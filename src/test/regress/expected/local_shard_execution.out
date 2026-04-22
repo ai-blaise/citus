@@ -302,7 +302,7 @@ SET citus.enable_binary_protocol = TRUE;
 EXPLAIN (COSTS OFF) SELECT * FROM distributed_table WHERE key = 1 AND age = 20;
                                                  QUERY PLAN
 ---------------------------------------------------------------------
- Custom Scan (Citus Adaptive)
+ Custom Scan (Citus Single Task)
    Task Count: 1
    Tasks Shown: All
    ->  Task
@@ -316,7 +316,7 @@ EXPLAIN (COSTS OFF) SELECT * FROM distributed_table WHERE key = 1 AND age = 20;
 select public.explain_filter('EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF)   SELECT * FROM distributed_table WHERE key = 1 AND age = 20');
                                                             explain_filter
 ---------------------------------------------------------------------
- Custom Scan (Citus Adaptive) (actual rows=N loops=N)
+ Custom Scan (Citus Single Task) (actual rows=N loops=N)
    Task Count: N
    Tuple data received from nodes: N bytes
    Tasks Shown: All
@@ -358,7 +358,7 @@ SELECT 1 FROM r WHERE z < 3;
 EXPLAIN (COSTS OFF) DELETE FROM distributed_table WHERE key = 1 AND age = 20;
                                                     QUERY PLAN
 ---------------------------------------------------------------------
- Custom Scan (Citus Adaptive)
+ Custom Scan (Citus Single Task)
    Task Count: 1
    Tasks Shown: All
    ->  Task
@@ -373,7 +373,7 @@ EXPLAIN (COSTS OFF) DELETE FROM distributed_table WHERE key = 1 AND age = 20;
 select public.explain_filter('EXPLAIN (ANALYZE, COSTS OFF, SUMMARY OFF, TIMING OFF, BUFFERS OFF) DELETE FROM distributed_table WHERE key = 1 AND age = 20');
                                                                explain_filter
 ---------------------------------------------------------------------
- Custom Scan (Citus Adaptive) (actual rows=N loops=N)
+ Custom Scan (Citus Single Task) (actual rows=N loops=N)
    Task Count: N
    Tasks Shown: All
    ->  Task
@@ -3280,9 +3280,9 @@ SELECT pg_sleep(0.1); -- wait to make sure the config has changed before running
 SET citus.enable_local_execution TO false; -- force a connection to the dummy placements
 -- run queries that use dummy placements for local execution
 SELECT * FROM event_responses WHERE FALSE;
-ERROR:  connection to the remote node postgres@foobar:57636 failed with the following error: could not translate host name "foobar" to address: <system specific error>
+ERROR:  could not establish any connections to the node foobar:57636 after 5000 ms
 WITH cte_1 AS (SELECT * FROM event_responses LIMIT 1) SELECT count(*) FROM cte_1;
-ERROR:  connection to the remote node postgres@foobar:57636 failed with the following error: could not translate host name "foobar" to address: <system specific error>
+ERROR:  could not establish any connections to the node foobar:57636 after 5000 ms
 ALTER SYSTEM RESET citus.local_hostname;
 SELECT pg_reload_conf();
  pg_reload_conf

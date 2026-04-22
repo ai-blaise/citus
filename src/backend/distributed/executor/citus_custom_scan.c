@@ -25,6 +25,7 @@
 
 #include "pg_version_constants.h"
 
+#include "distributed/adaptive_executor.h"
 #include "distributed/backend_data.h"
 #include "distributed/citus_clauses.h"
 #include "distributed/citus_custom_scan.h"
@@ -43,6 +44,7 @@
 #include "distributed/merge_executor.h"
 #include "distributed/merge_planner.h"
 #include "distributed/multi_executor.h"
+#include "distributed/multi_explain.h"
 #include "distributed/multi_router_planner.h"
 #include "distributed/multi_server_executor.h"
 #include "distributed/shard_utils.h"
@@ -59,6 +61,7 @@ extern AllowedDistributionColumn AllowedDistributionColumnValue;
 /* functions for creating custom scan nodes */
 static Node * AdaptiveExecutorCreateScan(CustomScan *scan);
 static Node * SortedMergeCreateScan(CustomScan *scan);
+static Node * SingleTaskExecutorCreateScan(CustomScan *scan);
 static Node * NonPushableInsertSelectCreateScan(CustomScan *scan);
 static Node * DelayedErrorCreateScan(CustomScan *scan);
 static Node * NonPushableMergeCommandCreateScan(CustomScan *scan);
@@ -68,6 +71,7 @@ static void CitusBeginScan(CustomScanState *node, EState *estate, int eflags);
 static void CitusBeginReadOnlyScan(CustomScanState *node, EState *estate, int eflags);
 static void CitusBeginModifyScan(CustomScanState *node, EState *estate, int eflags);
 static void CitusPreExecScan(CitusScanState *scanState);
+static TupleTableSlot * CitusExecOneTaskScan(CustomScanState *node);
 static bool ModifyJobNeedsEvaluation(Job *workerJob);
 static void RegenerateTaskForFasthPathQuery(Job *workerJob);
 static void RegenerateTaskListForInsert(Job *workerJob);
@@ -99,6 +103,11 @@ CustomScanMethods SortedMergeCustomScanMethods = {
 	SortedMergeCreateScan
 };
 
+CustomScanMethods SingleTaskExecutorCustomScanMethods = {
+	"Citus Single Task",
+	SingleTaskExecutorCreateScan
+};
+
 CustomScanMethods NonPushableInsertSelectCustomScanMethods = {
 	"Citus INSERT ... SELECT",
 	NonPushableInsertSelectCreateScan
@@ -122,6 +131,15 @@ static CustomExecMethods AdaptiveExecutorCustomExecMethods = {
 	.CustomName = "AdaptiveExecutorScan",
 	.BeginCustomScan = CitusBeginScan,
 	.ExecCustomScan = CitusExecScan,
+	.EndCustomScan = CitusEndScan,
+	.ReScanCustomScan = CitusReScan,
+	.ExplainCustomScan = CitusExplainScan
+};
+
+static CustomExecMethods SingleTaskExecutorCustomExecMethods = {
+	.CustomName = "SingleTaskExecutorScan",
+	.BeginCustomScan = CitusBeginScan,
+	.ExecCustomScan = CitusExecOneTaskScan,
 	.EndCustomScan = CitusEndScan,
 	.ReScanCustomScan = CitusReScan,
 	.ExplainCustomScan = CitusExplainScan
@@ -179,6 +197,7 @@ IsCitusCustomState(PlanState *planState)
 	CustomScanState *css = castNode(CustomScanState, planState);
 	if (css->methods == &AdaptiveExecutorCustomExecMethods ||
 		css->methods == &SortedMergeCustomExecMethods ||
+		css->methods == &SingleTaskExecutorCustomExecMethods ||
 		css->methods == &NonPushableInsertSelectCustomExecMethods ||
 		css->methods == &NonPushableMergeCommandCustomExecMethods)
 	{
@@ -197,6 +216,7 @@ RegisterCitusCustomScanMethods(void)
 {
 	RegisterCustomScanMethods(&AdaptiveExecutorCustomScanMethods);
 	RegisterCustomScanMethods(&SortedMergeCustomScanMethods);
+	RegisterCustomScanMethods(&SingleTaskExecutorCustomScanMethods);
 	RegisterCustomScanMethods(&NonPushableInsertSelectCustomScanMethods);
 	RegisterCustomScanMethods(&DelayedErrorCustomScanMethods);
 	RegisterCustomScanMethods(&NonPushableMergeCommandCustomScanMethods);
@@ -339,6 +359,40 @@ CitusExecScan(CustomScanState *node)
 	CitusScanState *scanState = (CitusScanState *) node;
 
 	CitusExecScanCommon(scanState);
+
+	return ReturnTupleFromTuplestore(scanState);
+}
+
+
+/*
+ * CitusExecOneTaskScan is the ExecCustomScan callback for the one-task
+ * adaptive executor. On the first call it executes the single-shard
+ * fast-path query via the streamlined SingleTaskExecutor, falling
+ * back to the full AdaptiveExecutor for EXPLAIN ANALYZE.
+ */
+static TupleTableSlot *
+CitusExecOneTaskScan(CustomScanState *node)
+{
+	CitusScanState *scanState = (CitusScanState *) node;
+
+	if (!scanState->finishedRemoteScan)
+	{
+		if (RequestedForExplainAnalyze(scanState))
+		{
+			AdaptiveExecutor(scanState);
+		}
+		else
+		{
+			SingleTaskExecutor(scanState);
+		}
+
+		if (!scanState->distributedPlan->disableTrackingQueryCounters)
+		{
+			IncrementStatCounterForMyDb(STAT_QUERY_EXECUTION_SINGLE_SHARD);
+		}
+
+		scanState->finishedRemoteScan = true;
+	}
 
 	return ReturnTupleFromTuplestore(scanState);
 }
@@ -804,6 +858,30 @@ SortedMergeCreateScan(CustomScan *scan)
 	scanState->distributedPlan = GetDistributedPlan(scan);
 
 	scanState->customScanState.methods = &SortedMergeCustomExecMethods;
+	scanState->PreExecScan = &CitusPreExecScan;
+
+	scanState->finishedPreScan = false;
+	scanState->finishedRemoteScan = false;
+
+	return (Node *) scanState;
+}
+
+
+/*
+ * SingleTaskExecutorCreateScan creates the scan state for the
+ * single-task executor, used for single-shard fast-path queries.
+ */
+static Node *
+SingleTaskExecutorCreateScan(CustomScan *scan)
+{
+	CitusScanState *scanState = palloc0(sizeof(CitusScanState));
+
+	/* reuse MULTI_EXECUTOR_ADAPTIVE for stats bucketing (see Research §6.1) */
+	scanState->executorType = MULTI_EXECUTOR_ADAPTIVE;
+	scanState->customScanState.ss.ps.type = T_CustomScanState;
+	scanState->distributedPlan = GetDistributedPlan(scan);
+
+	scanState->customScanState.methods = &SingleTaskExecutorCustomExecMethods;
 	scanState->PreExecScan = &CitusPreExecScan;
 
 	scanState->finishedPreScan = false;
