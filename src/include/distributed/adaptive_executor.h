@@ -33,5 +33,6 @@ extern uint64 ExecuteUtilityTaskListExtended(List *utilityTaskList, int poolSize
 extern uint64 ExecuteTaskListOutsideTransaction(RowModifyLevel modLevel, List *taskList,
 												int targetPoolSize, List *jobIdList);
 
+extern void EagerAdaptiveExecutor(CitusScanState *scanState);
 
 #endif /* ADAPTIVE_EXECUTOR_H */
