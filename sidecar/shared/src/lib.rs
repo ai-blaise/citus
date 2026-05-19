@@ -2,6 +2,14 @@
 
 // FEATURE: O4
 
+pub mod contracts;
+
+pub use contracts::{
+    AnalyticalMirrorContract, AuthIssuerContract, BackupRestoreContract, CdcSink,
+    CdcStreamContract, DeliveryRetryPolicy, RealtimeContract, RepackContract,
+    RepackExecutionStrategy, SidecarContractError, SidecarRuntimeContracts, StorageContract,
+};
+
 use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Eq, PartialEq)]

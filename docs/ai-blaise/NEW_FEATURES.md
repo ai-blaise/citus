@@ -14,6 +14,28 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 
 ## Throughput
 
+### T1: Settings-Bucket Connection Pool
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the pool settings-bucket contract for sharing worker
+connections across sessions with identical tracked GUC state.
+
+**Motivation**: Citus deployments need far more client sessions than worker
+backends without losing session correctness.
+
+**Citus comparison**: Vanilla Citus does not ship an external settings-bucket
+pooler.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T1` in `pool/src/runtime.rs`
+
 ### T2: Plan Cache Placement-Generation Invalidation
 
 **Overlay**: `pool/src/shard_map.rs`
@@ -35,6 +57,91 @@ movement but does not ship the ai-blaise pool's generation-aware cache model.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+
+### T3: Fast-Path Single-Shard Router
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the pool routing contract for sending eligible
+single-shard requests directly to the worker path with a coordinator fallback.
+
+**Motivation**: Coordinator-less topology needs a pool-level fast path before
+query execution patches are wired in.
+
+**Citus comparison**: Vanilla Citus plans single-shard queries but does not
+ship this pool routing layer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T3` in `pool/src/runtime.rs`
+
+### T9: Mirroring For Canary Traffic
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds a mirror-traffic policy with target and sample percentage.
+
+**Motivation**: Planner, pool, and sidecar changes need low-risk A/B traffic
+before they become default paths.
+
+**Citus comparison**: Vanilla Citus does not mirror query traffic.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T9` in `pool/src/runtime.rs`
+
+### T12: Pool HTAP Routing
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines HTAP routing policy from the pool to the analytical
+sidecar with staleness budget and predicate hints.
+
+**Motivation**: Hot/warm/cold query routing needs a single contract before the
+pool starts classifying real SQL.
+
+**Citus comparison**: Vanilla Citus does not route HTAP queries to sidecars.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T12` in `pool/src/runtime.rs`
+
+### T15: Transaction Pipelining In Pool
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines pool protocol pipelining limits for in-flight work and
+transaction pipelining.
+
+**Motivation**: Pool throughput work needs an explicit backpressure contract
+before pipelining reaches the data path.
+
+**Citus comparison**: Vanilla Citus does not provide an external pool
+pipelining contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T15` in `pool/src/runtime.rs`
 
 ## TimescaleDB Integration
 
@@ -462,7 +569,7 @@ helper.
 
 ### R7: REPACK CONCURRENTLY Adoption
 
-**Overlay**: `operator/src/crds/scheduled_repack.rs`
+**Overlay**: `operator/src/crds/scheduled_repack.rs`, `sidecar/shared/src/contracts.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -482,6 +589,28 @@ does not provide a scheduled repack CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
+- In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
+
+### R10: TLS Session Ticket Reuse In Pool
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the pool TLS session-ticket reuse and rotation contract.
+
+**Motivation**: Connection churn should not pay full TLS handshakes when
+rotation and reuse can be controlled explicitly.
+
+**Citus comparison**: Vanilla Citus does not include an external TLS pooler
+contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R10` in `pool/src/runtime.rs`
 
 ## Change Data And Branching
 
@@ -635,6 +764,28 @@ state machine.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
 
+### C1: CDC Sidecar
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines logical-replication slot, publication, sink, and retry
+contracts for the CDC sidecar.
+
+**Motivation**: Realtime, webhooks, analytical mirrors, and external sinks all
+need one validated CDC stream contract.
+
+**Citus comparison**: Vanilla Citus does not ship an out-of-process CDC
+sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C1` in `sidecar/shared/src/contracts.rs`
+
 ## Migrations
 
 ### M2: gh-ost-Style Online DDL
@@ -747,6 +898,27 @@ manage them as region objects.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
 
+### MR5: Pool GeoIP Routing
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the pool region-routing contract from CIDR rules to
+preferred regions.
+
+**Motivation**: Multi-region reads need a pool-side routing contract before
+GeoIP and edge-replica behavior can be enforced.
+
+**Citus comparison**: Vanilla Citus does not provide GeoIP-aware pool routing.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MR5` in `pool/src/runtime.rs`
+
 ### MR8: Leader Pinning Per Region
 
 **Overlay**: `operator/src/crds/region.rs`
@@ -771,6 +943,27 @@ tooling.
 
 ## Backup / PITR
 
+### B1: Backup Sidecar
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines schedule and archive URI contracts for the backup sidecar.
+
+**Motivation**: Backup execution needs a sidecar contract that matches the
+operator CRD before WAL archive implementation begins.
+
+**Citus comparison**: Vanilla Citus delegates backup sidecars to deployment
+tooling.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B1` in `sidecar/shared/src/contracts.rs`
+
 ### B2: Backup CRD
 
 **Overlay**: `operator/src/crds/backup.rs`
@@ -791,6 +984,48 @@ declarative schedule.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+
+### B3: PITR Restore
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds point-in-time restore target binding to the backup/restore
+sidecar contract.
+
+**Motivation**: PITR restore needs explicit target validation before `citusctl`
+and sidecar code execute recovery.
+
+**Citus comparison**: Vanilla Citus does not ship PITR restore orchestration.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B3` in `sidecar/shared/src/contracts.rs`
+
+### B4: Backup-As-Data-Source
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Carries a queryable branch name for read-only branch creation from
+backup archives.
+
+**Motivation**: Time-travel and investigation workflows need backup archives
+to become explicit read-only data sources.
+
+**Citus comparison**: Vanilla Citus does not expose backup-as-branch behavior.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B4` in `sidecar/shared/src/contracts.rs`
 
 ### B6: Encrypted Backups
 
@@ -969,6 +1204,136 @@ objects.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
 
+### Search8: Search-Aware Cold Tier
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds search-index enablement to the analytical mirror contract so
+cold-tier data can preserve search semantics.
+
+**Motivation**: Cold-tier movement should not discard full-text or hybrid
+search availability.
+
+**Citus comparison**: Vanilla Citus does not manage search-aware cold-tier
+mirrors.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Search8` in `sidecar/shared/src/contracts.rs`
+
+## HTAP
+
+### L8: Mooncake-Style Logical-Replication Mirror
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the analytical mirror contract binding a CDC slot to
+mirror name and object-storage URI.
+
+**Motivation**: HTAP without dual-write requires a validated mirror stream
+before analytical sidecars materialize warm columnar copies.
+
+**Citus comparison**: Vanilla Citus does not ship a logical-replication
+analytical mirror.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L8` in `sidecar/shared/src/contracts.rs`
+
+## Realtime
+
+### RT1: Realtime Sidecar
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines realtime WebSocket topic contracts fed by CDC events.
+
+**Motivation**: Realtime broadcasts need typed topic and tenant binding before
+the WebSocket sidecar is implemented.
+
+**Citus comparison**: Vanilla Citus does not ship realtime WebSocket
+broadcasts.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: RT1` in `sidecar/shared/src/contracts.rs`
+
+### RT2: Per-Tenant Topic Isolation
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Requires tenant IDs on realtime subscriptions so topics can be
+isolated per tenant.
+
+**Motivation**: Realtime streams must not leak row changes across tenants.
+
+**Citus comparison**: Vanilla Citus does not model realtime topic tenancy.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: RT2` in `sidecar/shared/src/contracts.rs`
+
+### RT3: Realtime Filter Expressions
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Carries server-side realtime filter expressions on subscription
+contracts.
+
+**Motivation**: Subscribers need filtered streams without pushing every CDC
+event over the socket.
+
+**Citus comparison**: Vanilla Citus does not ship realtime filters.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: RT3` in `sidecar/shared/src/contracts.rs`
+
+### RT4: Presence
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds presence enablement to realtime topic contracts.
+
+**Motivation**: Presence needs to be declared with the channel so the realtime
+sidecar can account for subscribers consistently.
+
+**Citus comparison**: Vanilla Citus has no presence-channel surface.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: RT4` in `sidecar/shared/src/contracts.rs`
+
 ## Edge Functions
 
 ### EF3: Function CRD
@@ -993,6 +1358,47 @@ sidecar runtimes can share the same desired state.
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
 
 ## Security / Auth
+
+### Auth1: JWT-Issuing Service
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines issuer, signing key reference, token TTL, and tenant claim
+contract for the auth sidecar.
+
+**Motivation**: SQL helpers and the pool need the same token contract before
+the auth sidecar starts issuing JWTs.
+
+**Citus comparison**: Vanilla Citus does not ship a JWT issuer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Auth1` in `sidecar/shared/src/contracts.rs`
+
+### Auth3: Token Introspection Cache
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines pool-side token introspection cache sizing and TTL.
+
+**Motivation**: Auth verification must be fast enough for pooled connection
+paths without repeatedly hitting the auth sidecar.
+
+**Citus comparison**: Vanilla Citus does not include token introspection.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Auth3` in `pool/src/runtime.rs`
 
 ### Sec1: RLS Helpers
 
@@ -1036,6 +1442,27 @@ contract to avoid split-brain authorization behavior.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+
+### Sec12: Per-Tenant Resource Quotas
+
+**Overlay**: `pool/src/runtime.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines token-bucket admission policy for tenant-scoped pool
+traffic.
+
+**Motivation**: Tenant quotas need pool-side enforcement before noisy tenants
+can be isolated reliably.
+
+**Citus comparison**: Vanilla Citus does not enforce per-tenant pool quotas.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
 
 ### Auth2: Tenant-Aware Claims
 
@@ -1081,6 +1508,91 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+
+### WH3: Reliable Delivery
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines max-attempt and dead-letter queue policy for CDC-backed
+webhook delivery.
+
+**Motivation**: Webhooks need at-least-once retry and dead-letter behavior
+before delivery sidecars can be trusted.
+
+**Citus comparison**: Vanilla Citus does not include webhook retry contracts.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: WH3` in `sidecar/shared/src/contracts.rs`
+
+## Storage
+
+### Sto1: Storage Sidecar
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines bucket and metadata-table contracts for the storage
+sidecar.
+
+**Motivation**: S3-compatible file storage needs a stable table and bucket
+mapping before upload/download paths are implemented.
+
+**Citus comparison**: Vanilla Citus does not ship an object storage sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sto1` in `sidecar/shared/src/contracts.rs`
+
+### Sto3: Presigned URL Signing
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines presigned upload URL TTL policy for the storage sidecar.
+
+**Motivation**: Direct uploads need a bounded signing window to keep file
+access auditable.
+
+**Citus comparison**: Vanilla Citus does not generate presigned object-store
+URLs.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sto3` in `sidecar/shared/src/contracts.rs`
+
+### Sto4: Bucket-Level ACLs
+
+**Overlay**: `sidecar/shared/src/contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Carries tenant-column ACL binding for object metadata rows.
+
+**Motivation**: Storage ACLs must line up with tenant RLS rather than live only
+in object-store policy.
+
+**Citus comparison**: Vanilla Citus does not manage storage ACLs.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sto4` in `sidecar/shared/src/contracts.rs`
 
 ## Federation
 
