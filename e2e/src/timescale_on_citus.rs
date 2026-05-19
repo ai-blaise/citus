@@ -2,8 +2,9 @@
 // FEATURE: TS7
 
 use ai_blaise_citus_operator::{
-    CompressionPolicy, ContinuousAggregateSpec, HypertableReconcileError, HypertableReconcilePlan,
-    HypertableSpec, RetentionPolicy,
+    CitusClusterSpec, CitusClusterSpecError, CitusTopology, CompressionPolicy,
+    ContinuousAggregateSpec, HypertableReconcileError, HypertableReconcilePlan, HypertableSpec,
+    PoolSpec, RetentionPolicy, SidecarSpec, SidecarType,
 };
 use std::error::Error;
 use std::fmt;
@@ -39,6 +40,7 @@ impl CohabitationPreloadConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TimescaleOnCitusAcceptance {
+    pub cluster: CitusClusterSpec,
     pub preload: CohabitationPreloadConfig,
     pub hypertable: HypertableSpec,
 }
@@ -46,6 +48,26 @@ pub struct TimescaleOnCitusAcceptance {
 impl TimescaleOnCitusAcceptance {
     pub fn canonical_metrics() -> Self {
         Self {
+            cluster: CitusClusterSpec {
+                topology: CitusTopology::CoordinatorWorker,
+                image: "ghcr.io/ai-blaise/citus:pg18-v2".to_string(),
+                workers: 3,
+                coordinators: 1,
+                storage_class: None,
+                timescale_enabled: true,
+                extensions: vec![
+                    CITUS_EXTENSION.to_string(),
+                    TIMESCALEDB_EXTENSION.to_string(),
+                ],
+                pool: Some(PoolSpec {
+                    replicas: 2,
+                    geoip_db: None,
+                }),
+                sidecars: vec![SidecarSpec {
+                    sidecar_type: SidecarType::Vectorizer,
+                    replicas: 1,
+                }],
+            },
             preload: CohabitationPreloadConfig {
                 shared_preload_libraries: vec![
                     CITUS_EXTENSION.to_string(),
@@ -85,13 +107,16 @@ impl TimescaleOnCitusAcceptance {
     }
 
     pub fn plan(&self) -> Result<TimescaleOnCitusPlan, TimescaleOnCitusAcceptanceError> {
+        self.cluster.validate()?;
         self.preload.validate()?;
         let reconcile = HypertableReconcilePlan::try_from(&self.hypertable)?;
 
         Ok(TimescaleOnCitusPlan {
+            cluster: self.cluster.clone(),
             preload: self.preload.clone(),
             reconcile,
             gates: vec![
+                AcceptanceGate::CitusClusterTopology,
                 AcceptanceGate::CohabitPreload,
                 AcceptanceGate::DistributedHypertable,
                 AcceptanceGate::CompressionPolicy,
@@ -105,6 +130,7 @@ impl TimescaleOnCitusAcceptance {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TimescaleOnCitusPlan {
+    pub cluster: CitusClusterSpec,
     pub preload: CohabitationPreloadConfig,
     pub reconcile: HypertableReconcilePlan,
     pub gates: Vec<AcceptanceGate>,
@@ -112,6 +138,7 @@ pub struct TimescaleOnCitusPlan {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AcceptanceGate {
+    CitusClusterTopology,
     CohabitPreload,
     DistributedHypertable,
     CompressionPolicy,
@@ -122,6 +149,7 @@ pub enum AcceptanceGate {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TimescaleOnCitusAcceptanceError {
+    Cluster(CitusClusterSpecError),
     MissingSharedPreloadLibrary(&'static str),
     MissingCohabitExtension(&'static str),
     Reconcile(HypertableReconcileError),
@@ -130,6 +158,7 @@ pub enum TimescaleOnCitusAcceptanceError {
 impl fmt::Display for TimescaleOnCitusAcceptanceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Cluster(error) => write!(formatter, "{error}"),
             Self::MissingSharedPreloadLibrary(library) => {
                 write!(formatter, "shared_preload_libraries must include {library}")
             }
@@ -145,6 +174,12 @@ impl fmt::Display for TimescaleOnCitusAcceptanceError {
 }
 
 impl Error for TimescaleOnCitusAcceptanceError {}
+
+impl From<CitusClusterSpecError> for TimescaleOnCitusAcceptanceError {
+    fn from(error: CitusClusterSpecError) -> Self {
+        Self::Cluster(error)
+    }
+}
 
 impl From<HypertableReconcileError> for TimescaleOnCitusAcceptanceError {
     fn from(error: HypertableReconcileError) -> Self {
@@ -176,6 +211,9 @@ mod tests {
             .plan()
             .expect("canonical acceptance plan");
 
+        assert_eq!(plan.cluster.topology, CitusTopology::CoordinatorWorker);
+        assert_eq!(plan.cluster.workers, 3);
+        assert_eq!(plan.cluster.coordinators, 1);
         assert_eq!(
             plan.preload.shared_preload_libraries,
             vec![
@@ -200,6 +238,7 @@ mod tests {
         assert_eq!(
             plan.gates,
             vec![
+                AcceptanceGate::CitusClusterTopology,
                 AcceptanceGate::CohabitPreload,
                 AcceptanceGate::DistributedHypertable,
                 AcceptanceGate::CompressionPolicy,
@@ -219,6 +258,20 @@ mod tests {
             acceptance.plan(),
             Err(TimescaleOnCitusAcceptanceError::MissingCohabitExtension(
                 TIMESCALEDB_EXTENSION
+            ))
+        );
+    }
+
+    #[test]
+    fn plan_rejects_invalid_cluster_topology() {
+        let mut acceptance = TimescaleOnCitusAcceptance::canonical_metrics();
+        acceptance.cluster.topology = CitusTopology::CoordinatorLess;
+        acceptance.cluster.coordinators = 1;
+
+        assert_eq!(
+            acceptance.plan(),
+            Err(TimescaleOnCitusAcceptanceError::Cluster(
+                CitusClusterSpecError::InvalidCoordinatorCount
             ))
         );
     }

@@ -208,8 +208,8 @@ are wired in.
 
 ### S4: Coordinator-Less Topology Mode
 
-**Overlay**: `operator/`, `pool/`
-**Status**: planned
+**Overlay**: `operator/`, `pool/`, `e2e/`
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -226,7 +226,8 @@ not ship ai-blaise's pool/operator topology mode.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- Feature marker: `FEATURE: S4`
+- In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
+- Acceptance: `e2e/src/timescale_on_citus.rs`
 
 ### S5: Raft Per Shard Group
 
