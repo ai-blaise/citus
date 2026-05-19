@@ -221,6 +221,73 @@ partitions, but it has no distributed-hypertable orchestration.
 - In-source: `FEATURE: TS1` in `companion/src/citus_timescale.rs`
   and `e2e/src/timescale_on_citus.rs`
 
+### TS2: Distributed Compression Policy
+
+**Overlay**: `companion/citus_timescale`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
+worker-fanned distributed compression policy creation.
+
+**Motivation**: Distributed hypertables need compression policies that are
+declared once and applied consistently across worker-local hypertables.
+
+**Citus comparison**: Vanilla Citus does not fan out TimescaleDB compression
+policy setup.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: TS2` in `companion/src/citus_timescale.rs`
+
+### TS3: Distributed Continuous Aggregate Partials
+
+**Overlay**: `companion/citus_timescale`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
+distributed continuous aggregate definitions and refresh-policy arguments.
+
+**Motivation**: Continuous aggregates must be coordinated through the same
+bridge as distributed hypertables so worker partials and coordinator finals are
+created predictably.
+
+**Citus comparison**: Vanilla Citus does not orchestrate TimescaleDB continuous
+aggregates across shards.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: TS3` in `companion/src/citus_timescale.rs`
+
+### TS4: Distributed Retention Policy
+
+**Overlay**: `companion/citus_timescale`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
+cluster-wide retention policy setup.
+
+**Motivation**: Retention should drop old chunks across all worker-local
+hypertables without requiring operator-authored per-worker SQL.
+
+**Citus comparison**: Vanilla Citus does not provide TimescaleDB retention
+policy fanout.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: TS4` in `companion/src/citus_timescale.rs`
+
 ### TS5: Time-Range Shard Pruner
 
 **Overlay**: `companion/citus_timescale`
@@ -314,6 +381,28 @@ Timescale-aware distributed hypertables.
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
+
+### TS12: Distributed Reorder Policy
+
+**Overlay**: `companion/citus_timescale`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
+worker-fanned TimescaleDB reorder policy setup.
+
+**Motivation**: Reorder policies need to target worker-local hypertables while
+remaining declarative at the coordinator/operator layer.
+
+**Citus comparison**: Vanilla Citus does not orchestrate TimescaleDB reorder
+policies across shards.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: TS12` in `companion/src/citus_timescale.rs`
 
 ## AI / Vector
 

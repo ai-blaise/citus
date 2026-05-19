@@ -9,6 +9,8 @@ Initial critical modules: `citus_timescale`, `observability`, `auth`,
 ## Current Surface
 
 - `DistributedHypertablePlan` for `FEATURE: TS1`
+- SQL-plan rendering for `FEATURE: TS2`, `FEATURE: TS3`, `FEATURE: TS4`, and
+  `FEATURE: TS12`
 - `TimeRangeShardPrunerPlan` for `FEATURE: TS5`
 - policy plan shapes for distributed compression, retention, reorder, and
   continuous aggregate refresh
@@ -23,4 +25,5 @@ Initial critical modules: `citus_timescale`, `observability`, `auth`,
   `FEATURE: S14`, `FEATURE: TO3`, `FEATURE: TO4`, and `FEATURE: TO5`
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
-The `pg18` feature is reserved for PostgreSQL 18 `pgrx` packaging.
+The `pg18` feature exposes the first pgrx SQL-callable companion Timescale
+bridge functions.

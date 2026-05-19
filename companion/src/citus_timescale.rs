@@ -1,11 +1,38 @@
 // FEATURE: TS1
+// FEATURE: TS2
+// FEATURE: TS3
+// FEATURE: TS4
 // FEATURE: TS5
+// FEATURE: TS12
 
 use std::error::Error;
 use std::fmt;
 
 pub const FEATURE_DISTRIBUTE_HYPERTABLE: &str = "TS1";
 pub const FEATURE_TIME_RANGE_SHARD_PRUNER: &str = "TS5";
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CompanionSqlPlan {
+    pub feature_id: &'static str,
+    pub commands: Vec<String>,
+}
+
+impl CompanionSqlPlan {
+    pub fn new(feature_id: &'static str, commands: Vec<String>) -> Result<Self, CompanionError> {
+        if commands.is_empty() || commands.iter().any(|command| command.trim().is_empty()) {
+            return Err(CompanionError::MissingRequiredField("commands"));
+        }
+
+        Ok(Self {
+            feature_id,
+            commands,
+        })
+    }
+
+    pub fn script(&self) -> String {
+        self.commands.join("\n")
+    }
+}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DistributedHypertablePlan {
@@ -40,6 +67,27 @@ impl DistributedHypertablePlan {
             return Err(CompanionError::InvalidShardCount);
         }
         Ok(())
+    }
+
+    pub fn to_sql_plan(&self) -> Result<CompanionSqlPlan, CompanionError> {
+        self.validate()?;
+        CompanionSqlPlan::new(
+            "TS1",
+            vec![
+                format!(
+                    "SELECT create_distributed_table({}::regclass, {});",
+                    sql_literal(&self.table),
+                    sql_literal(&self.distribution_column)
+                ),
+                format!(
+                    "SELECT companion_internal.create_worker_hypertables({}, {}, {}, {});",
+                    sql_literal(&self.table),
+                    sql_literal(&self.distribution_column),
+                    sql_literal(&self.chunk_time_interval),
+                    self.num_shards
+                ),
+            ],
+        )
     }
 }
 
@@ -86,6 +134,12 @@ impl AddPolicyDistributedPlan {
         plan.policy.validate()?;
         Ok(plan)
     }
+
+    pub fn to_sql_plan(&self) -> Result<CompanionSqlPlan, CompanionError> {
+        validate_required("table", &self.table)?;
+        self.policy.validate()?;
+        self.policy.to_sql_plan(&self.table)
+    }
 }
 
 impl AddPolicyDistributed {
@@ -103,6 +157,42 @@ impl AddPolicyDistributed {
             Self::Retention { drop_after } => validate_required("drop_after", drop_after),
             Self::Reorder { index_name } => validate_required("index_name", index_name),
         }
+    }
+
+    fn feature_id(&self) -> &'static str {
+        match self {
+            Self::Compression { .. } => "TS2",
+            Self::Retention { .. } => "TS4",
+            Self::Reorder { .. } => "TS12",
+        }
+    }
+
+    fn to_sql_plan(&self, table: &str) -> Result<CompanionSqlPlan, CompanionError> {
+        let command = match self {
+            Self::Compression {
+                older_than,
+                segment_by,
+                order_by,
+            } => format!(
+                "SELECT companion_internal.add_compression_policy_distributed({}, {}, {}, {});",
+                sql_literal(table),
+                sql_literal(older_than),
+                sql_array_literal(segment_by),
+                sql_array_literal(order_by)
+            ),
+            Self::Retention { drop_after } => format!(
+                "SELECT companion_internal.add_retention_policy_distributed({}, {});",
+                sql_literal(table),
+                sql_literal(drop_after)
+            ),
+            Self::Reorder { index_name } => format!(
+                "SELECT companion_internal.add_reorder_policy_distributed({}, {});",
+                sql_literal(table),
+                sql_literal(index_name)
+            ),
+        };
+
+        CompanionSqlPlan::new(self.feature_id(), vec![command])
     }
 }
 
@@ -145,6 +235,34 @@ impl AddContinuousAggregateDistributedPlan {
 
         Ok(self)
     }
+
+    pub fn to_sql_plan(&self) -> Result<CompanionSqlPlan, CompanionError> {
+        validate_required("name", &self.name)?;
+        validate_required("query", &self.query)?;
+
+        let mut command = format!(
+            "SELECT companion_internal.add_continuous_aggregate_distributed({}, {}",
+            sql_literal(&self.name),
+            sql_literal(&self.query)
+        );
+
+        if let (Some(refresh_start), Some(refresh_end), Some(schedule)) =
+            (&self.refresh_start, &self.refresh_end, &self.schedule)
+        {
+            validate_required("refresh_start", refresh_start)?;
+            validate_required("refresh_end", refresh_end)?;
+            validate_required("schedule", schedule)?;
+            command.push_str(&format!(
+                ", refresh_start => {}, refresh_end => {}, schedule => {}",
+                sql_literal(refresh_start),
+                sql_literal(refresh_end),
+                sql_literal(schedule)
+            ));
+        }
+
+        command.push_str(");");
+        CompanionSqlPlan::new("TS3", vec![command])
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -165,6 +283,19 @@ impl TimeRangeShardPrunerPlan {
         validate_required("distributed_table", &plan.distributed_table)?;
         validate_required("time_column", &plan.time_column)?;
         Ok(plan)
+    }
+
+    pub fn to_sql_plan(&self) -> Result<CompanionSqlPlan, CompanionError> {
+        validate_required("distributed_table", &self.distributed_table)?;
+        validate_required("time_column", &self.time_column)?;
+        CompanionSqlPlan::new(
+            "TS5",
+            vec![format!(
+                "SELECT companion_internal.enable_time_range_shard_pruner({}, {});",
+                sql_literal(&self.distributed_table),
+                sql_literal(&self.time_column)
+            )],
+        )
     }
 }
 
@@ -201,6 +332,28 @@ fn validate_required_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
+pub fn parse_identifier_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn sql_array_literal(values: &[String]) -> String {
+    let items = values
+        .iter()
+        .map(|value| sql_literal(value))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("ARRAY[{items}]")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +383,19 @@ mod tests {
     }
 
     #[test]
+    fn distribute_hypertable_renders_two_step_bridge_plan() {
+        let script = distribute_hypertable_plan("public.metrics", "tenant_id", "1 day", 32)
+            .expect("valid plan")
+            .to_sql_plan()
+            .expect("sql plan")
+            .script();
+
+        assert!(script.contains("create_distributed_table"));
+        assert!(script.contains("create_worker_hypertables"));
+        assert!(script.contains("'public.metrics'::regclass"));
+    }
+
+    #[test]
     fn compression_policy_requires_segment_and_order_columns() {
         let error = AddPolicyDistributedPlan::new(
             "metrics",
@@ -242,6 +408,25 @@ mod tests {
         .expect_err("empty segment_by must fail");
 
         assert_eq!(error, CompanionError::MissingRequiredField("segment_by"));
+    }
+
+    #[test]
+    fn compression_policy_renders_worker_fanout_command() {
+        let plan = AddPolicyDistributedPlan::new(
+            "public.metrics",
+            AddPolicyDistributed::Compression {
+                older_than: "7 days".to_string(),
+                segment_by: vec!["tenant_id".to_string()],
+                order_by: vec!["ts DESC".to_string()],
+            },
+        )
+        .expect("valid compression policy")
+        .to_sql_plan()
+        .expect("sql plan");
+
+        assert_eq!(plan.feature_id, "TS2");
+        assert!(plan.script().contains("add_compression_policy_distributed"));
+        assert!(plan.script().contains("ARRAY['tenant_id']"));
     }
 
     #[test]
@@ -258,10 +443,37 @@ mod tests {
     }
 
     #[test]
+    fn continuous_aggregate_renders_refresh_policy() {
+        let plan = AddContinuousAggregateDistributedPlan::new(
+            "metrics_hourly",
+            "SELECT tenant_id, time_bucket('1 hour', ts), count(*) FROM metrics GROUP BY 1, 2",
+        )
+        .expect("valid cagg")
+        .with_refresh_policy("7 days", "1 hour", "15 minutes")
+        .expect("refresh policy")
+        .to_sql_plan()
+        .expect("sql plan");
+
+        assert_eq!(plan.feature_id, "TS3");
+        assert!(plan
+            .script()
+            .contains("add_continuous_aggregate_distributed"));
+        assert!(plan.script().contains("refresh_start => '7 days'"));
+    }
+
+    #[test]
     fn time_range_shard_pruner_requires_table_and_time_column() {
         let error =
             TimeRangeShardPrunerPlan::new("metrics", "").expect_err("empty time column must fail");
 
         assert_eq!(error, CompanionError::MissingRequiredField("time_column"));
+    }
+
+    #[test]
+    fn identifier_list_parser_trims_empty_values() {
+        assert_eq!(
+            parse_identifier_list("tenant_id, region, ,"),
+            vec!["tenant_id".to_string(), "region".to_string()]
+        );
     }
 }
