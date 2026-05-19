@@ -4,6 +4,7 @@ members = [
     "e2e",
     "operator",
     "pool",
+    "sidecar/auth",
     "sidecar/shared",
     "sidecar/vectorizer",
     "tools/citus-mcp",

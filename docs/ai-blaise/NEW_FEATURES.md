@@ -1625,7 +1625,7 @@ sidecar runtimes can share the same desired state.
 
 ### Auth1: JWT-Issuing Service
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/auth`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1643,6 +1643,7 @@ the auth sidecar starts issuing JWTs.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth1` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: Auth1` in `sidecar/auth/src/lib.rs`
 
 ### Auth3: Token Introspection Cache
 
@@ -1730,7 +1731,7 @@ can be isolated reliably.
 
 ### Auth2: Tenant-Aware Claims
 
-**Overlay**: `companion/src/auth.rs`
+**Overlay**: `companion/src/auth.rs`, `sidecar/auth`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1748,6 +1749,49 @@ names before RLS enforcement is wired through.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth2` in `companion/src/auth.rs`
+- In-source: `FEATURE: Auth2` in `sidecar/auth/src/lib.rs`
+
+### Auth4: OAuth2 / OIDC Provider Contracts
+
+**Overlay**: `sidecar/auth`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines OIDC provider configuration with issuer URL, secret refs,
+and scopes for external identity integrations.
+
+**Motivation**: Auth sidecars need an auditable provider contract before
+Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
+
+**Citus comparison**: Vanilla Citus does not ship OAuth2/OIDC auth services.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Auth4` in `sidecar/auth/src/lib.rs`
+
+### Auth5: MFA Policy Contracts
+
+**Overlay**: `sidecar/auth`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds MFA policy validation for TOTP and WebAuthn enablement plus
+bounded retry attempts.
+
+**Motivation**: MFA behavior needs a declarative sidecar contract before token
+issuance can enforce step-up authentication.
+
+**Citus comparison**: Vanilla Citus does not ship MFA policy management.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Auth5` in `sidecar/auth/src/lib.rs`
 
 ## Webhooks
 
