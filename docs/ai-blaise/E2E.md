@@ -13,3 +13,8 @@ contract the real cluster test must satisfy:
 7. record the gates the database-backed runner must prove
 
 The first scenario is `TimescaleOnCitusAcceptance::canonical_metrics()`.
+
+`V2OperatorCatalogAcceptance::canonical_platform()` validates the rest of the
+V2 operator catalog in one model: branches, tenants, regions, survival goals,
+backups, vectorizers, sidecar deployments, migrations, conflict policies,
+federation, search indexes, webhooks, functions, and scheduled repacks.

@@ -3,6 +3,15 @@
 This is the canonical register of features that `ai-blaise/citus` adds beyond
 vanilla Citus. Every feature-bearing PR updates this file.
 
+`e2e/src/operator_catalog.rs` is the current pure-Rust acceptance model for
+the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
+`FEATURE: B2`, `FEATURE: B6`, `FEATURE: C4`, `FEATURE: C5`, `FEATURE: C6`,
+`FEATURE: C7`, `FEATURE: C8`, `FEATURE: C9`, `FEATURE: EF3`, `FEATURE: F1`,
+`FEATURE: M3`, `FEATURE: MR1`, `FEATURE: MR2`, `FEATURE: MR4`, `FEATURE: MR8`,
+`FEATURE: O5`, `FEATURE: R2`, `FEATURE: R7`, `FEATURE: S10`, `FEATURE: S11`,
+`FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
+`FEATURE: TO5`, and `FEATURE: WH1`.
+
 ## Throughput
 
 ### T2: Plan Cache Placement-Generation Invalidation
