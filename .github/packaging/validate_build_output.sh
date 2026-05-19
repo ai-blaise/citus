@@ -19,14 +19,22 @@ package_type=${1}
 # For this script, we set $HOME to /root and then set it back to /github/home.
 GITHUB_HOME="${HOME}"
 export HOME="/root"
+REPO_ROOT="$(pwd)"
+TOOLS_CHECKOUT_PARENT="$(mktemp -d)"
+
+cleanup() {
+    rm -rf "${TOOLS_CHECKOUT_PARENT}"
+    export HOME="${GITHUB_HOME}"
+}
+trap cleanup EXIT
 
 eval "$(pyenv init -)"
 pyenv versions
 pyenv virtualenv ${PACKAGING_PYTHON_VERSION} packaging_env
 pyenv activate packaging_env
 
-git clone -b v0.8.27 --depth=1  https://github.com/citusdata/tools.git tools
-python3 -m pip install -r tools/packaging_automation/requirements.txt
+git clone -b v0.8.27 --depth=1 https://github.com/citusdata/tools.git "${TOOLS_CHECKOUT_PARENT}/tools"
+python3 -m pip install -r "${TOOLS_CHECKOUT_PARENT}/tools/packaging_automation/requirements.txt"
 
 
 echo "Package type: ${package_type}"
@@ -41,9 +49,13 @@ if [[ ${package_type} == "rpm" && $(get_rpm_os_version) == 7* ]]; then
     python3 -m pip install 'urllib3<2'
 fi
 
-python3 -m tools.packaging_automation.validate_build_output --output_file output.log \
-                                                            --ignore_file .github/packaging/packaging_ignore.yml \
-                                                            --package_type ${package_type}
+(
+    cd "${TOOLS_CHECKOUT_PARENT}"
+    python3 -m tools.packaging_automation.validate_build_output \
+        --output_file "${REPO_ROOT}/output.log" \
+        --ignore_file "${REPO_ROOT}/.github/packaging/packaging_ignore.yml" \
+        --package_type ${package_type}
+)
 pyenv deactivate
 # Set $HOME back to /github/home
 export HOME=${GITHUB_HOME}
