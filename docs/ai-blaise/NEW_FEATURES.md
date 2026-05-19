@@ -274,6 +274,335 @@ consensus logic into Postgres backends.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - Feature marker: `FEATURE: S5`
 
+### S10: Schema-Based Tenancy
+
+**Overlay**: `operator/src/crds/tenant.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the `Tenant` operator spec for one-tenant-per-schema
+layouts on Citus schema-based sharding.
+
+**Motivation**: SaaS tenancy needs a declarative lifecycle boundary before
+tenant quotas, region affinity, migration, and archive jobs can reconcile.
+
+**Citus comparison**: Vanilla Citus supports schema-based sharding but does not
+ship a Kubernetes tenant CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S10` in `operator/src/crds/tenant.rs`
+
+### S11: Survival Goals
+
+**Overlay**: `operator/src/crds/survival_goal.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines zone-failure and region-failure survival targets that the
+operator can use to validate placement and replication intent.
+
+**Motivation**: Replication factor alone is ambiguous; users need an explicit
+failure domain goal for topology-aware reconciliation.
+
+**Citus comparison**: Vanilla Citus does not expose a survival-goal API.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
+
+## Resource Efficiency
+
+### R2: Scale-To-Zero Compute
+
+**Overlay**: `operator/src/crds/branch.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds branch-level suspend intent so short-lived compute branches
+can scale to zero while retaining their storage declaration.
+
+**Motivation**: Development, analytics, and point-in-time investigation
+branches should not burn compute while idle.
+
+**Citus comparison**: Vanilla Citus does not provide branch lifecycle or
+scale-to-zero semantics.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
+
+## Change Data And Branching
+
+### C6: CSI Snapshot Branching
+
+**Overlay**: `operator/src/crds/branch.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the branch source-cluster, storage, and branch-type
+contract needed for snapshot-backed cluster branches.
+
+**Motivation**: Branching needs an operator-owned API before CSI snapshot and
+copy-on-write implementations can be reconciled safely.
+
+**Citus comparison**: Vanilla Citus does not ship snapshot branch automation.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C6` in `operator/src/crds/branch.rs`
+
+### C7: Branch Suspend
+
+**Overlay**: `operator/src/crds/branch.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Carries suspend intent on the branch spec so the operator can
+coordinate scale-to-zero and resume workflows.
+
+**Motivation**: Branch lifecycle must be declarative to avoid orphaned compute
+or ad hoc suspend state.
+
+**Citus comparison**: Vanilla Citus has no branch suspend/resume surface.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C7` in `operator/src/crds/branch.rs`
+
+### C8: Branch Promote
+
+**Overlay**: `operator/src/crds/branch.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Establishes typed branch identity and source-cluster state for a
+future atomic branch promotion reconciler.
+
+**Motivation**: Promote/cut-over workflows need the same branch object that
+created and suspended the branch, so status and ownership stay consistent.
+
+**Citus comparison**: Vanilla Citus does not provide branch promotion.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C8` in `operator/src/crds/branch.rs`
+
+## Multi-Region
+
+### MR1: Region CRD
+
+**Overlay**: `operator/src/crds/region.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines named regions with Kubernetes zone and tablespace mapping.
+
+**Motivation**: Multi-region placement and tenant affinity need stable region
+objects rather than repeated stringly typed zone settings.
+
+**Citus comparison**: Vanilla Citus has tablespaces and placements but no
+region CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MR1` in `operator/src/crds/region.rs`
+
+### MR2: SurvivalGoal CRD
+
+**Overlay**: `operator/src/crds/survival_goal.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Declares whether the cluster should survive zone or region
+failure and how many replicas must remain available.
+
+**Motivation**: The operator must be able to reject impossible survival goals
+before it places shards.
+
+**Citus comparison**: Vanilla Citus does not encode failure-domain objectives.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MR2` in `operator/src/crds/survival_goal.rs`
+
+### MR4: Tablespaces By Region
+
+**Overlay**: `operator/src/crds/region.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Adds a declarative region-to-tablespace mapping for region-affine
+storage placement.
+
+**Motivation**: Tablespaces are the PostgreSQL primitive, but the operator
+needs a higher-level region policy to keep placements understandable.
+
+**Citus comparison**: Vanilla Citus can use PostgreSQL tablespaces but does not
+manage them as region objects.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
+
+### MR8: Leader Pinning Per Region
+
+**Overlay**: `operator/src/crds/region.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Carries leader-pinning intent on regions so future HA reconcilers
+can constrain primaries to chosen failure domains.
+
+**Motivation**: Multi-region clusters need explicit write-leader placement to
+control latency and failover behavior.
+
+**Citus comparison**: Vanilla Citus leaves primary placement to external HA
+tooling.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MR8` in `operator/src/crds/region.rs`
+
+## Backup / PITR
+
+### B2: Backup CRD
+
+**Overlay**: `operator/src/crds/backup.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines backup schedule, retention, object-store target, and
+provider for the future backup sidecar reconciler.
+
+**Motivation**: PITR and backup-as-data-source workflows need an auditable
+declarative schedule.
+
+**Citus comparison**: Vanilla Citus does not ship a cluster backup CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+
+### B6: Encrypted Backups
+
+**Overlay**: `operator/src/crds/backup.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds a KMS key reference to backup policy so encrypted archives
+are part of the reconciled contract.
+
+**Motivation**: Backup encryption must be configured with the schedule, not
+attached later by an external script.
+
+**Citus comparison**: Vanilla Citus delegates backup encryption entirely to
+deployment-specific tooling.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
+
+## Tenant Operations
+
+### TO1: Tenant CRD
+
+**Overlay**: `operator/src/crds/tenant.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Introduces the tenant lifecycle object used by tenant migration,
+archive, quotas, and region-affinity workflows.
+
+**Motivation**: Tenant operations require a first-class unit of ownership
+rather than interpreting arbitrary schema names.
+
+**Citus comparison**: Vanilla Citus does not ship tenant lifecycle objects.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TO1` in `operator/src/crds/tenant.rs`
+
+### TO2: Tenant Quotas
+
+**Overlay**: `operator/src/crds/tenant.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds connection, QPS, and storage quotas to tenant declarations.
+
+**Motivation**: Pool and sidecar enforcement need a typed quota source before
+runtime admission control is wired in.
+
+**Citus comparison**: Vanilla Citus has no per-tenant quota CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
+
+### TO5: Tenant Region Affinity
+
+**Overlay**: `operator/src/crds/tenant.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the preferred region for a tenant so placement and
+migration reconcilers can keep tenant data close to its users.
+
+**Motivation**: Region affinity needs to be part of tenant intent, not hidden
+inside one-off placement annotations.
+
+**Citus comparison**: Vanilla Citus does not model tenant-region affinity.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
+
 ## Observability
 
 ### O4: Sidecar Health And Metrics Contract
