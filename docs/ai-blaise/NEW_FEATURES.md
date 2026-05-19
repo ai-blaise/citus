@@ -366,8 +366,9 @@ delegating to trusted preexisting hooks where the Citus path can safely do so.
 **Bundled extension dep**: `timescaledb`
 
 **Summary**: Defines the Kubernetes `Hypertable` spec and typed reconcile plan
-that drive distributed hypertable creation, compression, retention, and
-continuous aggregate policy reconciliation.
+that drive distributed hypertable creation, compression, retention, continuous
+aggregate, and time-range shard-pruner reconciliation through ordered companion
+SQL plans.
 
 **Motivation**: The TimescaleDB bridge needs a declarative operator surface so
 cluster state can be reconciled repeatedly instead of hand-applied.

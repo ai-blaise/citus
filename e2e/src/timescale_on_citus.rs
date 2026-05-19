@@ -264,6 +264,15 @@ mod tests {
         );
         assert_eq!(plan.reconcile.policies.len(), 2);
         assert_eq!(plan.reconcile.continuous_aggregates.len(), 1);
+        assert_eq!(plan.reconcile.sql_plans.len(), 5);
+        assert!(plan
+            .reconcile
+            .sql_script()
+            .contains("create_distributed_table"));
+        assert!(plan
+            .reconcile
+            .sql_script()
+            .contains("enable_time_range_shard_pruner"));
         assert_eq!(
             plan.gates,
             vec![

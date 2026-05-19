@@ -21,5 +21,6 @@ sidecar deployment resources, online migration DSL, conflict resolution, FDW
 federation, hybrid search, outbound webhooks, edge functions, and online
 repack scheduling.
 
-`operator/src/reconcile/hypertable.rs` converts that spec into companion
-planning types so the future reconciler has one typed execution plan to apply.
+`operator/src/reconcile/hypertable.rs` converts that spec into ordered
+companion SQL plans so the future kube reconciler has one typed execution plan
+to apply.

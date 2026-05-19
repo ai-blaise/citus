@@ -2,7 +2,8 @@
 
 use ai_blaise_citus_companion::{
     distribute_hypertable_plan, AddContinuousAggregateDistributedPlan, AddPolicyDistributed,
-    AddPolicyDistributedPlan, CompanionError, DistributedHypertablePlan,
+    AddPolicyDistributedPlan, CompanionError, CompanionSqlPlan, DistributedHypertablePlan,
+    TimeRangeShardPrunerPlan,
 };
 use std::error::Error;
 use std::fmt;
@@ -17,6 +18,8 @@ pub struct HypertableReconcilePlan {
     pub distributed_hypertable: DistributedHypertablePlan,
     pub policies: Vec<AddPolicyDistributedPlan>,
     pub continuous_aggregates: Vec<AddContinuousAggregateDistributedPlan>,
+    pub time_range_pruner: TimeRangeShardPrunerPlan,
+    pub sql_plans: Vec<CompanionSqlPlan>,
 }
 
 impl TryFrom<&HypertableSpec> for HypertableReconcilePlan {
@@ -46,11 +49,36 @@ impl TryFrom<&HypertableSpec> for HypertableReconcilePlan {
             .map(continuous_aggregate_plan)
             .collect::<Result<Vec<_>, _>>()?;
 
+        let time_range_pruner =
+            TimeRangeShardPrunerPlan::new(spec.table.clone(), spec.time_column.clone())?;
+
+        let mut sql_plans = Vec::new();
+        sql_plans.push(distributed_hypertable.to_sql_plan()?);
+        for policy in &policies {
+            sql_plans.push(policy.to_sql_plan()?);
+        }
+        for continuous_aggregate in &continuous_aggregates {
+            sql_plans.push(continuous_aggregate.to_sql_plan()?);
+        }
+        sql_plans.push(time_range_pruner.to_sql_plan()?);
+
         Ok(Self {
             distributed_hypertable,
             policies,
             continuous_aggregates,
+            time_range_pruner,
+            sql_plans,
         })
+    }
+}
+
+impl HypertableReconcilePlan {
+    pub fn sql_script(&self) -> String {
+        self.sql_plans
+            .iter()
+            .map(CompanionSqlPlan::script)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -171,6 +199,10 @@ mod tests {
         assert_eq!(plan.distributed_hypertable.num_shards, 32);
         assert_eq!(plan.policies.len(), 2);
         assert_eq!(plan.continuous_aggregates.len(), 1);
+        assert_eq!(plan.time_range_pruner.time_column, "ts");
+        assert_eq!(plan.sql_plans.len(), 5);
+        assert!(plan.sql_script().contains("create_distributed_table"));
+        assert!(plan.sql_script().contains("enable_time_range_shard_pruner"));
         assert_eq!(
             plan.continuous_aggregates[0].schedule.as_deref(),
             Some("15 minutes")
