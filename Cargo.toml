@@ -6,6 +6,7 @@ members = [
     "pool",
     "sidecar/auth",
     "sidecar/backup",
+    "sidecar/cdc",
     "sidecar/shared",
     "sidecar/storage",
     "sidecar/vectorizer",

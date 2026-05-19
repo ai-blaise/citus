@@ -22,6 +22,10 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 `FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
 `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+`sidecar/cdc/src/lib.rs` validates logical replication stream, DDL capture,
+anonymization, reliable delivery, NATS, and Pub/Sub contracts for
+`FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
+`FEATURE: L8`, and `FEATURE: WH3`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
@@ -989,7 +993,7 @@ state machine.
 
 ### C1: CDC Sidecar
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1008,6 +1012,96 @@ sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C1` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: C1` in `sidecar/cdc/src/lib.rs`
+
+### C2: Schema-Aware CDC Sinks
+
+**Overlay**: `sidecar/cdc`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds DDL stream-table and included-schema contracts for CDC sinks
+that need schema changes alongside row events.
+
+**Motivation**: Downstream mirrors and queues need a pgstream-style schema
+timeline so consumers do not decode WAL against stale table metadata.
+
+**Citus comparison**: Vanilla Citus does not ship schema-aware CDC sink
+coordination.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C2` in `sidecar/cdc/src/lib.rs`
+
+### C3: CDC PII Anonymization
+
+**Overlay**: `sidecar/cdc`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `anon`
+
+**Summary**: Defines table/column anonymization rules that CDC delivery plans
+must apply before routing events to external sinks.
+
+**Motivation**: CDC frequently leaves the Postgres trust boundary; tagged PII
+columns need a first-class redaction contract before external sink delivery.
+
+**Citus comparison**: Vanilla Citus does not apply anonymization policy to
+logical replication streams.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C3` in `sidecar/cdc/src/lib.rs`
+
+### C14: CDC NATS Sink
+
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds validated NATS subject and server URL routing for CDC event
+delivery.
+
+**Motivation**: Low-latency event consumers need a NATS route with the same
+retry and dead-letter policy as webhook and realtime sinks.
+
+**Citus comparison**: Vanilla Citus does not publish CDC events to NATS.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C14` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: C14` in `sidecar/cdc/src/lib.rs`
+
+### C15: CDC GCP Pub/Sub Sink
+
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds validated GCP Pub/Sub project and topic routing for CDC
+event delivery.
+
+**Motivation**: Managed cloud consumers need a Pub/Sub route without forking
+the CDC sidecar delivery model.
+
+**Citus comparison**: Vanilla Citus does not publish CDC events to GCP
+Pub/Sub.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C15` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: C15` in `sidecar/cdc/src/lib.rs`
 
 ## Migrations
 
@@ -1501,7 +1595,7 @@ mirrors.
 
 ### L8: Mooncake-Style Logical-Replication Mirror
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1520,6 +1614,7 @@ analytical mirror.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L8` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: L8` in `sidecar/cdc/src/lib.rs`
 
 ## Realtime
 
@@ -1826,7 +1921,7 @@ management.
 
 ### WH3: Reliable Delivery
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1844,6 +1939,7 @@ before delivery sidecars can be trusted.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH3` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: WH3` in `sidecar/cdc/src/lib.rs`
 
 ## Storage
 

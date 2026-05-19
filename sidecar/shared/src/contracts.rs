@@ -3,6 +3,8 @@
 // FEATURE: B3
 // FEATURE: B4
 // FEATURE: C1
+// FEATURE: C14
+// FEATURE: C15
 // FEATURE: L8
 // FEATURE: R7
 // FEATURE: RT1
@@ -70,6 +72,7 @@ pub enum CdcSink {
     AnalyticalMirror { stream_name: String },
     Kafka { topic: String },
     Nats { subject: String },
+    PubSub { project_id: String, topic: String },
 }
 
 impl CdcSink {
@@ -90,6 +93,10 @@ impl CdcSink {
             }
             Self::Kafka { topic } => validate_required("cdc.sinks.kafka.topic", topic),
             Self::Nats { subject } => validate_required("cdc.sinks.nats.subject", subject),
+            Self::PubSub { project_id, topic } => {
+                validate_required("cdc.sinks.pubsub.project_id", project_id)?;
+                validate_required("cdc.sinks.pubsub.topic", topic)
+            }
         }
     }
 }
@@ -101,7 +108,7 @@ pub struct DeliveryRetryPolicy {
 }
 
 impl DeliveryRetryPolicy {
-    fn validate(&self) -> Result<(), SidecarContractError> {
+    pub fn validate(&self) -> Result<(), SidecarContractError> {
         if self.max_attempts == 0 {
             return Err(SidecarContractError::InvalidRetryAttempts);
         }

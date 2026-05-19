@@ -56,6 +56,18 @@ jobs:
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_backup
 
+  cdc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_cdc --tests
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_cdc
+
   storage:
     runs-on: ubuntu-latest
     steps:
