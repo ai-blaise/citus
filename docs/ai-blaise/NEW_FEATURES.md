@@ -871,6 +871,28 @@ operator-owned migration object.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
 
+### M8: citusctl Plan / Apply
+
+**Overlay**: `tools/citusctl`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the CLI plan/apply execution contract, including
+rendered diffs, preflight checks, apply execution, and audit-record steps.
+
+**Motivation**: Operator actions need a Terraform-style preview before
+mutating clusters, tenants, branches, migrations, backups, or extension state.
+
+**Citus comparison**: Vanilla Citus does not ship an operator CLI with
+two-step plan/apply semantics.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
+
 ## Multi-Region
 
 ### MR1: Region CRD
@@ -1026,7 +1048,7 @@ declarative schedule.
 
 ### B3: PITR Restore
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `tools/citusctl`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1044,6 +1066,7 @@ and sidecar code execute recovery.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B3` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: B3` in `tools/citusctl/src/lib.rs`
 
 ### B4: Backup-As-Data-Source
 
@@ -1065,6 +1088,27 @@ to become explicit read-only data sources.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B4` in `sidecar/shared/src/contracts.rs`
+
+### B5: Time-Travel Query Intent
+
+**Overlay**: `tools/citusctl`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds CLI validation for UTC time-travel targets before follower
+read and backup-backed query paths execute.
+
+**Motivation**: Time-travel operations need explicit timestamp validation at
+the operator entrypoint before sidecars and companion GUCs consume the request.
+
+**Citus comparison**: Vanilla Citus does not ship time-travel orchestration.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: B5` in `tools/citusctl/src/lib.rs`
 
 ### B6: Encrypted Backups
 
@@ -1697,6 +1741,72 @@ multi-tenant production usage.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP3` in `tools/citus-mcp/src/lib.rs`
+
+## Operations / DX
+
+### D1: citusctl dev up/down
+
+**Overlay**: `tools/citusctl`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds the typed `dev up` and `dev down` command contract for local
+cluster lifecycle operations.
+
+**Motivation**: Contributors need a single CLI entrypoint for local end-to-end
+clusters before the kind runner and image builder are wired.
+
+**Citus comparison**: Vanilla Citus has development scripts, but not the
+ai-blaise single-command local cluster contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D1` in `tools/citusctl/src/lib.rs`
+
+### D2: citusctl apply
+
+**Overlay**: `tools/citusctl`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Requires an explicit plan ID before apply-mode CLI execution.
+
+**Motivation**: Mutating operations should only run from a reviewed plan so
+operator and CI behavior stay auditable.
+
+**Citus comparison**: Vanilla Citus does not ship this plan-gated apply
+workflow.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
+
+### WF2: WAL Replay Debugger Command
+
+**Overlay**: `tools/citusctl`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_walinspect`
+
+**Summary**: Reserves CLI command planning and validation for WAL replay and
+time-scoped investigation workflows.
+
+**Motivation**: WAL forensics need to enter through plan/apply machinery so
+replay and restore commands can share preflight and audit behavior.
+
+**Citus comparison**: Vanilla Citus does not ship a WAL replay debugger CLI.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: WF2` in `tools/citusctl/src/lib.rs`
 
 ## Federation
 
