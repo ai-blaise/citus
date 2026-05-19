@@ -305,6 +305,28 @@ consensus logic into Postgres backends.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - Feature marker: `FEATURE: S5`
 
+### S6: Per-Shard Placement Generation
+
+**Overlay**: `companion/src/router_assist.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines companion-side placement generation and local-placement
+query contracts used by plan-cache invalidation and router fast paths.
+
+**Motivation**: Pool and companion routing need stable helper APIs before
+placement-generation invalidation can move beyond the pool model.
+
+**Citus comparison**: Vanilla Citus tracks shard placements but does not
+expose these helper contracts as companion APIs.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+
 ### S10: Schema-Based Tenancy
 
 **Overlay**: `operator/src/crds/tenant.rs`
@@ -348,6 +370,50 @@ failure domain goal for topology-aware reconciliation.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
 
+### S13: Range-Based Dynamic Sharding
+
+**Overlay**: `companion/src/router_assist.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Adds hash and range routing plan shapes so companion and pool code
+can reason about non-hash shard assignment through one API.
+
+**Motivation**: Dynamic sharding needs a router contract before planner and
+operator work can safely mix hash and range distribution.
+
+**Citus comparison**: Vanilla Citus primarily exposes hash distribution
+contracts and does not ship this range-routing helper surface.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S13` in `companion/src/router_assist.rs`
+
+### S14: Tenant Migration Online
+
+**Overlay**: `companion/src/tenants.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines tenant move plans between workers with optional region
+affinity preservation.
+
+**Motivation**: Tenant moves must be represented as validated plans before the
+operator and companion coordinate online migration.
+
+**Citus comparison**: Vanilla Citus can rebalance shards but does not expose a
+tenant-level online migration plan.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S14` in `companion/src/tenants.rs`
+
 ## Resource Efficiency
 
 ### R2: Scale-To-Zero Compute
@@ -371,6 +437,28 @@ scale-to-zero semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
+
+### R4: Idle-In-Transaction Reaper
+
+**Overlay**: `companion/src/observability.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines a guardrail plan for logging, canceling, or terminating
+sessions that sit idle in transaction beyond a configured limit.
+
+**Motivation**: Distributed transactions can hold locks and snapshots across
+workers; stale idle transactions need a predictable mitigation contract.
+
+**Citus comparison**: Vanilla Citus does not ship an idle-transaction reaper
+helper.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R4` in `companion/src/observability.rs`
 
 ### R7: REPACK CONCURRENTLY Adoption
 
@@ -525,7 +613,51 @@ that can coordinate validation, retries, and conflict handling.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
 
+### C10: Online DDL State Machine
+
+**Overlay**: `companion/src/schema_jobs.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds the schema-job state machine for `DELETE_ONLY`,
+`WRITE_ONLY`, `BACKFILL`, and `PUBLIC` transitions.
+
+**Motivation**: Online schema changes need a validated state model before the
+operator and schema-job sidecar can coordinate DDL safely.
+
+**Citus comparison**: Vanilla Citus does not ship an F1-style schema-change
+state machine.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
+
 ## Migrations
+
+### M2: gh-ost-Style Online DDL
+
+**Overlay**: `companion/src/schema_jobs.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the schema-job operation/state model used by future
+trigger and backfill based online DDL.
+
+**Motivation**: Online DDL needs explicit state transitions and lease
+validation before a sidecar or companion UDF can execute it.
+
+**Citus comparison**: Vanilla Citus has distributed DDL but does not provide
+gh-ost-style online DDL state machinery.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M2` in `companion/src/schema_jobs.rs`
 
 ### M3: Migration CRD
 
@@ -725,9 +857,53 @@ runtime admission control is wired in.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
 
+### TO3: Tenant Migration Online
+
+**Overlay**: `companion/src/tenants.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines tenant move plans that carry source worker, target
+worker, and optional region affinity.
+
+**Motivation**: Tenant movement needs a typed plan that can be validated before
+rebalance, pool draining, and schema routing are coordinated.
+
+**Citus comparison**: Vanilla Citus rebalances shards, but does not expose a
+tenant-level online move contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TO3` in `companion/src/tenants.rs`
+
+### TO4: Tenant Archive
+
+**Overlay**: `companion/src/tenants.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines tenant archive plans with destination URI and retention
+policy.
+
+**Motivation**: Tenant offboarding needs an auditable archive operation before
+data removal can be automated.
+
+**Citus comparison**: Vanilla Citus does not include tenant archive
+automation.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TO4` in `companion/src/tenants.rs`
+
 ### TO5: Tenant Region Affinity
 
-**Overlay**: `operator/src/crds/tenant.rs`
+**Overlay**: `operator/src/crds/tenant.rs`, `companion/src/tenants.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -745,6 +921,7 @@ inside one-off placement annotations.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO5` in `companion/src/tenants.rs`
 
 ## Search
 
@@ -815,6 +992,72 @@ sidecar runtimes can share the same desired state.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
 
+## Security / Auth
+
+### Sec1: RLS Helpers
+
+**Overlay**: `companion/src/auth.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the tenant RLS policy plan used by future `auth.*`
+companion UDFs.
+
+**Motivation**: Tenant-safe auto-API and pool integration need one validated
+mapping from session claims to tenant columns.
+
+**Citus comparison**: Vanilla Citus supports PostgreSQL RLS but does not ship
+tenant-aware helper UDFs.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sec1` in `companion/src/auth.rs`
+
+### Sec2: JWT Verification UDF
+
+**Overlay**: `companion/src/auth.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines issuer, audience, and JWKS secret binding for SQL-visible
+JWT verification.
+
+**Motivation**: Auth sidecars and SQL helpers need the same verified claim
+contract to avoid split-brain authorization behavior.
+
+**Citus comparison**: Vanilla Citus does not provide JWT verification helpers.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+
+### Auth2: Tenant-Aware Claims
+
+**Overlay**: `companion/src/auth.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the session-claim shape carrying `uid`, `role`,
+`tenant_id`, and optional JWT ID.
+
+**Motivation**: Pool, sidecar, and SQL helper code must agree on tenant claim
+names before RLS enforcement is wired through.
+
+**Citus comparison**: Vanilla Citus does not model application tenant claims.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Auth2` in `companion/src/auth.rs`
+
 ## Webhooks
 
 ### WH1: Webhook CRD
@@ -864,6 +1107,72 @@ not ship a federation CRD.
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
 
 ## Observability
+
+### O1: Query Percentile Views
+
+**Overlay**: `companion/src/observability.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `pg_stat_statements`
+
+**Summary**: Defines the plan for companion percentile views over
+`pg_stat_statements` latency data.
+
+**Motivation**: Production operators need p95/p99/p99.9 query latency without
+building one-off SQL at each installation.
+
+**Citus comparison**: Vanilla Citus exposes distributed execution stats but
+does not ship this percentile view contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O1` in `companion/src/observability.rs`
+
+### O2: Distributed Stats View
+
+**Overlay**: `companion/src/observability.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the cross-worker distributed stats view contract used by
+the future companion observability SQL.
+
+**Motivation**: Operators need one view of coordinator and worker behavior to
+debug distributed plans.
+
+**Citus comparison**: Vanilla Citus exposes many stats views, but not this
+single companion-owned rollup contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O2` in `companion/src/observability.rs`
+
+### O3: Distributed Replication Lag View
+
+**Overlay**: `companion/src/observability.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the replication-lag view plan with region coverage and
+lag budget.
+
+**Motivation**: Multi-region and follower-read features need one companion
+surface for lag budgets before HA gates can assert readiness.
+
+**Citus comparison**: Vanilla Citus does not provide an ai-blaise regional lag
+view contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O3` in `companion/src/observability.rs`
 
 ### O4: Sidecar Health And Metrics Contract
 
