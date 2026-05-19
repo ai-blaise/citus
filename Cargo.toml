@@ -1,5 +1,5 @@
 [workspace]
-members = ["companion", "operator", "sidecar/shared"]
+members = ["companion", "operator", "pool", "sidecar/shared"]
 resolver = "2"
 
 [workspace.package]

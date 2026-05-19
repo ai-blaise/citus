@@ -3,6 +3,30 @@
 This is the canonical register of features that `ai-blaise/citus` adds beyond
 vanilla Citus. Every feature-bearing PR updates this file.
 
+## Throughput
+
+### T2: Plan Cache Placement-Generation Invalidation
+
+**Overlay**: `pool/src/shard_map.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Tracks shard placement generations so cached plans can be
+invalidated only when the placements they depend on change.
+
+**Motivation**: Rebalance should not wipe the entire plan cache when only a
+small subset of shard placements moved.
+
+**Citus comparison**: Vanilla Citus has plan invalidation behavior around shard
+movement but does not ship the ai-blaise pool's generation-aware cache model.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+
 ## TimescaleDB Integration
 
 ### TS1: Distributed Hypertable Bridge
