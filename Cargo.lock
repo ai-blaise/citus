@@ -21,6 +21,9 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_operator"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_companion",
+]
 
 [[package]]
 name = "annotate-snippets"

@@ -106,9 +106,9 @@ load time.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Defines the Kubernetes `Hypertable` spec that drives distributed
-hypertable creation, compression, retention, and continuous aggregate policy
-reconciliation.
+**Summary**: Defines the Kubernetes `Hypertable` spec and typed reconcile plan
+that drive distributed hypertable creation, compression, retention, and
+continuous aggregate policy reconciliation.
 
 **Motivation**: The TimescaleDB bridge needs a declarative operator surface so
 cluster state can be reconciled repeatedly instead of hand-applied.
@@ -120,6 +120,7 @@ Timescale-aware distributed hypertables.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
+- In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
 
 ## Topology
 
