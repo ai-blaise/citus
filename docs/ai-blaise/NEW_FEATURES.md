@@ -204,6 +204,28 @@ are wired in.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
 
+### A8: Vector Dimension Via CRD
+
+**Overlay**: `operator/src/crds/vectorizer.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgvector`
+
+**Summary**: Defines the `Vectorizer` operator spec for source columns,
+embedding provider/model selection, destination vector dimensions, chunking,
+scheduling, and secret binding.
+
+**Motivation**: Vectorizer workers need a declarative contract before they can
+fan embedding jobs across Citus workers safely.
+
+**Citus comparison**: Vanilla Citus does not ship an AI vectorizer CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A8` in `operator/src/crds/vectorizer.rs`
+
 ## Topology
 
 ### S2: Topology-Aware Placement
@@ -341,7 +363,74 @@ scale-to-zero semantics.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
 
+### R7: REPACK CONCURRENTLY Adoption
+
+**Overlay**: `operator/src/crds/scheduled_repack.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `pg_repack`
+
+**Summary**: Defines the scheduled repack policy surface for online shard-table
+maintenance, with strategy selection for `pg_repack` and future PostgreSQL 19
+`REPACK CONCURRENTLY`.
+
+**Motivation**: Repack cadence and target tables need to be auditable and
+reconciled rather than run as one-off maintenance commands.
+
+**Citus comparison**: Vanilla Citus can use external maintenance tooling but
+does not provide a scheduled repack CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
+
 ## Change Data And Branching
+
+### C4: Active-Active Conflict Policy
+
+**Overlay**: `operator/src/crds/conflict_policy.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgactive`
+
+**Summary**: Defines table-scoped conflict policy for future active-active
+reference-table replication.
+
+**Motivation**: Cross-region writes need explicit resolution rules before
+replication can be enabled safely.
+
+**Citus comparison**: Vanilla Citus does not ship active-active conflict
+policy objects.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
+
+### C5: Replication Conflict Taxonomy
+
+**Overlay**: `operator/src/crds/conflict_policy.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `spock`
+
+**Summary**: Carries the seven conflict classes used by the future
+replication-conflict companion and active-active reconcilers.
+
+**Motivation**: Conflict resolution cannot be observable or testable if all
+conflicts collapse into one undifferentiated failure state.
+
+**Citus comparison**: Vanilla Citus does not expose a Spock-style conflict
+classification contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
 
 ### C6: CSI Snapshot Branching
 
@@ -405,6 +494,51 @@ created and suspended the branch, so status and ownership stay consistent.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C8` in `operator/src/crds/branch.rs`
+
+### C9: Migration Framework
+
+**Overlay**: `operator/src/crds/migration.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the migration CRD surface for pgroll-style and gh-ost
+style online DDL workflows.
+
+**Motivation**: Expand/contract schema changes need an operator-visible unit
+that can coordinate validation, retries, and conflict handling.
+
+**Citus comparison**: Vanilla Citus does not ship an online-migration CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
+
+## Migrations
+
+### M3: Migration CRD
+
+**Overlay**: `operator/src/crds/migration.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds typed migration declarations with inline YAML DSL and
+conflict handling mode.
+
+**Motivation**: Migration runs need to be reviewed and reconciled as desired
+state instead of launched imperatively.
+
+**Citus comparison**: Vanilla Citus provides distributed DDL primitives but no
+operator-owned migration object.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
 
 ## Multi-Region
 
@@ -603,6 +737,123 @@ inside one-off placement annotations.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
 
+## Search
+
+### Search2: Distributed BM25 Index
+
+**Overlay**: `operator/src/crds/search_index.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`
+
+**Summary**: Defines distributed search-index intent with text/vector column
+roles and BM25 or hybrid scoring.
+
+**Motivation**: Search indexes must be declared once and fanned out across
+workers without losing table ownership or scorer semantics.
+
+**Citus comparison**: Vanilla Citus does not ship a distributed BM25 search
+index CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Search2` in `operator/src/crds/search_index.rs`
+
+### Search7: Search Index CRD
+
+**Overlay**: `operator/src/crds/search_index.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`
+
+**Summary**: Adds the Kubernetes-facing `SearchIndex` object for declarative
+text and hybrid search indexes.
+
+**Motivation**: Search indexes need lifecycle and validation before companion
+SQL and sidecar cold-tier integration can be reconciled.
+
+**Citus comparison**: Vanilla Citus does not provide search-index lifecycle
+objects.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
+
+## Edge Functions
+
+### EF3: Function CRD
+
+**Overlay**: `operator/src/crds/function.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines edge-function runtime, source, triggers, and secret
+bindings for Deno and Bun deployments.
+
+**Motivation**: Function deployment needs to be declarative so auth, pool, and
+sidecar runtimes can share the same desired state.
+
+**Citus comparison**: Vanilla Citus does not ship an edge-function CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+
+## Webhooks
+
+### WH1: Webhook CRD
+
+**Overlay**: `operator/src/crds/webhook.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines outbound HTTP trigger declarations with events, URL,
+header secret reference, retry policy, and payload template.
+
+**Motivation**: Webhook delivery needs an operator-controlled contract before
+CDC and queue sidecars can guarantee retry behavior.
+
+**Citus comparison**: Vanilla Citus does not include webhook lifecycle
+management.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+
+## Federation
+
+### F1: Federation CRD
+
+**Overlay**: `operator/src/crds/federation.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `oracle_fdw`, `mysql_fdw`, `mongo_fdw`
+
+**Summary**: Defines external federation links for warehouse, document, and
+legacy database targets using secret-backed connection references.
+
+**Motivation**: FDW and lakehouse federation need a typed source of desired
+state before credentials and foreign schema creation are reconciled.
+
+**Citus comparison**: Vanilla Citus can participate in FDW queries but does
+not ship a federation CRD.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+
 ## Observability
 
 ### O4: Sidecar Health And Metrics Contract
@@ -626,3 +877,26 @@ or a sidecar health contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O4` in `sidecar/shared/src/lib.rs`
+
+### O5: OpenTelemetry Traces And Sidecar Deployment Contract
+
+**Overlay**: `operator/src/crds/sidecar.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the operator-facing sidecar deployment contract for
+replicas, resources, and type-specific configuration across the V2 sidecar
+surface.
+
+**Motivation**: Traces and rollout behavior are only useful if every sidecar is
+declared and reconciled through a consistent resource contract.
+
+**Citus comparison**: Vanilla Citus does not ship out-of-process sidecar
+deployment objects.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
