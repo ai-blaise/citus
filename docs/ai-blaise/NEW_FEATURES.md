@@ -98,6 +98,29 @@ load time.
 - In-source marker after patch application:
   `FEATURE: TS6` in `src/backend/distributed/shared_library_init.c`
 
+### TS7: Hypertable CRD Reconciler
+
+**Overlay**: `operator/src/crds/hypertable.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Defines the Kubernetes `Hypertable` spec that drives distributed
+hypertable creation, compression, retention, and continuous aggregate policy
+reconciliation.
+
+**Motivation**: The TimescaleDB bridge needs a declarative operator surface so
+cluster state can be reconciled repeatedly instead of hand-applied.
+
+**Citus comparison**: Vanilla Citus does not ship a Kubernetes CRD for
+Timescale-aware distributed hypertables.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
+
 ## Topology
 
 ### S4: Coordinator-Less Topology Mode

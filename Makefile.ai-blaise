@@ -2,7 +2,7 @@
 
 PATCH_FILES := $(shell find patches -maxdepth 1 -name '*.patch' | sort)
 
-.PHONY: patches-check build-companion test-companion features-doc-check slop-scan gate-close
+.PHONY: patches-check build-companion test-companion build-operator test-operator features-doc-check slop-scan gate-close
 
 patches-check:
 	@for patch in $(PATCH_FILES); do \
@@ -16,10 +16,16 @@ build-companion:
 test-companion:
 	cargo test -p ai_blaise_citus_companion
 
+build-operator:
+	cargo check -p ai_blaise_citus_operator
+
+test-operator:
+	cargo test -p ai_blaise_citus_operator
+
 features-doc-check:
 	@ci/ai-blaise/features-doc-check.sh
 
 slop-scan:
 	@ci/ai-blaise/slop-scan.sh
 
-gate-close: patches-check test-companion features-doc-check slop-scan
+gate-close: patches-check test-companion test-operator features-doc-check slop-scan
