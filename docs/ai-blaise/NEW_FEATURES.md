@@ -146,6 +146,50 @@ Timescale-aware distributed hypertables.
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
 
+## AI / Vector
+
+### A2: Vectorizer Worker
+
+**Overlay**: `sidecar/vectorizer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the vectorizer sidecar's embedding job model and health
+surface for future pgai-compatible queue execution.
+
+**Motivation**: pgai's Python worker is archived and coordinator-oriented. The
+fork needs a Rust worker model that can run per Citus worker.
+
+**Citus comparison**: Vanilla Citus does not ship an embedding worker.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A2` in `sidecar/vectorizer/src/lib.rs`
+
+### A4: Per-Tenant Token Budgets
+
+**Overlay**: `sidecar/vectorizer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds token reservation accounting so vectorization can reject work
+that would exceed a tenant's embedding budget.
+
+**Motivation**: Vectorization must be multi-tenant-safe before provider calls
+are wired in.
+
+**Citus comparison**: Vanilla Citus has no AI-provider budget accounting.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
+
 ## Topology
 
 ### S4: Coordinator-Less Topology Mode

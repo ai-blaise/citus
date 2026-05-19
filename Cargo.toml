@@ -1,5 +1,11 @@
 [workspace]
-members = ["companion", "operator", "pool", "sidecar/shared"]
+members = [
+    "companion",
+    "operator",
+    "pool",
+    "sidecar/shared",
+    "sidecar/vectorizer",
+]
 resolver = "2"
 
 [workspace.package]
