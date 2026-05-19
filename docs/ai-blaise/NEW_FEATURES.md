@@ -11,6 +11,13 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 `FEATURE: O5`, `FEATURE: R2`, `FEATURE: R7`, `FEATURE: S10`, `FEATURE: S11`,
 `FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
 `FEATURE: TO5`, and `FEATURE: WH1`.
+`e2e/src/runtime_contracts.rs` validates canonical runtime contracts for
+`FEATURE: Auth1`, `FEATURE: Auth3`, `FEATURE: B1`, `FEATURE: B3`,
+`FEATURE: B4`, `FEATURE: C1`, `FEATURE: L8`, `FEATURE: MR5`, `FEATURE: R7`,
+`FEATURE: R10`, `FEATURE: RT1`, `FEATURE: RT2`, `FEATURE: RT3`,
+`FEATURE: RT4`, `FEATURE: Search8`, `FEATURE: Sec12`, `FEATURE: Sto1`,
+`FEATURE: Sto3`, `FEATURE: Sto4`, `FEATURE: T1`, `FEATURE: T3`, `FEATURE: T9`,
+`FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
 
 ## Throughput
 

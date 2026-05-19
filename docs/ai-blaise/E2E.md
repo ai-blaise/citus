@@ -18,3 +18,9 @@ The first scenario is `TimescaleOnCitusAcceptance::canonical_metrics()`.
 V2 operator catalog in one model: branches, tenants, regions, survival goals,
 backups, vectorizers, sidecar deployments, migrations, conflict policies,
 federation, search indexes, webhooks, functions, and scheduled repacks.
+
+`V2RuntimeContractAcceptance::canonical_runtime()` validates the pool and
+sidecar runtime layer: CDC delivery, realtime, auth, storage, backup/restore,
+repack, analytical mirrors, settings-bucket pooling, fast-path routing,
+mirroring, HTAP routing, pipelining, TLS reuse, tenant admission, Geo routing,
+and token-cache behavior.
