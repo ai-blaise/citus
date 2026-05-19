@@ -1601,6 +1601,71 @@ in object-store policy.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto4` in `sidecar/shared/src/contracts.rs`
 
+## MCP
+
+### MCP1: citus-mcp Server
+
+**Overlay**: `tools/citus-mcp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the Model Context Protocol tool request contract for
+cluster inspection and guarded operations.
+
+**Motivation**: AI agents need a narrow, typed operation surface rather than
+direct database or Kubernetes access.
+
+**Citus comparison**: Vanilla Citus does not ship MCP tooling.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MCP1` in `tools/citus-mcp/src/lib.rs`
+
+### MCP2: Safe-Mode Tools
+
+**Overlay**: `tools/citus-mcp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds safe-mode validation that denies destructive MCP tools by
+default.
+
+**Motivation**: Agent operations should be inspect-first and dry-run-biased
+unless explicitly allowed.
+
+**Citus comparison**: Vanilla Citus does not provide safe-mode agent tooling.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MCP2` in `tools/citus-mcp/src/lib.rs`
+
+### MCP3: Tenant-Scoped Tools
+
+**Overlay**: `tools/citus-mcp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds tenant scope and allowed-schema validation to MCP tool
+requests.
+
+**Motivation**: Agent-visible tools must enforce tenant boundaries before
+multi-tenant production usage.
+
+**Citus comparison**: Vanilla Citus has no tenant-scoped AI-agent tool layer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MCP3` in `tools/citus-mcp/src/lib.rs`
+
 ## Federation
 
 ### F1: Federation CRD

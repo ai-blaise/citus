@@ -6,6 +6,7 @@ members = [
     "pool",
     "sidecar/shared",
     "sidecar/vectorizer",
+    "tools/citus-mcp",
 ]
 resolver = "2"
 
