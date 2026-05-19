@@ -26,6 +26,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_shared"
+version = "0.1.0"
+
+[[package]]
 name = "annotate-snippets"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

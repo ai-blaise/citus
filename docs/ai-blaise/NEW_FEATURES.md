@@ -166,3 +166,27 @@ consensus logic into Postgres backends.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - Feature marker: `FEATURE: S5`
+
+## Observability
+
+### O4: Sidecar Health And Metrics Contract
+
+**Overlay**: `sidecar/shared`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shared sidecar health, readiness, and drain state used by
+the future sidecar HTTP/gRPC health and metrics endpoints.
+
+**Motivation**: All ai-blaise sidecars need the same readiness semantics before
+they can safely participate in Kubernetes rollout, drain, and chaos gates.
+
+**Citus comparison**: Vanilla Citus does not ship out-of-process Rust sidecars
+or a sidecar health contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O4` in `sidecar/shared/src/lib.rs`
