@@ -427,6 +427,27 @@ fork needs a Rust worker model that can run per Citus worker.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A2` in `sidecar/vectorizer/src/lib.rs`
 
+### A3: Vector Provider Routing
+
+**Overlay**: `sidecar/vectorizer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines provider/model/secret routing for OpenAI, Azure OpenAI,
+Anthropic, Cohere, Voyage, Ollama, and Vertex AI embedding jobs.
+
+**Motivation**: The vectorizer must validate provider routes before spending
+tenant budget or dispatching requests.
+
+**Citus comparison**: Vanilla Citus does not route embedding provider calls.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A3` in `sidecar/vectorizer/src/lib.rs`
+
 ### A4: Per-Tenant Token Budgets
 
 **Overlay**: `sidecar/vectorizer`
@@ -447,6 +468,50 @@ are wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
+
+### A5: Vectorizer Usage Accounting
+
+**Overlay**: `sidecar/vectorizer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Adds usage records with tenant, provider, model, token, and
+micro-cost accounting for future `ai.usage_log` writes.
+
+**Motivation**: Cost dashboards and token budgets require a durable accounting
+shape before provider calls run in production.
+
+**Citus comparison**: Vanilla Citus does not account for embedding provider
+usage.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A5` in `sidecar/vectorizer/src/lib.rs`
+
+### A6: Shard-Local Distributed Vectorize
+
+**Overlay**: `sidecar/vectorizer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shard-local vectorizer queue polling and execution plans
+so workers can process local shard jobs without coordinator row round trips.
+
+**Motivation**: Distributed vectorization must preserve shard locality and
+avoid pushing every embedding job through the coordinator.
+
+**Citus comparison**: Vanilla Citus does not include shard-local embedding
+workers.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A6` in `sidecar/vectorizer/src/lib.rs`
 
 ### A8: Vector Dimension Via CRD
 
