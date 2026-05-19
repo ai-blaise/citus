@@ -54,6 +54,46 @@ impl SettingsBucketPolicy {
         }
         Ok(())
     }
+
+    pub fn fingerprint(&self, settings: &[SessionSetting]) -> Result<String, PoolRuntimeError> {
+        self.validate()?;
+        for setting in settings {
+            setting.validate()?;
+        }
+
+        let mut values = self
+            .tracked_gucs
+            .iter()
+            .map(|tracked_guc| {
+                let value = settings
+                    .iter()
+                    .find(|setting| setting.name.eq_ignore_ascii_case(tracked_guc))
+                    .map(|setting| setting.value.as_str())
+                    .unwrap_or("<unset>");
+                format!(
+                    "{}={}",
+                    tracked_guc.to_ascii_lowercase(),
+                    escape_fingerprint(value)
+                )
+            })
+            .collect::<Vec<_>>();
+        values.sort();
+
+        Ok(format!("{}:{}", self.bucket_name, values.join(";")))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SessionSetting {
+    pub name: String,
+    pub value: String,
+}
+
+impl SessionSetting {
+    fn validate(&self) -> Result<(), PoolRuntimeError> {
+        validate_required("session_setting.name", &self.name)?;
+        validate_required("session_setting.value", &self.value)
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -67,6 +107,30 @@ impl FastPathRouterPolicy {
     fn validate(&self) -> Result<(), PoolRuntimeError> {
         self.fallback_target.validate()
     }
+
+    pub fn decide(
+        &self,
+        single_shard_target: Option<RouteTarget>,
+    ) -> Result<RouteDecision, PoolRuntimeError> {
+        self.validate()?;
+        if !self.enabled {
+            return Ok(RouteDecision::Fallback(self.fallback_target.clone()));
+        }
+
+        match single_shard_target {
+            Some(target) if self.single_shard_only => {
+                target.validate()?;
+                Ok(RouteDecision::FastPath(target))
+            }
+            _ => Ok(RouteDecision::Fallback(self.fallback_target.clone())),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum RouteDecision {
+    FastPath(RouteTarget),
+    Fallback(RouteTarget),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -289,6 +353,10 @@ fn validate_optional_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
+fn escape_fingerprint(value: &str) -> String {
+    value.replace('\\', "\\\\").replace(';', "\\;")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,6 +364,57 @@ mod tests {
     #[test]
     fn valid_pool_runtime_contract_passes() {
         assert_eq!(valid_contract().validate(), Ok(()));
+    }
+
+    #[test]
+    fn settings_bucket_fingerprint_is_stable_and_sorted() {
+        let policy = SettingsBucketPolicy {
+            bucket_name: "default".to_string(),
+            tracked_gucs: vec![
+                "citus.enable_repartition_joins".to_string(),
+                "search_path".to_string(),
+            ],
+            max_connections: 128,
+        };
+
+        let fingerprint = policy
+            .fingerprint(&[
+                SessionSetting {
+                    name: "search_path".to_string(),
+                    value: "tenant_a,public".to_string(),
+                },
+                SessionSetting {
+                    name: "citus.enable_repartition_joins".to_string(),
+                    value: "off".to_string(),
+                },
+            ])
+            .expect("fingerprint");
+
+        assert_eq!(
+            fingerprint,
+            "default:citus.enable_repartition_joins=off;search_path=tenant_a,public"
+        );
+    }
+
+    #[test]
+    fn fast_path_policy_routes_single_shard_target() {
+        let policy = FastPathRouterPolicy {
+            enabled: true,
+            single_shard_only: true,
+            fallback_target: RouteTarget {
+                host: "coordinator".to_string(),
+                port: 5432,
+            },
+        };
+        let worker = RouteTarget {
+            host: "worker-a".to_string(),
+            port: 5432,
+        };
+
+        assert_eq!(
+            policy.decide(Some(worker.clone())),
+            Ok(RouteDecision::FastPath(worker))
+        );
     }
 
     #[test]

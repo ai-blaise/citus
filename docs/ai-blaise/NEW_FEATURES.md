@@ -61,8 +61,9 @@ federation extension policy.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool settings-bucket contract for sharing worker
-connections across sessions with identical tracked GUC state.
+**Summary**: Defines the pool settings-bucket contract and stable GUC
+fingerprint for sharing worker connections across sessions with identical
+tracked GUC state.
 
 **Motivation**: Citus deployments need far more client sessions than worker
 backends without losing session correctness.
@@ -83,8 +84,9 @@ pooler.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Tracks shard placement generations so cached plans can be
-invalidated only when the placements they depend on change.
+**Summary**: Tracks shard placement generations and cached query fingerprints
+so cached plans can be invalidated only when the placements they depend on
+change.
 
 **Motivation**: Rebalance should not wipe the entire plan cache when only a
 small subset of shard placements moved.
@@ -105,8 +107,9 @@ movement but does not ship the ai-blaise pool's generation-aware cache model.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool routing contract for sending eligible
-single-shard requests directly to the worker path with a coordinator fallback.
+**Summary**: Defines the pool routing contract and shard-map route selection
+for sending eligible single-shard requests directly to the worker path with a
+coordinator fallback.
 
 **Motivation**: Coordinator-less topology needs a pool-level fast path before
 query execution patches are wired in.
@@ -118,6 +121,7 @@ ship this pool routing layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T3` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
 
 ### T9: Mirroring For Canary Traffic
 
