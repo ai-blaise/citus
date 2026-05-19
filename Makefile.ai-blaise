@@ -1,14 +1,9 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-PATCH_FILES := $(shell find patches -maxdepth 1 -name '*.patch' | sort)
-
 .PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer features-doc-check slop-scan gate-close
 
 patches-check:
-	@for patch in $(PATCH_FILES); do \
-		echo "checking $$patch"; \
-		git apply --check "$$patch"; \
-	done
+	@ci/ai-blaise/patches-check.sh
 
 build-companion:
 	cargo check -p ai_blaise_citus_companion
