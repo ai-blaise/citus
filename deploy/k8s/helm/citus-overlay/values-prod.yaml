@@ -1,0 +1,5 @@
+operator:
+  replicas: 2
+
+pool:
+  replicas: 3

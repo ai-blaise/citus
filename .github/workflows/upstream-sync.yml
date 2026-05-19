@@ -1,0 +1,23 @@
+name: upstream-sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 */14 * *"
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/citusdata/citus.git
+          git fetch upstream main
+      - name: Verify patches against upstream main
+        run: |
+          git checkout -B upstream-sync-check upstream/main
+          git checkout "${GITHUB_SHA}" -- Makefile.ai-blaise ci/ai-blaise patches
+          make -f Makefile.ai-blaise patches-check

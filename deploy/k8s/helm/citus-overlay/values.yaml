@@ -1,0 +1,21 @@
+image:
+  registry: ghcr.io/ai-blaise
+  tag: main
+
+cnpg:
+  enabled: false
+
+operator:
+  replicas: 1
+
+pool:
+  enabled: true
+  replicas: 2
+
+sidecars:
+  analytical:
+    enabled: false
+  vectorizer:
+    enabled: false
+  cdc:
+    enabled: false

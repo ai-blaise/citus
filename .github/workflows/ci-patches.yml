@@ -1,0 +1,16 @@
+name: patches
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify quilt patches apply cleanly
+        run: make -f Makefile.ai-blaise patches-check
