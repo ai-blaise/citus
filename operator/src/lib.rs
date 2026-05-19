@@ -10,4 +10,7 @@ pub use crds::hypertable::{
     CompressionPolicy, ContinuousAggregateSpec, HypertableSpec, HypertableSpecError,
     RetentionPolicy,
 };
+pub use crds::shard_group::{
+    PlacementPolicy, ShardGroupSpec, ShardGroupSpecError, UnsatisfiablePlacementAction,
+};
 pub use reconcile::hypertable::{HypertableReconcileError, HypertableReconcilePlan};

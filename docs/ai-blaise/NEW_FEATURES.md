@@ -206,6 +206,29 @@ are wired in.
 
 ## Topology
 
+### S2: Topology-Aware Placement
+
+**Overlay**: `operator/src/crds/shard_group.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines the `ShardGroup` placement policy surface used to keep
+replicated shard placements spread across topology domains such as Kubernetes
+zones.
+
+**Motivation**: Placement decisions need an operator-owned policy before the
+fork can prove zone-aware replication and survival-goal behavior.
+
+**Citus comparison**: Vanilla Citus tracks placements but does not ship a
+Kubernetes-native CRD for topology spread constraints.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`
+
 ### S4: Coordinator-Less Topology Mode
 
 **Overlay**: `operator/`, `pool/`, `e2e/`
