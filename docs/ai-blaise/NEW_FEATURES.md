@@ -18,6 +18,38 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 `FEATURE: RT4`, `FEATURE: Search8`, `FEATURE: Sec12`, `FEATURE: Sto1`,
 `FEATURE: Sto3`, `FEATURE: Sto4`, `FEATURE: T1`, `FEATURE: T3`, `FEATURE: T9`,
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
+`images/citus-pg-overlay/extension-manifest.tsv` validates the bundled,
+optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
+`FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
+`FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+
+## Operand Image
+
+### Bundle1: Bundled Extension Image Contract
+
+**Overlay**: `images/citus-pg-overlay`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
+
+**Summary**: Defines the operand-image manifest, preload order, and required
+extension initialization SQL for the V2 bundled-extension surface.
+
+**Motivation**: The fork needs one machine-checkable contract for always-on,
+optional, and hard-blocked extensions before image builds and Helm values can
+be safely automated.
+
+**Citus comparison**: Vanilla Citus does not ship an ai-blaise operand image
+with TimescaleDB, search, graph, vector, storage, observability, security, and
+federation extension policy.
+
+**References**:
+
+- Design: `docs/ai-blaise/BUNDLED_EXTENSIONS.md`
+- CI: `ci/ai-blaise/image-check.sh`
+- In-source: `FEATURE: Bundle1` in
+  `images/citus-pg-overlay/extension-manifest.tsv`
 
 ## Throughput
 
