@@ -3,3 +3,17 @@ operator:
 
 pool:
   replicas: 1
+
+sidecars:
+  - name: vectorizer
+    enabled: true
+    replicas: 1
+  - name: cdc
+    enabled: false
+    replicas: 1
+  - name: auth
+    enabled: false
+    replicas: 1
+
+tools:
+  enabled: true

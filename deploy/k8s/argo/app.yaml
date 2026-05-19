@@ -6,7 +6,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/ai-blaise/citus
-    targetRevision: main
+    targetRevision: ai-blaise/bootstrap-v2
     path: deploy/k8s/helm/citus-overlay
   destination:
     server: https://kubernetes.default.svc

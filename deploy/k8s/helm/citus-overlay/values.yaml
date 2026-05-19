@@ -1,21 +1,87 @@
-image:
-  registry: ghcr.io/ai-blaise
-  tag: main
-
-cnpg:
-  enabled: false
+global:
+  imageRegistry: ghcr.io/ai-blaise
+  imagePullPolicy: IfNotPresent
 
 operator:
   replicas: 1
+  image:
+    repository: citus-operator
+    tag: "0.1.0"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  serviceMonitor:
+    enabled: false
 
 pool:
-  enabled: true
   replicas: 2
+  image:
+    repository: citus-pool
+    tag: "0.1.0"
+  service:
+    port: 5432
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
 
 sidecars:
-  analytical:
-    enabled: false
-  vectorizer:
-    enabled: false
-  cdc:
-    enabled: false
+  - name: vectorizer
+    enabled: true
+    image:
+      repository: citus-sidecar-vectorizer
+      tag: "0.1.0"
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  - name: cdc
+    enabled: true
+    image:
+      repository: citus-sidecar-cdc
+      tag: "0.1.0"
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  - name: auth
+    enabled: true
+    image:
+      repository: citus-sidecar-auth
+      tag: "0.1.0"
+    replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+tools:
+  enabled: false
+  image:
+    repository: citusctl
+    tag: "0.1.0"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi

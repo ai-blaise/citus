@@ -1,5 +1,21 @@
 operator:
   replicas: 2
+  serviceMonitor:
+    enabled: true
 
 pool:
   replicas: 3
+
+sidecars:
+  - name: vectorizer
+    enabled: true
+    replicas: 2
+  - name: cdc
+    enabled: true
+    replicas: 2
+  - name: auth
+    enabled: true
+    replicas: 2
+
+tools:
+  enabled: false
