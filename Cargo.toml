@@ -5,6 +5,7 @@ members = [
     "operator",
     "pool",
     "sidecar/auth",
+    "sidecar/backup",
     "sidecar/shared",
     "sidecar/vectorizer",
     "tools/citus-mcp",

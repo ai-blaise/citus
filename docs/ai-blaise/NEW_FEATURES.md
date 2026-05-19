@@ -1187,7 +1187,7 @@ tooling.
 
 ### B1: Backup Sidecar
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1205,6 +1205,7 @@ tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B1` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: B1` in `sidecar/backup/src/lib.rs`
 
 ### B2: Backup CRD
 
@@ -1229,7 +1230,7 @@ declarative schedule.
 
 ### B3: PITR Restore
 
-**Overlay**: `sidecar/shared/src/contracts.rs`, `tools/citusctl`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`, `tools/citusctl`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1247,11 +1248,12 @@ and sidecar code execute recovery.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B3` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: B3` in `sidecar/backup/src/lib.rs`
 - In-source: `FEATURE: B3` in `tools/citusctl/src/lib.rs`
 
 ### B4: Backup-As-Data-Source
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1269,6 +1271,7 @@ to become explicit read-only data sources.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B4` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: B4` in `sidecar/backup/src/lib.rs`
 
 ### B5: Time-Travel Query Intent
 
@@ -1293,7 +1296,7 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 
 ### B6: Encrypted Backups
 
-**Overlay**: `operator/src/crds/backup.rs`
+**Overlay**: `operator/src/crds/backup.rs`, `sidecar/backup`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1312,6 +1315,7 @@ deployment-specific tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
+- In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
 
 ## Tenant Operations
 
