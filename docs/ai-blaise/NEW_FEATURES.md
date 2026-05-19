@@ -411,6 +411,28 @@ policies across shards.
 
 ## AI / Vector
 
+### A1: pgai-Compatible Vectorizer DSL
+
+**Overlay**: `companion/src/vector.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgvector`, `timescaledb`
+
+**Summary**: Adds a Rust companion contract that renders a pgai-compatible
+`ai.create_vectorizer(...)` SQL plan with loading, chunking, embedding,
+destination, scheduling, queue, and usage-log setup.
+
+**Motivation**: pgai's vectorizer DSL is the right user-facing shape, but its
+archived Python worker is not a good runtime floor for this fork.
+
+**Citus comparison**: Vanilla Citus has no AI vectorizer DSL or worker queue.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: A1` in `companion/src/vector.rs`
+
 ### A2: Vectorizer Worker
 
 **Overlay**: `sidecar/vectorizer`

@@ -6,6 +6,7 @@ pub mod observability;
 pub mod router_assist;
 pub mod schema_jobs;
 pub mod tenants;
+pub mod vector;
 
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{
@@ -23,6 +24,10 @@ pub use router_assist::{
 };
 pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
 pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
+pub use vector::{
+    ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,
+    VectorizerPlan, VectorizerSchedule, VectorizerSqlPlan, VectorizerValidationError,
+};
 
 #[cfg(feature = "pg18")]
 mod pg18 {
@@ -45,6 +50,7 @@ mod pg18 {
             ("TS3", "distributed continuous aggregates", "sql-plan"),
             ("TS4", "distributed retention policy", "sql-plan"),
             ("TS5", "time-range shard pruner", "sql-plan"),
+            ("A1", "pgai-compatible vectorizer DSL", "planned"),
             ("O1", "query percentile views", "planned"),
             ("O2", "distributed stats view", "planned"),
             ("O3", "replication lag view", "planned"),

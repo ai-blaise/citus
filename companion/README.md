@@ -9,6 +9,7 @@ Initial critical modules: `citus_timescale`, `observability`, `auth`,
 ## Current Surface
 
 - `DistributedHypertablePlan` for `FEATURE: TS1`
+- `VectorizerDefinition` SQL-plan rendering for `FEATURE: A1`
 - SQL-plan rendering for `FEATURE: TS2`, `FEATURE: TS3`, `FEATURE: TS4`, and
   `FEATURE: TS12`
 - `TimeRangeShardPrunerPlan` for `FEATURE: TS5`
