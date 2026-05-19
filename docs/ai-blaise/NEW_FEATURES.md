@@ -94,14 +94,18 @@ not consult TimescaleDB dimension slices.
 
 ### TS6: Trusted Hook Coextensions
 
-**Overlay**: `patches/0001-allow-trusted-hook-coextensions.patch`
+**Overlay**:
+
+- `patches/0001-allow-trusted-hook-coextensions.patch`
+- `patches/0002-preserve-trusted-hook-chain-state.patch`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Allows Citus to load after preexisting PostgreSQL hooks when the
-operator explicitly configures trusted cohabiting extensions.
+operator explicitly configures trusted cohabiting extensions, then preserves
+the captured planner, executor, and non-distributed EXPLAIN hook chain.
 
 **Motivation**: Citus's upstream guard rejects any preexisting planner,
 utility, executor, or explain hook. ai-blaise/citus needs a controlled path for
@@ -114,13 +118,17 @@ citus.cohabit_extensions = 'timescaledb'
 ```
 
 **Citus comparison**: Vanilla Citus errors if these hooks are already set at
-load time.
+load time. With TS6 enabled, ai-blaise/citus remains the outer Citus hook while
+delegating to trusted preexisting hooks where the Citus path can safely do so.
 
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source marker after patch application:
-  `FEATURE: TS6` in `src/backend/distributed/shared_library_init.c`
+  `src/backend/distributed/shared_library_init.c`,
+  `src/backend/distributed/planner/distributed_planner.c`,
+  `src/backend/distributed/executor/multi_executor.c`,
+  `src/backend/distributed/planner/multi_explain.c`
 
 ### TS7: Hypertable CRD Reconciler
 

@@ -1,0 +1,316 @@
+From fb52f55e24654ace17a97c39e29d851214af4de9 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Tue, 19 May 2026 18:10:35 -0400
+Subject: [PATCH] Preserve trusted hook chain state
+
+FEATURE: TS6
+---
+ .../distributed/executor/multi_executor.c     | 69 +++++++++++++++----
+ .../distributed/planner/distributed_planner.c | 34 ++++++++-
+ .../distributed/planner/multi_explain.c       | 18 +++++
+ src/backend/distributed/shared_library_init.c |  4 ++
+ src/include/distributed/distributed_planner.h |  2 +
+ src/include/distributed/multi_executor.h      |  3 +
+ src/include/distributed/multi_explain.h       |  2 +
+ 7 files changed, 114 insertions(+), 18 deletions(-)
+
+diff --git a/src/backend/distributed/executor/multi_executor.c b/src/backend/distributed/executor/multi_executor.c
+index 85f6178d5..edc39ae15 100644
+--- a/src/backend/distributed/executor/multi_executor.c
++++ b/src/backend/distributed/executor/multi_executor.c
+@@ -95,9 +95,14 @@ bool EnableSortedMerge = true;
+  * another executor to run the SQL UDF.
+  */
+ int ExecutorLevel = 0;
++ExecutorStart_hook_type PreviousExecutorStartHook = NULL;
++ExecutorRun_hook_type PreviousExecutorRunHook = NULL;
+ 
+ 
+ /* local function forward declarations */
++static void RunPreviousExecutorStartHook(QueryDesc *queryDesc, int eflags);
++static void RunPreviousExecutorRunHook(QueryDesc *queryDesc, ScanDirection direction,
++									   uint64 count, bool execute_once);
+ static Relation StubRelation(TupleDesc tupleDescriptor);
+ static char * GetObjectTypeString(ObjectType objType);
+ static bool AlterTableConstraintCheck(QueryDesc *queryDesc);
+@@ -135,7 +140,7 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
+ 			 * XactReadOnly to false.
+ 			 */
+ 			XactReadOnly = false;
+-			standard_ExecutorStart(queryDesc, eflags);
++			RunPreviousExecutorStartHook(queryDesc, eflags);
+ 			XactReadOnly = true;
+ 		}
+ 		PG_CATCH();
+@@ -147,6 +152,25 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
+ 	}
+ 	else
+ #endif
++	{
++		RunPreviousExecutorStartHook(queryDesc, eflags);
++	}
++}
++
++
++/*
++ * FEATURE: TS6
++ *
++ * Continue an executor-start hook chain that was present before Citus loaded.
++ */
++static void
++RunPreviousExecutorStartHook(QueryDesc *queryDesc, int eflags)
++{
++	if (PreviousExecutorStartHook != NULL)
++	{
++		PreviousExecutorStartHook(queryDesc, eflags);
++	}
++	else
+ 	{
+ 		standard_ExecutorStart(queryDesc, eflags);
+ 	}
+@@ -239,20 +263,7 @@ CitusExecutorRun(QueryDesc *queryDesc,
+ 			/* postgres will switch here again and will restore back on its own */
+ 			MemoryContextSwitchTo(oldcontext);
+ 
+-			#if PG_VERSION_NUM >= PG_VERSION_18
+-
+-			/* PG18+ drops the “execute_once” argument */
+-			standard_ExecutorRun(queryDesc,
+-								 direction,
+-								 count);
+-		#else
+-
+-			/* PG17-: original four-arg signature */
+-			standard_ExecutorRun(queryDesc,
+-								 direction,
+-								 count,
+-								 execute_once);
+-		#endif
++			RunPreviousExecutorRunHook(queryDesc, direction, count, execute_once);
+ 		}
+ 
+ 		if (totalTime)
+@@ -311,6 +322,34 @@ CitusExecutorRun(QueryDesc *queryDesc,
+ }
+ 
+ 
++/*
++ * FEATURE: TS6
++ *
++ * Continue an executor-run hook chain that was present before Citus loaded.
++ */
++static void
++RunPreviousExecutorRunHook(QueryDesc *queryDesc,
++						   ScanDirection direction, uint64 count, bool execute_once)
++{
++	if (PreviousExecutorRunHook != NULL)
++	{
++#if PG_VERSION_NUM >= PG_VERSION_18
++		PreviousExecutorRunHook(queryDesc, direction, count);
++#else
++		PreviousExecutorRunHook(queryDesc, direction, count, execute_once);
++#endif
++	}
++	else
++	{
++#if PG_VERSION_NUM >= PG_VERSION_18
++		standard_ExecutorRun(queryDesc, direction, count);
++#else
++		standard_ExecutorRun(queryDesc, direction, count, execute_once);
++#endif
++	}
++}
++
++
+ /*
+  * FindCitusCustomScanStates returns a list of all citus custom scan states in it.
+  */
+diff --git a/src/backend/distributed/planner/distributed_planner.c b/src/backend/distributed/planner/distributed_planner.c
+index b33287e94..dca2ed818 100644
+--- a/src/backend/distributed/planner/distributed_planner.c
++++ b/src/backend/distributed/planner/distributed_planner.c
+@@ -76,6 +76,7 @@
+ 
+ static List *plannerRestrictionContextList = NIL;
+ int MultiTaskQueryLogLevel = CITUS_LOG_LEVEL_OFF; /* multi-task query log level */
++planner_hook_type PreviousPlannerHook = NULL;
+ static uint64 NextPlanId = 1;
+ 
+ /* keep track of planner call stack levels */
+@@ -147,6 +148,10 @@ static void ConcatenateRTablesAndPerminfos(PlannedStmt *mainPlan,
+ static bool CheckPostPlanDistribution(DistributedPlanningContext *planContext,
+ 									  bool isDistributedQuery,
+ 									  List *rangeTableList);
++static PlannedStmt * CallPreviousPlannerHook(Query *parse,
++											 const char *query_string,
++											 int cursorOptions,
++											 ParamListInfo boundParams);
+ #if PG_VERSION_NUM >= PG_VERSION_18
+ static int DisableSelfJoinElimination(void);
+ #endif
+@@ -274,9 +279,9 @@ distributed_planner(Query *parse,
+ 			 * restriction information per table and parse tree transformations made by
+ 			 * postgres' planner.
+ 			 */
+-			planContext.plan = standard_planner(planContext.query, NULL,
+-												planContext.cursorOptions,
+-												planContext.boundParams);
++			planContext.plan = CallPreviousPlannerHook(planContext.query, query_string,
++													   planContext.cursorOptions,
++													   planContext.boundParams);
+ #if PG_VERSION_NUM >= PG_VERSION_18
+ 			if (needsDistributedPlanning)
+ 			{
+@@ -341,6 +346,29 @@ distributed_planner(Query *parse,
+ }
+ 
+ 
++/*
++ * FEATURE: TS6
++ *
++ * Preserve a trusted coextension planner hook captured before Citus installed
++ * distributed_planner. Citus remains the outer hook, while the previous hook
++ * keeps its normal chance to transform or plan the statement before falling
++ * back to PostgreSQL's standard planner.
++ */
++static PlannedStmt *
++CallPreviousPlannerHook(Query *parse,
++						const char *query_string,
++						int cursorOptions,
++						ParamListInfo boundParams)
++{
++	if (PreviousPlannerHook != NULL)
++	{
++		return PreviousPlannerHook(parse, query_string, cursorOptions, boundParams);
++	}
++
++	return standard_planner(parse, NULL, cursorOptions, boundParams);
++}
++
++
+ /*
+  * ExtractRangeTableEntryList is a wrapper around ExtractRangeTableEntryWalker.
+  * The function traverses the input query and returns all the range table
+diff --git a/src/backend/distributed/planner/multi_explain.c b/src/backend/distributed/planner/multi_explain.c
+index 6b4b350dd..ad9a3b594 100644
+--- a/src/backend/distributed/planner/multi_explain.c
++++ b/src/backend/distributed/planner/multi_explain.c
+@@ -85,6 +85,7 @@
+ bool ExplainDistributedQueries = true;
+ bool ExplainAllTasks = false;
+ int ExplainAnalyzeSortMethod = EXPLAIN_ANALYZE_SORT_BY_TIME;
++ExplainOneQuery_hook_type PreviousExplainOneQueryHook = NULL;
+ extern MemoryContext SubPlanExplainAnalyzeContext;
+ 
+ /*
+@@ -1611,6 +1612,23 @@ CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
+ 					 ExplainState *es, const char *queryString, ParamListInfo params,
+ 					 QueryEnvironment *queryEnv)
+ {
++	/*
++	 * FEATURE: TS6
++	 *
++	 * For statements outside Citus distributed planning, preserve a trusted
++	 * coextension EXPLAIN hook captured before Citus loaded. Distributed
++	 * statements remain on Citus' EXPLAIN path so worker task output is not
++	 * bypassed.
++	 */
++	if (PreviousExplainOneQueryHook != NULL &&
++		(cursorOptions & CURSOR_OPT_FORCE_DISTRIBUTED) == 0 &&
++		!NeedsDistributedPlanning(query))
++	{
++		PreviousExplainOneQueryHook(query, cursorOptions, into, es, queryString, params,
++									queryEnv);
++		return;
++	}
++
+ 	/* save the flags of current EXPLAIN command */
+ 	CurrentDistributedQueryExplainOptions.costs = es->costs;
+ 	CurrentDistributedQueryExplainOptions.buffers = es->buffers;
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index dfb81907f..143018fed 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -477,14 +477,18 @@ _PG_init(void)
+ 	RegisterCitusCustomScanMethods();
+ 
+ 	/* intercept planner */
++	PreviousPlannerHook = planner_hook;
+ 	planner_hook = distributed_planner;
+ 
+ 	/* register for planner hook */
+ 	set_rel_pathlist_hook = multi_relation_restriction_hook;
+ 	get_relation_info_hook = multi_get_relation_info_hook;
+ 	set_join_pathlist_hook = multi_join_restriction_hook;
++	PreviousExecutorStartHook = ExecutorStart_hook;
+ 	ExecutorStart_hook = CitusExecutorStart;
++	PreviousExecutorRunHook = ExecutorRun_hook;
+ 	ExecutorRun_hook = citus_executor_run_adapter;
++	PreviousExplainOneQueryHook = ExplainOneQuery_hook;
+ 	ExplainOneQuery_hook = CitusExplainOneQuery;
+ 	prev_ExecutorEnd = ExecutorEnd_hook;
+ 	ExecutorEnd_hook = CitusAttributeToEnd;
+diff --git a/src/include/distributed/distributed_planner.h b/src/include/distributed/distributed_planner.h
+index 5d8c89074..4af5abab4 100644
+--- a/src/include/distributed/distributed_planner.h
++++ b/src/include/distributed/distributed_planner.h
+@@ -14,6 +14,7 @@
+ 
+ #include "nodes/pathnodes.h"
+ #include "nodes/plannodes.h"
++#include "optimizer/planner.h"
+ 
+ #include "pg_version_constants.h"
+ 
+@@ -31,6 +32,7 @@
+ 
+ /* level of planner calls */
+ extern int PlannerLevel;
++extern planner_hook_type PreviousPlannerHook;
+ 
+ 
+ /* RouterPlanType is used to determine the router plan to invoke */
+diff --git a/src/include/distributed/multi_executor.h b/src/include/distributed/multi_executor.h
+index e5de7d10e..dad310ca2 100644
+--- a/src/include/distributed/multi_executor.h
++++ b/src/include/distributed/multi_executor.h
+@@ -11,6 +11,7 @@
+ #define MULTI_EXECUTOR_H
+ 
+ #include "executor/execdesc.h"
++#include "executor/executor.h"
+ #include "nodes/execnodes.h"
+ #include "nodes/parsenodes.h"
+ 
+@@ -72,6 +73,8 @@ extern int ExecutorSlowStartInterval;
+ extern bool SortReturning;
+ extern bool EnableSortedMerge;
+ extern int ExecutorLevel;
++extern ExecutorStart_hook_type PreviousExecutorStartHook;
++extern ExecutorRun_hook_type PreviousExecutorRunHook;
+ 
+ 
+ extern void CitusExecutorStart(QueryDesc *queryDesc, int eflags);
+diff --git a/src/include/distributed/multi_explain.h b/src/include/distributed/multi_explain.h
+index f6dad83c2..3e272d646 100644
+--- a/src/include/distributed/multi_explain.h
++++ b/src/include/distributed/multi_explain.h
+@@ -12,6 +12,7 @@
+ 
+ #include "tuple_destination.h"
+ 
++#include "commands/explain.h"
+ #include "executor/executor.h"
+ 
+ typedef enum
+@@ -24,6 +25,7 @@ typedef enum
+ extern bool ExplainDistributedQueries;
+ extern bool ExplainAllTasks;
+ extern int ExplainAnalyzeSortMethod;
++extern ExplainOneQuery_hook_type PreviousExplainOneQueryHook;
+ 
+ extern void FreeSavedExplainPlan(void);
+ extern void CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
+-- 
+2.54.0
+

@@ -18,7 +18,9 @@ The fork combines upstream Citus with ai-blaise overlay components.
 
 The first end-to-end acceptance path is:
 
-1. Apply `patches/0001-allow-trusted-hook-coextensions.patch`.
+1. Apply the TS6 cohabitation patch series:
+   `patches/0001-allow-trusted-hook-coextensions.patch` and
+   `patches/0002-preserve-trusted-hook-chain-state.patch`.
 2. Build `companion/citus_timescale`.
 3. Reconcile the `Hypertable` CRD in `operator/`.
 4. Prove a Timescale hypertable partition under a Citus distributed parent works
