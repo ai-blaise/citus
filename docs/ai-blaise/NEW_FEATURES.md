@@ -8,7 +8,7 @@ vanilla Citus. Every feature-bearing PR updates this file.
 ### TS1: Distributed Hypertable Bridge
 
 **Overlay**: `companion/citus_timescale`
-**Status**: planned
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -38,12 +38,12 @@ partitions, but it has no distributed-hypertable orchestration.
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
-- Feature marker: `FEATURE: TS1`
+- In-source: `FEATURE: TS1` in `companion/src/citus_timescale.rs`
 
 ### TS5: Time-Range Shard Pruner
 
 **Overlay**: `companion/citus_timescale`
-**Status**: planned
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb`
@@ -66,7 +66,7 @@ not consult TimescaleDB dimension slices.
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
-- Feature marker: `FEATURE: TS5`
+- In-source: `FEATURE: TS5` in `companion/src/citus_timescale.rs`
 
 ### TS6: Trusted Hook Coextensions
 

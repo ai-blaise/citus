@@ -23,3 +23,7 @@ The first end-to-end acceptance path is:
 3. Reconcile the `Hypertable` CRD in `operator/`.
 4. Prove a Timescale hypertable partition under a Citus distributed parent works
    in an end-to-end cluster test.
+
+The companion crate starts with pure Rust planning and validation types. The
+`pg18` cargo feature is reserved for PostgreSQL 18 `pgrx` packaging once the
+database test harness is wired.
