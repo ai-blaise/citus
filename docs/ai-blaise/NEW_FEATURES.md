@@ -228,6 +228,7 @@ Kubernetes-native CRD for topology spread constraints.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`
+- Acceptance: `e2e/src/timescale_on_citus.rs`
 
 ### S4: Coordinator-Less Topology Mode
 

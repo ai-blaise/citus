@@ -4,7 +4,8 @@
 use ai_blaise_citus_operator::{
     CitusClusterSpec, CitusClusterSpecError, CitusTopology, CompressionPolicy,
     ContinuousAggregateSpec, HypertableReconcileError, HypertableReconcilePlan, HypertableSpec,
-    PoolSpec, RetentionPolicy, SidecarSpec, SidecarType,
+    PlacementPolicy, PoolSpec, RetentionPolicy, ShardGroupSpec, ShardGroupSpecError, SidecarSpec,
+    SidecarType, UnsatisfiablePlacementAction,
 };
 use std::error::Error;
 use std::fmt;
@@ -41,6 +42,7 @@ impl CohabitationPreloadConfig {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TimescaleOnCitusAcceptance {
     pub cluster: CitusClusterSpec,
+    pub shard_group: ShardGroupSpec,
     pub preload: CohabitationPreloadConfig,
     pub hypertable: HypertableSpec,
 }
@@ -66,6 +68,18 @@ impl TimescaleOnCitusAcceptance {
                 sidecars: vec![SidecarSpec {
                     sidecar_type: SidecarType::Vectorizer,
                     replicas: 1,
+                }],
+            },
+            shard_group: ShardGroupSpec {
+                parent_table: "public.metrics".to_string(),
+                distribution_column: "tenant_id".to_string(),
+                num_shards: 32,
+                colocation_group: Some("metrics".to_string()),
+                replication_factor: 3,
+                placement_policy: vec![PlacementPolicy {
+                    topology_key: "topology.kubernetes.io/zone".to_string(),
+                    max_skew: 1,
+                    when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
                 }],
             },
             preload: CohabitationPreloadConfig {
@@ -108,15 +122,18 @@ impl TimescaleOnCitusAcceptance {
 
     pub fn plan(&self) -> Result<TimescaleOnCitusPlan, TimescaleOnCitusAcceptanceError> {
         self.cluster.validate()?;
+        self.shard_group.validate()?;
         self.preload.validate()?;
         let reconcile = HypertableReconcilePlan::try_from(&self.hypertable)?;
 
         Ok(TimescaleOnCitusPlan {
             cluster: self.cluster.clone(),
+            shard_group: self.shard_group.clone(),
             preload: self.preload.clone(),
             reconcile,
             gates: vec![
                 AcceptanceGate::CitusClusterTopology,
+                AcceptanceGate::TopologyAwarePlacement,
                 AcceptanceGate::CohabitPreload,
                 AcceptanceGate::DistributedHypertable,
                 AcceptanceGate::CompressionPolicy,
@@ -131,6 +148,7 @@ impl TimescaleOnCitusAcceptance {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TimescaleOnCitusPlan {
     pub cluster: CitusClusterSpec,
+    pub shard_group: ShardGroupSpec,
     pub preload: CohabitationPreloadConfig,
     pub reconcile: HypertableReconcilePlan,
     pub gates: Vec<AcceptanceGate>,
@@ -139,6 +157,7 @@ pub struct TimescaleOnCitusPlan {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AcceptanceGate {
     CitusClusterTopology,
+    TopologyAwarePlacement,
     CohabitPreload,
     DistributedHypertable,
     CompressionPolicy,
@@ -150,6 +169,7 @@ pub enum AcceptanceGate {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TimescaleOnCitusAcceptanceError {
     Cluster(CitusClusterSpecError),
+    ShardGroup(ShardGroupSpecError),
     MissingSharedPreloadLibrary(&'static str),
     MissingCohabitExtension(&'static str),
     Reconcile(HypertableReconcileError),
@@ -159,6 +179,7 @@ impl fmt::Display for TimescaleOnCitusAcceptanceError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Cluster(error) => write!(formatter, "{error}"),
+            Self::ShardGroup(error) => write!(formatter, "{error}"),
             Self::MissingSharedPreloadLibrary(library) => {
                 write!(formatter, "shared_preload_libraries must include {library}")
             }
@@ -178,6 +199,12 @@ impl Error for TimescaleOnCitusAcceptanceError {}
 impl From<CitusClusterSpecError> for TimescaleOnCitusAcceptanceError {
     fn from(error: CitusClusterSpecError) -> Self {
         Self::Cluster(error)
+    }
+}
+
+impl From<ShardGroupSpecError> for TimescaleOnCitusAcceptanceError {
+    fn from(error: ShardGroupSpecError) -> Self {
+        Self::ShardGroup(error)
     }
 }
 
@@ -214,6 +241,8 @@ mod tests {
         assert_eq!(plan.cluster.topology, CitusTopology::CoordinatorWorker);
         assert_eq!(plan.cluster.workers, 3);
         assert_eq!(plan.cluster.coordinators, 1);
+        assert_eq!(plan.shard_group.parent_table, "public.metrics");
+        assert_eq!(plan.shard_group.replication_factor, 3);
         assert_eq!(
             plan.preload.shared_preload_libraries,
             vec![
@@ -239,6 +268,7 @@ mod tests {
             plan.gates,
             vec![
                 AcceptanceGate::CitusClusterTopology,
+                AcceptanceGate::TopologyAwarePlacement,
                 AcceptanceGate::CohabitPreload,
                 AcceptanceGate::DistributedHypertable,
                 AcceptanceGate::CompressionPolicy,
@@ -272,6 +302,19 @@ mod tests {
             acceptance.plan(),
             Err(TimescaleOnCitusAcceptanceError::Cluster(
                 CitusClusterSpecError::InvalidCoordinatorCount
+            ))
+        );
+    }
+
+    #[test]
+    fn plan_rejects_invalid_shard_group_policy() {
+        let mut acceptance = TimescaleOnCitusAcceptance::canonical_metrics();
+        acceptance.shard_group.placement_policy[0].max_skew = 0;
+
+        assert_eq!(
+            acceptance.plan(),
+            Err(TimescaleOnCitusAcceptanceError::ShardGroup(
+                ShardGroupSpecError::InvalidPlacementSkew
             ))
         );
     }
