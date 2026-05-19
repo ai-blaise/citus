@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "companion",
+    "e2e",
     "operator",
     "pool",
     "sidecar/shared",

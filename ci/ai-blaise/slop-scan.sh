@@ -12,11 +12,11 @@ failed=0
 for pattern in "${patterns[@]}"; do
   if command -v rg >/dev/null 2>&1; then
     if rg -n "${pattern}" \
-      companion sidecar pool operator tools docs/ai-blaise patches 2>/dev/null; then
+      companion sidecar pool operator e2e tools docs/ai-blaise patches 2>/dev/null; then
       failed=1
     fi
   elif grep -REn "${pattern}" \
-    companion sidecar pool operator tools docs/ai-blaise patches 2>/dev/null; then
+    companion sidecar pool operator e2e tools docs/ai-blaise patches 2>/dev/null; then
     failed=1
   fi
 done

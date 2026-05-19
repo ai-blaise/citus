@@ -62,7 +62,9 @@ partitions, but it has no distributed-hypertable orchestration.
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
+- Acceptance: `e2e/src/timescale_on_citus.rs`
 - In-source: `FEATURE: TS1` in `companion/src/citus_timescale.rs`
+  and `e2e/src/timescale_on_citus.rs`
 
 ### TS5: Time-Range Shard Pruner
 
@@ -90,7 +92,9 @@ not consult TimescaleDB dimension slices.
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
+- Acceptance: `e2e/src/timescale_on_citus.rs`
 - In-source: `FEATURE: TS5` in `companion/src/citus_timescale.rs`
+  and `e2e/src/timescale_on_citus.rs`
 
 ### TS6: Trusted Hook Coextensions
 
@@ -98,6 +102,7 @@ not consult TimescaleDB dimension slices.
 
 - `patches/0001-allow-trusted-hook-coextensions.patch`
 - `patches/0002-preserve-trusted-hook-chain-state.patch`
+
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -153,6 +158,7 @@ Timescale-aware distributed hypertables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
+- Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
 
 ## AI / Vector
 

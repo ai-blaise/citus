@@ -12,7 +12,7 @@ if [[ -z "${base}" ]]; then
   fi
 fi
 
-feature_paths='^(companion/src/|sidecar/[^/]+/src/|pool/src/|operator/src/crds/|patches/|tools/[^/]+/src/)'
+feature_paths='^(companion/src/|sidecar/[^/]+/src/|pool/src/|operator/src/crds/|e2e/src/|patches/|tools/[^/]+/src/)'
 
 added_files="$(git diff --name-only --diff-filter=A "${base}" "${head}" \
   | grep -E "${feature_paths}" || true)"
