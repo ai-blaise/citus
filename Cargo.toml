@@ -7,6 +7,7 @@ members = [
     "sidecar/auth",
     "sidecar/backup",
     "sidecar/shared",
+    "sidecar/storage",
     "sidecar/vectorizer",
     "tools/citus-mcp",
     "tools/citusctl",

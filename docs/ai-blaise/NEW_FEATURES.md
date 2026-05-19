@@ -22,6 +22,9 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 `FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
 `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+`sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
+ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
+`FEATURE: Sto4`, and `FEATURE: Sto5`.
 
 ## Operand Image
 
@@ -1846,7 +1849,7 @@ before delivery sidecars can be trusted.
 
 ### Sto1: Storage Sidecar
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1864,10 +1867,11 @@ mapping before upload/download paths are implemented.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto1` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: Sto1` in `sidecar/storage/src/lib.rs`
 
 ### Sto3: Presigned URL Signing
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1885,10 +1889,11 @@ URLs.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto3` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: Sto3` in `sidecar/storage/src/lib.rs`
 
 ### Sto4: Bucket-Level ACLs
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1905,6 +1910,29 @@ in object-store policy.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto4` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: Sto4` in `sidecar/storage/src/lib.rs`
+
+### Sto5: Antivirus Scan Integration
+
+**Overlay**: `sidecar/storage`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds antivirus scanner endpoint and quarantine-bucket validation
+for object uploads.
+
+**Motivation**: File attachments need a fail-closed malware scanning contract
+before direct uploads are exposed to tenants.
+
+**Citus comparison**: Vanilla Citus does not manage object-store antivirus
+policy.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sto5` in `sidecar/storage/src/lib.rs`
 
 ## MCP
 
