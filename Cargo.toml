@@ -7,6 +7,7 @@ members = [
     "sidecar/auth",
     "sidecar/backup",
     "sidecar/cdc",
+    "sidecar/realtime",
     "sidecar/shared",
     "sidecar/storage",
     "sidecar/vectorizer",

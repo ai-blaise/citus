@@ -26,6 +26,9 @@ optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
 `FEATURE: L8`, and `FEATURE: WH3`.
+`sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
+filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
+`FEATURE: RT3`, and `FEATURE: RT4`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
@@ -1620,7 +1623,7 @@ analytical mirror.
 
 ### RT1: Realtime Sidecar
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1638,10 +1641,11 @@ broadcasts.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT1` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: RT1` in `sidecar/realtime/src/lib.rs`
 
 ### RT2: Per-Tenant Topic Isolation
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1658,10 +1662,11 @@ isolated per tenant.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT2` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: RT2` in `sidecar/realtime/src/lib.rs`
 
 ### RT3: Realtime Filter Expressions
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1679,10 +1684,11 @@ event over the socket.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT3` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: RT3` in `sidecar/realtime/src/lib.rs`
 
 ### RT4: Presence
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1699,6 +1705,7 @@ sidecar can account for subscribers consistently.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT4` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: RT4` in `sidecar/realtime/src/lib.rs`
 
 ## Edge Functions
 

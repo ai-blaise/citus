@@ -64,6 +64,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_realtime"
+version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_cdc",
+ "ai_blaise_citus_sidecar_shared",
+]
+
+[[package]]
 name = "ai_blaise_citus_sidecar_shared"
 version = "0.1.0"
 
