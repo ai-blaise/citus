@@ -694,8 +694,8 @@ archived Python worker is not a good runtime floor for this fork.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the vectorizer sidecar's embedding job model and health
-surface for future pgai-compatible queue execution.
+**Summary**: Adds the vectorizer sidecar's embedding job model, health surface,
+and deterministic canonical worker execution path.
 
 **Motivation**: pgai's Python worker is archived and coordinator-oriented. The
 fork needs a Rust worker model that can run per Citus worker.
@@ -706,6 +706,7 @@ fork needs a Rust worker model that can run per Citus worker.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A2` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `FEATURE: A2` in `sidecar/vectorizer/src/main.rs`
 
 ### A3: Vector Provider Routing
 
@@ -758,7 +759,7 @@ are wired in.
 **Bundled extension dep**: `timescaledb`
 
 **Summary**: Adds usage records with tenant, provider, model, token, and
-micro-cost accounting for future `ai.usage_log` writes.
+micro-cost accounting, emitted by the canonical vectorizer worker run.
 
 **Motivation**: Cost dashboards and token budgets require a durable accounting
 shape before provider calls run in production.
@@ -770,6 +771,7 @@ usage.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A5` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `FEATURE: A5` in `sidecar/vectorizer/src/main.rs`
 
 ### A6: Shard-Local Distributed Vectorize
 

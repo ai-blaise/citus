@@ -12,10 +12,13 @@ Current implemented surface:
 - `QueuePollPlan`
 - `DistributedVectorizePlan`
 - `VectorizerWorker`
+- `VectorizerExecutionReport`
 - `EmbeddingProviderClient`
 - `UsageLogRecord`
 
-This is the first local model for `FEATURE: A2` vectorizer execution and
-`FEATURE: A4` per-tenant token budgets, with provider routing for
-`FEATURE: A3`, usage accounting for `FEATURE: A5`, and shard-local execution
-planning for `FEATURE: A6`.
+`cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical` executes a
+deterministic canonical batch and emits usage records as TSV. This is the
+executable local model for `FEATURE: A2` vectorizer execution and `FEATURE: A4`
+per-tenant token budgets, with provider routing for `FEATURE: A3`, usage
+accounting for `FEATURE: A5`, and shard-local execution planning for
+`FEATURE: A6`.

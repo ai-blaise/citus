@@ -269,6 +269,14 @@ impl VectorizerRunPlan {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorizerExecutionReport {
+    pub plan: VectorizerRunPlan,
+    pub results: Vec<ProviderEmbeddingResult>,
+    pub usage: Vec<UsageLogRecord>,
+    pub health: HealthReport,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VectorizerWorker {
     pub queue: QueuePollPlan,
@@ -313,6 +321,31 @@ impl VectorizerWorker {
         })
     }
 
+    pub fn execute_batch<C: EmbeddingProviderClient>(
+        &self,
+        jobs: &[VectorizerJob],
+        budgets: &mut [TenantTokenBudget],
+        client: &C,
+    ) -> Result<VectorizerExecutionReport, VectorizerError> {
+        let plan = self.plan_batch(jobs, budgets)?;
+        let mut results = Vec::with_capacity(plan.requests.len());
+        let mut usage = Vec::with_capacity(plan.requests.len());
+
+        for request in &plan.requests {
+            let result = client.embed(request)?;
+            result.validate()?;
+            usage.push(result.usage.clone());
+            results.push(result);
+        }
+
+        Ok(VectorizerExecutionReport {
+            plan,
+            results,
+            usage,
+            health: health_report(SystemTime::now(), 0),
+        })
+    }
+
     fn validate_route(&self, job: &VectorizerJob) -> Result<(), VectorizerError> {
         if self.routes.is_empty() {
             return Err(VectorizerError::MissingProviderRoute);
@@ -326,6 +359,69 @@ impl VectorizerWorker {
 
         Err(VectorizerError::MissingProviderRoute)
     }
+}
+
+pub fn canonical_worker() -> VectorizerWorker {
+    VectorizerWorker {
+        queue: QueuePollPlan {
+            queue_table: "ai.vectorizer_queue".to_string(),
+            batch_size: 8,
+            visibility_timeout_seconds: 30,
+        },
+        distributed: DistributedVectorizePlan {
+            worker_name: "worker-1".to_string(),
+            shard_id: 10_240,
+            queue_table: "ai.vectorizer_queue".to_string(),
+            local_only: true,
+        },
+        routes: vec![ProviderRoute {
+            provider: EmbeddingProvider::OpenAi,
+            model: "text-embedding-3-large".to_string(),
+            secret_ref: "openai-embeddings".to_string(),
+        }],
+    }
+}
+
+pub fn canonical_jobs() -> Vec<VectorizerJob> {
+    vec![
+        VectorizerJob {
+            tenant_id: "tenant-a".to_string(),
+            source_table: "public.documents".to_string(),
+            source_pk: "doc-1".to_string(),
+            source_text: "Citus shards tenant data across workers.".to_string(),
+            provider: EmbeddingProvider::OpenAi,
+            model: "text-embedding-3-large".to_string(),
+            estimated_tokens: 64,
+        },
+        VectorizerJob {
+            tenant_id: "tenant-a".to_string(),
+            source_table: "public.documents".to_string(),
+            source_pk: "doc-2".to_string(),
+            source_text: "The vectorizer runs shard-local batches.".to_string(),
+            provider: EmbeddingProvider::OpenAi,
+            model: "text-embedding-3-large".to_string(),
+            estimated_tokens: 48,
+        },
+    ]
+}
+
+pub fn canonical_budgets() -> Vec<TenantTokenBudget> {
+    vec![TenantTokenBudget {
+        tenant_id: "tenant-a".to_string(),
+        remaining_tokens: 256,
+    }]
+}
+
+pub fn canonical_execution_report() -> Result<VectorizerExecutionReport, VectorizerError> {
+    let worker = canonical_worker();
+    let jobs = canonical_jobs();
+    let mut budgets = canonical_budgets();
+    let client = DeterministicEmbeddingClient {
+        dimensions: 3,
+        cost_micros_per_token: 10,
+    };
+
+    worker.execute_batch(&jobs, &mut budgets, &client)
 }
 
 pub fn health_report(started_at: SystemTime, queue_depth: u64) -> HealthReport {
@@ -514,6 +610,46 @@ mod tests {
         assert_eq!(result.usage.tokens, 64);
         assert_eq!(result.usage.cost_micros, 640);
         assert_eq!(result.validate(), Ok(()));
+    }
+
+    #[test]
+    fn worker_executes_batch_and_returns_usage_report() {
+        let worker = canonical_worker();
+        let jobs = canonical_jobs();
+        let mut budgets = canonical_budgets();
+        let client = DeterministicEmbeddingClient {
+            dimensions: 3,
+            cost_micros_per_token: 10,
+        };
+
+        let report = worker
+            .execute_batch(&jobs, &mut budgets, &client)
+            .expect("execution report");
+
+        assert_eq!(report.plan.requests.len(), 2);
+        assert_eq!(report.results.len(), 2);
+        assert_eq!(
+            report.usage.iter().map(|record| record.tokens).sum::<u64>(),
+            112
+        );
+        assert_eq!(
+            report
+                .usage
+                .iter()
+                .map(|record| record.cost_micros)
+                .sum::<u64>(),
+            1_120
+        );
+        assert!(report.health.is_ready());
+        assert_eq!(budgets[0].remaining_tokens, 144);
+    }
+
+    #[test]
+    fn canonical_execution_report_is_deterministic() {
+        let report = canonical_execution_report().expect("canonical report");
+
+        assert_eq!(report.results[0].embedding, vec![0.064, 0.065, 0.066]);
+        assert_eq!(report.results[1].embedding, vec![0.048, 0.049, 0.05]);
     }
 
     fn valid_job(estimated_tokens: u64) -> VectorizerJob {
