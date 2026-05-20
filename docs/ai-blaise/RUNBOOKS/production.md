@@ -64,24 +64,43 @@ Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
 For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
-it builds the app images, installs the Helm chart, creates a real PostgreSQL
-upstream, verifies live SQL through the pool Kubernetes service, and
-port-forwards into the live operator plus every sidecar deployment to assert
-`/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
-port-forwards each pool pod after the SQL smoke and aggregates pool request
-metrics across replicas.
+it builds the app images, installs the exhaustive chart profile, creates a
+real PostgreSQL upstream, verifies live SQL through the pool Kubernetes
+service, and port-forwards into the live operator plus every sidecar deployment
+to assert `/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
+installs the `values-prod.yaml` profile and verifies that production values run
+the operator and pool with alpha sidecars/tools disabled while pool SQL/admin
+traffic still works. The deploy workflow and `gate-close` run this smoke at
+larger integration boundaries.
 
 ## Hardening Controls
 
-- `FEATURE: Sec7`: API keys and cloud credentials are referenced by external
-  secret names only.
-- `FEATURE: A9`: vector provider keys are bound through external secret
-  references rather than database rows.
-- `FEATURE: Sec8`: TLS is required for clients, Postgres backends, and
-  sidecar-to-sidecar HTTP.
-- `FEATURE: Sec9`: release images carry SBOM and cosign attestation records.
-- `FEATURE: Sec13`: pool CIDR allowlists are reviewed with every ingress
-  change.
+These runtime and security controls are alpha intent, not active production
+enforcement, until the Helm chart renders the corresponding runtime settings,
+ExternalSecret, TLS, NetworkPolicy, and release-attestation objects and the VM
+smoke verifies them. Production values keep those alpha controls disabled by
+default; enabling any of them requires measured evidence and a feature status
+promotion.
+
+- `FEATURE: Sec7`: API keys and cloud credentials will be referenced by
+  external secret names only after ExternalSecret rendering is implemented and
+  verified.
+- `FEATURE: A9`: vector provider keys will be bound through external secret
+  references rather than database rows after the same rendering and smoke proof
+  exists.
+- `FEATURE: Sec8`: TLS for clients, Postgres backends, and sidecar-to-sidecar
+  HTTP remains an alpha intent until certificates, mounts, probes, and traffic
+  tests are wired.
+- `FEATURE: Sec9`: SBOM and cosign attestation records remain release-intent
+  gates until the release workflow publishes and verifies them for each image.
+- `FEATURE: Sec13`: pool CIDR allowlists remain alpha intent until the chart
+  renders NetworkPolicy objects and the VM smoke verifies blocked and allowed
+  traffic.
+- `FEATURE: T6`: PG18 `io_uring` remains alpha intent until the operand image
+  and kernel/runtime compatibility smoke prove it on the target node class.
+- `FEATURE: T7`: pool protocol pipelining remains alpha intent until the pool
+  data path enforces it and live SQL traffic proves correctness under pipelined
+  clients.
 - `FEATURE: RT5`: realtime compatibility is verified against Phoenix-channel
   client behavior before a release is promoted.
 

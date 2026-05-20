@@ -9,6 +9,8 @@ cd "${repo_root}"
 cluster="${KIND_CLUSTER:-ai-blaise-citus-prod-smoke}"
 namespace="${NAMESPACE:-ai-blaise-prod-live}"
 release="${HELM_RELEASE:-ai-blaise-prod-live}"
+prod_values_namespace="${PROD_VALUES_NAMESPACE:-${namespace}-values}"
+prod_values_release="${PROD_VALUES_HELM_RELEASE:-${release}-values}"
 chart_name="${CHART_NAME:-ai-blaise-citus}"
 registry="${IMAGE_REGISTRY:-ai-blaise-local}"
 tag="${TAG:-prod-smoke}"
@@ -63,6 +65,54 @@ dump_k8s_diagnostics() {
   kubectl -n "${namespace}" get events --sort-by=.lastTimestamp >&2 || true
   kubectl -n "${namespace}" describe pod >&2 || true
   kubectl -n "${namespace}" logs --all-containers --tail=80 -l "app.kubernetes.io/name=ai-blaise-citus" >&2 || true
+}
+
+apply_monitoring_crds() {
+  kubectl apply -f - <<'YAML'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: servicemonitors.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  names:
+    kind: ServiceMonitor
+    listKind: ServiceMonitorList
+    plural: servicemonitors
+    singular: servicemonitor
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: prometheusrules.monitoring.coreos.com
+spec:
+  group: monitoring.coreos.com
+  names:
+    kind: PrometheusRule
+    listKind: PrometheusRuleList
+    plural: prometheusrules
+    singular: prometheusrule
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+YAML
+  kubectl wait --for=condition=Established crd/servicemonitors.monitoring.coreos.com --timeout=60s
+  kubectl wait --for=condition=Established crd/prometheusrules.monitoring.coreos.com --timeout=60s
 }
 
 wait_for_deployments() {
@@ -164,6 +214,54 @@ expected_probe_component() {
   esac
 }
 
+install_postgres_fixture() {
+  local target_namespace="$1"
+
+  kubectl create namespace "${target_namespace}" --dry-run=client -o yaml | kubectl apply -f -
+
+  cat <<YAML | kubectl apply -n "${target_namespace}" -f -
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-blaise-citus-postgres
+  labels:
+    app.kubernetes.io/name: ai-blaise-citus-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-blaise-citus-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ai-blaise-citus-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: ${postgres_image}
+          env:
+            - name: POSTGRES_PASSWORD
+              value: postgres
+          ports:
+            - name: postgres
+              containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-blaise-citus-postgres-rw
+spec:
+  selector:
+    app.kubernetes.io/name: ai-blaise-citus-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+YAML
+
+  kubectl -n "${target_namespace}" rollout status deployment/ai-blaise-citus-postgres --timeout=240s
+}
+
 probe_pool_admin_pods() {
   local pods
   local pod
@@ -243,11 +341,116 @@ probe_pool_admin_pods() {
   fi
 }
 
+run_pool_sql_smoke() {
+  kubectl -n "${namespace}" delete job ai-blaise-pool-sql-smoke >/dev/null 2>&1 || true
+  cat <<'YAML' | kubectl apply -n "${namespace}" -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-blaise-pool-sql-smoke
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: postgres:17
+          env:
+            - name: PGPASSWORD
+              value: postgres
+          command:
+            - sh
+            - -lc
+            - |
+              set -eu
+              psql -h ai-blaise-citus-pool -p 5432 -U postgres -d postgres -Atqv ON_ERROR_STOP=1 <<'SQL'
+              SELECT 42::int;
+              CREATE TEMP TABLE pool_proxy_smoke(value integer);
+              INSERT INTO pool_proxy_smoke VALUES (7), (35);
+              SELECT sum(value)::int FROM pool_proxy_smoke;
+              SQL
+YAML
+  wait_for_job ai-blaise-pool-sql-smoke
+  sql_output="$(kubectl -n "${namespace}" logs job/ai-blaise-pool-sql-smoke)"
+  if [[ "${sql_output}" != $'42\n42' ]]; then
+    echo "unexpected Kubernetes SQL smoke output:" >&2
+    printf '%s\n' "${sql_output}" >&2
+    exit 1
+  fi
+
+  probe_pool_admin_pods
+
+  kubectl -n "${namespace}" delete job ai-blaise-pool-admin-smoke >/dev/null 2>&1 || true
+  cat <<'YAML' | kubectl apply -n "${namespace}" -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-blaise-pool-admin-smoke
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: admin-http
+          image: postgres:17
+          command:
+            - bash
+            - -lc
+            - |
+              set -euo pipefail
+              http_get() {
+                local target_path="$1"
+                exec 3<>/dev/tcp/ai-blaise-citus-pool/8080
+                printf 'GET %s HTTP/1.1\r\nHost: ai-blaise-citus-pool\r\nConnection: close\r\n\r\n' "${target_path}" >&3
+                cat <&3 || true
+                exec 3<&-
+                exec 3>&-
+              }
+              http_get /readyz | grep -F '"upstream_ready":true'
+              http_get /metrics |
+                awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
+                     END { exit ready ? 0 : 1 }'
+YAML
+  wait_for_job ai-blaise-pool-admin-smoke
+}
+
+assert_deployment_replicas() {
+  local deployment="$1"
+  local expected="$2"
+  local actual
+
+  actual="$(kubectl -n "${namespace}" get "deployment/${deployment}" -o jsonpath='{.spec.replicas}')"
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "deployment/${deployment} expected ${expected} replicas, found ${actual}" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+}
+
+assert_no_alpha_workload_deployments() {
+  local forbidden
+
+  forbidden="$(
+    kubectl -n "${namespace}" get deployments -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' |
+      grep -E 'sidecar-|tools' || true
+  )"
+
+  if [[ -n "${forbidden}" ]]; then
+    echo "values-prod.yaml rendered alpha workload deployments:" >&2
+    printf '%s\n' "${forbidden}" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+}
+
 if ! kind get clusters | grep -Fxq "${cluster}"; then
   kind create cluster --name "${cluster}"
 fi
 
 kubectl config use-context "kind-${cluster}" >/dev/null
+apply_monitoring_crds
 
 if [[ "${build_images}" == "1" ]]; then
   IMAGE_REGISTRY="${registry}" TAG="${tag}" PUSH=false \
@@ -258,49 +461,7 @@ for image in "${images[@]}"; do
   kind load docker-image "${registry}/${image}:${tag}" --name "${cluster}"
 done
 
-kubectl create namespace "${namespace}" --dry-run=client -o yaml | kubectl apply -f -
-
-cat <<YAML | kubectl apply -n "${namespace}" -f -
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ai-blaise-citus-postgres
-  labels:
-    app.kubernetes.io/name: ai-blaise-citus-postgres
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: ai-blaise-citus-postgres
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: ai-blaise-citus-postgres
-    spec:
-      containers:
-        - name: postgres
-          image: ${postgres_image}
-          env:
-            - name: POSTGRES_PASSWORD
-              value: postgres
-          ports:
-            - name: postgres
-              containerPort: 5432
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ai-blaise-citus-postgres-rw
-spec:
-  selector:
-    app.kubernetes.io/name: ai-blaise-citus-postgres
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: postgres
-YAML
-
-kubectl -n "${namespace}" rollout status deployment/ai-blaise-citus-postgres --timeout=240s
+install_postgres_fixture "${namespace}"
 
 helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
   --namespace "${namespace}" \
@@ -343,78 +504,50 @@ for sidecar in "${images[@]}"; do
   sidecar_probe_port="$((sidecar_probe_port + 1))"
 done
 
-kubectl -n "${namespace}" delete job ai-blaise-pool-sql-smoke >/dev/null 2>&1 || true
-cat <<'YAML' | kubectl apply -n "${namespace}" -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ai-blaise-pool-sql-smoke
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: psql
-          image: postgres:17
-          env:
-            - name: PGPASSWORD
-              value: postgres
-          command:
-            - sh
-            - -lc
-            - |
-              set -eu
-              psql -h ai-blaise-citus-pool -p 5432 -U postgres -d postgres -Atqv ON_ERROR_STOP=1 <<'SQL'
-              SELECT 42::int;
-              CREATE TEMP TABLE pool_proxy_smoke(value integer);
-              INSERT INTO pool_proxy_smoke VALUES (7), (35);
-              SELECT sum(value)::int FROM pool_proxy_smoke;
-              SQL
-YAML
-wait_for_job ai-blaise-pool-sql-smoke
-sql_output="$(kubectl -n "${namespace}" logs job/ai-blaise-pool-sql-smoke)"
-if [[ "${sql_output}" != $'42\n42' ]]; then
-  echo "unexpected Kubernetes SQL smoke output:" >&2
-  printf '%s\n' "${sql_output}" >&2
+run_pool_sql_smoke
+
+kubectl -n "${namespace}" get deployment,pod,svc
+echo "ai_blaise_citus exhaustive image-matrix smoke passed in kind/${cluster}/${namespace}"
+
+helm uninstall "${release}" --namespace "${namespace}"
+for _ in $(seq 1 30); do
+  if ! kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+if kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+  echo "timed out waiting for ${chart_name}-operator ClusterRole cleanup" >&2
   exit 1
 fi
 
-probe_pool_admin_pods
+namespace="${prod_values_namespace}"
+install_postgres_fixture "${namespace}"
 
-kubectl -n "${namespace}" delete job ai-blaise-pool-admin-smoke >/dev/null 2>&1 || true
-cat <<'YAML' | kubectl apply -n "${namespace}" -f -
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ai-blaise-pool-admin-smoke
-spec:
-  backoffLimit: 0
-  template:
-    spec:
-      restartPolicy: Never
-      containers:
-        - name: admin-http
-          image: postgres:17
-          command:
-            - bash
-            - -lc
-            - |
-              set -euo pipefail
-              http_get() {
-                local target_path="$1"
-                exec 3<>/dev/tcp/ai-blaise-citus-pool/8080
-                printf 'GET %s HTTP/1.1\r\nHost: ai-blaise-citus-pool\r\nConnection: close\r\n\r\n' "${target_path}" >&3
-                cat <&3 || true
-                exec 3<&-
-                exec 3>&-
-              }
-              http_get /readyz | grep -F '"upstream_ready":true'
-              http_get /metrics |
-                awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
-                     END { exit ready ? 0 : 1 }'
-YAML
-wait_for_job ai-blaise-pool-admin-smoke
+helm upgrade --install "${prod_values_release}" deploy/k8s/helm/citus-overlay \
+  --namespace "${namespace}" \
+  --create-namespace \
+  -f deploy/k8s/helm/citus-overlay/values-prod.yaml \
+  --set "global.imageRegistry=${registry}" \
+  --set "global.imagePullPolicy=IfNotPresent" \
+  --set "operator.image.tag=${tag}" \
+  --set "pool.image.tag=${tag}" \
+  --set "sidecarDefaults.tag=${tag}" \
+  --set "operator.resources.requests.cpu=${smoke_request_cpu}" \
+  --set "operator.resources.requests.memory=${smoke_request_memory}" \
+  --set "operator.resources.limits.cpu=${smoke_limit_cpu}" \
+  --set "operator.resources.limits.memory=${smoke_limit_memory}" \
+  --set "pool.resources.requests.cpu=${smoke_request_cpu}" \
+  --set "pool.resources.requests.memory=${smoke_request_memory}" \
+  --set "pool.resources.limits.cpu=${smoke_limit_cpu}" \
+  --set "pool.resources.limits.memory=${smoke_limit_memory}"
+
+wait_for_deployments
+assert_deployment_replicas "${chart_name}-operator" 2
+assert_deployment_replicas "${chart_name}-pool" 3
+assert_no_alpha_workload_deployments
+probe_deployment_http "${chart_name}-operator" operator 8080 18180
+run_pool_sql_smoke
 
 kubectl -n "${namespace}" get deployment,pod,svc
-echo "ai_blaise_citus Kubernetes production smoke passed in kind/${cluster}"
+echo "ai_blaise_citus values-prod.yaml production profile smoke passed in kind/${cluster}/${namespace}"

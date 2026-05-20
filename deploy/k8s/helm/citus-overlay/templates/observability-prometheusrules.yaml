@@ -20,7 +20,7 @@ spec:
           annotations:
             summary: Citus replication lag is above the configured budget
         - alert: AiBlaiseCitusSidecarNotReady
-          expr: min(ai_blaise_citus_sidecar_ready) by (component) == 0
+          expr: min(ai_blaise_sidecar_ready) by (component) == 0
           for: 2m
           labels:
             severity: warning

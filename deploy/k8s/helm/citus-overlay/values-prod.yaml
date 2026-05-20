@@ -9,15 +9,13 @@ pool:
     host: ai-blaise-citus-postgres-rw
     port: 5432
   protocolPipeline:
-    enabled: true
+    enabled: false
     maxInFlight: 64
   networkPolicy:
-    cidrAllowlist:
-      - 10.0.0.0/8
-      - 172.16.0.0/12
+    cidrAllowlist: []
 
 postgres:
-  ioMethod: io_uring
+  ioMethod: ""
 
 sidecars:
   - name: analytical
@@ -83,12 +81,12 @@ observability:
 
 security:
   externalSecrets:
-    enabled: true
-    secretStoreRef: ai-blaise-prod-secrets
+    enabled: false
+    secretStoreRef: ""
   tls:
-    clients: true
-    postgres: true
-    sidecars: true
+    clients: false
+    postgres: false
+    sidecars: false
   releaseAttestation:
-    sbom: true
-    cosign: true
+    sbom: false
+    cosign: false

@@ -57,9 +57,9 @@ AS $$
         ('M11', 'online column-type migration', 'sql-plan'),
         ('WH2', 'companion webhook helpers', 'sql-plan'),
         ('O1', 'query percentile views', 'sql-runtime'),
-        ('O2', 'distributed stats view', 'sql-runtime'),
+        ('O2', 'local activity stats view', 'sql-runtime'),
         ('O3', 'replication lag view', 'sql-runtime'),
-        ('R4', 'idle transaction reaper', 'sql-runtime'),
+        ('R4', 'idle transaction detector', 'sql-runtime'),
         ('Auth2', 'tenant-aware claims', 'runtime-contract'),
         ('Sec1', 'RLS helpers', 'runtime-contract'),
         ('Sec2', 'JWT verification UDF', 'runtime-contract'),
@@ -334,7 +334,7 @@ $$;
 CREATE VIEW companion_pg_stat_statements_p95 AS
 SELECT * FROM companion_query_percentiles();
 
-CREATE FUNCTION companion_pg_stat_distributed()
+CREATE FUNCTION companion_pg_stat_local_activity()
 RETURNS TABLE(
     database_name name,
     node_addr inet,
@@ -355,6 +355,24 @@ AS $$
     FROM pg_stat_activity AS activity
     WHERE activity.datname IS NOT NULL
     GROUP BY activity.datname, inet_server_addr()
+$$;
+
+CREATE VIEW companion_pg_stat_local_activity AS
+SELECT * FROM companion_pg_stat_local_activity();
+
+CREATE FUNCTION companion_pg_stat_distributed()
+RETURNS TABLE(
+    database_name name,
+    node_addr inet,
+    active_sessions bigint,
+    idle_in_transaction_sessions bigint,
+    waiting_sessions bigint
+)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT * FROM companion_pg_stat_local_activity()
 $$;
 
 CREATE VIEW companion_pg_stat_distributed AS

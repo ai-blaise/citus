@@ -1229,7 +1229,7 @@ scale-to-zero semantics.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
 
-### R4: Idle-In-Transaction Reaper
+### R4: Idle-In-Transaction Detector
 
 **Overlay**: `companion/src/observability.rs`
 **Status**: production-ready
@@ -1237,21 +1237,24 @@ scale-to-zero semantics.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines a guardrail plan and installable
+**Summary**: Defines a guardrail plan and installable detection-only
 `companion_idle_transactions(...)` SQL surface for sessions that sit idle in
 transaction beyond a configured limit.
 
 **Motivation**: Distributed transactions can hold locks and snapshots across
-workers; stale idle transactions need a predictable mitigation contract.
+workers; stale idle transactions need predictable detection before any
+cancel/terminate policy can be promoted.
 
-**Citus comparison**: Vanilla Citus does not ship an idle-transaction reaper
+**Citus comparison**: Vanilla Citus does not ship an idle-transaction detector
 helper.
 
 Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` opens a real
 PostgreSQL session, leaves it idle inside a transaction, and requires the
 installable `companion_idle_transactions('100 milliseconds'::interval)` SQL
-surface to detect that live backend from `pg_stat_activity`. VM verification
-for this promotion reran the smoke against a real `postgres:17` container.
+surface to detect that live backend from `pg_stat_activity`. The promoted
+runtime scope is detection only; it does not cancel or terminate sessions. VM
+verification for this promotion reran the smoke against a real `postgres:17`
+container.
 
 **References**:
 
@@ -3581,6 +3584,10 @@ kind production smoke using the real Rust image matrix, live operator and
 sidecar `/healthz`, `/readyz`, and `/metrics` probes, real PostgreSQL traffic
 through the pool service, and per-pod pool request metric aggregation. GitHub
 Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
+The deploy workflow and `gate-close` now run
+`ci/ai-blaise/kind-production-smoke.sh` as a live integration gate. That smoke
+separately verifies the exhaustive image-matrix profile and the
+`values-prod.yaml` profile with alpha workloads disabled.
 
 **References**:
 
@@ -3590,6 +3597,8 @@ Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
   `images/rust-runtime/Dockerfile`
 - Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `.github/workflows/ci-deploy.yml`
+- Gate: `make -f Makefile.ai-blaise gate-close`
 - CI: `ci/ai-blaise/image-check.sh`
 
 ### WF2: WAL Replay Debugger Command
@@ -3809,7 +3818,7 @@ verification for this promotion reran that smoke against `postgres:17`.
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
-### O2: Distributed Stats View
+### O2: Local Activity Stats View
 
 **Overlay**: `companion/src/observability.rs`
 **Status**: production-ready
@@ -3817,17 +3826,21 @@ verification for this promotion reran that smoke against `postgres:17`.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Adds the distributed stats contract and installable
-`companion_pg_stat_distributed` SQL view for local node activity rollups.
+**Summary**: Adds the local activity stats contract and installable
+`companion_pg_stat_local_activity` SQL view for local node activity rollups.
+The legacy `companion_pg_stat_distributed` view remains as a compatibility
+alias for the same local-node data.
 
-**Motivation**: Operators need one view of coordinator and worker behavior to
-debug distributed plans.
+**Motivation**: Operators need a per-node view that can be installed on
+coordinators and workers before a later multi-node aggregation layer is
+promoted.
 
 **Citus comparison**: Vanilla Citus exposes many stats views, but not this
-single companion-owned rollup contract.
+single companion-owned local activity rollup contract.
 
 Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `ai_blaise_citus` into a real `postgres:17` container and requires
+`companion_pg_stat_local_activity` and its compatibility alias
 `companion_pg_stat_distributed` to report the local database node.
 `ci/ai-blaise/observability-replication-smoke.sh` then starts a real
 PostgreSQL primary, installs the extension, and requires the view to report

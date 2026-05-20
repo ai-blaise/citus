@@ -27,6 +27,14 @@ more production-ready than the artifacts justified.
 8. Operand-image docs described the required extension bundle as installed for
    every operand image even though `FEATURE: Bundle1` is still an alpha
    manifest/init contract without a real full-bundle image build smoke.
+9. Production Helm values enabled alpha runtime/security intent fields for
+   protocol pipelining, PG18 `io_uring`, External Secrets, TLS, release
+   attestations, and pool CIDR allowlists even though the chart does not yet
+   render or enforce the corresponding runtime/security objects.
+10. The Kubernetes production smoke installed the exhaustive default profile
+    with every app image enabled, but it did not install `values-prod.yaml`.
+    Production-value claims were therefore guarded statically but not exercised
+    through a live Helm rollout and pool traffic path.
 
 ## Corrections
 
@@ -69,6 +77,24 @@ more production-ready than the artifacts justified.
   every binary package is installed in a runnable operand image. The production
   gap audit rejects the old operand-image overclaim until a real full-bundle
   image build smoke exists.
+- Production values now keep alpha runtime/security intent controls disabled by
+  default. The deploy check and production gap audit reject production values
+  that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
+  release attestations, or CIDR allowlists before those controls are rendered,
+  enforced, and verified end to end.
+- The Kubernetes production smoke now runs two live Helm profiles in kind. The
+  exhaustive image-matrix profile still proves every Rust app image can serve
+  probes and pool SQL traffic, and a separate `values-prod.yaml` profile proves
+  that production values install with operator/pool replicas, no alpha sidecar
+  or tools deployments, monitoring CRDs present, and live SQL through the pool.
+- The Argo application now uses `values-prod.yaml` so GitOps deployment matches
+  the production profile, and the deploy workflow plus `gate-close` now invoke
+  the live kind production smoke instead of leaving D13 as VM-only evidence.
+- The observability dashboard and alert templates now query
+  `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
+- O2 and R4 production-ready wording now matches the implemented SQL runtime:
+  O2 is local-node activity stats with a compatibility alias, and R4 is
+  idle-transaction detection only, not cancellation or termination.
 
 ## Verification Standard
 
@@ -83,6 +109,9 @@ Rule 10 completion for this branch requires local and VM verification of:
   through Kubernetes port-forwarding.
 - Live PostgreSQL traffic through the pool service data port, plus `/readyz`
   and `/metrics` verification on the pool admin port and per-pod pool metrics.
+- Live `values-prod.yaml` Helm rollout that keeps alpha workloads disabled
+  while the production operator and pool deployments become available and serve
+  SQL/admin traffic.
 - Every production-promoted SQL runtime smoke must be part of the GitHub image
   workflow, `gate-close`, and static production gap audit guards.
 

@@ -30,4 +30,8 @@ real PostgreSQL query through `serve`, while CI requires Docker for that live
 traffic gate.
 `ci/ai-blaise/kind-production-smoke.sh` builds the real Rust image matrix,
 loads it into kind, installs the Helm chart with a real PostgreSQL upstream,
-and verifies SQL plus admin metrics through the pool service.
+and verifies SQL plus admin metrics through the pool service. It now installs
+both the exhaustive image-matrix chart profile and the production
+`values-prod.yaml` profile, where alpha sidecars and tools remain disabled.
+The Argo application uses `values-prod.yaml` so GitOps deploys the same
+production profile that the smoke verifies.

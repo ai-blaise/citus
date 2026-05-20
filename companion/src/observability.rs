@@ -9,17 +9,17 @@ use std::fmt;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OperationsGuardrailPlan {
     pub query_percentiles: QueryPercentileViewPlan,
-    pub distributed_stats: DistributedStatPlan,
+    pub local_activity_stats: LocalActivityStatPlan,
     pub replication_lag: ReplicationLagPlan,
-    pub idle_transaction_reaper: IdleTransactionReaperPlan,
+    pub idle_transaction_detector: IdleTransactionDetectorPlan,
 }
 
 impl OperationsGuardrailPlan {
     pub fn validate(&self) -> Result<(), ObservabilityError> {
         self.query_percentiles.validate()?;
-        self.distributed_stats.validate()?;
+        self.local_activity_stats.validate()?;
         self.replication_lag.validate()?;
-        self.idle_transaction_reaper.validate()
+        self.idle_transaction_detector.validate()
     }
 }
 
@@ -51,15 +51,14 @@ pub enum LatencyPercentile {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct DistributedStatPlan {
+pub struct LocalActivityStatPlan {
     pub view_name: String,
-    pub include_workers: bool,
     pub sample_interval_seconds: u32,
 }
 
-impl DistributedStatPlan {
+impl LocalActivityStatPlan {
     pub fn validate(&self) -> Result<(), ObservabilityError> {
-        validate_required("distributed_stats.view_name", &self.view_name)?;
+        validate_required("local_activity_stats.view_name", &self.view_name)?;
         if self.sample_interval_seconds == 0 {
             return Err(ObservabilityError::InvalidSampleInterval);
         }
@@ -86,25 +85,17 @@ impl ReplicationLagPlan {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct IdleTransactionReaperPlan {
+pub struct IdleTransactionDetectorPlan {
     pub max_idle_seconds: u32,
-    pub action: IdleTransactionAction,
 }
 
-impl IdleTransactionReaperPlan {
+impl IdleTransactionDetectorPlan {
     pub fn validate(&self) -> Result<(), ObservabilityError> {
         if self.max_idle_seconds == 0 {
             return Err(ObservabilityError::InvalidIdleLimit);
         }
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum IdleTransactionAction {
-    Log,
-    Cancel,
-    Terminate,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -166,9 +157,8 @@ mod tests {
                 source_view: "pg_stat_statements".to_string(),
                 percentiles: vec![LatencyPercentile::P95, LatencyPercentile::P99],
             },
-            distributed_stats: DistributedStatPlan {
-                view_name: "companion.pg_stat_distributed".to_string(),
-                include_workers: true,
+            local_activity_stats: LocalActivityStatPlan {
+                view_name: "companion.pg_stat_local_activity".to_string(),
                 sample_interval_seconds: 15,
             },
             replication_lag: ReplicationLagPlan {
@@ -176,9 +166,8 @@ mod tests {
                 regions: vec!["us-east-1".to_string(), "us-west-2".to_string()],
                 max_lag_ms: 5_000,
             },
-            idle_transaction_reaper: IdleTransactionReaperPlan {
+            idle_transaction_detector: IdleTransactionDetectorPlan {
                 max_idle_seconds: 60,
-                action: IdleTransactionAction::Cancel,
             },
         };
 
@@ -202,10 +191,9 @@ mod tests {
     }
 
     #[test]
-    fn idle_reaper_requires_positive_limit() {
-        let plan = IdleTransactionReaperPlan {
+    fn idle_detector_requires_positive_limit() {
+        let plan = IdleTransactionDetectorPlan {
             max_idle_seconds: 0,
-            action: IdleTransactionAction::Log,
         };
 
         assert_eq!(plan.validate(), Err(ObservabilityError::InvalidIdleLimit));

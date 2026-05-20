@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
 
 jobs:
   analytical:

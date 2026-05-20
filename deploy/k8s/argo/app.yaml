@@ -8,6 +8,9 @@ spec:
     repoURL: https://github.com/ai-blaise/citus
     targetRevision: ai-blaise/bootstrap-v2
     path: deploy/k8s/helm/citus-overlay
+    helm:
+      valueFiles:
+        - values-prod.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-blaise-citus

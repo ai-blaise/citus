@@ -28,8 +28,16 @@ OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
+DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
+ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
+DASHBOARD_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml"
+PROMRULE_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml"
 PROD_READINESS = ROOT / "ci/ai-blaise/production-readiness-check.sh"
 IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
+DEPLOY_WORKFLOW = ROOT / ".github/workflows/ci-deploy.yml"
+POOL_WORKFLOW = ROOT / ".github/workflows/ci-pool.yml"
+OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
+SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 
 SOURCE_ROOTS = [
@@ -192,7 +200,15 @@ observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
 deploy_check = read(DEPLOY_CHECK)
 prod_values = read(PROD_VALUES)
+default_values = read(DEFAULT_VALUES)
+argo_app = read(ARGO_APP)
+dashboard_template = read(DASHBOARD_TEMPLATE)
+promrule_template = read(PROMRULE_TEMPLATE)
 image_workflow = read(IMAGE_WORKFLOW)
+deploy_workflow = read(DEPLOY_WORKFLOW)
+pool_workflow = read(POOL_WORKFLOW)
+operator_workflow = read(OPERATOR_WORKFLOW)
+sidecar_workflow = read(SIDECAR_WORKFLOW)
 makefile = read(MAKEFILE)
 sources = source_text()
 
@@ -306,6 +322,13 @@ for phrase in (
 ):
     if phrase not in docs_compact:
         fail(f"NEW_FEATURES.md must preserve guardrail phrase: {phrase}")
+for pattern in (
+    "idle transaction reaper",
+    "o2: distributed stats view",
+    "coordinator and worker behavior to debug distributed plans",
+):
+    if pattern in docs_compact:
+        fail(f"NEW_FEATURES.md contains stale production-ready overclaim: {pattern}")
 
 for phrase in (
     "release prerequisites, not a waiver for alpha features",
@@ -403,6 +426,7 @@ for phrase in (
     "CREATE EXTENSION pg_stat_statements;",
     "ai_blaise_pg_stat_statements_seed",
     "companion_pg_stat_statements_p95",
+    "companion_pg_stat_local_activity",
     "docker exec -d",
     "companion_idle_transactions('100 milliseconds'::interval)",
 ):
@@ -413,6 +437,7 @@ for phrase in (
     'docker exec -i "${container}" psql',
     "shared_preload_libraries=pg_stat_statements",
     "ai_blaise_pg_stat_statements_seed",
+    "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
 ):
     if phrase not in image_check:
@@ -447,6 +472,7 @@ for phrase in (
     "wal_level=replica",
     "pg_basebackup",
     "pg_is_in_recovery()",
+    "companion_pg_stat_local_activity",
     "companion_pg_stat_distributed",
     "companion_pg_dist_replication_lag",
     "state = 'streaming'",
@@ -463,6 +489,13 @@ for phrase in (
     "kind create cluster",
     "scripts/citus-scale/build-app-images.sh",
     "helm upgrade --install",
+    "apply_monitoring_crds",
+    "-f deploy/k8s/helm/citus-overlay/values-prod.yaml",
+    "assert_no_alpha_workload_deployments",
+    "exhaustive image-matrix smoke passed",
+    'helm uninstall "${release}"',
+    "ClusterRole cleanup",
+    "values-prod.yaml production profile smoke passed",
     "port-forward",
     "/healthz",
     "/readyz",
@@ -473,6 +506,37 @@ for phrase in (
 ):
     if phrase not in kind_smoke:
         fail(f"kind-production-smoke.sh is missing live deployment proof marker: {phrase}")
+
+if "values-prod.yaml" not in argo_app or "valueFiles:" not in argo_app:
+    fail("Argo application must install the production values profile")
+
+if "kind-production-smoke:" not in deploy_workflow:
+    fail("deploy workflow must include the live Kubernetes production smoke job")
+if "bash ci/ai-blaise/kind-production-smoke.sh" not in deploy_workflow:
+    fail("deploy workflow must run ci/ai-blaise/kind-production-smoke.sh")
+if "Install Helm for rendered chart checks" not in deploy_workflow:
+    fail("deploy workflow must install Helm before rendered deploy checks")
+
+gate_close_dependencies = makefile.split("gate-close:", 1)[-1].splitlines()[0]
+if "kind-production-smoke" not in gate_close_dependencies:
+    fail("gate-close must include the live Kubernetes production smoke")
+
+for path, text in (
+    (POOL_WORKFLOW, pool_workflow),
+    (OPERATOR_WORKFLOW, operator_workflow),
+    (SIDECAR_WORKFLOW, sidecar_workflow),
+):
+    if "ai-blaise/bootstrap-v2" not in text:
+        fail(f"{path} must run on ai-blaise/bootstrap-v2 pushes")
+
+for path, text in (
+    (DASHBOARD_TEMPLATE, dashboard_template),
+    (PROMRULE_TEMPLATE, promrule_template),
+):
+    if "ai_blaise_sidecar_ready" not in text:
+        fail(f"{path} must query the sidecar metric emitted by runtime.rs")
+    if "ai_blaise_citus_sidecar_ready" in text:
+        fail(f"{path} contains stale sidecar metric name ai_blaise_citus_sidecar_ready")
 
 for phrase in (
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",
@@ -492,6 +556,8 @@ for target in (
 
 if "values-prod.yaml must not enable alpha sidecars by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha sidecars enabled in production values")
+if "values-prod.yaml must not enable alpha runtime/security intent controls by default" not in deploy_check:
+    fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in production values")
 inside_sidecars = False
 current_sidecar = ""
 enabled_sidecars = []
@@ -513,6 +579,50 @@ if enabled_sidecars:
         "values-prod.yaml must not enable alpha sidecars by default: "
         + ", ".join(enabled_sidecars)
     )
+
+alpha_intent_findings = []
+if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
+    alpha_intent_findings.append("T7 pool.protocolPipeline.enabled")
+if re.search(
+    r"networkPolicy:\n(?:    .*\n)*    cidrAllowlist:\n(?:      - .+\n)+",
+    prod_values,
+):
+    alpha_intent_findings.append("Sec13 pool.networkPolicy.cidrAllowlist")
+if re.search(r"ioMethod:\s+io_uring\b", prod_values):
+    alpha_intent_findings.append("T6 postgres.ioMethod")
+if re.search(r"externalSecrets:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
+    alpha_intent_findings.append("Sec7 security.externalSecrets.enabled")
+if re.search(r"tls:\n(?:    .*\n)*    (clients|postgres|sidecars):\s+true\b", prod_values):
+    alpha_intent_findings.append("Sec8 security.tls")
+if re.search(
+    r"releaseAttestation:\n(?:    .*\n)*    (sbom|cosign):\s+true\b",
+    prod_values,
+):
+    alpha_intent_findings.append("Sec9 security.releaseAttestation")
+if alpha_intent_findings:
+    fail(
+        "values-prod.yaml must not enable alpha runtime/security intent controls by default: "
+        + ", ".join(alpha_intent_findings)
+    )
+
+for phrase in (
+    "protocolPipeline:",
+    "ioMethod: io_uring",
+    "externalSecrets:",
+    "tls:",
+    "releaseAttestation:",
+    "cidrAllowlist:",
+):
+    if phrase not in default_values:
+        fail(f"values.yaml must preserve alpha security intent field: {phrase}")
+
+for phrase in (
+    "runtime and security controls are alpha intent",
+    "not active production enforcement",
+    "production values keep those alpha controls disabled",
+):
+    if phrase not in runbook_compact:
+        fail(f"production runbook must preserve runtime/security alpha guardrail: {phrase}")
 
 for path in (
     DOCS,

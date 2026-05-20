@@ -326,8 +326,12 @@ BEGIN
     RAISE EXCEPTION 'public apply_distribute_hypertable state was not recorded';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM companion_pg_stat_local_activity) THEN
+    RAISE EXCEPTION 'companion_pg_stat_local_activity must report the local postgres node';
+  END IF;
+
   IF NOT EXISTS (SELECT 1 FROM companion_pg_stat_distributed) THEN
-    RAISE EXCEPTION 'companion_pg_stat_distributed must report the local postgres node';
+    RAISE EXCEPTION 'compatibility companion_pg_stat_distributed view must report the local postgres node';
   END IF;
 
   IF NOT EXISTS (
