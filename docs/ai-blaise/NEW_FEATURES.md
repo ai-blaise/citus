@@ -3530,7 +3530,7 @@ queries.
 ### D13: Production Runtime Image Matrix
 
 **Overlay**: `images/rust-runtime`, `scripts/citus-scale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3550,6 +3550,12 @@ images.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
+
+Production evidence: PR #3 and merge commit `537711d89` passed the VM
+kind production smoke using the real Rust image matrix, live operator and
+sidecar `/healthz`, `/readyz`, and `/metrics` probes, real PostgreSQL traffic
+through the pool service, and per-pod pool request metric aggregation. GitHub
+Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
 
 **References**:
 
@@ -3819,7 +3825,7 @@ view contract.
 ### O4: Sidecar Health And Metrics Contract
 
 **Overlay**: `sidecar/shared`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3833,6 +3839,12 @@ they can safely participate in Kubernetes rollout, drain, and chaos gates.
 
 **Citus comparison**: Vanilla Citus does not ship out-of-process Rust sidecars
 or a sidecar health contract.
+
+Production evidence: PR #3 and merge commit `537711d89` passed the VM
+kind production smoke that port-forwarded into the live operator and every
+deployed sidecar and verified `/healthz`, `/readyz`, and `/metrics` from the
+actual pods. Production values still keep alpha feature sidecars disabled by
+default; this status applies only to the shared probe/metrics runtime.
 
 **References**:
 
