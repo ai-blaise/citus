@@ -397,6 +397,7 @@ avoid scanning irrelevant worker-local hypertable chunks.
 
 ```sql
 SET companion.enable_time_range_shard_pruner = on;
+SELECT time_range_shard_pruner('public.metrics', 'ts');
 ```
 
 **Citus comparison**: Vanilla Citus prunes by distribution metadata, but it does
@@ -406,6 +407,8 @@ not consult TimescaleDB dimension slices.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
+- SQL fallback: `time_range_shard_pruner()` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - In-source: `FEATURE: TS5` in `companion/src/citus_timescale.rs`
   and `e2e/src/timescale_on_citus.rs`
 

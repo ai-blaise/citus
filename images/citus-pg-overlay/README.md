@@ -15,6 +15,6 @@ dependencies.
 - `extensions/ai_blaise_citus.control` and
   `extensions/ai_blaise_citus--0.1.0.sql` install the companion SQL fallback
   surface so `CREATE EXTENSION ai_blaise_citus` exposes feature-status and
-  pgrx-compatible Timescale-on-Citus plan helpers before the compiled pgrx
-  library is present.
+  pgrx-compatible Timescale-on-Citus plan helpers, including the TS5
+  time-range shard-pruner helper, before the compiled pgrx library is present.
 - `ci/ai-blaise/image-check.sh` validates the image contract in CI.

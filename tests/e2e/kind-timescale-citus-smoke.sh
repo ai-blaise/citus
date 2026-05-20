@@ -124,6 +124,7 @@ BEGIN
       RAISE EXCEPTION 'companion_feature_status must report TS1';
     END IF;
     PERFORM distribute_hypertable('timescale_smoke_metrics', 'metric_time', '1 day', 4);
+    PERFORM time_range_shard_pruner('timescale_smoke_metrics', 'metric_time');
   END IF;
 END $$;
 SQL

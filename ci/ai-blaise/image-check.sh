@@ -109,6 +109,7 @@ grep -Fq "CREATE FUNCTION companion_feature_status()" "${image_dir}/extensions/a
 grep -Fq "CREATE FUNCTION companion_distribute_hypertable_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION add_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION time_range_shard_pruner" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 
 if grep -RIn "'planned'\\|planned" "${image_dir}/extensions"; then
   echo "companion SQL extension must not expose planned feature statuses" >&2

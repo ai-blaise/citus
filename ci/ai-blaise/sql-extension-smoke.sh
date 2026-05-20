@@ -80,10 +80,18 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM companion_feature_status() WHERE feature_id = 'TS1') THEN
     RAISE EXCEPTION 'companion_feature_status must include TS1';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM companion_feature_status() WHERE feature_id = 'TS5') THEN
+    RAISE EXCEPTION 'companion_feature_status must include TS5';
+  END IF;
 
   plan_sql := distribute_hypertable('timescale_smoke_metrics', 'metric_time', '1 day', 4);
   IF plan_sql NOT LIKE '%create_hypertable%' THEN
     RAISE EXCEPTION 'distribute_hypertable did not render create_hypertable plan: %', plan_sql;
+  END IF;
+
+  plan_sql := time_range_shard_pruner('timescale_smoke_metrics', 'metric_time');
+  IF plan_sql NOT LIKE '%enable_time_range_shard_pruner%' THEN
+    RAISE EXCEPTION 'time_range_shard_pruner did not render pruner plan: %', plan_sql;
   END IF;
 END $$;
 SQL

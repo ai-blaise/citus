@@ -292,3 +292,34 @@ AS $$
         schedule::interval
     )
 $$;
+
+CREATE FUNCTION companion_time_range_shard_pruner_plan(
+    distributed_table regclass,
+    time_column name
+)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    RETURN format(
+$plan$SELECT companion_internal.enable_time_range_shard_pruner(%1$L::regclass, %2$L);$plan$,
+        distributed_table::text,
+        time_column::text
+    );
+END;
+$$;
+
+CREATE FUNCTION time_range_shard_pruner(
+    distributed_table text,
+    time_column text
+)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT companion_time_range_shard_pruner_plan(
+        distributed_table::regclass,
+        time_column::name
+    )
+$$;

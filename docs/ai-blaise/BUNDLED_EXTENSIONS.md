@@ -16,7 +16,8 @@ as the deterministic extension creation order.
 
 The overlay also installs `ai_blaise_citus`, a local SQL fallback companion
 extension. It exposes `companion_feature_status()` plus pgrx-compatible
-Timescale-on-Citus plan helpers in the operand image even before the compiled
+Timescale-on-Citus plan helpers, including distributed hypertable and
+time-range shard-pruner plans, in the operand image even before the compiled
 pgrx companion library is loaded, so smoke tests and operators have a stable
 extension name to target.
 
