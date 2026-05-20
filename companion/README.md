@@ -3,8 +3,9 @@
 Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
-Initial critical modules: `citus_timescale`, `lsp_metadata`, `observability`,
-`auth`, `router_assist`, `schema_jobs`, `tenants`, and
+Initial critical modules: `citus_timescale`, `geo_distributed`,
+`graph_bridge`, `jsonschema_bridge`, `lsp_metadata`, `observability`, `auth`,
+`router_assist`, `schema_jobs`, `search_bridge`, `tenants`, and
 `toolkit_distributed`.
 
 ## Current Surface
@@ -15,6 +16,13 @@ Initial critical modules: `citus_timescale`, `lsp_metadata`, `observability`,
   `FEATURE: TS12`
 - `TimeRangeShardPrunerPlan` for `FEATURE: TS5`
 - `LspMetadataViewPlan` for `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8`
+- `SearchIndexDistributedPlan`, `HybridRankPlan`, and `RerankerPlan` for
+  `FEATURE: Search2`, `FEATURE: Search3`, and `FEATURE: Search9`
+- `GraphDistributionPlan` for `FEATURE: G2`, `FEATURE: G3`, and
+  `FEATURE: API4`
+- `JsonSchemaDistributedPlan` for `FEATURE: JS2` and `FEATURE: M13`
+- `GeoDistributionPlan` and `GeoPruningPlan` for `FEATURE: Geo2` and
+  `FEATURE: Geo3`
 - policy plan shapes for distributed compression, retention, reorder, and
   continuous aggregate refresh
 - `OperationsGuardrailPlan` for `FEATURE: O1`, `FEATURE: O2`, `FEATURE: O3`,

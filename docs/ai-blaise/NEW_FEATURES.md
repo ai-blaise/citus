@@ -1855,7 +1855,7 @@ inside one-off placement annotations.
 
 ### Search2: Distributed BM25 Index
 
-**Overlay**: `operator/src/crds/search_index.rs`
+**Overlay**: `operator/src/crds/search_index.rs`, `companion/src/search_bridge.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1874,6 +1874,28 @@ index CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search2` in `operator/src/crds/search_index.rs`
+- In-source: `FEATURE: Search2` in `companion/src/search_bridge.rs`
+
+### Search3: Hybrid BM25 + Vector Ranking
+
+**Overlay**: `companion/src/search_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`, `pgvector`
+
+**Summary**: Defines the companion SQL-plan contract that combines BM25 and
+vector scores into one hybrid rank over distributed tables.
+
+**Motivation**: Hybrid search needs one coordinator-visible ranking contract
+while BM25 and vector indexes remain worker-local.
+
+**Citus comparison**: Vanilla Citus does not ship a hybrid search ranker.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Search3` in `companion/src/search_bridge.rs`
 
 ### Search7: Search Index CRD
 
@@ -1919,6 +1941,27 @@ mirrors.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Search8` in `sidecar/coldtier/src/lib.rs`
+
+### Search9: Search Reranker UDF Plan
+
+**Overlay**: `companion/src/search_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines provider/model/limit planning for reranking top hybrid
+search results.
+
+**Motivation**: Reranking should be explicit and auditable before LLM-provider
+calls are wired into the search path.
+
+**Citus comparison**: Vanilla Citus does not provide a search reranker UDF.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Search9` in `companion/src/search_bridge.rs`
 
 ## HTAP
 
@@ -2185,7 +2228,7 @@ so requests route through Citus-aware helper views.
 
 ### API3: GraphQL Sidecar
 
-**Overlay**: `sidecar/graphql`
+**Overlay**: `sidecar/graphql`, `companion/src/graph_bridge.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -2225,6 +2268,7 @@ for distributed tables.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API4` in `sidecar/graphql/src/lib.rs`
+- In-source: `FEATURE: API4` in `companion/src/graph_bridge.rs`
 
 ### API5: RLS-Aware Auto API
 
@@ -2954,6 +2998,144 @@ not ship a federation CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+
+## Graph
+
+### G2: Distributed Graph Bridge
+
+**Overlay**: `companion/src/graph_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `age`
+
+**Summary**: Defines Apache AGE graph distribution plans over colocated Citus
+vertex and edge tables.
+
+**Motivation**: Graph queries need shard-local subgraphs before Cypher traffic
+can safely run over distributed datasets.
+
+**Citus comparison**: Vanilla Citus does not provide an Apache AGE
+distributed-graph bridge.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: G2` in `companion/src/graph_bridge.rs`
+
+### G3: Graph Colocation Policy
+
+**Overlay**: `companion/src/graph_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `age`
+
+**Summary**: Captures the required vertex/edge colocation policy for
+distributed graph tables.
+
+**Motivation**: Traversals are only efficient when vertices and edges share
+placement by tenant or graph key.
+
+**Citus comparison**: Vanilla Citus has colocation groups, but no graph-aware
+policy layer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: G3` in `companion/src/graph_bridge.rs`
+
+## JSON Schema
+
+### JS2: Distributed JSON Schema Validation
+
+**Overlay**: `companion/src/jsonschema_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_jsonschema`
+
+**Summary**: Defines schema registration and shard-trigger fanout for JSON
+Schema validation on distributed tables.
+
+**Motivation**: JSON validation must run on every shard, not only where a
+coordinator migration happened to install a trigger.
+
+**Citus comparison**: Vanilla Citus does not manage distributed
+pg_jsonschema trigger fanout.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: JS2` in `companion/src/jsonschema_bridge.rs`
+
+### M13: JSON Schema Validation On Insert
+
+**Overlay**: `companion/src/jsonschema_bridge.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_jsonschema`
+
+**Summary**: Defines insert/update trigger timing for JSON Schema validation
+on distributed tables.
+
+**Motivation**: Migration and schema contracts need fail-fast JSON validation
+before malformed tenant data is accepted.
+
+**Citus comparison**: Vanilla Citus does not ship JSON Schema validation
+helpers.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M13` in `companion/src/jsonschema_bridge.rs`
+
+## Geo
+
+### Geo2: Geo-Aware Citus Distribution
+
+**Overlay**: `companion/src/geo_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgis`
+
+**Summary**: Defines geohash-derived distribution planning for PostGIS-backed
+tables.
+
+**Motivation**: Location-heavy workloads need spatially meaningful shard keys
+so nearby data can be routed and rebalanced coherently.
+
+**Citus comparison**: Vanilla Citus can distribute geometry tables but does
+not create geo-aware distribution keys.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Geo2` in `companion/src/geo_distributed.rs`
+
+### Geo3: Geo Shard Pruning Planner Input
+
+**Overlay**: `companion/src/geo_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgis`
+
+**Summary**: Defines bbox/grid planner input used to prune shards for spatial
+queries.
+
+**Motivation**: Spatial queries should avoid scanning shards whose geohash
+grid cells cannot intersect the requested bounding box.
+
+**Citus comparison**: Vanilla Citus does not expose geo-shard pruning
+metadata.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Geo3` in `companion/src/geo_distributed.rs`
 
 ## Observability
 

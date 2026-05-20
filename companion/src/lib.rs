@@ -2,10 +2,14 @@
 
 pub mod auth;
 pub mod citus_timescale;
+pub mod geo_distributed;
+pub mod graph_bridge;
+pub mod jsonschema_bridge;
 pub mod lsp_metadata;
 pub mod observability;
 pub mod router_assist;
 pub mod schema_jobs;
+pub mod search_bridge;
 pub mod tenants;
 pub mod toolkit_distributed;
 pub mod vector;
@@ -15,6 +19,13 @@ pub use citus_timescale::{
     distribute_hypertable_plan, AddContinuousAggregateDistributedPlan, AddPolicyDistributed,
     AddPolicyDistributedPlan, CompanionError, CompanionSqlPlan, DistributedHypertablePlan,
     TimeRangeShardPrunerPlan, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
+};
+pub use geo_distributed::{
+    GeoDistributionPlan, GeoGrid, GeoPruningPlan, GeoSqlPlan, GeoValidationError,
+};
+pub use graph_bridge::{GraphBridgeError, GraphDistributionPlan, GraphSqlPlan};
+pub use jsonschema_bridge::{
+    JsonSchemaDistributedPlan, JsonSchemaError, JsonSchemaSqlPlan, ValidationTiming,
 };
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
@@ -28,6 +39,10 @@ pub use router_assist::{
     ShardRoutingStrategy,
 };
 pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
+pub use search_bridge::{
+    HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
+    SearchIndexDistributedPlan, SearchSqlPlan,
+};
 pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
 pub use toolkit_distributed::{
     ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,
@@ -74,6 +89,14 @@ mod pg18 {
             ("TS17", "distributed state toolkit aggregates", "sql-plan"),
             ("T8", "toolkit two-step aggregate pushdown", "sql-plan"),
             ("L9", "worker partial aggregate pushdown", "sql-plan"),
+            ("Search3", "hybrid BM25 and vector ranking", "sql-plan"),
+            ("Search9", "reranker UDF plan", "sql-plan"),
+            ("G2", "distributed graph bridge", "sql-plan"),
+            ("G3", "graph colocation policy", "sql-plan"),
+            ("JS2", "distributed JSON Schema validation", "sql-plan"),
+            ("M13", "JSON Schema validation triggers", "sql-plan"),
+            ("Geo2", "geo-aware distribution", "sql-plan"),
+            ("Geo3", "geo shard pruning", "sql-plan"),
             ("A1", "pgai-compatible vectorizer DSL", "planned"),
             ("O1", "query percentile views", "planned"),
             ("O2", "distributed stats view", "planned"),
