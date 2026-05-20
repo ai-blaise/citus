@@ -1214,7 +1214,7 @@ scale-to-zero semantics.
 ### R4: Idle-In-Transaction Reaper
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -1229,11 +1229,18 @@ workers; stale idle transactions need a predictable mitigation contract.
 **Citus comparison**: Vanilla Citus does not ship an idle-transaction reaper
 helper.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` opens a real
+PostgreSQL session, leaves it idle inside a transaction, and requires the
+installable `companion_idle_transactions('100 milliseconds'::interval)` SQL
+surface to detect that live backend from `pg_stat_activity`. VM verification
+for this promotion reran the smoke against a real `postgres:17` container.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R4` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### R5: Hot/Warm/Cold Tier Policy Job
 
@@ -3755,7 +3762,7 @@ metadata.
 ### O1: Query Percentile Views
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_stat_statements`
@@ -3770,11 +3777,19 @@ building one-off SQL at each installation.
 **Citus comparison**: Vanilla Citus exposes distributed execution stats but
 does not ship this percentile view contract.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` starts a real
+PostgreSQL 17 container with `shared_preload_libraries=pg_stat_statements`,
+creates both `pg_stat_statements` and `ai_blaise_citus`, seeds a tracked SQL
+statement, and requires the installable `companion_pg_stat_statements_p95`
+view to report nonnegative percentile latency for that live statement. VM
+verification for this promotion reran that smoke against `postgres:17`.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O1` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### O2: Distributed Stats View
 

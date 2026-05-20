@@ -21,6 +21,9 @@ more production-ready than the artifacts justified.
    executable internal routines.
 6. The pool `serve` mode exposed HTTP probes on the PostgreSQL service port,
    so live traffic tests proved readiness only, not PostgreSQL wire behavior.
+7. The SQL extension smoke invoked `docker exec psql` without attaching stdin,
+   so its heredoc could be skipped by Docker and the smoke could pass without
+   installing or exercising `ai_blaise_citus`.
 
 ## Corrections
 
@@ -49,6 +52,10 @@ more production-ready than the artifacts justified.
 - CI checks now assert the real image matrix, `serve` support, Helm probe
   contracts, live sidecar probe coverage, pool data/admin port separation,
   pool live-SQL smoke coverage, and SQL bridge-state smoke coverage.
+- The SQL extension smoke now attaches stdin to `psql`, preloads and creates
+  `pg_stat_statements`, verifies live percentile rows through
+  `companion_pg_stat_statements_p95`, opens a real idle-in-transaction
+  backend, and requires `companion_idle_transactions(...)` to detect it.
 
 ## Verification Standard
 
@@ -56,6 +63,8 @@ Rule 10 completion for this branch requires local and VM verification of:
 
 - Rust formatting and compile/test gates for all changed packages.
 - SQL extension smoke against a real Postgres container.
+- SQL smoke commands must be fed into the Postgres container with stdin
+  attached; static image checks reject the old false-positive pattern.
 - Helm render and Kubernetes rollout with the real app images.
 - Live operator and sidecar `/healthz`, `/readyz`, and `/metrics` responses
   through Kubernetes port-forwarding.
@@ -70,10 +79,12 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 161
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Two narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Four narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence: `D13`
-for the production runtime image matrix and `O4` for the shared sidecar
-health/readiness/metrics runtime. The other 159 feature headings remain
+for the production runtime image matrix, `O4` for the shared sidecar
+health/readiness/metrics runtime, `O1` for the installable
+`pg_stat_statements` percentile view, and `R4` for the installable idle
+transaction detection SQL surface. The other 157 feature headings remain
 `Status: alpha`. The remaining 79 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
