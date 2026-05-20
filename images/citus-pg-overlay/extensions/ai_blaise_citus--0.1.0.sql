@@ -42,10 +42,10 @@ AS $$
         ('M1', 'pgroll-style expand-contract migrations', 'sql-plan'),
         ('M11', 'online column-type migration', 'sql-plan'),
         ('WH2', 'companion webhook helpers', 'sql-plan'),
-        ('O1', 'query percentile views', 'runtime-contract'),
-        ('O2', 'distributed stats view', 'runtime-contract'),
-        ('O3', 'replication lag view', 'runtime-contract'),
-        ('R4', 'idle transaction reaper', 'runtime-contract'),
+        ('O1', 'query percentile views', 'sql-runtime'),
+        ('O2', 'distributed stats view', 'sql-runtime'),
+        ('O3', 'replication lag view', 'sql-runtime'),
+        ('R4', 'idle transaction reaper', 'sql-runtime'),
         ('Auth2', 'tenant-aware claims', 'runtime-contract'),
         ('Sec1', 'RLS helpers', 'runtime-contract'),
         ('Sec2', 'JWT verification UDF', 'runtime-contract'),
@@ -88,6 +88,132 @@ AS $$
     )
     FROM unnest(string_to_array(COALESCE(input, ''), ',')) AS part
 $$;
+
+CREATE FUNCTION companion_query_percentiles()
+RETURNS TABLE(
+    query text,
+    calls bigint,
+    mean_ms numeric,
+    p95_ms numeric,
+    p99_ms numeric,
+    p999_ms numeric
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF to_regclass('pg_stat_statements') IS NULL THEN
+        RETURN;
+    END IF;
+
+    RETURN QUERY EXECUTE
+        $sql$
+            SELECT
+                query::text,
+                calls::bigint,
+                round(mean_exec_time::numeric, 3) AS mean_ms,
+                round(GREATEST(mean_exec_time, mean_exec_time + (1.645 * stddev_exec_time))::numeric, 3) AS p95_ms,
+                round(GREATEST(mean_exec_time, mean_exec_time + (2.326 * stddev_exec_time))::numeric, 3) AS p99_ms,
+                round(GREATEST(mean_exec_time, mean_exec_time + (3.090 * stddev_exec_time))::numeric, 3) AS p999_ms
+            FROM pg_stat_statements
+            WHERE calls > 0
+            ORDER BY total_exec_time DESC
+            LIMIT 100
+        $sql$;
+END;
+$$;
+
+CREATE VIEW companion_pg_stat_statements_p95 AS
+SELECT * FROM companion_query_percentiles();
+
+CREATE FUNCTION companion_pg_stat_distributed()
+RETURNS TABLE(
+    database_name name,
+    node_addr inet,
+    active_sessions bigint,
+    idle_in_transaction_sessions bigint,
+    waiting_sessions bigint
+)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT
+        activity.datname,
+        inet_server_addr(),
+        count(*) FILTER (WHERE activity.state = 'active')::bigint,
+        count(*) FILTER (WHERE activity.state = 'idle in transaction')::bigint,
+        count(*) FILTER (WHERE activity.wait_event IS NOT NULL)::bigint
+    FROM pg_stat_activity AS activity
+    WHERE activity.datname IS NOT NULL
+    GROUP BY activity.datname, inet_server_addr()
+$$;
+
+CREATE VIEW companion_pg_stat_distributed AS
+SELECT * FROM companion_pg_stat_distributed();
+
+CREATE FUNCTION companion_pg_dist_replication_lag()
+RETURNS TABLE(
+    application_name text,
+    client_addr inet,
+    state text,
+    write_lag interval,
+    flush_lag interval,
+    replay_lag interval,
+    lag_bytes numeric
+)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT
+        replication.application_name::text,
+        replication.client_addr,
+        replication.state::text,
+        replication.write_lag,
+        replication.flush_lag,
+        replication.replay_lag,
+        pg_wal_lsn_diff(pg_current_wal_lsn(), replication.replay_lsn)::numeric
+    FROM pg_stat_replication AS replication
+$$;
+
+CREATE VIEW companion_pg_dist_replication_lag AS
+SELECT * FROM companion_pg_dist_replication_lag();
+
+CREATE FUNCTION companion_idle_transactions(max_idle interval DEFAULT '60 seconds'::interval)
+RETURNS TABLE(
+    pid integer,
+    usename name,
+    application_name text,
+    client_addr inet,
+    idle_for interval,
+    state text
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF max_idle <= '0 seconds'::interval THEN
+        RAISE EXCEPTION 'max_idle must be greater than zero';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        activity.pid,
+        activity.usename,
+        activity.application_name::text,
+        activity.client_addr,
+        now() - activity.xact_start,
+        activity.state::text
+    FROM pg_stat_activity AS activity
+    WHERE activity.state = 'idle in transaction'
+      AND activity.xact_start IS NOT NULL
+      AND now() - activity.xact_start >= max_idle;
+END;
+$$;
+
+CREATE VIEW companion_idle_transactions_over_60s AS
+SELECT * FROM companion_idle_transactions('60 seconds'::interval);
 
 CREATE FUNCTION companion_distribute_hypertable_plan(
     table_name regclass,

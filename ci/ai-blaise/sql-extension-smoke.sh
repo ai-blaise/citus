@@ -83,6 +83,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM companion_feature_status() WHERE feature_id = 'TS5') THEN
     RAISE EXCEPTION 'companion_feature_status must include TS5';
   END IF;
+  IF (
+    SELECT count(*)
+    FROM companion_feature_status()
+    WHERE feature_id IN ('O1', 'O2', 'O3', 'R4')
+      AND status = 'sql-runtime'
+  ) <> 4 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark observability features as sql-runtime';
+  END IF;
 
   plan_sql := distribute_hypertable('timescale_smoke_metrics', 'metric_time', '1 day', 4);
   IF plan_sql NOT LIKE '%create_hypertable%' THEN
@@ -93,6 +101,14 @@ BEGIN
   IF plan_sql NOT LIKE '%enable_time_range_shard_pruner%' THEN
     RAISE EXCEPTION 'time_range_shard_pruner did not render pruner plan: %', plan_sql;
   END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM companion_pg_stat_distributed) THEN
+    RAISE EXCEPTION 'companion_pg_stat_distributed must report the local postgres node';
+  END IF;
+
+  PERFORM * FROM companion_pg_stat_statements_p95 LIMIT 1;
+  PERFORM * FROM companion_pg_dist_replication_lag LIMIT 1;
+  PERFORM * FROM companion_idle_transactions('1 second'::interval) LIMIT 1;
 END $$;
 SQL
 

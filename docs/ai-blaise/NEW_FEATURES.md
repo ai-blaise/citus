@@ -1070,8 +1070,9 @@ scale-to-zero semantics.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines a guardrail plan for logging, canceling, or terminating
-sessions that sit idle in transaction beyond a configured limit.
+**Summary**: Defines a guardrail plan and installable
+`companion_idle_transactions(...)` SQL surface for sessions that sit idle in
+transaction beyond a configured limit.
 
 **Motivation**: Distributed transactions can hold locks and snapshots across
 workers; stale idle transactions need a predictable mitigation contract.
@@ -1083,6 +1084,7 @@ helper.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R4` in `companion/src/observability.rs`
+- SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### R5: Hot/Warm/Cold Tier Policy Job
 
@@ -3497,8 +3499,9 @@ metadata.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_stat_statements`
 
-**Summary**: Defines the plan for companion percentile views over
-`pg_stat_statements` latency data.
+**Summary**: Adds the companion percentile contract and installable
+`companion_pg_stat_statements_p95` SQL view over `pg_stat_statements` latency
+data when the extension is present.
 
 **Motivation**: Production operators need p95/p99/p99.9 query latency without
 building one-off SQL at each installation.
@@ -3510,6 +3513,7 @@ does not ship this percentile view contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O1` in `companion/src/observability.rs`
+- SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### O2: Distributed Stats View
 
@@ -3519,8 +3523,8 @@ does not ship this percentile view contract.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the cross-worker distributed stats view contract used by
-the future companion observability SQL.
+**Summary**: Adds the distributed stats contract and installable
+`companion_pg_stat_distributed` SQL view for local node activity rollups.
 
 **Motivation**: Operators need one view of coordinator and worker behavior to
 debug distributed plans.
@@ -3532,6 +3536,7 @@ single companion-owned rollup contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O2` in `companion/src/observability.rs`
+- SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### O3: Distributed Replication Lag View
 
@@ -3541,8 +3546,8 @@ single companion-owned rollup contract.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the replication-lag view plan with region coverage and
-lag budget.
+**Summary**: Adds the replication-lag contract and installable
+`companion_pg_dist_replication_lag` SQL view over `pg_stat_replication`.
 
 **Motivation**: Multi-region and follower-read features need one companion
 surface for lag budgets before HA gates can assert readiness.
@@ -3554,6 +3559,7 @@ view contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O3` in `companion/src/observability.rs`
+- SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### O4: Sidecar Health And Metrics Contract
 
