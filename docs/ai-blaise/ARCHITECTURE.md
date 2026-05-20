@@ -28,6 +28,8 @@ The first end-to-end acceptance path is:
 5. Prove a Timescale hypertable partition under a Citus distributed parent works
    in an end-to-end cluster test.
 
-The companion crate starts with pure Rust planning and validation types. The
-`pg18` cargo feature is reserved for PostgreSQL 18 `pgrx` packaging once the
-database test harness is wired.
+The companion crate starts with pure Rust planning and validation types, then
+exposes them through two database surfaces: a `pg18`-gated pgrx module and an
+`ai_blaise_citus` SQL fallback extension packaged in the operand image. The SQL
+fallback is smoke-tested with Docker in CI so `CREATE EXTENSION ai_blaise_citus`
+is verified before the compiled pgrx library becomes the only runtime surface.
