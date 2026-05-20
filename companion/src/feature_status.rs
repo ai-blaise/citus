@@ -190,7 +190,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "O2",
-        feature_name: "distributed stats view",
+        feature_name: "local activity stats view",
         status: "runtime-contract",
     },
     FeatureStatus {
@@ -200,7 +200,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "R4",
-        feature_name: "idle transaction reaper",
+        feature_name: "idle transaction detector",
         status: "runtime-contract",
     },
     FeatureStatus {

@@ -77,13 +77,24 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
+    FROM companion_pg_stat_local_activity
+    WHERE database_name = current_database()
+      AND active_sessions >= 1
+      AND idle_in_transaction_sessions >= 0
+      AND waiting_sessions >= 0
+  ) THEN
+    RAISE EXCEPTION 'companion_pg_stat_local_activity did not report local activity';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
     FROM companion_pg_stat_distributed
     WHERE database_name = current_database()
       AND active_sessions >= 1
       AND idle_in_transaction_sessions >= 0
       AND waiting_sessions >= 0
   ) THEN
-    RAISE EXCEPTION 'companion_pg_stat_distributed did not report local activity';
+    RAISE EXCEPTION 'compatibility companion_pg_stat_distributed did not report local activity';
   END IF;
 END $$;
 SQL

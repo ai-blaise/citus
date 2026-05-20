@@ -67,8 +67,8 @@ pub use lsp_metadata::{
 };
 pub use migration::{MigrationError, MigrationOperation, MigrationPlan, MigrationSqlPlan};
 pub use observability::{
-    DistributedStatPlan, IdleTransactionAction, IdleTransactionReaperPlan, LatencyPercentile,
-    ObservabilityError, OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
+    IdleTransactionDetectorPlan, LatencyPercentile, LocalActivityStatPlan, ObservabilityError,
+    OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
 };
 pub use ops_contracts::{
     canonical_operations_readiness_contract, canonical_operations_readiness_report,

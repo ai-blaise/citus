@@ -13,5 +13,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Helm for rendered chart checks
+        run: |
+          set -euo pipefail
+          curl -fsSL https://get.helm.sh/helm-v3.15.4-linux-amd64.tar.gz -o /tmp/helm.tgz
+          tar -C /tmp -xzf /tmp/helm.tgz
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
       - name: Check deploy chart contract
         run: bash ci/ai-blaise/deploy-check.sh
+
+  kind-production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Kubernetes smoke tools
+        run: |
+          set -euo pipefail
+          curl -fsSL https://get.helm.sh/helm-v3.15.4-linux-amd64.tar.gz -o /tmp/helm.tgz
+          tar -C /tmp -xzf /tmp/helm.tgz
+          sudo install /tmp/linux-amd64/helm /usr/local/bin/helm
+          curl -fsSL -o /tmp/kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
+          chmod +x /tmp/kind
+          sudo install /tmp/kind /usr/local/bin/kind
+          curl -fsSL -o /tmp/kubectl https://dl.k8s.io/release/v1.30.3/bin/linux/amd64/kubectl
+          chmod +x /tmp/kubectl
+          sudo install /tmp/kubectl /usr/local/bin/kubectl
+      - name: Run live Kubernetes production smoke
+        env:
+          DOCKER_BUILDKIT: "1"
+          KIND_CLUSTER: ai-blaise-citus-prod-smoke-ci
+          TAG: ci-${{ github.sha }}
+        run: bash ci/ai-blaise/kind-production-smoke.sh

@@ -2,9 +2,21 @@
 set -euo pipefail
 
 chart_dir="deploy/k8s/helm/citus-overlay"
+argo_app="deploy/k8s/argo/app.yaml"
 kind_smoke="ci/ai-blaise/kind-production-smoke.sh"
+deploy_workflow=".github/workflows/ci-deploy.yml"
+pool_workflow=".github/workflows/ci-pool.yml"
+operator_workflow=".github/workflows/ci-operator.yml"
+sidecar_workflow=".github/workflows/ci-sidecar.yml"
+makefile="Makefile.ai-blaise"
 required_files=(
+  "${argo_app}"
   "${kind_smoke}"
+  "${deploy_workflow}"
+  "${pool_workflow}"
+  "${operator_workflow}"
+  "${sidecar_workflow}"
+  "${makefile}"
   "${chart_dir}/Chart.yaml"
   "${chart_dir}/values.yaml"
   "${chart_dir}/values-dev.yaml"
@@ -55,6 +67,12 @@ grep -q 'FEATURE: O6' "${chart_dir}/templates/observability-dashboards.yaml"
 grep -q 'FEATURE: O10' "${chart_dir}/templates/observability-prometheusrules.yaml"
 grep -q 'kind: ConfigMap' "${chart_dir}/templates/observability-dashboards.yaml"
 grep -q 'kind: PrometheusRule' "${chart_dir}/templates/observability-prometheusrules.yaml"
+grep -q 'ai_blaise_sidecar_ready' "${chart_dir}/templates/observability-dashboards.yaml"
+grep -q 'ai_blaise_sidecar_ready' "${chart_dir}/templates/observability-prometheusrules.yaml"
+if grep -R "ai_blaise_citus_sidecar_ready" "${chart_dir}/templates"; then
+  echo "observability templates must query emitted ai_blaise_sidecar_ready metric" >&2
+  exit 1
+fi
 grep -q 'args:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/operator-deployment.yaml"
@@ -92,6 +110,14 @@ grep -q 'FEATURE: D13' "${kind_smoke}"
 grep -q 'kind create cluster' "${kind_smoke}"
 grep -q 'scripts/citus-scale/build-app-images.sh' "${kind_smoke}"
 grep -q 'helm upgrade --install' "${kind_smoke}"
+grep -q 'apply_monitoring_crds' "${kind_smoke}"
+grep -q 'PROD_VALUES_NAMESPACE' "${kind_smoke}"
+grep -q -- '-f deploy/k8s/helm/citus-overlay/values-prod.yaml' "${kind_smoke}"
+grep -q 'assert_no_alpha_workload_deployments' "${kind_smoke}"
+grep -q 'exhaustive image-matrix smoke passed' "${kind_smoke}"
+grep -q 'helm uninstall "${release}"' "${kind_smoke}"
+grep -q 'ClusterRole cleanup' "${kind_smoke}"
+grep -q 'values-prod.yaml production profile smoke passed' "${kind_smoke}"
 grep -q 'probe_deployment_http' "${kind_smoke}"
 grep -q 'expected_probe_component' "${kind_smoke}"
 grep -q 'probe_pool_admin_pods' "${kind_smoke}"
@@ -105,6 +131,17 @@ grep -q 'psql -h ai-blaise-citus-pool' "${kind_smoke}"
 grep -q 'FEATURE: D9' docs/ai-blaise/RUNBOOKS/upgrade.md
 grep -q 'FEATURE: D10' docs/ai-blaise/RUNBOOKS/production.md
 grep -q 'FEATURE: MR9' docs/ai-blaise/RUNBOOKS/disaster-recovery.md
+grep -q 'helm:' "${argo_app}"
+grep -q 'valueFiles:' "${argo_app}"
+grep -q 'values-prod.yaml' "${argo_app}"
+grep -q 'Install Helm for rendered chart checks' "${deploy_workflow}"
+grep -q 'kind-production-smoke:' "${deploy_workflow}"
+grep -q 'Run live Kubernetes production smoke' "${deploy_workflow}"
+grep -q 'bash ci/ai-blaise/kind-production-smoke.sh' "${deploy_workflow}"
+grep -Eq '^gate-close: .*kind-production-smoke' "${makefile}"
+for workflow in "${pool_workflow}" "${operator_workflow}" "${sidecar_workflow}"; do
+  grep -q 'ai-blaise/bootstrap-v2' "${workflow}"
+done
 
 required_sidecars=(
   analytical auth backup cdc coldtier edge-functions graphql hlc mcp
@@ -192,4 +229,40 @@ crd_count="$(grep -c '^kind: CustomResourceDefinition$' "${chart_dir}/crds/ai-bl
 if [[ "${crd_count}" -ne 17 ]]; then
   echo "expected 17 CRDs, found ${crd_count}" >&2
   exit 1
+fi
+
+if command -v helm >/dev/null 2>&1; then
+  render_dir="$(mktemp -d)"
+  cleanup_render() {
+    rm -rf "${render_dir}"
+  }
+  trap cleanup_render EXIT
+
+  helm template default-check "${chart_dir}" >"${render_dir}/default.yaml"
+  helm template dev-check "${chart_dir}" \
+    -f "${chart_dir}/values-dev.yaml" >"${render_dir}/dev.yaml"
+  helm template prod-check "${chart_dir}" \
+    -f "${chart_dir}/values-prod.yaml" >"${render_dir}/prod.yaml"
+
+  grep -q 'kind: Deployment' "${render_dir}/default.yaml"
+  grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/default.yaml"
+  grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
+  grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"
+  grep -q 'app.kubernetes.io/component: tools' "${render_dir}/dev.yaml"
+
+  grep -q 'name: ai-blaise-citus-operator' "${render_dir}/prod.yaml"
+  grep -q 'name: ai-blaise-citus-pool' "${render_dir}/prod.yaml"
+  grep -q 'kind: ServiceMonitor' "${render_dir}/prod.yaml"
+  grep -q 'kind: PrometheusRule' "${render_dir}/prod.yaml"
+  grep -q 'ai_blaise_sidecar_ready' "${render_dir}/prod.yaml"
+  if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/prod.yaml"; then
+    echo "values-prod.yaml render must not include alpha sidecar deployments" >&2
+    exit 1
+  fi
+  if grep -q 'app.kubernetes.io/component: tools' "${render_dir}/prod.yaml"; then
+    echo "values-prod.yaml render must not include alpha tools deployment" >&2
+    exit 1
+  fi
+else
+  echo "helm unavailable; skipping rendered chart profile checks"
 fi

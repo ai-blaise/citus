@@ -64,12 +64,14 @@ Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
 For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
-it builds the app images, installs the Helm chart, creates a real PostgreSQL
-upstream, verifies live SQL through the pool Kubernetes service, and
-port-forwards into the live operator plus every sidecar deployment to assert
-`/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
-port-forwards each pool pod after the SQL smoke and aggregates pool request
-metrics across replicas.
+it builds the app images, installs the exhaustive chart profile, creates a
+real PostgreSQL upstream, verifies live SQL through the pool Kubernetes
+service, and port-forwards into the live operator plus every sidecar deployment
+to assert `/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
+installs the `values-prod.yaml` profile and verifies that production values run
+the operator and pool with alpha sidecars/tools disabled while pool SQL/admin
+traffic still works. The deploy workflow and `gate-close` run this smoke at
+larger integration boundaries.
 
 ## Hardening Controls
 

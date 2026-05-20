@@ -59,7 +59,7 @@ data:
           "type": "stat",
           "targets": [
             {
-              "expr": "min(ai_blaise_citus_sidecar_ready) by (component)"
+              "expr": "min(ai_blaise_sidecar_ready) by (component)"
             }
           ]
         },
