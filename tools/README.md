@@ -16,3 +16,6 @@ hints, Timescale hypertable bridge diagnostics, and quick-fix planning.
 
 `citus-watch` now has the initial Rust dashboard contract for the unified live
 view over companion metadata, Prometheus metrics, and pool-side signals.
+
+`citus-schema-designer` now has the initial Rust visualization contract for
+distribution, hypertable, search-index, webhook, and live shard-map overlays.

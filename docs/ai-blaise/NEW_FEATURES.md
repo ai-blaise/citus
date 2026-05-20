@@ -1566,6 +1566,28 @@ two-step plan/apply semantics.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
 
+### M9: Schema Visualization Output
+
+**Overlay**: `tools/citus-schema-designer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines schema visualization data for distribution, hypertable,
+search-index, webhook, and live shard-placement overlays.
+
+**Motivation**: Distributed schema design needs visual output that shows shard
+and extension-specific state rather than only ordinary table relationships.
+
+**Citus comparison**: Vanilla Citus does not ship a visual schema designer or
+live shard-map overlay model.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M9` in `tools/citus-schema-designer/src/lib.rs`
+
 ### M11: Online Column-Type Migration
 
 **Overlay**: `companion/src/migration.rs`
@@ -3179,6 +3201,28 @@ rather than discovering them during deploy-time reconciliation.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D4` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
+
+### D6: citus-schema-designer Visual
+
+**Overlay**: `tools/citus-schema-designer`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the initial contract for the DrawDB-based visual schema
+designer's Citus overlays.
+
+**Motivation**: Schema designers need a stable model for distribution,
+hypertable, search, webhook, and shard-placement layers before the UI reads
+live CRD or companion state.
+
+**Citus comparison**: Vanilla Citus does not include a visual schema designer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D6` in `tools/citus-schema-designer/src/lib.rs`
 
 ### D12: citus-watch Dashboard
 
