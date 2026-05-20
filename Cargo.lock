@@ -78,6 +78,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_hlc"
+version = "0.1.0"
+
+[[package]]
 name = "ai_blaise_citus_sidecar_realtime"
 version = "0.1.0"
 dependencies = [

@@ -34,6 +34,8 @@ anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
 database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
+`sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
+follower-read contracts for `FEATURE: S9`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
@@ -674,6 +676,28 @@ expose these helper contracts as companion APIs.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+
+### S9: Closed-Timestamp Follower Reads
+
+**Overlay**: `sidecar/hlc`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines hybrid logical clock timestamps, closed timestamp plans,
+and follower-read safety checks.
+
+**Motivation**: Bounded-staleness reads need a shared clock and closed
+timestamp contract before replicas can serve `AS OF` queries.
+
+**Citus comparison**: Vanilla Citus does not provide closed-timestamp follower
+reads.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: S9` in `sidecar/hlc/src/lib.rs`
 
 ### S10: Schema-Based Tenancy
 
