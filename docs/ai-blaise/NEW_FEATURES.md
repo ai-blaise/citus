@@ -45,6 +45,8 @@ safety, and gh-ost shadow-table contracts for `FEATURE: C10` and
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
+`sidecar/txn_status/src/lib.rs` validates parallel-commit transaction status,
+intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
 
 ## Operand Image
 
@@ -145,6 +147,29 @@ ship this pool routing layer.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
+
+### T5: Parallel Commit Transaction Status
+
+**Overlay**: `sidecar/txn_status`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines Raft-backed transaction status records with staging
+state, shard write intents, replication evidence, and finalize decisions.
+
+**Motivation**: Multi-shard commits need a parallel-commit path that can
+commit once every intent has durable replication evidence, while falling back
+to classic 2PC when the sidecar path is unavailable or not staged.
+
+**Citus comparison**: Vanilla Citus uses distributed 2PC but does not ship a
+parallel-commit transaction-status sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
 
 ### T9: Mirroring For Canary Traffic
 

@@ -108,6 +108,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_txn_status"
+version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_hlc",
+]
+
+[[package]]
 name = "ai_blaise_citus_sidecar_vectorizer"
 version = "0.1.0"
 dependencies = [

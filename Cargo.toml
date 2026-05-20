@@ -14,6 +14,7 @@ members = [
     "sidecar/schema_job",
     "sidecar/shared",
     "sidecar/storage",
+    "sidecar/txn_status",
     "sidecar/vectorizer",
     "tools/citus-mcp",
     "tools/citusctl",
