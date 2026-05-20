@@ -26,6 +26,9 @@ optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
 `FEATURE: L8`, and `FEATURE: WH3`.
+`sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
+database callback, and triggered invocation contracts for `FEATURE: EF1`,
+`FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
@@ -1709,6 +1712,48 @@ sidecar can account for subscribers consistently.
 
 ## Edge Functions
 
+### EF1: Deno Runtime Sidecar
+
+**Overlay**: `sidecar/edge_functions`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `deno`
+
+**Summary**: Defines Deno runtime launch plans for HTTP, scheduled, and
+CDC-triggered edge functions.
+
+**Motivation**: Edge functions need a typed runtime contract before the
+sidecar starts executing user code.
+
+**Citus comparison**: Vanilla Citus does not ship a Deno edge-function
+runtime.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
+
+### EF2: Bun Runtime Alternative
+
+**Overlay**: `sidecar/edge_functions`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `bun`
+
+**Summary**: Adds Bun runtime launch planning for edge-function bundles.
+
+**Motivation**: Some workloads prefer Bun startup and package compatibility;
+the sidecar needs runtime selection without changing the CRD shape.
+
+**Citus comparison**: Vanilla Citus does not ship a Bun edge-function runtime.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: EF2` in `sidecar/edge_functions/src/lib.rs`
+
 ### EF3: Function CRD
 
 **Overlay**: `operator/src/crds/function.rs`
@@ -1729,6 +1774,50 @@ sidecar runtimes can share the same desired state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+
+### EF4: Database Callback Over UDS
+
+**Overlay**: `sidecar/edge_functions`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines Unix-domain-socket callback plans so edge functions can
+call back into Postgres with a bounded statement timeout.
+
+**Motivation**: Function runtimes need a local, explicit Postgres callback
+contract rather than ad hoc TCP credentials in user code.
+
+**Citus comparison**: Vanilla Citus does not expose an edge-function DB
+callback path.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: EF4` in `sidecar/edge_functions/src/lib.rs`
+
+### EF5: Triggered Edge Functions
+
+**Overlay**: `sidecar/edge_functions`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines scheduled and CDC-event invocation contracts for edge
+functions.
+
+**Motivation**: Cron and event-driven functions need the same validation path
+as HTTP functions before queue integration is wired in.
+
+**Citus comparison**: Vanilla Citus does not invoke external edge functions
+from schedules or CDC events.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: EF5` in `sidecar/edge_functions/src/lib.rs`
 
 ## Security / Auth
 
