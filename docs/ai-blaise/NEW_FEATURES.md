@@ -42,6 +42,10 @@ surface.
 `sidecar/coldtier/src/lib.rs` validates cold-tier layer files, tier movement,
 and search-aware index contracts for `FEATURE: R1`, `FEATURE: R5`,
 `FEATURE: R9`, and `FEATURE: Search8`.
+`sidecar/coldtier/src/lib.rs` also runs a deterministic pageserver-lite
+runtime for those features, covering layer object placement, bytes
+materialized to object storage, cross-tier planner route refreshes, cold-tier
+read accounting, and Tantivy/LanceDB search index publication.
 `sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
 database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
@@ -1059,7 +1063,8 @@ tenant-level online migration plan.
 **Bundled extension dep**: `pg_lake`, `pg_parquet`
 
 **Summary**: Defines table-granular image and delta layer files for cold shard
-storage on object stores, plus a runnable canonical move-plan emitter.
+storage on object stores, plus runnable canonical move-plan and runtime
+emitters.
 
 **Motivation**: Cold shard data needs a predictable object layout before
 operators can evict low-temperature shards from the hot tier.
@@ -1072,6 +1077,7 @@ tier.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R1` in `sidecar/coldtier/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
 
 ### R2: Scale-To-Zero Compute
 
@@ -1128,7 +1134,8 @@ helper.
 **Bundled extension dep**: none
 
 **Summary**: Defines temperature-score thresholds and generated shard move
-plans between hot, warm, and cold tiers.
+plans between hot, warm, and cold tiers, then accounts for canonical runtime
+move execution.
 
 **Motivation**: Tiering policy needs deterministic move plans before an
 operator or sidecar starts relocating shard data.
@@ -1140,6 +1147,7 @@ movement.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R5` in `sidecar/coldtier/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
 
 ### R7: REPACK CONCURRENTLY Adoption
 
@@ -1176,7 +1184,8 @@ does not provide a scheduled repack CRD.
 **Bundled extension dep**: none
 
 **Summary**: Exposes cold-tier object URIs and shard table identity for
-planner paths that span hot, warm, and cold storage.
+planner paths that span hot, warm, and cold storage, with runtime planner-route
+refresh accounting.
 
 **Motivation**: Cross-tier planning needs machine-readable cold-shard location
 and format metadata before the companion planner can combine tiers.
@@ -1188,6 +1197,7 @@ cold shard layers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R9` in `sidecar/coldtier/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
 
 ### R10: TLS Session Ticket Reuse In Pool
 
@@ -2099,7 +2109,8 @@ objects.
 **Bundled extension dep**: none
 
 **Summary**: Adds search-index enablement to the analytical mirror contract so
-cold-tier data can preserve search semantics.
+cold-tier data can preserve search semantics, and materializes cold-tier
+Tantivy/LanceDB search artifacts in the runtime report.
 
 **Motivation**: Cold-tier movement should not discard full-text or hybrid
 search availability.
@@ -2112,6 +2123,7 @@ mirrors.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Search8` in `sidecar/coldtier/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
 
 ### Search9: Search Reranker UDF Plan
 
