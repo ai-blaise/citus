@@ -18,12 +18,41 @@ spec:
         app.kubernetes.io/component: operator
     spec:
       serviceAccountName: {{ include "citus-overlay.name" . }}-operator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: operator
           image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.operator.image.repository "tag" .Values.operator.image.tag) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - serve
+          env:
+            - name: AI_BLAISE_COMPONENT
+              value: operator
+            - name: AI_BLAISE_LISTEN_ADDR
+              value: "0.0.0.0:8080"
           ports:
             - name: metrics
               containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           resources:
             {{- toYaml .Values.operator.resources | nindent 12 }}

@@ -43,6 +43,11 @@ integration-target, and hard-blocked extension contracts for
 `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`; the
 companion catalog also emits a deterministic TSV summary through
 `companion/src/bin/companion_contracts.rs`.
+`images/rust-runtime/Dockerfile` and
+`scripts/citus-scale/build-app-images.sh` build the deployable Rust operator,
+pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
+shared TCP health/readiness/metrics server with `serve` so production
+Kubernetes pods do not depend on placeholder responder images.
 `companion/src/advanced_planner.rs` executes a deterministic summary for the
 broad V2 planner, tiering, regional, backup, federation, storage, and
 research-guard feature contracts through
@@ -356,7 +361,9 @@ pipelining contract.
 
 **Summary**: Provides the SQL surface that distributes a PostgreSQL
 declarative-partitioned parent table through Citus while using TimescaleDB
-hypertables for worker-local partitions.
+hypertables for worker-local partitions. The `apply_distribute_hypertable`
+SQL function executes the TimescaleDB and Citus calls when both extensions are
+loaded, then records bridge state for operator/readiness inspection.
 
 **Motivation**: Vanilla Citus does not understand TimescaleDB hypertables.
 The bridge uses TimescaleDB's partitioned-hypertable seam without forking
@@ -382,6 +389,8 @@ partitions, but it has no distributed-hypertable orchestration.
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - In-source: `FEATURE: TS1` in `companion/src/citus_timescale.rs`
   and `e2e/src/timescale_on_citus.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### TS2: Distributed Compression Policy
 
@@ -391,8 +400,9 @@ partitions, but it has no distributed-hypertable orchestration.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
-worker-fanned distributed compression policy creation.
+**Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
+recording, and a `pg18`-gated pgrx surface for worker-fanned distributed
+compression policy creation.
 
 **Motivation**: Distributed hypertables need compression policies that are
 declared once and applied consistently across worker-local hypertables.
@@ -404,6 +414,8 @@ policy setup.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS2` in `companion/src/citus_timescale.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### TS3: Distributed Continuous Aggregate Partials
 
@@ -413,8 +425,9 @@ policy setup.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
-distributed continuous aggregate definitions and refresh-policy arguments.
+**Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
+recording, and a `pg18`-gated pgrx surface for distributed continuous
+aggregate definitions and refresh-policy arguments.
 
 **Motivation**: Continuous aggregates must be coordinated through the same
 bridge as distributed hypertables so worker partials and coordinator finals are
@@ -427,6 +440,8 @@ aggregates across shards.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS3` in `companion/src/citus_timescale.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### TS4: Distributed Retention Policy
 
@@ -436,8 +451,9 @@ aggregates across shards.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
-cluster-wide retention policy setup.
+**Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
+recording, and a `pg18`-gated pgrx surface for cluster-wide retention policy
+setup.
 
 **Motivation**: Retention should drop old chunks across all worker-local
 hypertables without requiring operator-authored per-worker SQL.
@@ -449,6 +465,8 @@ policy fanout.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS4` in `companion/src/citus_timescale.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### TS5: Time-Range Shard Pruner
 
@@ -459,7 +477,9 @@ policy fanout.
 **Bundled extension dep**: `timescaledb`
 
 **Summary**: Adds planner support that combines Citus shard metadata with
-TimescaleDB time dimensions to prune shards for time-bound predicates.
+TimescaleDB time dimensions to prune shards for time-bound predicates. The SQL
+extension now records enabled pruner state through an executable
+`apply_time_range_shard_pruner` surface.
 
 **Motivation**: Distributed hypertables need shard pruning by tenant and time to
 avoid scanning irrelevant worker-local hypertable chunks.
@@ -482,6 +502,8 @@ not consult TimescaleDB dimension slices.
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - In-source: `FEATURE: TS5` in `companion/src/citus_timescale.rs`
   and `e2e/src/timescale_on_citus.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 
 ### TS6: Trusted Hook Coextensions
 
@@ -609,8 +631,9 @@ Timescale-aware cohabitation doctor rules.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Adds SQL-plan rendering and a `pg18`-gated pgrx surface for
-worker-fanned TimescaleDB reorder policy setup.
+**Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
+recording, and a `pg18`-gated pgrx surface for worker-fanned TimescaleDB
+reorder policy setup.
 
 **Motivation**: Reorder policies need to target worker-local hypertables while
 remaining declarative at the coordinator/operator layer.
@@ -622,6 +645,33 @@ policies across shards.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS12` in `companion/src/citus_timescale.rs`
+- SQL runtime: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+
+### TS18: Executable Timescale Bridge State
+
+**Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`, `citus`
+
+**Summary**: Adds executable SQL apply functions and durable bridge-state
+records for the distributed hypertable, compression, retention, continuous
+aggregate, reorder, and time-range-pruner surfaces.
+
+**Motivation**: The bridge must be testable as server-executable SQL instead
+of only returning SQL text that references missing internal routines.
+
+**Citus comparison**: Vanilla Citus does not expose a TimescaleDB bridge state
+catalog or apply functions for Timescale policy fanout.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- SQL extension: `FEATURE: TS18` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS13: Distributed time_bucket_gapfill
 
@@ -3456,6 +3506,32 @@ queries.
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### D13: Production Runtime Image Matrix
+
+**Overlay**: `images/rust-runtime`, `scripts/citus-scale`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Builds real Rust application images for the operator, pool,
+sidecars, and `citusctl`, with the deployed services defaulting to the
+long-running `serve` command.
+
+**Motivation**: Production Kubernetes verification must exercise the actual
+unpublished app containers rather than synthetic responder images.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
+pool, sidecar, or tool image matrix.
+
+**References**:
+
+- Build script: `FEATURE: D13` in
+  `scripts/citus-scale/build-app-images.sh`
+- Runtime Dockerfile: `FEATURE: D13` in
+  `images/rust-runtime/Dockerfile`
+- CI: `ci/ai-blaise/image-check.sh`
+
 ### WF2: WAL Replay Debugger Command
 
 **Overlay**: `tools/citusctl`
@@ -3720,7 +3796,8 @@ view contract.
 **Bundled extension dep**: none
 
 **Summary**: Defines shared sidecar health, readiness, drain state, HTTP probe
-handling, Unix-socket probe serving, and Prometheus metrics emission.
+handling, Unix-socket probe serving, TCP probe serving for Kubernetes, and
+Prometheus metrics emission.
 
 **Motivation**: All ai-blaise sidecars need the same readiness semantics before
 they can safely participate in Kubernetes rollout, drain, and chaos gates.

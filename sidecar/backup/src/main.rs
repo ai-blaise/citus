@@ -6,6 +6,7 @@
 use ai_blaise_citus_sidecar_backup::{
     canonical_backup_report, canonical_backup_runtime_report, WalCompression,
 };
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::process;
 
@@ -13,6 +14,10 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+    if args == ["serve"] {
+        run_server("backup", "0.0.0.0:8080");
         return;
     }
 
@@ -85,8 +90,15 @@ fn run_runtime_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: backup [run-canonical|run-runtime-canonical]");
+    println!("usage: backup [serve|run-canonical|run-runtime-canonical]");
     println!("runs deterministic canonical backup sidecar plan/runtime reports and emits TSV");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 fn compression_name(compression: &WalCompression) -> &'static str {

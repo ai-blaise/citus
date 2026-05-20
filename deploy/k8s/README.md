@@ -14,6 +14,11 @@ dashboard ConfigMaps and optional `PrometheusRule` alerts. These resources are
 plain Kubernetes/monitoring objects and assume the platform already provides
 the matching controllers.
 
+Rust workloads run the real image matrix built by
+`scripts/citus-scale/build-app-images.sh`. The operator, pool, and sidecars
+start with `serve` and expose shared `/healthz`, `/readyz`, and `/metrics`
+endpoints for Kubernetes rollout and live-traffic smoke tests.
+
 `values.yaml`, `values-dev.yaml`, and `values-prod.yaml` deliberately list the
 same sidecar names so environment overlays cannot silently drop a daemon from
 the install path. `ci/ai-blaise/deploy-check.sh` enforces that list.

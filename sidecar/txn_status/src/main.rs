@@ -1,5 +1,6 @@
 // FEATURE: T5
 
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use ai_blaise_citus_sidecar_txn_status::{
     canonical_txn_status_report, TxnFinalizeDecision, TxnStatus,
 };
@@ -10,6 +11,11 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+
+    if args == ["serve"] {
+        run_server("txn-status", "0.0.0.0:8080");
         return;
     }
 
@@ -49,8 +55,15 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: txn-status [run-canonical]");
+    println!("usage: txn-status [serve|run-canonical]");
     println!("runs the deterministic canonical transaction-status sidecar plan and emits TSV");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 fn status_name(status: &TxnStatus) -> &'static str {

@@ -1,4 +1,5 @@
 use ai_blaise_citus_pool::canonical_pool_execution_report;
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::process;
 
@@ -6,6 +7,10 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+    if args == ["serve"] {
+        run_server("pool", "0.0.0.0:5432");
         return;
     }
 
@@ -49,6 +54,13 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: ai_blaise_citus_pool [run-canonical]");
+    println!("usage: ai_blaise_citus_pool [serve|run-canonical]");
     println!("runs the deterministic canonical pool execution report and emits TSV");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }

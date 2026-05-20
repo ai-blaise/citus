@@ -3,6 +3,7 @@
 // FEATURE: Sto4
 // FEATURE: Sto5
 
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use ai_blaise_citus_sidecar_storage::{
     canonical_storage_report, canonical_storage_runtime_report, AntivirusVerdict, BucketAcl,
     ObjectStoreProvider, PresignedMethod,
@@ -14,6 +15,11 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+
+    if args == ["serve"] {
+        run_server("storage", "0.0.0.0:8080");
         return;
     }
 
@@ -87,8 +93,15 @@ fn run_runtime_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: storage [run-canonical|run-runtime-canonical]");
+    println!("usage: storage [serve|run-canonical|run-runtime-canonical]");
     println!("runs deterministic canonical storage sidecar plan/runtime reports and emits TSV");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 fn provider_name(provider: &ObjectStoreProvider) -> &'static str {

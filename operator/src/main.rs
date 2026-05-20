@@ -43,6 +43,7 @@ use ai_blaise_citus_operator::{
     VectorDestinationSpec, VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec,
     WebhookEvent, WebhookRetryPolicy, WebhookSpec,
 };
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::error::Error;
 use std::process;
@@ -54,6 +55,10 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+    if args == ["serve"] {
+        run_server("operator", "0.0.0.0:8080");
         return;
     }
 
@@ -96,7 +101,14 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [run-canonical]");
+    println!("usage: operator [serve|run-canonical]");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

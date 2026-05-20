@@ -22,6 +22,22 @@ Production deployments must run through the continuous gates before release.
 14. Feature docs.
 15. License.
 
+## Runtime Image Gate
+
+`FEATURE: D13`
+
+Before promotion, build the real Rust runtime image matrix:
+
+```bash
+IMAGE_REGISTRY=ghcr.io/ai-blaise TAG="${RELEASE_TAG}" \
+  scripts/citus-scale/build-app-images.sh
+```
+
+Production traffic tests must use these images, not substitute responder
+containers. The Kubernetes chart starts the operator, pool, and sidecars with
+`serve` and probes `/healthz` and `/readyz`; smoke tests should also fetch
+`/metrics` through the service or a port-forward.
+
 ## Hardening Controls
 
 - `FEATURE: Sec7`: API keys and cloud credentials are referenced by external

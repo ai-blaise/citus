@@ -18,11 +18,21 @@ spec:
         app.kubernetes.io/name: {{ include "citus-overlay.name" . }}
         app.kubernetes.io/component: tools
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: citusctl
           image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.tools.image.repository "tag" .Values.tools.image.tag) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-          command: ["sleep", "infinity"]
+          command: ["/bin/sleep", "infinity"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           resources:
             {{- toYaml .Values.tools.resources | nindent 12 }}
 {{- end }}

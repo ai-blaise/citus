@@ -17,12 +17,41 @@ spec:
         app.kubernetes.io/name: {{ include "citus-overlay.name" . }}
         app.kubernetes.io/component: pool
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: pool
           image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.pool.image.repository "tag" .Values.pool.image.tag) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - serve
+          env:
+            - name: AI_BLAISE_COMPONENT
+              value: pool
+            - name: AI_BLAISE_LISTEN_ADDR
+              value: "0.0.0.0:{{ .Values.pool.service.port }}"
           ports:
             - name: postgres
               containerPort: {{ .Values.pool.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: postgres
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: postgres
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           resources:
             {{- toYaml .Values.pool.resources | nindent 12 }}
