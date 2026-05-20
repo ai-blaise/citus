@@ -32,6 +32,9 @@ database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
+`sidecar/schema_job/src/lib.rs` validates online-DDL worker leases, backfill,
+safety, and gh-ost shadow-table contracts for `FEATURE: C10` and
+`FEATURE: M2`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
@@ -977,7 +980,7 @@ that can coordinate validation, retries, and conflict handling.
 
 ### C10: Online DDL State Machine
 
-**Overlay**: `companion/src/schema_jobs.rs`
+**Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -996,6 +999,7 @@ state machine.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
+- In-source: `FEATURE: C10` in `sidecar/schema_job/src/lib.rs`
 
 ### C1: CDC Sidecar
 
@@ -1113,7 +1117,7 @@ Pub/Sub.
 
 ### M2: gh-ost-Style Online DDL
 
-**Overlay**: `companion/src/schema_jobs.rs`
+**Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1132,6 +1136,7 @@ gh-ost-style online DDL state machinery.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M2` in `companion/src/schema_jobs.rs`
+- In-source: `FEATURE: M2` in `sidecar/schema_job/src/lib.rs`
 
 ### M3: Migration CRD
 

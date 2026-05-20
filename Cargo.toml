@@ -9,6 +9,7 @@ members = [
     "sidecar/cdc",
     "sidecar/edge_functions",
     "sidecar/realtime",
+    "sidecar/schema_job",
     "sidecar/shared",
     "sidecar/storage",
     "sidecar/vectorizer",
