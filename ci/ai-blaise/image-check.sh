@@ -9,6 +9,7 @@ init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
 runtime_dockerfile="images/rust-runtime/Dockerfile"
 build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
+pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -18,7 +19,8 @@ for file in \
   "${init_sql}" \
   "${image_dir}/README.md" \
   "${runtime_dockerfile}" \
-  "${build_app_images}"; do
+  "${build_app_images}" \
+  "${pool_proxy_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -151,7 +153,6 @@ done
 
 required_serve_mains=(
   operator/src/main.rs
-  pool/src/main.rs
   sidecar/analytical/src/main.rs
   sidecar/auth/src/main.rs
   sidecar/backup/src/main.rs
@@ -175,6 +176,13 @@ for main_file in "${required_serve_mains[@]}"; do
   grep -Fq 'args == ["serve"]' "${main_file}"
   grep -Fq 'run_probe_server' "${main_file}"
 done
+
+grep -Fq 'args == ["serve"]' pool/src/main.rs
+grep -Fq 'run_pool_service_from_env' pool/src/main.rs
+grep -Fq 'AI_BLAISE_POOL_UPSTREAM_ADDR' pool/src/proxy.rs
+grep -Fq 'handle_proxy_connection' pool/src/proxy.rs
+grep -Fq 'ai_blaise_citus_pool_upstream_ready' pool/src/proxy.rs
+grep -Fq 'psql -h 127.0.0.1 -p "${pool_port}"' "${pool_proxy_smoke}"
 
 for file in \
   "${image_dir}/extensions/ai_blaise_citus.control" \

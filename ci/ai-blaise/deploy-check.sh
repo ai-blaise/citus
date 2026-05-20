@@ -2,7 +2,9 @@
 set -euo pipefail
 
 chart_dir="deploy/k8s/helm/citus-overlay"
+kind_smoke="ci/ai-blaise/kind-production-smoke.sh"
 required_files=(
+  "${kind_smoke}"
   "${chart_dir}/Chart.yaml"
   "${chart_dir}/values.yaml"
   "${chart_dir}/values-dev.yaml"
@@ -44,6 +46,8 @@ grep -q '^sidecarDefaults:$' "${chart_dir}/values.yaml"
 grep -q '^sidecars:$' "${chart_dir}/values.yaml"
 grep -q 'ioMethod: io_uring' "${chart_dir}/values.yaml"
 grep -q 'protocolPipeline:' "${chart_dir}/values.yaml"
+grep -q 'adminPort:' "${chart_dir}/values.yaml"
+grep -q 'upstream:' "${chart_dir}/values.yaml"
 grep -q 'cidrAllowlist:' "${chart_dir}/values.yaml"
 grep -q 'externalSecrets:' "${chart_dir}/values.yaml"
 grep -q 'releaseAttestation:' "${chart_dir}/values.yaml"
@@ -58,9 +62,16 @@ grep -q 'livenessProbe:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'args:' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'AI_BLAISE_POOL_ADMIN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'AI_BLAISE_POOL_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'AI_BLAISE_POOL_UPSTREAM_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'name: admin' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/pool-deployment.yaml"
+grep -A4 'readinessProbe:' "${chart_dir}/templates/pool-deployment.yaml" | grep -q 'port: admin'
+grep -A4 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml" | grep -q 'port: admin'
+grep -q 'targetPort: admin' "${chart_dir}/templates/pool-service.yaml"
 grep -q 'args:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/sidecar-deployments.yaml"
@@ -71,8 +82,17 @@ if [[ ! -x scripts/citus-scale/deploy.sh ]]; then
   echo "missing executable D8 deploy wrapper: scripts/citus-scale/deploy.sh" >&2
   exit 1
 fi
+if [[ ! -x "${kind_smoke}" ]]; then
+  echo "missing executable Kubernetes production smoke: ${kind_smoke}" >&2
+  exit 1
+fi
 
 grep -q 'FEATURE: D8' scripts/citus-scale/deploy.sh
+grep -q 'FEATURE: D13' "${kind_smoke}"
+grep -q 'kind create cluster' "${kind_smoke}"
+grep -q 'scripts/citus-scale/build-app-images.sh' "${kind_smoke}"
+grep -q 'helm upgrade --install' "${kind_smoke}"
+grep -q 'psql -h ai-blaise-citus-pool' "${kind_smoke}"
 grep -q 'FEATURE: D9' docs/ai-blaise/RUNBOOKS/upgrade.md
 grep -q 'FEATURE: D10' docs/ai-blaise/RUNBOOKS/production.md
 grep -q 'FEATURE: MR9' docs/ai-blaise/RUNBOOKS/disaster-recovery.md

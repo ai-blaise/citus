@@ -1,5 +1,4 @@
-use ai_blaise_citus_pool::canonical_pool_execution_report;
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_pool::{canonical_pool_execution_report, run_pool_service_from_env};
 use std::env;
 use std::process;
 
@@ -10,7 +9,7 @@ fn main() {
         return;
     }
     if args == ["serve"] {
-        run_server("pool", "0.0.0.0:5432");
+        run_server();
         return;
     }
 
@@ -55,12 +54,13 @@ fn run_canonical() {
 
 fn print_usage() {
     println!("usage: ai_blaise_citus_pool [serve|run-canonical]");
-    println!("runs the deterministic canonical pool execution report and emits TSV");
+    println!("serve proxies PostgreSQL TCP traffic and exposes admin probes on a separate port");
+    println!("run-canonical emits the deterministic canonical pool execution TSV");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_server() {
+    if let Err(error) = run_pool_service_from_env() {
+        eprintln!("pool: service failed: {error}");
         process::exit(1);
     }
 }

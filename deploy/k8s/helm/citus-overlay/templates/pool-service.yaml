@@ -13,3 +13,6 @@ spec:
     - name: postgres
       port: {{ .Values.pool.service.port }}
       targetPort: postgres
+    - name: admin
+      port: {{ .Values.pool.service.adminPort }}
+      targetPort: admin

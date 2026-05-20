@@ -31,20 +31,28 @@ spec:
             - name: AI_BLAISE_COMPONENT
               value: pool
             - name: AI_BLAISE_LISTEN_ADDR
+              value: "0.0.0.0:{{ .Values.pool.service.adminPort }}"
+            - name: AI_BLAISE_POOL_ADMIN_ADDR
+              value: "0.0.0.0:{{ .Values.pool.service.adminPort }}"
+            - name: AI_BLAISE_POOL_LISTEN_ADDR
               value: "0.0.0.0:{{ .Values.pool.service.port }}"
+            - name: AI_BLAISE_POOL_UPSTREAM_ADDR
+              value: "{{ .Values.pool.upstream.host }}:{{ .Values.pool.upstream.port }}"
           ports:
             - name: postgres
               containerPort: {{ .Values.pool.service.port }}
+            - name: admin
+              containerPort: {{ .Values.pool.service.adminPort }}
           readinessProbe:
             httpGet:
               path: /readyz
-              port: postgres
+              port: admin
             initialDelaySeconds: 3
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz
-              port: postgres
+              port: admin
             initialDelaySeconds: 5
             periodSeconds: 20
           securityContext:

@@ -32,10 +32,13 @@ with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
 `FEATURE: RT4`, `FEATURE: Search8`, `FEATURE: Sec12`, `FEATURE: Sto1`,
 `FEATURE: Sto3`, `FEATURE: Sto4`, `FEATURE: T1`, `FEATURE: T3`, `FEATURE: T9`,
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
-`pool/src/main.rs` executes a deterministic pool runtime and shard-map summary
-for `FEATURE: Auth3`, `FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`,
-`FEATURE: T1`, `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`,
-`FEATURE: T12`, and `FEATURE: T15`.
+`pool/src/main.rs` executes a real PostgreSQL TCP proxy in `serve` mode, with
+upstream-aware admin readiness on a separate port; `ci/ai-blaise/pool-proxy-smoke.sh`
+verifies live SQL through that data port, and the binary still emits the
+deterministic pool runtime and shard-map summary for `FEATURE: Auth3`,
+`FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`, `FEATURE: T1`,
+`FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`,
+and `FEATURE: T15`.
 `images/citus-pg-overlay/extension-manifest.tsv` and
 `companion/src/extension_catalog.rs` validate the bundled, optional,
 integration-target, and hard-blocked extension contracts for
@@ -48,6 +51,8 @@ companion catalog also emits a deterministic TSV summary through
 pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
 shared TCP health/readiness/metrics server with `serve` so production
 Kubernetes pods do not depend on placeholder responder images.
+`ci/ai-blaise/kind-production-smoke.sh` installs those images into kind and
+verifies live SQL plus pool admin metrics through the Helm chart.
 `companion/src/advanced_planner.rs` executes a deterministic summary for the
 broad V2 planner, tiering, regional, backup, federation, storage, and
 research-guard feature contracts through
@@ -234,6 +239,7 @@ ship this pool routing layer.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
+- In-source: `FEATURE: T3` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T5: Parallel Commit Transaction Status
@@ -335,7 +341,9 @@ pool starts classifying real SQL.
 **Bundled extension dep**: none
 
 **Summary**: Defines pool protocol pipelining limits for in-flight work and
-transaction pipelining.
+transaction pipelining, and keeps the production `serve` data plane as a real
+byte-transparent PostgreSQL TCP proxy while routing policy becomes
+shard-aware.
 
 **Motivation**: Pool throughput work needs an explicit backpressure contract
 before pipelining reaches the data path.
@@ -347,6 +355,7 @@ pipelining contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T15` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T7` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ## TimescaleDB Integration
@@ -3516,10 +3525,12 @@ queries.
 
 **Summary**: Builds real Rust application images for the operator, pool,
 sidecars, and `citusctl`, with the deployed services defaulting to the
-long-running `serve` command.
+long-running `serve` command. The pool image separates PostgreSQL TCP traffic
+from admin probes and requires a configured upstream before readiness.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
-unpublished app containers rather than synthetic responder images.
+app containers and PostgreSQL traffic path rather than synthetic responder
+images.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
@@ -3530,6 +3541,8 @@ pool, sidecar, or tool image matrix.
   `scripts/citus-scale/build-app-images.sh`
 - Runtime Dockerfile: `FEATURE: D13` in
   `images/rust-runtime/Dockerfile`
+- Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
 - CI: `ci/ai-blaise/image-check.sh`
 
 ### WF2: WAL Replay Debugger Command
@@ -3984,7 +3997,7 @@ run-operations-canonical`, depending on whether the row is backed by
 | Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` |
 | T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` |
 | T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` |
-| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs`, `pool/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
+| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
 | T10 | Bulk protocol fetch path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has no ai-blaise bulk-fetch contract. | `FEATURE: T10` |
 | T11 | DistSQL physical pushdown | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this DistSQL contract. | `FEATURE: T11` |
 | T13 | Distributed cursors | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate multi-shard cursor state this way. | `FEATURE: T13` |
