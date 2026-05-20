@@ -109,6 +109,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_repack"
+version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
+
+[[package]]
 name = "ai_blaise_citus_sidecar_schema_job"
 version = "0.1.0"
 dependencies = [

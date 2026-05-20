@@ -50,6 +50,8 @@ placement intent, quorum, and failover decisions for `FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
+`sidecar/repack/src/lib.rs` validates online repack command planning and
+per-shard targets for `FEATURE: R7`.
 `sidecar/schema_job/src/lib.rs` validates online-DDL worker leases, backfill,
 safety, and gh-ost shadow-table contracts for `FEATURE: C10` and
 `FEATURE: M2`.
@@ -914,7 +916,7 @@ movement.
 
 ### R7: REPACK CONCURRENTLY Adoption
 
-**Overlay**: `operator/src/crds/scheduled_repack.rs`, `sidecar/shared/src/contracts.rs`
+**Overlay**: `operator/src/crds/scheduled_repack.rs`, `sidecar/shared/src/contracts.rs`, `sidecar/repack`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -935,6 +937,7 @@ does not provide a scheduled repack CRD.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 
 ### R9: Cross-Tier Query Planner Input
 

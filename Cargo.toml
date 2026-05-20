@@ -15,6 +15,7 @@ members = [
     "sidecar/postgrest",
     "sidecar/raft",
     "sidecar/realtime",
+    "sidecar/repack",
     "sidecar/schema_job",
     "sidecar/shared",
     "sidecar/storage",
