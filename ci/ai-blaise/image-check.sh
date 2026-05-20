@@ -11,6 +11,7 @@ build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
+observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -22,7 +23,8 @@ for file in \
   "${runtime_dockerfile}" \
   "${build_app_images}" \
   "${pool_proxy_smoke}" \
-  "${timescale_bridge_smoke}"; do
+  "${timescale_bridge_smoke}" \
+  "${observability_replication_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -35,6 +37,10 @@ if [[ ! -x "${build_app_images}" ]]; then
 fi
 if [[ ! -x "${timescale_bridge_smoke}" ]]; then
   echo "missing executable Timescale bridge smoke: ${timescale_bridge_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${observability_replication_smoke}" ]]; then
+  echo "missing executable observability replication smoke: ${observability_replication_smoke}" >&2
   exit 1
 fi
 
@@ -234,6 +240,12 @@ grep -Fq "SELECT apply_continuous_aggregate_distributed" "${timescale_bridge_smo
 grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_bridge_smoke}"
 grep -Fq "_timescaledb_catalog.hypertable" "${timescale_bridge_smoke}"
 grep -Fq "companion_timescale_bridge_state" "${timescale_bridge_smoke}"
+grep -Fq "wal_level=replica" "${observability_replication_smoke}"
+grep -Fq "pg_basebackup" "${observability_replication_smoke}"
+grep -Fq "pg_is_in_recovery()" "${observability_replication_smoke}"
+grep -Fq "companion_pg_stat_distributed" "${observability_replication_smoke}"
+grep -Fq "companion_pg_dist_replication_lag" "${observability_replication_smoke}"
+grep -Fq "state = 'streaming'" "${observability_replication_smoke}"
 
 if grep -RIn "'planned'\\|planned" "${image_dir}/extensions"; then
   echo "companion SQL extension must not expose planned feature statuses" >&2
