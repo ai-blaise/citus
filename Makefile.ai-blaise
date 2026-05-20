@@ -1,6 +1,6 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
+.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model emit-timescale-apply-plan build-lsp test-lsp analyze-lsp-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
 
 patches-check:
 	@ci/ai-blaise/patches-check.sh
@@ -44,6 +44,15 @@ test-e2e-model:
 emit-timescale-apply-plan:
 	cargo run -p ai_blaise_citus_e2e --bin timescale_apply_plan
 
+build-lsp:
+	cargo check -p ai_blaise_citus_lsp --all-targets
+
+test-lsp:
+	cargo test -p ai_blaise_citus_lsp
+
+analyze-lsp-canonical:
+	cargo run -p ai_blaise_citus_lsp -- analyze-canonical
+
 kind-smoke:
 	@tests/e2e/kind-timescale-citus-smoke.sh
 
@@ -56,4 +65,4 @@ features-doc-check:
 slop-scan:
 	@ci/ai-blaise/slop-scan.sh
 
-gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared test-sidecar-vectorizer test-e2e-model features-doc-check slop-scan sql-extension-smoke
+gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared test-sidecar-vectorizer test-e2e-model test-lsp features-doc-check slop-scan sql-extension-smoke

@@ -491,7 +491,8 @@ Timescale-aware distributed hypertables.
 **Bundled extension dep**: none
 
 **Summary**: Adds edit-time diagnostics for creating Timescale hypertables on
-distributed tables without the companion bridge.
+distributed tables without the companion bridge, exposed through the canonical
+`citus-lsp` diagnostic emitter.
 
 **Motivation**: The required Timescale integration is subtle enough that users
 need IDE feedback before invalid SQL reaches a migration or operator reconcile.
@@ -504,6 +505,7 @@ hypertable invariants.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS8` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: TS8` in `tools/citus-lsp/src/lib.rs`
+- Executable: `FEATURE: TS8` in `tools/citus-lsp/src/main.rs`
 
 ### TS9: Doctor Rules For Cohabitation
 
@@ -1515,7 +1517,8 @@ operator-owned migration object.
 **Bundled extension dep**: none
 
 **Summary**: Adds typed quick-fix actions for missing Citus distribution
-columns and related colocation repairs.
+columns and related colocation repairs, exposed through the canonical
+`citus-lsp` diagnostic emitter.
 
 **Motivation**: Migrations should fail early in the editor with a concrete
 fix plan before CI or the operator has to reject a schema change.
@@ -1528,6 +1531,7 @@ distributed schema authoring.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M5` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: M5` in `tools/citus-lsp/src/lib.rs`
+- Executable: `FEATURE: M5` in `tools/citus-lsp/src/main.rs`
 
 ### M7: Pre-Flight Cohabit-Extension Check
 
@@ -3220,7 +3224,7 @@ administration shell.
 
 **Summary**: Adds the initial Citus-aware LSP analyzer contract for
 non-colocated joins, unsafe distribution-column alters, missing tenant filters,
-and missing search analyzers.
+missing search analyzers, and a runnable canonical diagnostic emitter.
 
 **Motivation**: Developers need edit-time errors for distributed SQL rules
 rather than discovering them during deploy-time reconciliation.
@@ -3232,6 +3236,7 @@ rather than discovering them during deploy-time reconciliation.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D4` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
+- Executable: `FEATURE: D4` in `tools/citus-lsp/src/main.rs`
 
 ### D5: citus-admin Web UI
 

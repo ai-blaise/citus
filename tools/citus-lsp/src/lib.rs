@@ -298,6 +298,92 @@ pub enum LspRule {
     MissingDistributionColumnQuickFix,
 }
 
+pub fn all_lsp_rules() -> Vec<LspRule> {
+    vec![
+        LspRule::NonColocatedJoin,
+        LspRule::DistributionColumnAlter,
+        LspRule::HypertableInvariant,
+        LspRule::MissingTenantFilter,
+        LspRule::MissingSearchAnalyzer,
+        LspRule::MissingDistributionColumnQuickFix,
+    ]
+}
+
+pub fn canonical_lsp_plan() -> Result<CitusLspPlan, CitusLspError> {
+    CitusLspPlan::new(
+        LspMetadataSnapshot {
+            distributed_tables: vec![
+                DistributedTableMetadata {
+                    table: "public.orders".to_string(),
+                    distribution_column: "tenant_id".to_string(),
+                    colocation_group: "tenant".to_string(),
+                    tenant_column: Some("tenant_id".to_string()),
+                },
+                DistributedTableMetadata {
+                    table: "public.line_items".to_string(),
+                    distribution_column: "tenant_id".to_string(),
+                    colocation_group: "tenant".to_string(),
+                    tenant_column: Some("tenant_id".to_string()),
+                },
+                DistributedTableMetadata {
+                    table: "public.events".to_string(),
+                    distribution_column: "device_id".to_string(),
+                    colocation_group: "device".to_string(),
+                    tenant_column: None,
+                },
+            ],
+            hypertables: vec![HypertableMetadata {
+                table: "public.events".to_string(),
+                time_column: "created_at".to_string(),
+                distributed_parent: Some("public.events".to_string()),
+            }],
+            search_indexes: Vec::new(),
+            tenants: vec![TenantMetadata {
+                tenant_id: "tenant-a".to_string(),
+                schema: "tenant_a".to_string(),
+            }],
+        },
+        all_lsp_rules(),
+    )
+}
+
+pub fn canonical_analysis_request() -> SqlAnalysisRequest {
+    SqlAnalysisRequest {
+        uri: "file:///workspace/canonical.sql".to_string(),
+        intents: vec![
+            SqlIntent::CreateTable {
+                table: "tenant_a.invoices".to_string(),
+                columns: vec!["tenant_id".to_string(), "invoice_id".to_string()],
+                distribution_column: None,
+                tenant_column: Some("tenant_id".to_string()),
+            },
+            SqlIntent::Join {
+                left_table: "public.orders".to_string(),
+                right_table: "public.events".to_string(),
+            },
+            SqlIntent::AlterColumn {
+                table: "public.orders".to_string(),
+                column: "tenant_id".to_string(),
+                action: AlterColumnAction::Drop,
+            },
+            SqlIntent::CreateHypertable {
+                table: "public.events".to_string(),
+                time_column: Some("created_at".to_string()),
+                uses_distributed_bridge: false,
+            },
+            SqlIntent::Select {
+                table: "public.orders".to_string(),
+                where_columns: vec!["status".to_string()],
+            },
+            SqlIntent::CreateSearchIndex {
+                index_name: "orders_search".to_string(),
+                table: "public.orders".to_string(),
+                analyzer: None,
+            },
+        ],
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SqlAnalysisRequest {
     pub uri: String,
@@ -633,49 +719,40 @@ mod tests {
         assert_eq!(diagnostic.severity, DiagnosticSeverity::Error);
     }
 
-    fn plan_with_all_rules() -> CitusLspPlan {
-        CitusLspPlan::new(
-            LspMetadataSnapshot {
-                distributed_tables: vec![
-                    DistributedTableMetadata {
-                        table: "public.orders".to_string(),
-                        distribution_column: "tenant_id".to_string(),
-                        colocation_group: "tenant".to_string(),
-                        tenant_column: Some("tenant_id".to_string()),
-                    },
-                    DistributedTableMetadata {
-                        table: "public.line_items".to_string(),
-                        distribution_column: "tenant_id".to_string(),
-                        colocation_group: "tenant".to_string(),
-                        tenant_column: Some("tenant_id".to_string()),
-                    },
-                    DistributedTableMetadata {
-                        table: "public.events".to_string(),
-                        distribution_column: "device_id".to_string(),
-                        colocation_group: "device".to_string(),
-                        tenant_column: None,
-                    },
-                ],
-                hypertables: vec![HypertableMetadata {
-                    table: "public.events".to_string(),
-                    time_column: "created_at".to_string(),
-                    distributed_parent: Some("public.events".to_string()),
-                }],
-                search_indexes: Vec::new(),
-                tenants: vec![TenantMetadata {
-                    tenant_id: "tenant-a".to_string(),
-                    schema: "tenant_a".to_string(),
-                }],
-            },
+    #[test]
+    fn canonical_plan_reports_all_executable_diagnostic_classes() {
+        let analysis = canonical_lsp_plan()
+            .unwrap()
+            .analyze(&canonical_analysis_request())
+            .unwrap();
+        let codes = analysis
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            codes,
             vec![
-                LspRule::NonColocatedJoin,
-                LspRule::DistributionColumnAlter,
-                LspRule::HypertableInvariant,
-                LspRule::MissingTenantFilter,
-                LspRule::MissingSearchAnalyzer,
-                LspRule::MissingDistributionColumnQuickFix,
-            ],
-        )
-        .unwrap()
+                LspDiagnosticCode::MissingDistributionColumn,
+                LspDiagnosticCode::NonColocatedJoin,
+                LspDiagnosticCode::DistributionColumnAlter,
+                LspDiagnosticCode::HypertableInvariant,
+                LspDiagnosticCode::MissingTenantFilter,
+                LspDiagnosticCode::MissingSearchAnalyzer,
+            ]
+        );
+        assert!(
+            analysis
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.quick_fix.is_some())
+                .count()
+                >= 5
+        );
+    }
+
+    fn plan_with_all_rules() -> CitusLspPlan {
+        canonical_lsp_plan().unwrap()
     }
 }

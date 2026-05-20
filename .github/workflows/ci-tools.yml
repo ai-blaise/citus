@@ -41,7 +41,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_lsp --tests
+        run: cargo check -p ai_blaise_citus_lsp --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_lsp
 
