@@ -8,6 +8,7 @@ members = [
     "sidecar/auth",
     "sidecar/backup",
     "sidecar/cdc",
+    "sidecar/coldtier",
     "sidecar/edge_functions",
     "sidecar/hlc",
     "sidecar/raft",

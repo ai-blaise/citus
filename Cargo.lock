@@ -71,6 +71,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_sidecar_coldtier"
+version = "0.1.0"
+
+[[package]]
 name = "ai_blaise_citus_sidecar_edge_functions"
 version = "0.1.0"
 dependencies = [

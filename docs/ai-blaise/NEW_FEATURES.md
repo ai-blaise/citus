@@ -31,6 +31,9 @@ MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
 `FEATURE: L8`, and `FEATURE: WH3`.
+`sidecar/coldtier/src/lib.rs` validates cold-tier layer files, tier movement,
+and search-aware index contracts for `FEATURE: R1`, `FEATURE: R5`,
+`FEATURE: R9`, and `FEATURE: Search8`.
 `sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
 database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
@@ -815,6 +818,28 @@ tenant-level online migration plan.
 
 ## Resource Efficiency
 
+### R1: Cold Tier On Iceberg And Parquet
+
+**Overlay**: `sidecar/coldtier`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_lake`, `pg_parquet`
+
+**Summary**: Defines table-granular image and delta layer files for cold shard
+storage on object stores.
+
+**Motivation**: Cold shard data needs a predictable object layout before
+operators can evict low-temperature shards from the hot tier.
+
+**Citus comparison**: Vanilla Citus does not provide an S3-backed cold shard
+tier.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R1` in `sidecar/coldtier/src/lib.rs`
+
 ### R2: Scale-To-Zero Compute
 
 **Overlay**: `operator/src/crds/branch.rs`
@@ -859,6 +884,28 @@ helper.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R4` in `companion/src/observability.rs`
 
+### R5: Hot/Warm/Cold Tier Policy Job
+
+**Overlay**: `sidecar/coldtier`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines temperature-score thresholds and generated shard move
+plans between hot, warm, and cold tiers.
+
+**Motivation**: Tiering policy needs deterministic move plans before an
+operator or sidecar starts relocating shard data.
+
+**Citus comparison**: Vanilla Citus does not automate hot/warm/cold shard
+movement.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R5` in `sidecar/coldtier/src/lib.rs`
+
 ### R7: REPACK CONCURRENTLY Adoption
 
 **Overlay**: `operator/src/crds/scheduled_repack.rs`, `sidecar/shared/src/contracts.rs`
@@ -882,6 +929,28 @@ does not provide a scheduled repack CRD.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
+
+### R9: Cross-Tier Query Planner Input
+
+**Overlay**: `sidecar/coldtier`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Exposes cold-tier object URIs and shard table identity for
+planner paths that span hot, warm, and cold storage.
+
+**Motivation**: Cross-tier planning needs machine-readable cold-shard location
+and format metadata before the companion planner can combine tiers.
+
+**Citus comparison**: Vanilla Citus does not plan queries across object-store
+cold shard layers.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: R9` in `sidecar/coldtier/src/lib.rs`
 
 ### R10: TLS Session Ticket Reuse In Pool
 
@@ -1638,7 +1707,7 @@ objects.
 
 ### Search8: Search-Aware Cold Tier
 
-**Overlay**: `sidecar/shared/src/contracts.rs`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/coldtier`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1657,6 +1726,7 @@ mirrors.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search8` in `sidecar/shared/src/contracts.rs`
+- In-source: `FEATURE: Search8` in `sidecar/coldtier/src/lib.rs`
 
 ## HTAP
 
