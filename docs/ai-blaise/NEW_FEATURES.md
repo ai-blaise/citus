@@ -18,10 +18,13 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 `FEATURE: RT4`, `FEATURE: Search8`, `FEATURE: Sec12`, `FEATURE: Sto1`,
 `FEATURE: Sto3`, `FEATURE: Sto4`, `FEATURE: T1`, `FEATURE: T3`, `FEATURE: T9`,
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
-`images/citus-pg-overlay/extension-manifest.tsv` validates the bundled,
-optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
-`FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
-`FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+`images/citus-pg-overlay/extension-manifest.tsv` and
+`companion/src/extension_catalog.rs` validate the bundled, optional,
+integration-target, and hard-blocked extension contracts for
+`FEATURE: Bundle1`, `FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`,
+`FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`; the
+companion catalog also emits a deterministic TSV summary through
+`companion/src/bin/companion_contracts.rs`.
 `companion/src/advanced_planner.rs` executes a deterministic summary for the
 broad V2 planner, tiering, regional, backup, federation, storage, and
 research-guard feature contracts through
@@ -129,6 +132,7 @@ federation extension policy.
 - CI: `ci/ai-blaise/image-check.sh`
 - In-source: `FEATURE: Bundle1` in
   `images/citus-pg-overlay/extension-manifest.tsv`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical`
 
 ## Throughput
 

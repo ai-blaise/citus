@@ -40,7 +40,8 @@ pub use db_doctor::{
     DoctorSeverity, DoctorViolation,
 };
 pub use extension_catalog::{
-    v2_extension_contracts, validate_extension_contracts, ExtensionCatalogError,
+    canonical_extension_catalog_execution_report, v2_extension_contracts,
+    validate_extension_contracts, ExtensionCatalogError, ExtensionCatalogExecutionReport,
     ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
 };
 pub use feature_status::{

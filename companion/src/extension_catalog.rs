@@ -71,6 +71,42 @@ pub struct ExtensionCatalogSummary {
     pub preloaded: usize,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ExtensionCatalogExecutionReport {
+    pub contract_count: usize,
+    pub covered_feature_ids: usize,
+    pub feature_edges: usize,
+    pub required: usize,
+    pub optional: usize,
+    pub integration_targets: usize,
+    pub preloaded: usize,
+}
+
+impl ExtensionCatalogExecutionReport {
+    fn from_contracts(contracts: &[ExtensionContract]) -> Result<Self, ExtensionCatalogError> {
+        let summary = validate_extension_contracts(contracts)?;
+
+        let mut covered_features = BTreeSet::new();
+        let mut feature_edges = 0;
+        for contract in contracts {
+            feature_edges += contract.feature_ids.len();
+            for feature_id in contract.feature_ids {
+                covered_features.insert(*feature_id);
+            }
+        }
+
+        Ok(Self {
+            contract_count: contracts.len(),
+            covered_feature_ids: covered_features.len(),
+            feature_edges,
+            required: summary.required,
+            optional: summary.optional,
+            integration_targets: summary.integration_targets,
+            preloaded: summary.preloaded,
+        })
+    }
+}
+
 pub fn v2_extension_contracts() -> Vec<ExtensionContract> {
     vec![
         required("pgvector", &["A7"], false),
@@ -168,6 +204,11 @@ pub fn validate_extension_contracts(
     Ok(summary)
 }
 
+pub fn canonical_extension_catalog_execution_report(
+) -> Result<ExtensionCatalogExecutionReport, ExtensionCatalogError> {
+    ExtensionCatalogExecutionReport::from_contracts(&v2_extension_contracts())
+}
+
 fn required(
     name: &'static str,
     feature_ids: &'static [&'static str],
@@ -248,6 +289,24 @@ mod tests {
         assert!(summary.required >= 10);
         assert!(summary.optional >= 20);
         assert!(summary.preloaded >= 10);
+    }
+
+    #[test]
+    fn canonical_extension_catalog_report_is_stable() {
+        let report = canonical_extension_catalog_execution_report().unwrap();
+
+        assert_eq!(
+            report,
+            ExtensionCatalogExecutionReport {
+                contract_count: 45,
+                covered_feature_ids: EXTENSION_CATALOG_FEATURE_IDS.len(),
+                feature_edges: 47,
+                required: 18,
+                optional: 26,
+                integration_targets: 1,
+                preloaded: 18,
+            }
+        );
     }
 
     #[test]

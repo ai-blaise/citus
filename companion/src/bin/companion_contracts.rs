@@ -42,7 +42,8 @@
 // FEATURE: TS11
 
 use ai_blaise_citus_companion::{
-    canonical_advanced_planner_execution_report, canonical_operations_readiness_report,
+    canonical_advanced_planner_execution_report, canonical_extension_catalog_execution_report,
+    canonical_operations_readiness_report,
 };
 use std::env;
 use std::process;
@@ -58,6 +59,9 @@ fn main() {
         [] => run_advanced_planner_canonical(),
         [command] if command == "run-advanced-planner-canonical" => {
             run_advanced_planner_canonical()
+        }
+        [command] if command == "run-extension-catalog-canonical" => {
+            run_extension_catalog_canonical();
         }
         [command] if command == "run-operations-canonical" => {
             run_operations_canonical();
@@ -95,6 +99,27 @@ fn run_advanced_planner_canonical() {
     );
 }
 
+fn run_extension_catalog_canonical() {
+    let report = canonical_extension_catalog_execution_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: extension catalog report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "contracts\tcovered_feature_ids\tfeature_edges\trequired\toptional\tintegration_targets\tpreloaded"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.contract_count,
+        report.covered_feature_ids,
+        report.feature_edges,
+        report.required,
+        report.optional,
+        report.integration_targets,
+        report.preloaded,
+    );
+}
+
 fn run_operations_canonical() {
     let report = canonical_operations_readiness_report().unwrap_or_else(|error| {
         eprintln!("companion-contracts: operations readiness report failed: {error}");
@@ -118,7 +143,7 @@ fn run_operations_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-operations-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-operations-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }

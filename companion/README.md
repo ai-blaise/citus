@@ -51,7 +51,9 @@ and `webhooks`.
 - `ExtensionContract` for the V2 bundled and optional extension surfaces,
   including `FEATURE: A7`, `FEATURE: Search1`, `FEATURE: G1`,
   `FEATURE: JS1`, `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: O7`,
-  `FEATURE: Sec3`, and `FEATURE: WF1`
+  `FEATURE: Sec3`, and `FEATURE: WF1`;
+  `companion_contracts run-extension-catalog-canonical` emits the deterministic
+  catalog summary used by CI.
 - `AdvancedPlannerContract` for remaining planner, tiering, time-travel,
   cursor, savepoint, regional, backup, federation, storage, and research-guard
   surfaces, including `FEATURE: T4`, `FEATURE: T10`, `FEATURE: T11`,
@@ -74,8 +76,10 @@ and `webhooks`.
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 Use `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- \
-run-advanced-planner-canonical` and `cargo run -p ai_blaise_citus_companion \
---bin companion_contracts -- run-operations-canonical` to emit TSV reports for
-the broad V2 companion contracts.
+run-advanced-planner-canonical`, `cargo run -p ai_blaise_citus_companion \
+--bin companion_contracts -- run-extension-catalog-canonical`, and `cargo run \
+-p ai_blaise_citus_companion --bin companion_contracts -- \
+run-operations-canonical` to emit TSV reports for the broad V2 companion
+contracts.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale
 bridge functions.
