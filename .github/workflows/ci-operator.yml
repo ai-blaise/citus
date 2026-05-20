@@ -1,0 +1,23 @@
+name: operator
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check all targets
+        run: cargo check -p ai_blaise_citus_operator --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_operator
+      - name: Run canonical operator contract
+        run: cargo run -q -p ai_blaise_citus_operator -- run-canonical

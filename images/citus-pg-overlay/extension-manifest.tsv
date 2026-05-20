@@ -1,0 +1,79 @@
+# FEATURE: Bundle1 Search1 G1 JS1 PM1 IA1 WF1 F2
+# name|tier|license|source|feature_ids|policy
+timescaledb|required|Apache-2.0+TSL|binary-package|TS1,TS2,TS3,TS4,TS5,TS10,TS11,TS12|Mandatory cohabitation target; TSL source is never patched or vendored.
+citus|required|AGPL-3.0|source-tree|TS6|Base fork source in this repository.
+ai_blaise_citus|required|AGPL-3.0|local-sql-extension|TS1,TS2,TS3,TS4,TS5,M7|Companion SQL fallback extension installed by the overlay image.
+pgvector|required|PostgreSQL|binary-package|A7|Vector similarity extension.
+pg_cron|required|PostgreSQL|binary-package|EF5|Cron-style scheduling for policy jobs.
+pg_partman|required|PostgreSQL|binary-package|R5|Partition maintenance for non-hypertable data.
+pgaudit|required|PostgreSQL|binary-package|Sec3|SQL audit baseline.
+pgauditlogtofile|required|PostgreSQL|binary-package|Sec3|File-backed audit log sink.
+pgsodium|required|PostgreSQL|binary-package|Sec4,Sec15|Libsodium crypto and encryption helpers.
+hll|required|Apache-2.0|binary-package|T8,L9|Merge-friendly approximate aggregates.
+topn|required|Apache-2.0|binary-package|T8,L9|Merge-friendly top-N aggregate.
+tdigest|required|Apache-2.0|binary-package|TS15,T8,L9|Merge-friendly percentile aggregate.
+pgnodemx|required|Apache-2.0|binary-package|O8|OS and cgroup metrics through SQL.
+postgis|required|GPL-2.0|binary-package|Geo1,Geo2,Geo3|Geospatial functions for distributed geo features.
+pg_search|required|AGPL-3.0|binary-package|Search1,Search2,Search3|BM25 and hybrid search substrate.
+pg_graphql|required|Apache-2.0|binary-package|API3,API4|GraphQL schema endpoint substrate.
+pg_jsonschema|required|Apache-2.0|binary-package|JS1,JS2,M13|JSON Schema validation substrate.
+age|required|Apache-2.0|binary-package|G1,G2,G3|Apache AGE graph query substrate.
+plrust|required|PostgreSQL|binary-package|EF6|Rust UDF substrate.
+plv8|required|PostgreSQL|binary-package|EF6|In-database JavaScript UDF substrate.
+pg_uuidv7|required|PostgreSQL|binary-package|M12|Monotonic UUID helper.
+pg_repack|required|BSD-style|binary-package|R7|Online repack until PG19 REPACK CONCURRENTLY.
+pg_failover_slots|required|PostgreSQL|binary-package|C12|Logical replication slot failover.
+pg_subscription_pg_failover|optional|PostgreSQL|binary-package|C13|Logical subscription failover state.
+pg_warm|required|PostgreSQL|binary-package|R11|Replica cold-start cache warming.
+pgcrypto|required|PostgreSQL|core-extension|Sec14|Core crypto primitives.
+pg_trgm|required|PostgreSQL|core-extension|Search5|Trigram search support.
+citext|required|PostgreSQL|core-extension|Search6|Case-insensitive text type.
+rum|required|PostgreSQL|binary-package|Search4|Alternate full-text index.
+hypopg|optional|PostgreSQL|binary-package|IA1,IA3|What-if indexing for advisor.
+pg_qualstats|optional|PostgreSQL|binary-package|IA2,IA3|Predicate stats for advisor.
+pg_stat_kcache|optional|PostgreSQL|binary-package|O9|Kernel CPU and IO per statement.
+pg_wait_sampling|optional|PostgreSQL|binary-package|O7|Wait-event sampling.
+pgsentinel|optional|PostgreSQL|binary-package|O7|ASH-style wait diagnostics.
+pgsql-http|optional|PostgreSQL|binary-package|F5|Outbound HTTP from SQL.
+pg_net|optional|PostgreSQL|binary-package|F5|Async outbound HTTP from SQL.
+pgl_ddl_deploy|optional|PostgreSQL|binary-package|M6,C11|DDL replication across regions.
+pg_track_settings|optional|PostgreSQL|binary-package|M10|Configuration drift tracking.
+pg_lake|optional|Apache-2.0|source-build|L1,L3,L6|Analytical lakehouse substrate.
+pg_duckdb|optional|MIT|source-build|L1,L12,L13|Alternative analytical engine.
+pgactive|optional|Apache-2.0|binary-package|S7,C4,MR7|Cross-region active-active for reference tables.
+oracle_fdw|optional|PostgreSQL|binary-package|F2|Oracle migration and federation FDW.
+mysql_fdw|optional|PostgreSQL|binary-package|F2|MySQL migration and federation FDW.
+mongo_fdw|optional|PostgreSQL|binary-package|F2|Mongo migration and federation FDW.
+tds_fdw|optional|PostgreSQL|binary-package|F2|SQL Server migration and federation FDW.
+pgmq|optional|Apache-2.0|source-build|R6|Alternative queue substrate.
+pgque|optional|Apache-2.0|source-build|R6|Bloat-free queue substrate.
+pg_parquet|optional|PostgreSQL|source-build|L11|Parquet read/write helper.
+pg_squeeze|optional|PostgreSQL|binary-package|R7|Alternative online reorg.
+pg_show_plans|optional|PostgreSQL|binary-package|O12|Live plan inspection.
+pg_stat_monitor|optional|PostgreSQL|binary-package|O11|Alternative statement histogram view.
+pg_walinspect|optional|PostgreSQL|core-extension|WF1,WF2|WAL inspection from SQL.
+pg_safeupdate|optional|PostgreSQL|binary-package|Sec10|Guard accidental full-table writes.
+anon|optional|PostgreSQL|binary-package|C3,Sec11|CDC anonymization substrate.
+vchord|optional|Apache-2.0|source-build|A12|Alternate vector index.
+pg_hint_plan|optional|PostgreSQL|binary-package|PM1,PM3|Hint-driven plan management.
+sr_plan|optional|PostgreSQL|binary-package|PM2,PM3,PM4|Saved-plan backend.
+pgledger|optional|MIT|source-build|Sec5,Sec6|Optional upstream ledger extension.
+pglinter|optional|Apache-2.0|source-build|TS9,M7|Optional schema linter substrate.
+omnigres|optional|Apache-2.0|integration-target|API1,API6|Reference-only HTTP/API stack.
+orioledb|hard-block|PostgreSQL|blocked|none|Heap access method conflicts with this stack.
+pg_cryogen|hard-block|unknown|blocked|none|Cold-storage behavior competes with ai-blaise coldtier.
+undam|hard-block|unknown|blocked|none|Storage-layer conflict risk.
+append_only_heap|hard-block|unknown|blocked|none|Heap access method conflict.
+imcs|hard-block|unknown|blocked|none|Memory column store competes with Citus execution.
+hydra_columnar|hard-block|unknown|blocked|none|Columnar access method conflict.
+pg_strom|hard-block|GPL-2.0|blocked|none|Planner and GPU execution hooks conflict with Citus paths.
+vops|hard-block|PostgreSQL|blocked|none|Vectorized execution conflicts with planner assumptions.
+vectorize_engine|hard-block|unknown|blocked|none|Competes with ai-blaise vectorizer.
+pg_pathman|hard-block|PostgreSQL|blocked|none|Partitioning hook conflict with Citus and Timescale.
+mmts|hard-block|unknown|blocked|none|Multi-master transaction manager conflict.
+pg_dtm|hard-block|PostgreSQL|blocked|none|Distributed transaction manager conflict.
+pg_tsdtm|hard-block|PostgreSQL|blocked|none|Distributed transaction manager conflict.
+pg_shardman|hard-block|unknown|blocked|none|Sharding manager conflict with Citus.
+gogudb|hard-block|unknown|blocked|none|Distributed transaction and sharding conflict.
+plproxy|hard-block|BSD-style|blocked|none|Proxy sharding conflict.
+postgres_fdw_plus|hard-block|unknown|blocked|none|FDW behavior competes with federation contract.

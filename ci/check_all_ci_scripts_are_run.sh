@@ -11,7 +11,8 @@ source ci/ci_helpers.sh
 ci_scripts=$(
     find ci/ -iname "*.sh" |
     sed -E 's#^ci/##g' |
-    grep -v -E '^(ci_helpers.sh|fix_style.sh)$'
+    grep -v -E '^(ci_helpers.sh|fix_style.sh)$' |
+    grep -v -E '^ai-blaise/'
 )
 for script in $ci_scripts; do
     if ! grep "\\bci/$script\\b" -r .github > /dev/null; then

@@ -1,0 +1,17 @@
+name: license
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check license audit
+        run: bash ci/ai-blaise/license-check.sh

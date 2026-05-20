@@ -1,0 +1,253 @@
+name: sidecar
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+
+jobs:
+  analytical:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_analytical
+      - name: Run canonical analytical report
+        run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-canonical
+      - name: Run canonical analytical runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical
+
+  shared:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_shared --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_shared
+
+  vectorizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_vectorizer --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_vectorizer
+
+  auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_auth --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_auth
+
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_backup --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_backup
+      - name: Run canonical backup report
+        run: cargo run -q -p ai_blaise_citus_sidecar_backup -- run-canonical
+      - name: Run canonical backup runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical
+
+  cdc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_cdc --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_cdc
+      - name: Run canonical CDC delivery
+        run: cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-canonical
+      - name: Run canonical CDC runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical
+
+  coldtier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_coldtier --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_coldtier
+      - name: Run canonical cold-tier report
+        run: cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical
+      - name: Run canonical cold-tier runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical
+
+  edge-functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_edge_functions
+      - name: Run canonical edge-function report
+        run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-canonical
+      - name: Run canonical edge-function runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
+
+  graphql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_graphql
+
+  hlc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_hlc --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_hlc
+
+  mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_mcp --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_mcp
+
+  postgrest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_postgrest
+
+  raft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_raft --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_raft
+
+  realtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_realtime
+      - name: Run canonical realtime broadcast
+        run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-canonical
+      - name: Run canonical realtime runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical
+
+  repack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_repack --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_repack
+
+  schema-job:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_schema_job --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_schema_job
+
+  storage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_storage --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_storage
+      - name: Run canonical storage report
+        run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-canonical
+      - name: Run canonical storage runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical
+
+  txn-status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_sidecar_txn_status --all-targets
+      - name: Test
+        run: cargo test -p ai_blaise_citus_sidecar_txn_status

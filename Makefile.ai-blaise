@@ -1,0 +1,311 @@
+# ai-blaise overlay targets. Upstream Makefile remains untouched.
+
+.PHONY: patches-check upstream-merge-dry build-companion test-companion run-companion-advanced-planner-canonical run-companion-extension-catalog-canonical run-companion-operations-canonical build-operator test-operator run-operator-canonical build-pool test-pool run-pool-canonical build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer run-vectorizer-canonical build-sidecar-cdc test-sidecar-cdc run-cdc-canonical run-cdc-runtime-canonical build-sidecar-realtime test-sidecar-realtime run-realtime-canonical run-realtime-runtime-canonical build-sidecar-storage test-sidecar-storage run-storage-canonical run-storage-runtime-canonical build-sidecar-backup test-sidecar-backup run-backup-canonical run-backup-runtime-canonical build-sidecar-edge-functions test-sidecar-edge-functions run-edge-functions-canonical run-edge-functions-runtime-canonical build-sidecar-analytical test-sidecar-analytical run-analytical-canonical run-analytical-runtime-canonical build-sidecar-coldtier test-sidecar-coldtier run-coldtier-canonical run-coldtier-runtime-canonical build-sidecar-auth test-sidecar-auth run-auth-canonical build-sidecar-postgrest test-sidecar-postgrest run-postgrest-canonical build-sidecar-graphql test-sidecar-graphql run-graphql-canonical build-sidecar-mcp test-sidecar-mcp run-mcp-canonical build-sidecar-hlc test-sidecar-hlc run-hlc-canonical build-sidecar-raft test-sidecar-raft run-raft-canonical build-sidecar-repack test-sidecar-repack run-repack-canonical build-sidecar-schema-job test-sidecar-schema-job run-schema-job-canonical build-sidecar-txn-status test-sidecar-txn-status run-txn-status-canonical build-e2e-model test-e2e-model emit-timescale-apply-plan run-release-gates-canonical build-tools-mcp test-tools-mcp run-tools-mcp-canonical build-lsp test-lsp analyze-lsp-canonical build-watch test-watch run-watch-canonical build-schema-designer test-schema-designer run-schema-designer-canonical build-tui test-tui run-tui-canonical build-admin test-admin run-admin-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan v2-closure-check v2-acceptance-check gate-close
+
+patches-check:
+	@ci/ai-blaise/patches-check.sh
+
+upstream-merge-dry:
+	@bash ci/ai-blaise/upstream-merge-dry.sh
+
+build-companion:
+	cargo check -p ai_blaise_citus_companion --all-targets
+
+test-companion:
+	cargo test -p ai_blaise_citus_companion
+
+run-companion-advanced-planner-canonical:
+	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
+
+run-companion-extension-catalog-canonical:
+	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical
+
+run-companion-operations-canonical:
+	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
+
+build-operator:
+	cargo check -p ai_blaise_citus_operator --all-targets
+
+test-operator:
+	cargo test -p ai_blaise_citus_operator
+
+run-operator-canonical:
+	cargo run -q -p ai_blaise_citus_operator -- run-canonical
+
+build-pool:
+	cargo check -p ai_blaise_citus_pool --all-targets
+
+test-pool:
+	cargo test -p ai_blaise_citus_pool
+
+run-pool-canonical:
+	cargo run -q -p ai_blaise_citus_pool -- run-canonical
+
+build-sidecar-shared:
+	cargo check -p ai_blaise_citus_sidecar_shared --all-targets
+
+test-sidecar-shared:
+	cargo test -p ai_blaise_citus_sidecar_shared
+
+probe-sidecar-shared:
+	cargo run -q -p ai_blaise_citus_sidecar_shared -- probe-canonical
+
+build-sidecar-vectorizer:
+	cargo check -p ai_blaise_citus_sidecar_vectorizer --all-targets
+
+test-sidecar-vectorizer:
+	cargo test -p ai_blaise_citus_sidecar_vectorizer
+
+run-vectorizer-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_vectorizer -- run-canonical
+
+build-sidecar-cdc:
+	cargo check -p ai_blaise_citus_sidecar_cdc --all-targets
+
+test-sidecar-cdc:
+	cargo test -p ai_blaise_citus_sidecar_cdc
+
+run-cdc-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-canonical
+
+run-cdc-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical
+
+build-sidecar-realtime:
+	cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
+
+test-sidecar-realtime:
+	cargo test -p ai_blaise_citus_sidecar_realtime
+
+run-realtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-canonical
+
+run-realtime-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical
+
+build-sidecar-storage:
+	cargo check -p ai_blaise_citus_sidecar_storage --all-targets
+
+test-sidecar-storage:
+	cargo test -p ai_blaise_citus_sidecar_storage
+
+run-storage-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_storage -- run-canonical
+
+run-storage-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical
+
+build-sidecar-backup:
+	cargo check -p ai_blaise_citus_sidecar_backup --all-targets
+
+test-sidecar-backup:
+	cargo test -p ai_blaise_citus_sidecar_backup
+
+run-backup-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_backup -- run-canonical
+
+run-backup-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical
+
+build-sidecar-edge-functions:
+	cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
+
+test-sidecar-edge-functions:
+	cargo test -p ai_blaise_citus_sidecar_edge_functions
+
+run-edge-functions-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-canonical
+
+run-edge-functions-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
+
+build-sidecar-analytical:
+	cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
+
+test-sidecar-analytical:
+	cargo test -p ai_blaise_citus_sidecar_analytical
+
+run-analytical-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-canonical
+
+run-analytical-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical
+
+build-sidecar-coldtier:
+	cargo check -p ai_blaise_citus_sidecar_coldtier --all-targets
+
+test-sidecar-coldtier:
+	cargo test -p ai_blaise_citus_sidecar_coldtier
+
+run-coldtier-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical
+
+run-coldtier-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical
+
+build-sidecar-auth:
+	cargo check -p ai_blaise_citus_sidecar_auth --all-targets
+
+test-sidecar-auth:
+	cargo test -p ai_blaise_citus_sidecar_auth
+
+run-auth-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_auth -- run-canonical
+
+build-sidecar-postgrest:
+	cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
+
+test-sidecar-postgrest:
+	cargo test -p ai_blaise_citus_sidecar_postgrest
+
+run-postgrest-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_postgrest -- run-canonical
+
+build-sidecar-graphql:
+	cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
+
+test-sidecar-graphql:
+	cargo test -p ai_blaise_citus_sidecar_graphql
+
+run-graphql-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-canonical
+
+build-sidecar-mcp:
+	cargo check -p ai_blaise_citus_sidecar_mcp --all-targets
+
+test-sidecar-mcp:
+	cargo test -p ai_blaise_citus_sidecar_mcp
+
+run-mcp-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_mcp -- run-canonical
+
+build-sidecar-hlc:
+	cargo check -p ai_blaise_citus_sidecar_hlc --all-targets
+
+test-sidecar-hlc:
+	cargo test -p ai_blaise_citus_sidecar_hlc
+
+run-hlc-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_hlc -- run-canonical
+
+build-sidecar-raft:
+	cargo check -p ai_blaise_citus_sidecar_raft --all-targets
+
+test-sidecar-raft:
+	cargo test -p ai_blaise_citus_sidecar_raft
+
+run-raft-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_raft -- run-canonical
+
+build-sidecar-repack:
+	cargo check -p ai_blaise_citus_sidecar_repack --all-targets
+
+test-sidecar-repack:
+	cargo test -p ai_blaise_citus_sidecar_repack
+
+run-repack-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_repack -- run-canonical
+
+build-sidecar-schema-job:
+	cargo check -p ai_blaise_citus_sidecar_schema_job --all-targets
+
+test-sidecar-schema-job:
+	cargo test -p ai_blaise_citus_sidecar_schema_job
+
+run-schema-job-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_schema_job -- run-canonical
+
+build-sidecar-txn-status:
+	cargo check -p ai_blaise_citus_sidecar_txn_status --all-targets
+
+test-sidecar-txn-status:
+	cargo test -p ai_blaise_citus_sidecar_txn_status
+
+run-txn-status-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_txn_status -- run-canonical
+
+build-e2e-model:
+	cargo check -p ai_blaise_citus_e2e
+
+test-e2e-model:
+	cargo test -p ai_blaise_citus_e2e
+
+emit-timescale-apply-plan:
+	cargo run -p ai_blaise_citus_e2e --bin timescale_apply_plan
+
+run-release-gates-canonical:
+	cargo run -q -p ai_blaise_citus_e2e --bin release_gate_report
+
+build-tools-mcp:
+	cargo check -p ai_blaise_citus_mcp --all-targets
+
+test-tools-mcp:
+	cargo test -p ai_blaise_citus_mcp
+
+run-tools-mcp-canonical:
+	cargo run -q -p ai_blaise_citus_mcp -- run-canonical
+
+build-lsp:
+	cargo check -p ai_blaise_citus_lsp --all-targets
+
+test-lsp:
+	cargo test -p ai_blaise_citus_lsp
+
+analyze-lsp-canonical:
+	cargo run -p ai_blaise_citus_lsp -- analyze-canonical
+
+build-watch:
+	cargo check -p ai_blaise_citus_watch --all-targets
+
+test-watch:
+	cargo test -p ai_blaise_citus_watch
+
+run-watch-canonical:
+	cargo run -q -p ai_blaise_citus_watch -- run-canonical
+
+build-schema-designer:
+	cargo check -p ai_blaise_citus_schema_designer --all-targets
+
+test-schema-designer:
+	cargo test -p ai_blaise_citus_schema_designer
+
+run-schema-designer-canonical:
+	cargo run -q -p ai_blaise_citus_schema_designer -- run-canonical
+
+build-tui:
+	cargo check -p ai_blaise_citus_tui --all-targets
+
+test-tui:
+	cargo test -p ai_blaise_citus_tui
+
+run-tui-canonical:
+	cargo run -q -p ai_blaise_citus_tui -- run-canonical
+
+build-admin:
+	cargo check -p ai_blaise_citus_admin --all-targets
+
+test-admin:
+	cargo test -p ai_blaise_citus_admin
+
+run-admin-canonical:
+	cargo run -q -p ai_blaise_citus_admin -- run-canonical
+
+kind-smoke:
+	@tests/e2e/kind-timescale-citus-smoke.sh
+
+sql-extension-smoke:
+	@ci/ai-blaise/sql-extension-smoke.sh
+
+features-doc-check:
+	@ci/ai-blaise/features-doc-check.sh
+
+slop-scan:
+	@ci/ai-blaise/slop-scan.sh
+
+v2-closure-check:
+	@bash ci/ai-blaise/v2-closure-check.sh
+
+v2-acceptance-check:
+	@bash ci/ai-blaise/v2-acceptance-check.sh
+
+gate-close: patches-check upstream-merge-dry test-companion run-companion-advanced-planner-canonical run-companion-extension-catalog-canonical run-companion-operations-canonical test-operator run-operator-canonical test-pool run-pool-canonical test-sidecar-shared probe-sidecar-shared test-sidecar-vectorizer run-vectorizer-canonical test-sidecar-cdc run-cdc-canonical run-cdc-runtime-canonical test-sidecar-realtime run-realtime-canonical run-realtime-runtime-canonical test-sidecar-storage run-storage-canonical run-storage-runtime-canonical test-sidecar-backup run-backup-canonical run-backup-runtime-canonical test-sidecar-edge-functions run-edge-functions-canonical run-edge-functions-runtime-canonical test-sidecar-analytical run-analytical-canonical run-analytical-runtime-canonical test-sidecar-coldtier run-coldtier-canonical run-coldtier-runtime-canonical test-sidecar-auth run-auth-canonical test-sidecar-postgrest run-postgrest-canonical test-sidecar-graphql run-graphql-canonical test-sidecar-mcp run-mcp-canonical test-sidecar-hlc run-hlc-canonical test-sidecar-raft run-raft-canonical test-sidecar-repack run-repack-canonical test-sidecar-schema-job run-schema-job-canonical test-sidecar-txn-status run-txn-status-canonical test-e2e-model emit-timescale-apply-plan run-release-gates-canonical test-tools-mcp run-tools-mcp-canonical test-lsp analyze-lsp-canonical test-watch run-watch-canonical test-schema-designer run-schema-designer-canonical test-tui run-tui-canonical test-admin run-admin-canonical features-doc-check slop-scan v2-closure-check v2-acceptance-check sql-extension-smoke

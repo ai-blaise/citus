@@ -1,0 +1,19 @@
+name: image-contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check image extension contract
+        run: bash ci/ai-blaise/image-check.sh
+      - name: Smoke SQL companion extension
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh

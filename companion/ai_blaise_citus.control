@@ -1,0 +1,4 @@
+comment = 'ai-blaise Citus companion extension'
+default_version = '0.1.0'
+module_pathname = '$libdir/ai_blaise_citus_companion'
+relocatable = false

@@ -1,0 +1,38 @@
+[workspace]
+members = [
+    "companion",
+    "e2e",
+    "operator",
+    "pool",
+    "sidecar/analytical",
+    "sidecar/auth",
+    "sidecar/backup",
+    "sidecar/cdc",
+    "sidecar/coldtier",
+    "sidecar/edge_functions",
+    "sidecar/graphql",
+    "sidecar/hlc",
+    "sidecar/mcp",
+    "sidecar/postgrest",
+    "sidecar/raft",
+    "sidecar/realtime",
+    "sidecar/repack",
+    "sidecar/schema_job",
+    "sidecar/shared",
+    "sidecar/storage",
+    "sidecar/txn_status",
+    "sidecar/vectorizer",
+    "tools/citus-mcp",
+    "tools/citus-admin",
+    "tools/citus-lsp",
+    "tools/citus-schema-designer",
+    "tools/citus-tui",
+    "tools/citus-watch",
+    "tools/citusctl",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0"
+repository = "https://github.com/ai-blaise/citus"

@@ -1,0 +1,159 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Tue, 19 May 2026 21:00:00 +0000
+Subject: [PATCH] Allow trusted hook coextensions
+
+FEATURE: TS6
+
+Citus currently errors during preload if planner, utility, executor, or explain
+hooks are already registered. That is correct as the default because Citus
+expects to be the innermost hook in several paths.
+
+ai-blaise/citus needs an explicit, operator-controlled path for validated
+cohabitation tests. Add a postmaster GUC, citus.cohabit_extensions, that allows
+startup to continue when preexisting hooks are present and the deployment has
+listed trusted coextensions. The first target is TimescaleDB cohabitation.
+
+This patch intentionally does not infer hook ownership from function pointers.
+The GUC is a deployment-level trust contract and the cohabitation test suite is
+responsible for proving listed extensions are safe.
+---
+ src/backend/distributed/shared_library_init.c | 106 +++++++++++++++++++++----
+ 1 file changed, 91 insertions(+), 15 deletions(-)
+
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -160,6 +160,7 @@ DEFINE_COLUMNAR_PASSTHROUGH_FUNC(test_columnar_storage_write_new_page)
+ 
+ #define DUMMY_REAL_TIME_EXECUTOR_ENUM_VALUE 9999999
+ static char *CitusVersion = CITUS_VERSION;
++static char *CohabitExtensions = "";
+ static char *DeprecatedEmptyString = "";
+ static char *MitmfifoEmptyString = "";
+ static bool DeprecatedDeferShardDeleteOnMove = true;
+@@ -194,6 +195,10 @@ static void CitusCleanupConnectionsAtExit(int code, Datum arg);
+ static void SaveBackendStatsIntoSavedBackendStatsHashAtExit(int code, Datum arg);
+ static void DecrementExternalClientBackendCounterAtExit(int code, Datum arg);
+ static void CreateRequiredDirectories(void);
++static void RegisterCitusPreloadConfigVariables(void);
++static void ErrorIfHooksAlreadyRegistered(void);
++static bool CitusHasAlreadyRegisteredHooks(void);
++static bool CitusHasTrustedHookCoextensions(void);
+ static void RegisterCitusConfigVariables(void);
+ static void OverridePostgresConfigProperties(void);
+ static bool ErrorIfNotASuitableDeadlockFactor(double *newval, void **extra,
+@@ -438,20 +443,10 @@ _PG_init(void)
+ 	/*
+-	 * Perform checks before registering any hooks, to avoid erroring out in a
+-	 * partial state.
+-	 *
+-	 * In many cases (e.g. planner and utility hook, to run inside
+-	 * pg_stat_statements et. al.) we have to be loaded before other hooks
+-	 * (thus as the innermost/last running hook) to be able to do our
+-	 * duties. For simplicity insist that all hooks are previously unused.
++	 * Register preload GUCs before checking hooks. They are needed during
++	 * preload and must be visible before the full Citus GUC table is registered.
+ 	 */
+-	if (planner_hook != NULL || ProcessUtility_hook != NULL ||
+-		ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
+-		ExplainOneQuery_hook != NULL)
+-	{
+-		ereport(ERROR, (errmsg("Citus has to be loaded first"),
+-						errhint("Place citus at the beginning of "
+-								"shared_preload_libraries.")));
+-	}
++	RegisterCitusPreloadConfigVariables();
++
++	ErrorIfHooksAlreadyRegistered();
+ 
+ 	ResizeStackToMaximumDepth();
+ 
+@@ -973,6 +969,87 @@ CreateRequiredDirectories(void)
+ 	}
+ }
+ 
++/*
++ * Register GUCs that are needed before Citus performs its preload hook checks.
++ */
++static void
++RegisterCitusPreloadConfigVariables(void)
++{
++	DefineCustomStringVariable(
++		"citus.cohabit_extensions",
++		gettext_noop("Lists extensions allowed to install hooks before Citus."),
++		gettext_noop("Citus normally must be loaded before PostgreSQL planner, "
++					 "utility, executor, and explain hooks are installed. This "
++					 "setting lists extensions whose hook chains have been "
++					 "validated with Citus and may be trusted during preload."),
++		&CohabitExtensions,
++		"",
++		PGC_POSTMASTER,
++		GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE,
++		NULL, NULL, NULL);
++}
++
++static void
++ErrorIfHooksAlreadyRegistered(void)
++{
++	if (!CitusHasAlreadyRegisteredHooks())
++	{
++		return;
++	}
++
++	if (CitusHasTrustedHookCoextensions())
++	{
++		ereport(LOG, (errmsg("allowing Citus to load after preexisting hooks"),
++					  errdetail("citus.cohabit_extensions is set to \"%s\".",
++								CohabitExtensions)));
++		return;
++	}
++
++	/*
++	 * In many cases (e.g. planner and utility hook, to run inside
++	 * pg_stat_statements et. al.) we have to be loaded before other hooks
++	 * (thus as the innermost/last running hook) to be able to do our
++	 * duties. For simplicity insist that all hooks are previously unused unless
++	 * the operator explicitly opts into a validated cohabitation chain.
++	 */
++	ereport(ERROR, (errmsg("Citus has to be loaded first"),
++					errhint("Place citus at the beginning of "
++							"shared_preload_libraries or configure "
++							"citus.cohabit_extensions for validated "
++							"coextensions.")));
++}
++
++static bool
++CitusHasAlreadyRegisteredHooks(void)
++{
++	return planner_hook != NULL || ProcessUtility_hook != NULL ||
++		   ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
++		   ExplainOneQuery_hook != NULL;
++}
++
++static bool
++CitusHasTrustedHookCoextensions(void)
++{
++	List *cohabitExtensionList = NIL;
++	char *cohabitExtensions = NULL;
++	bool hasTrustedHookCoextensions = false;
++
++	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
++	{
++		return false;
++	}
++
++	cohabitExtensions = pstrdup(CohabitExtensions);
++	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
++	{
++		hasTrustedHookCoextensions = cohabitExtensionList != NIL;
++		list_free(cohabitExtensionList);
++	}
++	pfree(cohabitExtensions);
++
++	return hasTrustedHookCoextensions;
++}
++
+ 
+ /* Register Citus configuration variables. */
+ static void

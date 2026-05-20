@@ -1,0 +1,43 @@
+# FEATURE: O10
+{{- if .Values.observability.alertRules.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "citus-overlay.name" . }}-alerts
+  labels:
+    {{- include "citus-overlay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observability
+spec:
+  groups:
+    - name: ai-blaise-citus.rules
+      interval: {{ .Values.observability.alertRules.interval }}
+      rules:
+        - alert: AiBlaiseCitusReplicationLagHigh
+          expr: max(ai_blaise_citus_replication_lag_seconds) > {{ .Values.observability.alertRules.thresholds.replicationLagSeconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Citus replication lag is above the configured budget
+        - alert: AiBlaiseCitusSidecarNotReady
+          expr: min(ai_blaise_citus_sidecar_ready) by (component) == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: An ai-blaise Citus sidecar is not ready
+        - alert: AiBlaiseCitusVectorizerBacklogHigh
+          expr: sum(ai_blaise_citus_vectorizer_backlog_jobs) > {{ .Values.observability.alertRules.thresholds.vectorizerBacklog }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Vectorizer backlog is above the configured budget
+        - alert: AiBlaiseCitusPoolErrorRateHigh
+          expr: (sum(rate(ai_blaise_citus_pool_errors_total[5m])) / sum(rate(ai_blaise_citus_pool_requests_total[5m]))) * 100 > {{ .Values.observability.alertRules.thresholds.poolErrorRatePercent }}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Pool error rate is above the configured budget
+{{- end }}

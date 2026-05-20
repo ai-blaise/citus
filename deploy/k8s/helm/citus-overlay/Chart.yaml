@@ -1,0 +1,11 @@
+apiVersion: v2
+name: ai-blaise-citus-overlay
+description: ai-blaise Citus overlay operator, pool, sidecars, tools, and CRDs.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/ai-blaise/citus
+sources:
+  - https://github.com/ai-blaise/citus
+annotations:
+  ai-blaise.com/third-party-platform: external

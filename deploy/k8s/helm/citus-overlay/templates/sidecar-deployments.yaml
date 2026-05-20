@@ -1,0 +1,37 @@
+{{- range .Values.sidecars }}
+{{- if .enabled }}
+{{- $repository := default (printf "citus-sidecar-%s" .name) (dig "image" "repository" "" .) }}
+{{- $tag := default $.Values.sidecarDefaults.tag (dig "image" "tag" "" .) }}
+{{- $port := default $.Values.sidecarDefaults.port .port }}
+{{- $resources := default $.Values.sidecarDefaults.resources .resources }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "citus-overlay.name" $ }}-sidecar-{{ .name }}
+  labels:
+    {{- include "citus-overlay.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: sidecar-{{ .name }}
+spec:
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "citus-overlay.name" $ }}
+      app.kubernetes.io/component: sidecar-{{ .name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "citus-overlay.name" $ }}
+        app.kubernetes.io/component: sidecar-{{ .name }}
+    spec:
+      containers:
+        - name: {{ .name }}
+          image: {{ include "citus-overlay.image" (dict "Values" $.Values "repository" $repository "tag" $tag) }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $port }}
+          resources:
+            {{- toYaml $resources | nindent 12 }}
+---
+{{- end }}
+{{- end }}

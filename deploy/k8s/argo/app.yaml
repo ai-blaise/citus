@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-blaise-citus
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ai-blaise/citus
+    targetRevision: ai-blaise/bootstrap-v2
+    path: deploy/k8s/helm/citus-overlay
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-blaise-citus
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

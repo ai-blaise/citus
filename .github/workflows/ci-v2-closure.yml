@@ -1,0 +1,18 @@
+name: v2-closure
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check V2 closure contract
+        run: bash ci/ai-blaise/v2-closure-check.sh

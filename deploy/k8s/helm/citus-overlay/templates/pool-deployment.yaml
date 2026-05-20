@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "citus-overlay.name" . }}-pool
+  labels:
+    {{- include "citus-overlay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pool
+spec:
+  replicas: {{ .Values.pool.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "citus-overlay.name" . }}
+      app.kubernetes.io/component: pool
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "citus-overlay.name" . }}
+        app.kubernetes.io/component: pool
+    spec:
+      containers:
+        - name: pool
+          image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.pool.image.repository "tag" .Values.pool.image.tag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.pool.service.port }}
+          resources:
+            {{- toYaml .Values.pool.resources | nindent 12 }}

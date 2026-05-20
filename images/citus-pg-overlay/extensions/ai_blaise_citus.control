@@ -1,0 +1,3 @@
+comment = 'ai-blaise Citus companion SQL fallback extension'
+default_version = '0.1.0'
+relocatable = false
