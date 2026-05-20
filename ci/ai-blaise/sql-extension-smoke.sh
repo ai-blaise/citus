@@ -62,12 +62,100 @@ CREATE TABLE timescale_smoke_metrics (
   metric_time timestamptz NOT NULL,
   value double precision NOT NULL
 );
+CREATE INDEX timescale_smoke_metrics_metric_time_idx
+ON timescale_smoke_metrics(metric_time);
+
+CREATE TABLE timescale_bridge_call_log (
+  function_name text NOT NULL,
+  relation_name text,
+  argument_summary jsonb NOT NULL DEFAULT '{}'::jsonb,
+  called_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE FUNCTION create_hypertable(
+  table_name regclass,
+  time_column text,
+  chunk_time_interval interval DEFAULT NULL,
+  if_not_exists boolean DEFAULT false
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO timescale_bridge_call_log(function_name, relation_name, argument_summary)
+  VALUES (
+    'create_hypertable',
+    table_name::text,
+    jsonb_build_object(
+      'time_column', time_column,
+      'chunk_time_interval', chunk_time_interval::text,
+      'if_not_exists', if_not_exists
+    )
+  );
+END;
+$$;
+
+CREATE FUNCTION create_distributed_table(
+  table_name regclass,
+  distribution_column text,
+  shard_count integer DEFAULT 32
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO timescale_bridge_call_log(function_name, relation_name, argument_summary)
+  VALUES (
+    'create_distributed_table',
+    table_name::text,
+    jsonb_build_object(
+      'distribution_column', distribution_column,
+      'shard_count', shard_count
+    )
+  );
+END;
+$$;
+
+CREATE FUNCTION add_retention_policy(
+  table_name regclass,
+  drop_after interval
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO timescale_bridge_call_log(function_name, relation_name, argument_summary)
+  VALUES (
+    'add_retention_policy',
+    table_name::text,
+    jsonb_build_object('drop_after', drop_after::text)
+  );
+END;
+$$;
+
+CREATE FUNCTION add_reorder_policy(
+  table_name regclass,
+  index_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO timescale_bridge_call_log(function_name, relation_name, argument_summary)
+  VALUES (
+    'add_reorder_policy',
+    table_name::text,
+    jsonb_build_object('index_name', index_name)
+  );
+END;
+$$;
 
 DO $$
 DECLARE
   status_count integer;
   planned_count integer;
   plan_sql text;
+  bridge_features integer;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -114,6 +202,20 @@ BEGIN
     RAISE EXCEPTION 'time_range_shard_pruner did not render pruner plan: %', plan_sql;
   END IF;
 
+  PERFORM apply_distribute_hypertable(
+    'timescale_smoke_metrics',
+    'metric_time',
+    '1 day',
+    2
+  );
+  IF (
+    SELECT count(*)
+    FROM timescale_bridge_call_log
+    WHERE function_name IN ('create_hypertable', 'create_distributed_table')
+  ) <> 2 THEN
+    RAISE EXCEPTION 'apply_distribute_hypertable did not call both dependency entrypoints';
+  END IF;
+
   PERFORM companion_internal.create_worker_hypertables(
     'timescale_smoke_metrics'::regclass,
     'metric_time'::name,
@@ -130,10 +232,36 @@ BEGIN
     'timescale_smoke_metrics'::regclass,
     '90 days'::interval
   );
+  PERFORM apply_retention_policy_distributed(
+    'timescale_smoke_metrics',
+    '90 days'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM timescale_bridge_call_log
+    WHERE function_name = 'add_retention_policy'
+      AND relation_name = 'timescale_smoke_metrics'
+  ) THEN
+    RAISE EXCEPTION 'apply_retention_policy_distributed did not call dependency entrypoint';
+  END IF;
+
   PERFORM companion_internal.add_reorder_policy_distributed(
     'timescale_smoke_metrics'::regclass,
     'timescale_smoke_metrics_metric_time_idx'::name
   );
+  PERFORM apply_reorder_policy_distributed(
+    'timescale_smoke_metrics',
+    'timescale_smoke_metrics_metric_time_idx'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM timescale_bridge_call_log
+    WHERE function_name = 'add_reorder_policy'
+      AND relation_name = 'timescale_smoke_metrics'
+  ) THEN
+    RAISE EXCEPTION 'apply_reorder_policy_distributed did not call dependency entrypoint';
+  END IF;
+
   PERFORM companion_internal.add_continuous_aggregate_distributed(
     'timescale_smoke_hourly',
     'SELECT time_bucket(''1 hour'', metric_time), avg(value) FROM timescale_smoke_metrics GROUP BY 1',
@@ -145,14 +273,57 @@ BEGIN
     'timescale_smoke_metrics'::regclass,
     'metric_time'::name
   );
+  PERFORM apply_time_range_shard_pruner(
+    'timescale_smoke_metrics',
+    'metric_time'
+  );
 
-  IF (
-    SELECT count(*)
+  BEGIN
+    PERFORM apply_compression_policy_distributed(
+      'timescale_smoke_metrics',
+      '7 days',
+      'metric_time',
+      'metric_time DESC'
+    );
+    RAISE EXCEPTION 'apply_compression_policy_distributed must require TimescaleDB dependency';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%requires visible function add_compression_policy from extension timescaledb%' THEN
+      RAISE;
+    END IF;
+  END;
+
+  BEGIN
+    PERFORM apply_continuous_aggregate_distributed(
+      'timescale_smoke_hourly_apply',
+      'SELECT metric_time, avg(value) FROM timescale_smoke_metrics GROUP BY 1',
+      '7 days',
+      '1 hour',
+      '1 hour'
+    );
+    RAISE EXCEPTION 'apply_continuous_aggregate_distributed must require TimescaleDB dependency';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%requires visible function add_continuous_aggregate_policy from extension timescaledb%' THEN
+      RAISE;
+    END IF;
+  END;
+
+  SELECT count(DISTINCT feature_id)
+  INTO bridge_features
+  FROM companion_timescale_bridge_state
+  WHERE feature_id IN ('TS1', 'TS2', 'TS3', 'TS4', 'TS5', 'TS12');
+  IF bridge_features <> 6 THEN
+    RAISE EXCEPTION 'expected six Timescale bridge state feature ids, got %',
+      bridge_features;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
     FROM companion_timescale_bridge_state
-    WHERE feature_id IN ('TS1', 'TS2', 'TS3', 'TS4', 'TS5', 'TS12')
-  ) <> 6 THEN
-    RAISE EXCEPTION 'expected six Timescale bridge state records, got %',
-      (SELECT count(*) FROM companion_timescale_bridge_state);
+    WHERE feature_id = 'TS1'
+      AND object_name = 'timescale_smoke_metrics'
+      AND parameters->>'shard_count' = '2'
+  ) THEN
+    RAISE EXCEPTION 'public apply_distribute_hypertable state was not recorded';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM companion_pg_stat_distributed) THEN
