@@ -43,7 +43,11 @@ equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
 For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
 it builds the app images, installs the Helm chart, creates a real PostgreSQL
-upstream, and verifies live SQL through the pool Kubernetes service.
+upstream, verifies live SQL through the pool Kubernetes service, and
+port-forwards into the live operator plus every sidecar deployment to assert
+`/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
+port-forwards each pool pod after the SQL smoke and aggregates pool request
+metrics across replicas.
 
 ## Hardening Controls
 

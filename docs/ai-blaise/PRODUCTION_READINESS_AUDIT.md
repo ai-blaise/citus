@@ -39,9 +39,16 @@ more production-ready than the artifacts justified.
 - The pool now runs a byte-transparent PostgreSQL TCP proxy on the service
   port and a separate admin server for probes and metrics. Readiness checks the
   configured upstream before Kubernetes can route clients to the pod.
+- The Kubernetes production smoke now port-forwards into the live operator and
+  every sidecar deployment and verifies `/healthz`, `/readyz`, and `/metrics`
+  from the real pods before it runs the pool SQL traffic job.
+- After the SQL smoke, the same Kubernetes smoke port-forwards every pool pod
+  and aggregates `ai_blaise_citus_pool_requests_total` across replicas, avoiding
+  a false failure when the admin service selects a pool pod that did not handle
+  the SQL connection.
 - CI checks now assert the real image matrix, `serve` support, Helm probe
-  contracts, pool data/admin port separation, pool live-SQL smoke coverage,
-  and SQL bridge-state smoke coverage.
+  contracts, live sidecar probe coverage, pool data/admin port separation,
+  pool live-SQL smoke coverage, and SQL bridge-state smoke coverage.
 
 ## Verification Standard
 
@@ -50,5 +57,7 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Rust formatting and compile/test gates for all changed packages.
 - SQL extension smoke against a real Postgres container.
 - Helm render and Kubernetes rollout with the real app images.
+- Live operator and sidecar `/healthz`, `/readyz`, and `/metrics` responses
+  through Kubernetes port-forwarding.
 - Live PostgreSQL traffic through the pool service data port, plus `/readyz`
-  and `/metrics` verification on the pool admin port.
+  and `/metrics` verification on the pool admin port and per-pod pool metrics.

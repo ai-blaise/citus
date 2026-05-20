@@ -52,7 +52,10 @@ pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
 shared TCP health/readiness/metrics server with `serve` so production
 Kubernetes pods do not depend on placeholder responder images.
 `ci/ai-blaise/kind-production-smoke.sh` installs those images into kind and
-verifies live SQL plus pool admin metrics through the Helm chart.
+verifies live operator and sidecar `/healthz`, `/readyz`, and `/metrics`
+responses from real pods, then verifies live SQL plus pool admin metrics
+through the Helm chart, including aggregate pool request counters across
+replicas.
 `companion/src/advanced_planner.rs` executes a deterministic summary for the
 broad V2 planner, tiering, regional, backup, federation, storage, and
 research-guard feature contracts through
@@ -3526,7 +3529,11 @@ queries.
 **Summary**: Builds real Rust application images for the operator, pool,
 sidecars, and `citusctl`, with the deployed services defaulting to the
 long-running `serve` command. The pool image separates PostgreSQL TCP traffic
-from admin probes and requires a configured upstream before readiness.
+from admin probes and requires a configured upstream before readiness. The
+Kubernetes production smoke also verifies live operator and sidecar health,
+readiness, and metrics over port-forwarded pod traffic before accepting the
+deployment, and aggregates pool request metrics across replicas after the SQL
+smoke so service load balancing cannot hide a cold pool pod.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
 app containers and PostgreSQL traffic path rather than synthetic responder
