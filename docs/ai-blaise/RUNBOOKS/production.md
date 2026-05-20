@@ -22,6 +22,7 @@ Production deployments must run through the continuous gates before release.
 14. Feature docs.
 15. License.
 16. Production-readiness audit.
+17. Production gap audit.
 
 The first 15 gates are not a blanket production certification for every custom
 feature. They verify the V2 acceptance model and the current deployment path.
@@ -31,7 +32,13 @@ release scope:
 
 ```bash
 ci/ai-blaise/production-readiness-check.sh production-release
+ci/ai-blaise/production-gap-audit.sh
 ```
+
+The production-gap-audit gate is intentionally conservative: it asserts that
+V2 acceptance is a modeled prerequisite, that production-release mode remains
+blocked while alpha features exist, and that SQL/Kubernetes smoke tests still
+exercise live runtime behavior.
 
 ## Runtime Image Gate
 

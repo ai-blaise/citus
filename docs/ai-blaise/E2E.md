@@ -28,3 +28,8 @@ sidecar runtime layer: CDC delivery, realtime, auth, storage, backup/restore,
 repack, analytical mirrors, settings-bucket pooling, fast-path routing,
 mirroring, HTAP routing, pipelining, TLS reuse, tenant admission, Geo routing,
 and token-cache behavior.
+
+The V2 release-gate report is not measured production evidence by itself. It
+records the canonical gate shape and expected thresholds that live harnesses
+must later prove. `ci/ai-blaise/production-gap-audit.sh` keeps that boundary
+machine-checkable so canonical model output cannot promote alpha features.

@@ -12,5 +12,7 @@ if ! printf '%s\n' "${output}" | grep -Fqx "${expected}"; then
   exit 1
 fi
 
+# The production gap audit treats this as modeled acceptance. Passing this
+# check is a release prerequisite, not production evidence for alpha features.
 bash ci/ai-blaise/upstream-merge-dry.sh
 bash ci/ai-blaise/production-readiness-check.sh

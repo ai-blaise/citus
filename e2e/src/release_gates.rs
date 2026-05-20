@@ -50,6 +50,8 @@ pub struct V2ReleaseGateAcceptance {
 }
 
 impl V2ReleaseGateAcceptance {
+    // Canonical V2 gate shape and thresholds; this is not measured production evidence
+    // until each gate is backed by live harness output.
     pub fn canonical() -> Self {
         Self {
             cohabit: CohabitGate {
