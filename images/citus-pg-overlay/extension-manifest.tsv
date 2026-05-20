@@ -2,6 +2,7 @@
 # name|tier|license|source|feature_ids|policy
 timescaledb|required|Apache-2.0+TSL|binary-package|TS1,TS2,TS3,TS4,TS5,TS10,TS11,TS12|Mandatory cohabitation target; TSL source is never patched or vendored.
 citus|required|AGPL-3.0|source-tree|TS6|Base fork source in this repository.
+ai_blaise_citus|required|AGPL-3.0|local-sql-extension|TS1,TS2,TS3,TS4,TS5,M7|Companion SQL fallback extension installed by the overlay image.
 pgvector|required|PostgreSQL|binary-package|A7|Vector similarity extension.
 pg_cron|required|PostgreSQL|binary-package|EF5|Cron-style scheduling for policy jobs.
 pg_partman|required|PostgreSQL|binary-package|R5|Partition maintenance for non-hypertable data.

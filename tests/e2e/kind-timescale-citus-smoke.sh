@@ -38,7 +38,7 @@ for command_name in docker kind kubectl helm psql; do
 done
 
 if [[ -z "${db_image}" ]]; then
-  echo "SMOKE_DB_IMAGE must point at an image containing Postgres, Citus, TimescaleDB, and companion" >&2
+  echo "SMOKE_DB_IMAGE must point at an image containing Postgres, Citus, TimescaleDB, and ai_blaise_citus" >&2
   exit 1
 fi
 
@@ -115,9 +115,15 @@ CREATE TABLE IF NOT EXISTS timescale_smoke_metrics (
 SELECT create_hypertable('timescale_smoke_metrics', 'metric_time', if_not_exists => true);
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'companion') THEN
-    CREATE EXTENSION IF NOT EXISTS companion;
-    PERFORM companion_feature_status();
+  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'ai_blaise_citus') THEN
+    CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+    IF EXISTS (SELECT 1 FROM companion_feature_status() WHERE status = 'planned') THEN
+      RAISE EXCEPTION 'companion_feature_status must not report planned features';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM companion_feature_status() WHERE feature_id = 'TS1') THEN
+      RAISE EXCEPTION 'companion_feature_status must report TS1';
+    END IF;
+    PERFORM distribute_hypertable('timescale_smoke_metrics', 'metric_time', '1 day', 4);
   END IF;
 END $$;
 SQL

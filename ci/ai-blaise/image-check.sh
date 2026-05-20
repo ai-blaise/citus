@@ -16,7 +16,7 @@ done
 
 required_extensions=(
   timescaledb citus pgvector pg_cron pg_partman pgaudit pgauditlogtofile
-  pgsodium hll topn tdigest pgnodemx postgis pg_search pg_graphql
+  ai_blaise_citus pgsodium hll topn tdigest pgnodemx postgis pg_search pg_graphql
   pg_jsonschema age plrust plv8 pg_uuidv7 pg_repack pg_failover_slots
   pg_warm pgcrypto pg_trgm citext rum
 )
@@ -92,7 +92,33 @@ fi
 grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgvector,pgaudit,pgsodium,pg_cron,age,plrust,companion,pg_hint_plan,sr_plan'" "${load_order}"
 grep -Fq "citus.cohabit_extensions = 'timescaledb'" "${load_order}"
 grep -Fq "COPY extension-manifest.tsv" "${dockerfile}"
+grep -Fq "COPY extensions/ai_blaise_citus.control" "${dockerfile}"
+grep -Fq "COPY extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
+
+for file in \
+  "${image_dir}/extensions/ai_blaise_citus.control" \
+  "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"; do
+  if [[ ! -s "${file}" ]]; then
+    echo "missing companion SQL extension artifact: ${file}" >&2
+    exit 1
+  fi
+done
+
+grep -Fq "CREATE FUNCTION companion_feature_status()" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_distribute_hypertable_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION add_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+
+if grep -RIn "'planned'\\|planned" "${image_dir}/extensions"; then
+  echo "companion SQL extension must not expose planned feature statuses" >&2
+  exit 1
+fi
+
+if grep -RIn "^\\\\" "${image_dir}/extensions"; then
+  echo "companion SQL extension files must be server-executable SQL, not psql meta-command scripts" >&2
+  exit 1
+fi
 
 if grep -RIn "timescaledb.*/tsl\\|/tsl/" "${image_dir}"; then
   echo "image contract must not vendor or patch Timescale TSL source" >&2

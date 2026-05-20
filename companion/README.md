@@ -64,6 +64,9 @@ and `webhooks`.
   `FEATURE: D11`, `FEATURE: MR9`, `FEATURE: RT5`, `FEATURE: S7`,
   `FEATURE: A9`, `FEATURE: Sec7`, `FEATURE: Sec8`, `FEATURE: Sec9`,
   `FEATURE: Sec13`, `FEATURE: T6`, and `FEATURE: T7`
+- `COMPANION_FEATURE_STATUSES` as the canonical status table exposed by the
+  pgrx `companion_feature_status()` function and by the SQL fallback extension
+  packaged in the operand image.
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale

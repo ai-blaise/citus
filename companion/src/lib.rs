@@ -5,6 +5,7 @@ pub mod auth;
 pub mod citus_timescale;
 pub mod db_doctor;
 pub mod extension_catalog;
+pub mod feature_status;
 pub mod geo_distributed;
 pub mod graph_bridge;
 pub mod index_advisor;
@@ -40,6 +41,10 @@ pub use db_doctor::{
 pub use extension_catalog::{
     v2_extension_contracts, validate_extension_contracts, ExtensionCatalogError,
     ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
+};
+pub use feature_status::{
+    companion_feature_statuses, validate_companion_feature_statuses, FeatureStatus,
+    FeatureStatusError, COMPANION_FEATURE_STATUSES,
 };
 pub use geo_distributed::{
     GeoDistributionPlan, GeoGrid, GeoPruningPlan, GeoSqlPlan, GeoValidationError,
@@ -107,65 +112,12 @@ mod pg18 {
             name!(status, &'static str),
         ),
     > {
-        TableIterator::new(vec![
-            ("TS1", "distributed hypertable bridge", "sql-plan"),
-            ("TS2", "distributed compression policy", "sql-plan"),
-            ("TS3", "distributed continuous aggregates", "sql-plan"),
-            ("TS4", "distributed retention policy", "sql-plan"),
-            ("TS5", "time-range shard pruner", "sql-plan"),
-            ("TS8", "LSP hypertable invariants", "sql-plan"),
-            ("TS13", "distributed time_bucket_gapfill", "sql-plan"),
-            ("TS14", "distributed metric toolkit aggregates", "sql-plan"),
-            (
-                "TS15",
-                "distributed approximate toolkit aggregates",
-                "sql-plan",
-            ),
-            (
-                "TS16",
-                "distributed downsampler toolkit aggregates",
-                "sql-plan",
-            ),
-            ("TS17", "distributed state toolkit aggregates", "sql-plan"),
-            ("T8", "toolkit two-step aggregate pushdown", "sql-plan"),
-            ("L9", "worker partial aggregate pushdown", "sql-plan"),
-            ("Search3", "hybrid BM25 and vector ranking", "sql-plan"),
-            ("Search9", "reranker UDF plan", "sql-plan"),
-            ("G2", "distributed graph bridge", "sql-plan"),
-            ("G3", "graph colocation policy", "sql-plan"),
-            ("JS2", "distributed JSON Schema validation", "sql-plan"),
-            ("M13", "JSON Schema validation triggers", "sql-plan"),
-            ("Geo2", "geo-aware distribution", "sql-plan"),
-            ("Geo3", "geo shard pruning", "sql-plan"),
-            ("TS9", "doctor rules for cohabitation", "sql-plan"),
-            ("M7", "pre-flight cohabit-extension check", "sql-plan"),
-            ("PM3", "plan freeze companion module", "sql-plan"),
-            ("PM4", "plan regression detection", "sql-plan"),
-            ("IA3", "companion index advisor", "sql-plan"),
-            ("Sec5", "immutable ledger", "sql-plan"),
-            ("Sec6", "ledger HMAC tamper evidence", "sql-plan"),
-            ("M1", "pgroll-style expand-contract migrations", "sql-plan"),
-            ("M11", "online column-type migration", "sql-plan"),
-            ("WH2", "companion webhook helpers", "sql-plan"),
-            ("A1", "pgai-compatible vectorizer DSL", "planned"),
-            ("O1", "query percentile views", "planned"),
-            ("O2", "distributed stats view", "planned"),
-            ("O3", "replication lag view", "planned"),
-            ("R4", "idle transaction reaper", "planned"),
-            ("Auth2", "tenant-aware claims", "planned"),
-            ("Sec1", "RLS helpers", "planned"),
-            ("Sec2", "JWT verification UDF", "planned"),
-            ("S6", "placement generation helpers", "planned"),
-            ("S13", "range routing helpers", "planned"),
-            ("C10", "online schema job state machine", "planned"),
-            ("M2", "gh-ost-style online DDL", "planned"),
-            ("S14", "tenant migration online", "planned"),
-            ("TO3", "tenant migration online", "planned"),
-            ("TO4", "tenant archive", "planned"),
-            ("TO5", "tenant region affinity", "planned"),
-            ("D4", "citus-lsp metadata views", "sql-plan"),
-            ("M5", "LSP migration quick-fix metadata", "sql-plan"),
-        ])
+        TableIterator::new(
+            crate::feature_status::companion_feature_statuses()
+                .iter()
+                .map(|feature| (feature.feature_id, feature.feature_name, feature.status))
+                .collect(),
+        )
     }
 
     #[pg_extern]

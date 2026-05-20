@@ -12,7 +12,7 @@ tests/e2e/kind-timescale-citus-smoke.sh
 
 Live mode creates a kind cluster, Helm-renders the overlay chart, validates CRD
 and chart YAML with `kubectl --dry-run=client`, starts the operand image, loads
-Citus and TimescaleDB together, and calls companion feature status when the
-companion extension is available.
+Citus and TimescaleDB together, and verifies `companion_feature_status()` when
+the `ai_blaise_citus` companion extension is available.
 
 End-to-end acceptance gates run here as the implementation matures.
