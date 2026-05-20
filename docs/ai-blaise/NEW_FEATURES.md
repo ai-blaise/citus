@@ -72,6 +72,9 @@ for `FEATURE: C10` and `FEATURE: M2`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
+`sidecar/storage/src/lib.rs` also runs a deterministic storage flow for those
+features: presigned URL issuance, tenant bucket ACL checks, object size
+enforcement, metadata persistence, and antivirus quarantine decisions.
 `sidecar/txn_status/src/lib.rs` validates parallel-commit transaction status,
 intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
 `sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status
@@ -3053,6 +3056,7 @@ mapping before upload/download paths are implemented.
 - In-source: `FEATURE: Sto1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto1` in `sidecar/storage/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
 
 ### Sto3: Presigned URL Signing
 
@@ -3075,6 +3079,7 @@ URLs.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto3` in `sidecar/storage/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
 
 ### Sto4: Bucket-Level ACLs
 
@@ -3096,6 +3101,7 @@ in object-store policy.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto4` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto4` in `sidecar/storage/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
 
 ### Sto5: Antivirus Scan Integration
 
@@ -3118,6 +3124,7 @@ policy.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto5` in `sidecar/storage/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
 
 ## MCP
 

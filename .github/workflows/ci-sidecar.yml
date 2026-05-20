@@ -215,6 +215,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_storage --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_storage
+      - name: Run canonical storage report
+        run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-canonical
+      - name: Run canonical storage runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical
 
   txn-status:
     runs-on: ubuntu-latest

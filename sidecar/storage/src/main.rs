@@ -4,7 +4,8 @@
 // FEATURE: Sto5
 
 use ai_blaise_citus_sidecar_storage::{
-    canonical_storage_report, BucketAcl, ObjectStoreProvider, PresignedMethod,
+    canonical_storage_report, canonical_storage_runtime_report, AntivirusVerdict, BucketAcl,
+    ObjectStoreProvider, PresignedMethod,
 };
 use std::env;
 use std::process;
@@ -13,6 +14,11 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+
+    if args == ["run-runtime-canonical"] {
+        run_runtime_canonical();
         return;
     }
 
@@ -52,9 +58,37 @@ fn main() {
     );
 }
 
+fn run_runtime_canonical() {
+    let report = canonical_storage_runtime_report().unwrap_or_else(|error| {
+        eprintln!("storage: canonical runtime report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "bucket\ttenant_id\tobject_key\tcontent_type\tsize_bytes\tcontent_digest\tstored_objects\tquarantined_objects\tscanned_objects\tissued_urls\tantivirus_verdict\tpresigned_method\tpresigned_ttl\tpresigned_url"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.upload.metadata.bucket,
+        report.upload.metadata.tenant_id,
+        report.upload.metadata.object_key,
+        report.upload.metadata.content_type,
+        report.upload.metadata.size_bytes,
+        report.upload.content_digest,
+        report.state.stored_objects,
+        report.state.quarantined_objects,
+        report.state.scanned_objects,
+        report.state.issued_urls,
+        verdict_name(&report.upload.antivirus_verdict),
+        method_name(&report.presigned_url.plan.method),
+        report.presigned_url.expires_in_seconds,
+        report.presigned_url.url,
+    );
+}
+
 fn print_usage() {
-    println!("usage: storage [run-canonical]");
-    println!("runs the deterministic canonical storage sidecar plan and emits TSV");
+    println!("usage: storage [run-canonical|run-runtime-canonical]");
+    println!("runs deterministic canonical storage sidecar plan/runtime reports and emits TSV");
 }
 
 fn provider_name(provider: &ObjectStoreProvider) -> &'static str {
@@ -80,5 +114,13 @@ fn method_name(method: &PresignedMethod) -> &'static str {
         PresignedMethod::Get => "get",
         PresignedMethod::Put => "put",
         PresignedMethod::Delete => "delete",
+    }
+}
+
+fn verdict_name(verdict: &AntivirusVerdict) -> &'static str {
+    match verdict {
+        AntivirusVerdict::Clean => "clean",
+        AntivirusVerdict::Infected => "infected",
+        AntivirusVerdict::NotScanned => "not_scanned",
     }
 }
