@@ -1340,7 +1340,7 @@ state machine.
 **Bundled extension dep**: none
 
 **Summary**: Defines logical-replication slot, publication, sink, and retry
-contracts for the CDC sidecar.
+contracts for the CDC sidecar, plus a runnable canonical delivery emitter.
 
 **Motivation**: Realtime, webhooks, analytical mirrors, and external sinks all
 need one validated CDC stream contract.
@@ -1353,6 +1353,7 @@ sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: C1` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-canonical`
 
 ### C2: Schema-Aware CDC Sinks
 
@@ -2450,7 +2451,8 @@ OpenAPI endpoint.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines realtime WebSocket topic contracts fed by CDC events.
+**Summary**: Defines realtime WebSocket topic contracts fed by CDC events,
+plus a runnable canonical broadcast emitter.
 
 **Motivation**: Realtime broadcasts need typed topic and tenant binding before
 the WebSocket sidecar is implemented.
@@ -2463,6 +2465,7 @@ broadcasts.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT1` in `sidecar/realtime/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-canonical`
 
 ### RT2: Per-Tenant Topic Isolation
 

@@ -249,13 +249,94 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), RealtimeSid
     Ok(())
 }
 
+pub fn canonical_realtime_plan() -> RealtimeSidecarPlan {
+    RealtimeSidecarPlan {
+        contract: RealtimeContract {
+            topic: "orders".to_string(),
+            tenant_id: "tenant-a".to_string(),
+            filters: vec!["status=paid".to_string()],
+            presence_enabled: true,
+        },
+        source_slot: "ai_blaise_cdc".to_string(),
+        subscriptions: vec![
+            RealtimeSubscription {
+                connection_id: "conn-a".to_string(),
+                user_id: "user-a".to_string(),
+                tenant_id: "tenant-a".to_string(),
+                topic: "orders".to_string(),
+                filters: vec![RealtimeFilter {
+                    column: "status".to_string(),
+                    operator: FilterOperator::Eq,
+                    value: "paid".to_string(),
+                }],
+            },
+            RealtimeSubscription {
+                connection_id: "conn-b".to_string(),
+                user_id: "user-b".to_string(),
+                tenant_id: "tenant-b".to_string(),
+                topic: "orders".to_string(),
+                filters: vec![RealtimeFilter {
+                    column: "status".to_string(),
+                    operator: FilterOperator::Eq,
+                    value: "paid".to_string(),
+                }],
+            },
+            RealtimeSubscription {
+                connection_id: "conn-c".to_string(),
+                user_id: "user-c".to_string(),
+                tenant_id: "tenant-a".to_string(),
+                topic: "orders".to_string(),
+                filters: vec![RealtimeFilter {
+                    column: "status".to_string(),
+                    operator: FilterOperator::Eq,
+                    value: "pending".to_string(),
+                }],
+            },
+        ],
+        presence: Some(PresencePlan {
+            tenant_id: "tenant-a".to_string(),
+            topic: "orders".to_string(),
+            users: vec![PresenceUser {
+                user_id: "user-a".to_string(),
+                tenant_id: "tenant-a".to_string(),
+                connection_id: "conn-a".to_string(),
+                online_at: "2026-05-19T12:00:00Z".to_string(),
+            }],
+        }),
+    }
+}
+
+pub fn canonical_realtime_event() -> CdcEventEnvelope {
+    CdcEventEnvelope {
+        lsn: "16/B374D848".to_string(),
+        schema: "public".to_string(),
+        table: "orders".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        operation: CdcOperation::Insert,
+        columns: vec![
+            CdcColumnValue {
+                name: "id".to_string(),
+                value: Some("1".to_string()),
+            },
+            CdcColumnValue {
+                name: "status".to_string(),
+                value: Some("paid".to_string()),
+            },
+        ],
+    }
+}
+
+pub fn canonical_broadcast_plan() -> Result<RealtimeBroadcastPlan, RealtimeSidecarError> {
+    canonical_realtime_plan().broadcast_plan(&canonical_realtime_event())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn realtime_plan_routes_matching_tenant_and_filter() {
-        let plan = valid_plan();
+        let plan = canonical_realtime_plan();
         let broadcast = plan
             .broadcast_plan(&valid_event("tenant-a", "paid"))
             .expect("broadcast plan");
@@ -270,8 +351,21 @@ mod tests {
     }
 
     #[test]
+    fn canonical_broadcast_plan_is_deterministic() {
+        let broadcast = canonical_broadcast_plan().expect("canonical broadcast");
+
+        assert_eq!(broadcast.topic, "orders");
+        assert_eq!(broadcast.tenant_id, "tenant-a");
+        assert_eq!(broadcast.recipients, vec!["conn-a".to_string()]);
+        assert_eq!(
+            broadcast.presence_snapshot.expect("presence").online_users,
+            vec!["user-a".to_string()]
+        );
+    }
+
+    #[test]
     fn realtime_plan_blocks_cross_tenant_subscriptions() {
-        let plan = valid_plan();
+        let plan = canonical_realtime_plan();
         let broadcast = plan
             .broadcast_plan(&valid_event("tenant-b", "paid"))
             .expect("broadcast plan");
@@ -281,9 +375,9 @@ mod tests {
 
     #[test]
     fn realtime_filter_blocks_non_matching_events() {
-        let plan = valid_plan();
+        let plan = canonical_realtime_plan();
         let broadcast = plan
-            .broadcast_plan(&valid_event("tenant-a", "pending"))
+            .broadcast_plan(&valid_event("tenant-a", "refunded"))
             .expect("broadcast plan");
 
         assert!(broadcast.recipients.is_empty());
@@ -291,7 +385,7 @@ mod tests {
 
     #[test]
     fn presence_rejects_cross_tenant_user() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_realtime_plan();
         plan.presence = Some(PresencePlan {
             tenant_id: "tenant-a".to_string(),
             topic: "orders".to_string(),
@@ -316,52 +410,6 @@ mod tests {
         };
 
         assert_eq!(user.validate(), Err(RealtimeSidecarError::InvalidTimestamp));
-    }
-
-    fn valid_plan() -> RealtimeSidecarPlan {
-        RealtimeSidecarPlan {
-            contract: RealtimeContract {
-                topic: "orders".to_string(),
-                tenant_id: "tenant-a".to_string(),
-                filters: vec!["status=paid".to_string()],
-                presence_enabled: true,
-            },
-            source_slot: "ai_blaise_cdc".to_string(),
-            subscriptions: vec![
-                RealtimeSubscription {
-                    connection_id: "conn-a".to_string(),
-                    user_id: "user-a".to_string(),
-                    tenant_id: "tenant-a".to_string(),
-                    topic: "orders".to_string(),
-                    filters: vec![RealtimeFilter {
-                        column: "status".to_string(),
-                        operator: FilterOperator::Eq,
-                        value: "paid".to_string(),
-                    }],
-                },
-                RealtimeSubscription {
-                    connection_id: "conn-b".to_string(),
-                    user_id: "user-b".to_string(),
-                    tenant_id: "tenant-b".to_string(),
-                    topic: "orders".to_string(),
-                    filters: vec![RealtimeFilter {
-                        column: "status".to_string(),
-                        operator: FilterOperator::Eq,
-                        value: "paid".to_string(),
-                    }],
-                },
-            ],
-            presence: Some(PresencePlan {
-                tenant_id: "tenant-a".to_string(),
-                topic: "orders".to_string(),
-                users: vec![PresenceUser {
-                    user_id: "user-a".to_string(),
-                    tenant_id: "tenant-a".to_string(),
-                    connection_id: "conn-a".to_string(),
-                    online_at: "2026-05-19T12:00:00Z".to_string(),
-                }],
-            }),
-        }
     }
 
     fn valid_event(tenant_id: &str, status: &str) -> CdcEventEnvelope {

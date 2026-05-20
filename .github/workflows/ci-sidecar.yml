@@ -76,7 +76,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_cdc --tests
+        run: cargo check -p ai_blaise_citus_sidecar_cdc --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_cdc
 
@@ -172,7 +172,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_realtime --tests
+        run: cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_realtime
 

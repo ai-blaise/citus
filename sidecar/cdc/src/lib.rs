@@ -483,26 +483,140 @@ pub fn sink_plan_from_shared(
     Ok(plan)
 }
 
+pub fn canonical_retry_policy() -> DeliveryRetryPolicy {
+    DeliveryRetryPolicy {
+        max_attempts: 5,
+        dead_letter_queue: "cdc.dead_letters".to_string(),
+    }
+}
+
+pub fn canonical_slot_plan() -> LogicalSlotPlan {
+    LogicalSlotPlan {
+        slot_name: "ai_blaise_cdc".to_string(),
+        publication_name: "ai_blaise_publication".to_string(),
+        plugin: WalOutputPlugin::Wal2Json,
+        confirmed_flush_lsn: Some("16/B374D848".to_string()),
+    }
+}
+
+pub fn canonical_cdc_plan() -> CdcSidecarPlan {
+    CdcSidecarPlan {
+        stream: CdcStreamContract {
+            slot_name: "ai_blaise_cdc".to_string(),
+            publication_name: "ai_blaise_publication".to_string(),
+            sinks: vec![
+                CdcSink::Nats {
+                    subject: "tenant.orders".to_string(),
+                },
+                CdcSink::PubSub {
+                    project_id: "analytics-prod".to_string(),
+                    topic: "orders".to_string(),
+                },
+            ],
+            retry_policy: canonical_retry_policy(),
+        },
+        slot: canonical_slot_plan(),
+        sinks: vec![
+            CdcSinkPlan::Webhook {
+                name: "webhook".to_string(),
+                url: "https://hooks.example.com/orders".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+            CdcSinkPlan::Realtime {
+                name: "realtime".to_string(),
+                topic_prefix: "tenant.orders".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+            CdcSinkPlan::Nats {
+                name: "nats".to_string(),
+                subject: "tenant.orders".to_string(),
+                server_url: "nats://nats.cdc.svc:4222".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+            CdcSinkPlan::PubSub {
+                name: "pubsub".to_string(),
+                project_id: "analytics-prod".to_string(),
+                topic: "orders".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+        ],
+        schema_capture: Some(SchemaCapturePlan {
+            ddl_stream_table: "cdc.ddl_events".to_string(),
+            include_schemas: vec!["public".to_string()],
+            fail_on_parse_error: true,
+        }),
+        anonymization: vec![AnonymizationRule {
+            schema: "public".to_string(),
+            table: "orders".to_string(),
+            column: "email".to_string(),
+            strategy: AnonymizationStrategy::Hash,
+        }],
+    }
+}
+
+pub fn canonical_cdc_event() -> CdcEventEnvelope {
+    CdcEventEnvelope {
+        lsn: "16/B374D848".to_string(),
+        schema: "public".to_string(),
+        table: "orders".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        operation: CdcOperation::Insert,
+        columns: vec![
+            CdcColumnValue {
+                name: "id".to_string(),
+                value: Some("1".to_string()),
+            },
+            CdcColumnValue {
+                name: "status".to_string(),
+                value: Some("paid".to_string()),
+            },
+            CdcColumnValue {
+                name: "email".to_string(),
+                value: Some("person@example.com".to_string()),
+            },
+        ],
+    }
+}
+
+pub fn canonical_delivery_plan() -> Result<CdcDeliveryPlan, CdcSidecarError> {
+    canonical_cdc_plan().delivery_plan(&canonical_cdc_event())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn cdc_sidecar_plan_routes_event_to_all_sinks() {
-        let plan = valid_plan();
+        let plan = canonical_cdc_plan();
         let delivery = plan
-            .delivery_plan(&valid_event())
+            .delivery_plan(&canonical_cdc_event())
             .expect("delivery plan should route");
 
         assert_eq!(delivery.event_lsn, "16/B374D848");
         assert_eq!(delivery.table, "public.orders");
-        assert_eq!(delivery.routed_sinks.len(), 3);
+        assert_eq!(delivery.routed_sinks.len(), 4);
+        assert_eq!(delivery.anonymized_columns, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn canonical_delivery_plan_is_deterministic() {
+        let delivery = canonical_delivery_plan().expect("canonical delivery");
+
+        assert_eq!(
+            delivery
+                .routed_sinks
+                .iter()
+                .map(|sink| sink.sink.as_str())
+                .collect::<Vec<_>>(),
+            vec!["webhook", "realtime", "nats", "pubsub"]
+        );
         assert_eq!(delivery.anonymized_columns, vec!["email".to_string()]);
     }
 
     #[test]
     fn logical_slot_rejects_invalid_lsn() {
-        let mut plan = valid_slot();
+        let mut plan = canonical_slot_plan();
         plan.confirmed_flush_lsn = Some("not-an-lsn".to_string());
 
         assert_eq!(plan.validate(), Err(CdcSidecarError::InvalidLsn));
@@ -514,7 +628,7 @@ mod tests {
             name: "nats".to_string(),
             subject: "tenant.orders".to_string(),
             server_url: "http://nats".to_string(),
-            retry_policy: valid_retry_policy(),
+            retry_policy: canonical_retry_policy(),
         };
 
         assert_eq!(sink.validate(), Err(CdcSidecarError::InvalidNatsUrl));
@@ -526,7 +640,7 @@ mod tests {
             name: "pubsub".to_string(),
             project_id: " ".to_string(),
             topic: "orders".to_string(),
-            retry_policy: valid_retry_policy(),
+            retry_policy: canonical_retry_policy(),
         };
 
         assert_eq!(
@@ -551,91 +665,5 @@ mod tests {
                 "schema_capture.ddl_stream_table"
             ))
         );
-    }
-
-    fn valid_plan() -> CdcSidecarPlan {
-        CdcSidecarPlan {
-            stream: CdcStreamContract {
-                slot_name: "ai_blaise_cdc".to_string(),
-                publication_name: "ai_blaise_publication".to_string(),
-                sinks: vec![
-                    CdcSink::Nats {
-                        subject: "tenant.orders".to_string(),
-                    },
-                    CdcSink::PubSub {
-                        project_id: "analytics-prod".to_string(),
-                        topic: "orders".to_string(),
-                    },
-                ],
-                retry_policy: valid_retry_policy(),
-            },
-            slot: valid_slot(),
-            sinks: vec![
-                CdcSinkPlan::Webhook {
-                    name: "webhook".to_string(),
-                    url: "https://hooks.example.com/orders".to_string(),
-                    retry_policy: valid_retry_policy(),
-                },
-                CdcSinkPlan::Nats {
-                    name: "nats".to_string(),
-                    subject: "tenant.orders".to_string(),
-                    server_url: "nats://nats.cdc.svc:4222".to_string(),
-                    retry_policy: valid_retry_policy(),
-                },
-                CdcSinkPlan::PubSub {
-                    name: "pubsub".to_string(),
-                    project_id: "analytics-prod".to_string(),
-                    topic: "orders".to_string(),
-                    retry_policy: valid_retry_policy(),
-                },
-            ],
-            schema_capture: Some(SchemaCapturePlan {
-                ddl_stream_table: "cdc.ddl_events".to_string(),
-                include_schemas: vec!["public".to_string()],
-                fail_on_parse_error: true,
-            }),
-            anonymization: vec![AnonymizationRule {
-                schema: "public".to_string(),
-                table: "orders".to_string(),
-                column: "email".to_string(),
-                strategy: AnonymizationStrategy::Hash,
-            }],
-        }
-    }
-
-    fn valid_slot() -> LogicalSlotPlan {
-        LogicalSlotPlan {
-            slot_name: "ai_blaise_cdc".to_string(),
-            publication_name: "ai_blaise_publication".to_string(),
-            plugin: WalOutputPlugin::Wal2Json,
-            confirmed_flush_lsn: Some("16/B374D848".to_string()),
-        }
-    }
-
-    fn valid_event() -> CdcEventEnvelope {
-        CdcEventEnvelope {
-            lsn: "16/B374D848".to_string(),
-            schema: "public".to_string(),
-            table: "orders".to_string(),
-            tenant_id: "tenant-a".to_string(),
-            operation: CdcOperation::Insert,
-            columns: vec![
-                CdcColumnValue {
-                    name: "id".to_string(),
-                    value: Some("1".to_string()),
-                },
-                CdcColumnValue {
-                    name: "email".to_string(),
-                    value: Some("person@example.com".to_string()),
-                },
-            ],
-        }
-    }
-
-    fn valid_retry_policy() -> DeliveryRetryPolicy {
-        DeliveryRetryPolicy {
-            max_attempts: 5,
-            dead_letter_queue: "cdc.dead_letters".to_string(),
-        }
     }
 }
