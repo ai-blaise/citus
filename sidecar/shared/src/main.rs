@@ -1,6 +1,8 @@
 // FEATURE: O4
 
-use ai_blaise_citus_sidecar_shared::{HttpMethod, HttpProbeRequest, SidecarRuntime};
+use ai_blaise_citus_sidecar_shared::{
+    run_probe_server, HttpMethod, HttpProbeRequest, SidecarRuntime,
+};
 use std::env;
 use std::process;
 
@@ -8,6 +10,11 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+
+    if args == ["serve"] {
+        run_server("sidecar-shared", "0.0.0.0:8080");
         return;
     }
 
@@ -48,8 +55,15 @@ fn method_name(method: &HttpMethod) -> &str {
 }
 
 fn print_usage() {
-    println!("usage: sidecar-shared [probe-canonical]");
+    println!("usage: sidecar-shared [serve|probe-canonical]");
     println!("emits tab-separated canonical health, readiness, drain, and metrics probes");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 fn escape_field(value: &str) -> String {

@@ -19,5 +19,7 @@ jobs:
         run: cargo check -p ai_blaise_citus_pool --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_pool
+      - name: Smoke PostgreSQL traffic through pool proxy
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-proxy-smoke.sh
       - name: Run canonical pool execution report
         run: cargo run -q -p ai_blaise_citus_pool -- run-canonical

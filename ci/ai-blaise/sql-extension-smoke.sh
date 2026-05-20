@@ -83,6 +83,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM companion_feature_status() WHERE feature_id = 'TS5') THEN
     RAISE EXCEPTION 'companion_feature_status must include TS5';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_feature_status()
+    WHERE feature_id = 'TS18'
+      AND status = 'sql-runtime'
+  ) THEN
+    RAISE EXCEPTION 'companion_feature_status must include sql-runtime TS18';
+  END IF;
   IF (
     SELECT count(*)
     FROM companion_feature_status()
@@ -100,6 +108,47 @@ BEGIN
   plan_sql := time_range_shard_pruner('timescale_smoke_metrics', 'metric_time');
   IF plan_sql NOT LIKE '%enable_time_range_shard_pruner%' THEN
     RAISE EXCEPTION 'time_range_shard_pruner did not render pruner plan: %', plan_sql;
+  END IF;
+
+  PERFORM companion_internal.create_worker_hypertables(
+    'timescale_smoke_metrics'::regclass,
+    'metric_time'::name,
+    '1 day'::interval,
+    4
+  );
+  PERFORM companion_internal.add_compression_policy_distributed(
+    'timescale_smoke_metrics'::regclass,
+    '7 days'::interval,
+    ARRAY['metric_time']::text[],
+    ARRAY['metric_time DESC']::text[]
+  );
+  PERFORM companion_internal.add_retention_policy_distributed(
+    'timescale_smoke_metrics'::regclass,
+    '90 days'::interval
+  );
+  PERFORM companion_internal.add_reorder_policy_distributed(
+    'timescale_smoke_metrics'::regclass,
+    'timescale_smoke_metrics_metric_time_idx'::name
+  );
+  PERFORM companion_internal.add_continuous_aggregate_distributed(
+    'timescale_smoke_hourly',
+    'SELECT time_bucket(''1 hour'', metric_time), avg(value) FROM timescale_smoke_metrics GROUP BY 1',
+    '7 days'::interval,
+    '1 hour'::interval,
+    '1 hour'::interval
+  );
+  PERFORM companion_internal.enable_time_range_shard_pruner(
+    'timescale_smoke_metrics'::regclass,
+    'metric_time'::name
+  );
+
+  IF (
+    SELECT count(*)
+    FROM companion_timescale_bridge_state
+    WHERE feature_id IN ('TS1', 'TS2', 'TS3', 'TS4', 'TS5', 'TS12')
+  ) <> 6 THEN
+    RAISE EXCEPTION 'expected six Timescale bridge state records, got %',
+      (SELECT count(*) FROM companion_timescale_bridge_state);
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM companion_pg_stat_distributed) THEN

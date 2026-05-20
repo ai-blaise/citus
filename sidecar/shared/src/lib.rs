@@ -11,7 +11,8 @@ pub use contracts::{
     RepackExecutionStrategy, SidecarContractError, SidecarRuntimeContracts, StorageContract,
 };
 pub use runtime::{
-    HttpMethod, HttpProbeRequest, HttpProbeResponse, SidecarRuntime, SidecarRuntimeError,
+    listen_addr_from_env, run_probe_server, serve_tcp_forever, HttpMethod, HttpProbeRequest,
+    HttpProbeResponse, SidecarRuntime, SidecarRuntimeError,
 };
 
 use std::time::{Duration, SystemTime};

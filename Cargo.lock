@@ -44,11 +44,15 @@ name = "ai_blaise_citus_operator"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_companion",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]
 name = "ai_blaise_citus_pool"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
 
 [[package]]
 name = "ai_blaise_citus_schema_designer"
@@ -86,38 +90,53 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_sidecar_coldtier"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_edge_functions"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_cdc",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_graphql"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_hlc"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_mcp"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_mcp",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_postgrest"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_sidecar_shared",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_raft"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_hlc",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]
@@ -140,6 +159,7 @@ name = "ai_blaise_citus_sidecar_schema_job"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_companion",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]
@@ -158,6 +178,7 @@ name = "ai_blaise_citus_sidecar_txn_status"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_hlc",
+ "ai_blaise_citus_sidecar_shared",
 ]
 
 [[package]]

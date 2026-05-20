@@ -5,6 +5,9 @@ operator:
 
 pool:
   replicas: 3
+  upstream:
+    host: ai-blaise-citus-postgres-rw
+    port: 5432
   protocolPipeline:
     enabled: true
     maxInFlight: 64

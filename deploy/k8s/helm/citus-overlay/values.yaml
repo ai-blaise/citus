@@ -24,6 +24,10 @@ pool:
     tag: "0.1.0"
   service:
     port: 5432
+    adminPort: 8080
+  upstream:
+    host: ai-blaise-citus-postgres-rw
+    port: 5432
   resources:
     requests:
       cpu: 250m

@@ -1,7 +1,18 @@
 # pool
 
-Shard-aware pooler. The implementation will fork pgcat and replace generic
-routing with Citus shard-map routing.
+Shard-aware pooler. The production `serve` command runs a real PostgreSQL TCP
+proxy with a separate admin health port:
+
+- `AI_BLAISE_POOL_LISTEN_ADDR`: client PostgreSQL listener, default
+  `0.0.0.0:5432`
+- `AI_BLAISE_POOL_ADMIN_ADDR`: HTTP admin listener for `/healthz`, `/readyz`,
+  and `/metrics`, default `0.0.0.0:8080`
+- `AI_BLAISE_POOL_UPSTREAM_ADDR`: required PostgreSQL upstream target
+
+The proxy keeps the data plane byte-transparent while the shard-map router and
+plan-cache logic mature behind the same binary. Readiness checks connect to the
+configured upstream, so Kubernetes does not route traffic to a pool pod that
+cannot reach Postgres.
 
 Current implemented surface:
 
@@ -12,6 +23,8 @@ Current implemented surface:
 - `ShardRoute`
 - `PoolRuntimeContract`
 - `PoolExecutionReport`
+- `PoolProxyConfig`
+- `PoolProxyState`
 - `SessionSetting`
 
 These types are the first local model for `FEATURE: T2` placement-generation
@@ -22,3 +35,5 @@ selection.
 `FEATURE: Sec12`, `FEATURE: Auth3`, and `FEATURE: MR5`.
 `cargo run -p ai_blaise_citus_pool -- run-canonical` emits the deterministic
 execution summary for the pool runtime and shard-map contracts used by CI.
+`ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL
+through the pool listener, and asserts readiness plus Prometheus counters.

@@ -3,6 +3,7 @@
 use crate::{ComponentState, DrainState, HealthReport};
 use std::error::Error;
 use std::fmt;
+use std::net::TcpListener;
 use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -262,6 +263,7 @@ impl HttpProbeResponse {
 pub enum SidecarRuntimeError {
     Io(String),
     MalformedRequest,
+    InvalidListenAddress(String),
 }
 
 impl fmt::Display for SidecarRuntimeError {
@@ -269,6 +271,9 @@ impl fmt::Display for SidecarRuntimeError {
         match self {
             Self::Io(error) => write!(formatter, "{error}"),
             Self::MalformedRequest => write!(formatter, "malformed HTTP probe request"),
+            Self::InvalidListenAddress(address) => {
+                write!(formatter, "invalid listen address: {address}")
+            }
         }
     }
 }
@@ -279,6 +284,49 @@ impl From<std::io::Error> for SidecarRuntimeError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error.to_string())
     }
+}
+
+pub fn listen_addr_from_env(default_addr: &str) -> Result<String, SidecarRuntimeError> {
+    let address = std::env::var("AI_BLAISE_LISTEN_ADDR").unwrap_or_else(|_| default_addr.into());
+    if address.trim().is_empty() {
+        return Err(SidecarRuntimeError::InvalidListenAddress(address));
+    }
+    Ok(address)
+}
+
+pub fn serve_tcp_forever(
+    listen_addr: &str,
+    runtime: SidecarRuntime,
+) -> Result<(), SidecarRuntimeError> {
+    use std::io::{Read, Write};
+
+    let listener = TcpListener::bind(listen_addr)?;
+    let component = runtime.component().to_string();
+    eprintln!("ai-blaise {component} probe server listening on {listen_addr}");
+
+    for stream in listener.incoming() {
+        let mut stream = stream?;
+        let mut runtime = runtime.clone();
+        let mut buffer = [0_u8; 8192];
+        let read_len = stream.read(&mut buffer)?;
+        let response = runtime
+            .handle_http_bytes(&buffer[..read_len])
+            .unwrap_or_else(|error| {
+                HttpProbeResponse::new(
+                    400,
+                    "application/json",
+                    format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+                )
+            });
+        stream.write_all(response.to_http_string().as_bytes())?;
+    }
+
+    Ok(())
+}
+
+pub fn run_probe_server(component: &str, default_addr: &str) -> Result<(), SidecarRuntimeError> {
+    let listen_addr = listen_addr_from_env(default_addr)?;
+    serve_tcp_forever(&listen_addr, SidecarRuntime::ready(component))
 }
 
 #[cfg(unix)]
@@ -419,6 +467,22 @@ mod tests {
             .to_http_string()
             .starts_with("HTTP/1.1 503 Service Unavailable"));
         assert!(response.body.contains("queue lag budget exceeded"));
+    }
+
+    #[test]
+    fn listen_addr_defaults_and_rejects_empty_env() {
+        std::env::remove_var("AI_BLAISE_LISTEN_ADDR");
+        assert_eq!(
+            listen_addr_from_env("127.0.0.1:8080").unwrap(),
+            "127.0.0.1:8080"
+        );
+
+        std::env::set_var("AI_BLAISE_LISTEN_ADDR", "");
+        assert_eq!(
+            listen_addr_from_env("127.0.0.1:8080").unwrap_err(),
+            SidecarRuntimeError::InvalidListenAddress(String::new())
+        );
+        std::env::remove_var("AI_BLAISE_LISTEN_ADDR");
     }
 
     #[cfg(unix)]

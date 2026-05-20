@@ -1,4 +1,17 @@
+-- FEATURE: TS18
+
 CREATE SCHEMA IF NOT EXISTS companion_internal;
+
+CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state (
+    bridge_id bigserial PRIMARY KEY,
+    feature_id text NOT NULL,
+    object_name text NOT NULL,
+    parameters jsonb NOT NULL DEFAULT '{}'::jsonb,
+    applied_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS timescale_bridge_state_feature_object_idx
+ON companion_internal.timescale_bridge_state(feature_id, object_name);
 
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
@@ -7,14 +20,15 @@ STABLE
 PARALLEL SAFE
 AS $$
     VALUES
-        ('TS1', 'distributed hypertable bridge', 'sql-plan'),
-        ('TS2', 'distributed compression policy', 'sql-plan'),
-        ('TS3', 'distributed continuous aggregates', 'sql-plan'),
-        ('TS4', 'distributed retention policy', 'sql-plan'),
-        ('TS5', 'time-range shard pruner', 'sql-plan'),
+        ('TS1', 'distributed hypertable bridge', 'sql-runtime'),
+        ('TS2', 'distributed compression policy', 'sql-runtime'),
+        ('TS3', 'distributed continuous aggregates', 'sql-runtime'),
+        ('TS4', 'distributed retention policy', 'sql-runtime'),
+        ('TS5', 'time-range shard pruner', 'sql-runtime'),
         ('TS8', 'LSP hypertable invariants', 'sql-plan'),
         ('TS9', 'doctor rules for cohabitation', 'sql-plan'),
-        ('TS12', 'distributed reorder policy', 'sql-plan'),
+        ('TS12', 'distributed reorder policy', 'sql-runtime'),
+        ('TS18', 'executable Timescale bridge state', 'sql-runtime'),
         ('TS13', 'distributed time_bucket_gapfill', 'sql-plan'),
         ('TS14', 'distributed metric toolkit aggregates', 'sql-plan'),
         ('TS15', 'distributed approximate toolkit aggregates', 'sql-plan'),
@@ -87,6 +101,200 @@ AS $$
         ARRAY[]::text[]
     )
     FROM unnest(string_to_array(COALESCE(input, ''), ',')) AS part
+$$;
+
+CREATE FUNCTION companion_internal.visible_function_exists(function_name name)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM pg_proc AS proc
+        JOIN pg_namespace AS namespace ON namespace.oid = proc.pronamespace
+        WHERE proc.proname = function_name
+          AND pg_function_is_visible(proc.oid)
+    )
+$$;
+
+CREATE FUNCTION companion_internal.require_visible_function(
+    function_name name,
+    extension_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF NOT companion_internal.visible_function_exists(function_name) THEN
+        RAISE EXCEPTION '% requires visible function % from extension %',
+            current_query(), function_name, extension_name;
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.record_timescale_bridge_state(
+    feature_id text,
+    object_name text,
+    parameters jsonb DEFAULT '{}'::jsonb
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF btrim(feature_id) = '' THEN
+        RAISE EXCEPTION 'feature_id must not be empty';
+    END IF;
+    IF btrim(object_name) = '' THEN
+        RAISE EXCEPTION 'object_name must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.timescale_bridge_state(
+        feature_id,
+        object_name,
+        parameters
+    )
+    VALUES (
+        feature_id,
+        object_name,
+        COALESCE(parameters, '{}'::jsonb)
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.create_worker_hypertables(
+    table_name regclass,
+    distribution_column name,
+    chunk_time_interval interval,
+    shard_count integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF shard_count <= 0 THEN
+        RAISE EXCEPTION 'shard_count must be greater than zero';
+    END IF;
+
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS1',
+        table_name::text,
+        jsonb_build_object(
+            'distribution_column', distribution_column::text,
+            'chunk_time_interval', chunk_time_interval::text,
+            'shard_count', shard_count
+        )
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.add_compression_policy_distributed(
+    table_name regclass,
+    older_than interval,
+    segment_by text[] DEFAULT ARRAY[]::text[],
+    order_by text[] DEFAULT ARRAY[]::text[]
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS2',
+        table_name::text,
+        jsonb_build_object(
+            'older_than', older_than::text,
+            'segment_by', COALESCE(segment_by, ARRAY[]::text[]),
+            'order_by', COALESCE(order_by, ARRAY[]::text[])
+        )
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.add_retention_policy_distributed(
+    table_name regclass,
+    drop_after interval
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS4',
+        table_name::text,
+        jsonb_build_object('drop_after', drop_after::text)
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.add_reorder_policy_distributed(
+    table_name regclass,
+    index_name name
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS12',
+        table_name::text,
+        jsonb_build_object('index_name', index_name::text)
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.add_continuous_aggregate_distributed(
+    view_name text,
+    view_query text,
+    refresh_start interval,
+    refresh_end interval,
+    schedule interval
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF btrim(view_name) = '' THEN
+        RAISE EXCEPTION 'view_name must not be empty';
+    END IF;
+    IF btrim(view_query) = '' THEN
+        RAISE EXCEPTION 'view_query must not be empty';
+    END IF;
+
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS3',
+        view_name,
+        jsonb_build_object(
+            'view_query', view_query,
+            'refresh_start', refresh_start::text,
+            'refresh_end', refresh_end::text,
+            'schedule', schedule::text
+        )
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.enable_time_range_shard_pruner(
+    distributed_table regclass,
+    time_column name
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    PERFORM companion_internal.record_timescale_bridge_state(
+        'TS5',
+        distributed_table::text,
+        jsonb_build_object('time_column', time_column::text)
+    );
+END;
 $$;
 
 CREATE FUNCTION companion_query_percentiles()
@@ -260,6 +468,53 @@ AS $$
     )
 $$;
 
+CREATE FUNCTION apply_distribute_hypertable(
+    table_name text,
+    dist_col text,
+    chunk_time_interval text,
+    num_shards integer DEFAULT 32
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass := table_name::regclass;
+BEGIN
+    IF num_shards <= 0 THEN
+        RAISE EXCEPTION 'num_shards must be greater than zero';
+    END IF;
+
+    PERFORM companion_internal.require_visible_function(
+        'create_hypertable',
+        'timescaledb'
+    );
+    PERFORM companion_internal.require_visible_function(
+        'create_distributed_table',
+        'citus'
+    );
+
+    EXECUTE format(
+        'SELECT create_hypertable(%L::regclass, %L, chunk_time_interval => %L::interval, if_not_exists => true)',
+        table_regclass::text,
+        dist_col,
+        chunk_time_interval
+    );
+    EXECUTE format(
+        'SELECT create_distributed_table(%L::regclass, %L, shard_count => %s)',
+        table_regclass::text,
+        dist_col,
+        num_shards
+    );
+    PERFORM companion_internal.create_worker_hypertables(
+        table_regclass,
+        dist_col::name,
+        chunk_time_interval::interval,
+        num_shards
+    );
+END;
+$$;
+
 CREATE FUNCTION companion_add_compression_policy_distributed_plan(
     table_name regclass,
     older_than interval,
@@ -301,6 +556,55 @@ AS $$
     )
 $$;
 
+CREATE FUNCTION apply_compression_policy_distributed(
+    table_name text,
+    older_than text,
+    segment_by text DEFAULT '',
+    order_by text DEFAULT ''
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass := table_name::regclass;
+    segment_columns text[] := companion_internal.identifier_list(segment_by);
+    order_columns text[] := companion_internal.identifier_list(order_by);
+    compression_options text := 'timescaledb.compress';
+BEGIN
+    PERFORM companion_internal.require_visible_function(
+        'add_compression_policy',
+        'timescaledb'
+    );
+
+    IF cardinality(segment_columns) > 0 THEN
+        compression_options := compression_options || format(
+            ', timescaledb.compress_segmentby = %L',
+            array_to_string(segment_columns, ',')
+        );
+    END IF;
+    IF cardinality(order_columns) > 0 THEN
+        compression_options := compression_options || format(
+            ', timescaledb.compress_orderby = %L',
+            array_to_string(order_columns, ',')
+        );
+    END IF;
+
+    EXECUTE format('ALTER TABLE %s SET (%s)', table_regclass, compression_options);
+    EXECUTE format(
+        'SELECT add_compression_policy(%L::regclass, %L::interval)',
+        table_regclass::text,
+        older_than
+    );
+    PERFORM companion_internal.add_compression_policy_distributed(
+        table_regclass,
+        older_than::interval,
+        segment_columns,
+        order_columns
+    );
+END;
+$$;
+
 CREATE FUNCTION companion_add_retention_policy_distributed_plan(
     table_name regclass,
     drop_after interval
@@ -333,6 +637,34 @@ AS $$
     )
 $$;
 
+CREATE FUNCTION apply_retention_policy_distributed(
+    table_name text,
+    drop_after text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass := table_name::regclass;
+BEGIN
+    PERFORM companion_internal.require_visible_function(
+        'add_retention_policy',
+        'timescaledb'
+    );
+
+    EXECUTE format(
+        'SELECT add_retention_policy(%L::regclass, %L::interval)',
+        table_regclass::text,
+        drop_after
+    );
+    PERFORM companion_internal.add_retention_policy_distributed(
+        table_regclass,
+        drop_after::interval
+    );
+END;
+$$;
+
 CREATE FUNCTION companion_add_reorder_policy_distributed_plan(
     table_name regclass,
     index_name name
@@ -363,6 +695,34 @@ AS $$
         table_name::regclass,
         index_name::name
     )
+$$;
+
+CREATE FUNCTION apply_reorder_policy_distributed(
+    table_name text,
+    index_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass := table_name::regclass;
+BEGIN
+    PERFORM companion_internal.require_visible_function(
+        'add_reorder_policy',
+        'timescaledb'
+    );
+
+    EXECUTE format(
+        'SELECT add_reorder_policy(%L::regclass, %L)',
+        table_regclass::text,
+        index_name
+    );
+    PERFORM companion_internal.add_reorder_policy_distributed(
+        table_regclass,
+        index_name::name
+    );
+END;
 $$;
 
 CREATE FUNCTION companion_add_continuous_aggregate_distributed_plan(
@@ -419,6 +779,52 @@ AS $$
     )
 $$;
 
+CREATE FUNCTION apply_continuous_aggregate_distributed(
+    name text,
+    query text,
+    refresh_start text,
+    refresh_end text,
+    schedule text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF btrim(name) = '' THEN
+        RAISE EXCEPTION 'name must not be empty';
+    END IF;
+    IF btrim(query) = '' THEN
+        RAISE EXCEPTION 'query must not be empty';
+    END IF;
+
+    PERFORM companion_internal.require_visible_function(
+        'add_continuous_aggregate_policy',
+        'timescaledb'
+    );
+
+    EXECUTE format(
+        'CREATE MATERIALIZED VIEW %I WITH (timescaledb.continuous) AS %s',
+        name,
+        query
+    );
+    EXECUTE format(
+        'SELECT add_continuous_aggregate_policy(%L, start_offset => %L::interval, end_offset => %L::interval, schedule_interval => %L::interval)',
+        name,
+        refresh_start,
+        refresh_end,
+        schedule
+    );
+    PERFORM companion_internal.add_continuous_aggregate_distributed(
+        name,
+        query,
+        refresh_start::interval,
+        refresh_end::interval,
+        schedule::interval
+    );
+END;
+$$;
+
 CREATE FUNCTION companion_time_range_shard_pruner_plan(
     distributed_table regclass,
     time_column name
@@ -449,3 +855,28 @@ AS $$
         time_column::name
     )
 $$;
+
+CREATE FUNCTION apply_time_range_shard_pruner(
+    distributed_table text,
+    time_column text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    PERFORM companion_internal.enable_time_range_shard_pruner(
+        distributed_table::regclass,
+        time_column::name
+    );
+END;
+$$;
+
+CREATE VIEW companion_timescale_bridge_state AS
+SELECT
+    bridge_id,
+    feature_id,
+    object_name,
+    parameters,
+    applied_at
+FROM companion_internal.timescale_bridge_state;

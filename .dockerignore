@@ -1,0 +1,7 @@
+.git
+target
+tmp_check
+*.log
+*.tmp
+node_modules
+.DS_Store

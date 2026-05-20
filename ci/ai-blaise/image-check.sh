@@ -6,13 +6,31 @@ manifest="${image_dir}/extension-manifest.tsv"
 dockerfile="${image_dir}/Dockerfile"
 load_order="${image_dir}/shared-preload-libraries.conf"
 init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
+runtime_dockerfile="images/rust-runtime/Dockerfile"
+build_app_images="scripts/citus-scale/build-app-images.sh"
+dockerignore=".dockerignore"
+pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 
-for file in "${manifest}" "${dockerfile}" "${load_order}" "${init_sql}" "${image_dir}/README.md"; do
+for file in \
+  "${dockerignore}" \
+  "${manifest}" \
+  "${dockerfile}" \
+  "${load_order}" \
+  "${init_sql}" \
+  "${image_dir}/README.md" \
+  "${runtime_dockerfile}" \
+  "${build_app_images}" \
+  "${pool_proxy_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
   fi
 done
+
+if [[ ! -x "${build_app_images}" ]]; then
+  echo "missing executable app image build matrix: ${build_app_images}" >&2
+  exit 1
+fi
 
 required_extensions=(
   timescaledb citus pgvector pg_cron pg_partman pgaudit pgauditlogtofile
@@ -95,6 +113,76 @@ grep -Fq "COPY extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY extensions/ai_blaise_citus.control" "${dockerfile}"
 grep -Fq "COPY extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
+grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
+grep -Fq "FEATURE: D13" "${build_app_images}"
+grep -Fq 'cargo build --release -p "${PACKAGE}" --bin "${BIN}"' "${runtime_dockerfile}"
+grep -Fq 'ENTRYPOINT ["/usr/local/bin/ai-blaise-app"]' "${runtime_dockerfile}"
+grep -Fq 'CMD ["serve"]' "${runtime_dockerfile}"
+grep -Fxq 'target' "${dockerignore}"
+grep -Fxq '.git' "${dockerignore}"
+
+required_app_images=(
+  citus-operator
+  citus-pool
+  citus-sidecar-analytical
+  citus-sidecar-auth
+  citus-sidecar-backup
+  citus-sidecar-cdc
+  citus-sidecar-coldtier
+  citus-sidecar-edge-functions
+  citus-sidecar-graphql
+  citus-sidecar-hlc
+  citus-sidecar-mcp
+  citus-sidecar-postgrest
+  citus-sidecar-raft
+  citus-sidecar-realtime
+  citus-sidecar-repack
+  citus-sidecar-schema-job
+  citus-sidecar-storage
+  citus-sidecar-txn-status
+  citus-sidecar-vectorizer
+  citusctl
+)
+
+for app_image in "${required_app_images[@]}"; do
+  if ! grep -Fq "\"${app_image}|" "${build_app_images}"; then
+    echo "missing app image from build matrix: ${app_image}" >&2
+    exit 1
+  fi
+done
+
+required_serve_mains=(
+  operator/src/main.rs
+  sidecar/analytical/src/main.rs
+  sidecar/auth/src/main.rs
+  sidecar/backup/src/main.rs
+  sidecar/cdc/src/main.rs
+  sidecar/coldtier/src/main.rs
+  sidecar/edge_functions/src/main.rs
+  sidecar/graphql/src/main.rs
+  sidecar/hlc/src/main.rs
+  sidecar/mcp/src/main.rs
+  sidecar/postgrest/src/main.rs
+  sidecar/raft/src/main.rs
+  sidecar/realtime/src/main.rs
+  sidecar/repack/src/main.rs
+  sidecar/schema_job/src/main.rs
+  sidecar/storage/src/main.rs
+  sidecar/txn_status/src/main.rs
+  sidecar/vectorizer/src/main.rs
+)
+
+for main_file in "${required_serve_mains[@]}"; do
+  grep -Fq 'args == ["serve"]' "${main_file}"
+  grep -Fq 'run_probe_server' "${main_file}"
+done
+
+grep -Fq 'args == ["serve"]' pool/src/main.rs
+grep -Fq 'run_pool_service_from_env' pool/src/main.rs
+grep -Fq 'AI_BLAISE_POOL_UPSTREAM_ADDR' pool/src/proxy.rs
+grep -Fq 'handle_proxy_connection' pool/src/proxy.rs
+grep -Fq 'ai_blaise_citus_pool_upstream_ready' pool/src/proxy.rs
+grep -Fq 'psql -h 127.0.0.1 -p "${pool_port}"' "${pool_proxy_smoke}"
 
 for file in \
   "${image_dir}/extensions/ai_blaise_citus.control" \
@@ -108,8 +196,13 @@ done
 grep -Fq "CREATE FUNCTION companion_feature_status()" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_distribute_hypertable_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION apply_distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION add_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION apply_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION time_range_shard_pruner" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_timescale_bridge_state" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 
 if grep -RIn "'planned'\\|planned" "${image_dir}/extensions"; then
   echo "companion SQL extension must not expose planned feature statuses" >&2

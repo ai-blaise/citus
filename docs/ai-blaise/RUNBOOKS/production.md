@@ -22,6 +22,29 @@ Production deployments must run through the continuous gates before release.
 14. Feature docs.
 15. License.
 
+## Runtime Image Gate
+
+`FEATURE: D13`
+
+Before promotion, build the real Rust runtime image matrix:
+
+```bash
+IMAGE_REGISTRY=ghcr.io/ai-blaise TAG="${RELEASE_TAG}" \
+  scripts/citus-scale/build-app-images.sh
+```
+
+Production traffic tests must use these images, not substitute responder
+containers. The Kubernetes chart starts the operator, pool, and sidecars with
+`serve`. The pool must have `AI_BLAISE_POOL_UPSTREAM_ADDR` set and must answer
+a real PostgreSQL client query through the `postgres` service port. Probe-only
+traffic is insufficient for production signoff.
+Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
+equivalent before promotion; the accepted result is a successful SQL query
+through the pool data port plus ready admin probes and pool traffic metrics.
+For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
+it builds the app images, installs the Helm chart, creates a real PostgreSQL
+upstream, and verifies live SQL through the pool Kubernetes service.
+
 ## Hardening Controls
 
 - `FEATURE: Sec7`: API keys and cloud credentials are referenced by external

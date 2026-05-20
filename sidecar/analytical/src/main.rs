@@ -12,6 +12,7 @@ use ai_blaise_citus_sidecar_analytical::{
     canonical_analytical_execution_plan, canonical_analytical_runtime_report, AnalyticalEngine,
     FederationTarget, LakehouseFormat,
 };
+use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::process;
 
@@ -19,6 +20,10 @@ fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
+        return;
+    }
+    if args == ["serve"] {
+        run_server("analytical", "0.0.0.0:8080");
         return;
     }
 
@@ -129,8 +134,15 @@ fn run_runtime_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: analytical [run-canonical|run-runtime-canonical]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
+}
+
+fn run_server(component: &str, default_addr: &str) {
+    if let Err(error) = run_probe_server(component, default_addr) {
+        eprintln!("{component}: probe server failed: {error}");
+        process::exit(1);
+    }
 }
 
 fn engine_name(engine: &AnalyticalEngine) -> &'static str {

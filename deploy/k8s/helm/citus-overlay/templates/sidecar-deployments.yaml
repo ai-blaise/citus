@@ -23,13 +23,42 @@ spec:
         app.kubernetes.io/name: {{ include "citus-overlay.name" $ }}
         app.kubernetes.io/component: sidecar-{{ .name }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: {{ .name }}
           image: {{ include "citus-overlay.image" (dict "Values" $.Values "repository" $repository "tag" $tag) }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          args:
+            - serve
+          env:
+            - name: AI_BLAISE_COMPONENT
+              value: {{ .name | quote }}
+            - name: AI_BLAISE_LISTEN_ADDR
+              value: "0.0.0.0:{{ $port }}"
           ports:
             - name: http
               containerPort: {{ $port }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
           resources:
             {{- toYaml $resources | nindent 12 }}
 ---
