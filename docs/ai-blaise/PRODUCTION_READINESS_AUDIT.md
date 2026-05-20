@@ -56,6 +56,11 @@ more production-ready than the artifacts justified.
   `pg_stat_statements`, verifies live percentile rows through
   `companion_pg_stat_statements_p95`, opens a real idle-in-transaction
   backend, and requires `companion_idle_transactions(...)` to detect it.
+- The image workflow and `gate-close` now run every promoted SQL runtime
+  smoke: the plain PostgreSQL extension smoke, the real TimescaleDB bridge
+  smoke, and the primary/standby observability replication smoke. The
+  production gap audit rejects regressions that leave a promoted runtime smoke
+  out of those gates.
 
 ## Verification Standard
 
@@ -70,6 +75,8 @@ Rule 10 completion for this branch requires local and VM verification of:
   through Kubernetes port-forwarding.
 - Live PostgreSQL traffic through the pool service data port, plus `/readyz`
   and `/metrics` verification on the pool admin port and per-pod pool metrics.
+- Every production-promoted SQL runtime smoke must be part of the GitHub image
+  workflow, `gate-close`, and static production gap audit guards.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -79,14 +86,16 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 161
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Five narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Seven narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence: `D13`
 for the production runtime image matrix, `O4` for the shared sidecar
 health/readiness/metrics runtime, `O1` for the installable
-`pg_stat_statements` percentile view, and `R4` for the installable idle
-transaction detection SQL surface, and `TS18` for the installable Timescale
-bridge-state SQL surface verified in both plain PostgreSQL and a real
-TimescaleDB container. The other 156 feature headings remain
+`pg_stat_statements` percentile view, `O2` for the installable local activity
+stats view, `O3` for the installable replication-lag view against a real
+streaming standby, `R4` for the installable idle transaction detection SQL
+surface, and `TS18` for the installable Timescale bridge-state SQL surface
+verified in both plain PostgreSQL and a real TimescaleDB container. The other
+154 feature headings remain
 `Status: alpha`. The remaining 79 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
@@ -122,7 +131,8 @@ direction: the V2 acceptance model must not be cited as production evidence,
 `v2-acceptance-check.sh` must stay out of `production-release` mode, modeled
 release-gate constants must remain documented as non-production evidence, and
 the SQL/Kubernetes smoke guards must keep proving real stdin, live Postgres,
-live pool SQL traffic, and live pod probe traffic.
+live TimescaleDB behavior, live primary/standby replication behavior, live pool
+SQL traffic, and live pod probe traffic.
 
 Production Helm values must also keep alpha sidecars disabled by default.
 `values-prod.yaml` can carry replica/resource intent for those components, but

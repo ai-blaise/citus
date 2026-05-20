@@ -3812,7 +3812,7 @@ verification for this promotion reran that smoke against `postgres:17`.
 ### O2: Distributed Stats View
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -3826,16 +3826,25 @@ debug distributed plans.
 **Citus comparison**: Vanilla Citus exposes many stats views, but not this
 single companion-owned rollup contract.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container and requires
+`companion_pg_stat_distributed` to report the local database node.
+`ci/ai-blaise/observability-replication-smoke.sh` then starts a real
+PostgreSQL primary, installs the extension, and requires the view to report
+active local activity with nonnegative idle and wait counters.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O2` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/observability-replication-smoke.sh`
 
 ### O3: Distributed Replication Lag View
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -3849,11 +3858,18 @@ surface for lag budgets before HA gates can assert readiness.
 **Citus comparison**: Vanilla Citus does not provide an ai-blaise regional lag
 view contract.
 
+Production evidence: `ci/ai-blaise/observability-replication-smoke.sh` starts
+a real `postgres:17` primary and streaming standby on a Docker network, creates
+a replication role, performs `pg_basebackup`, waits for the standby to enter
+recovery, and requires the installable `companion_pg_dist_replication_lag`
+view to report a streaming standby row with nonnegative lag bytes.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O3` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/observability-replication-smoke.sh`
 
 ### O4: Sidecar Health And Metrics Contract
 

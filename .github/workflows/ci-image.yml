@@ -17,3 +17,7 @@ jobs:
         run: bash ci/ai-blaise/image-check.sh
       - name: Smoke SQL companion extension
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
+      - name: Smoke Timescale bridge against real TimescaleDB
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh
+      - name: Smoke observability replication views
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh
