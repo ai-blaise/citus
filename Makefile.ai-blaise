@@ -41,6 +41,9 @@ build-e2e-model:
 test-e2e-model:
 	cargo test -p ai_blaise_citus_e2e
 
+emit-timescale-apply-plan:
+	cargo run -p ai_blaise_citus_e2e --bin timescale_apply_plan
+
 kind-smoke:
 	@tests/e2e/kind-timescale-citus-smoke.sh
 

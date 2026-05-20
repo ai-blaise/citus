@@ -480,6 +480,7 @@ Timescale-aware distributed hypertables.
   `companion_feature_status()`, verifies Timescale/Citus cohabitation, then
   applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
+  and canonical SQL emitter `e2e/src/bin/timescale_apply_plan.rs`
 
 ### TS8: LSP Rules For Hypertable Invariants
 
