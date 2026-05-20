@@ -1,6 +1,6 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model features-doc-check slop-scan gate-close
+.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model kind-smoke features-doc-check slop-scan gate-close
 
 patches-check:
 	@ci/ai-blaise/patches-check.sh
@@ -40,6 +40,9 @@ build-e2e-model:
 
 test-e2e-model:
 	cargo test -p ai_blaise_citus_e2e
+
+kind-smoke:
+	@tests/e2e/kind-timescale-citus-smoke.sh
 
 features-doc-check:
 	@ci/ai-blaise/features-doc-check.sh
