@@ -10,5 +10,6 @@ Current implemented surface:
 - `OnlineDdlSafetyPlan`
 - `GhOstShadowPlan`
 - `SchemaJobAction`
+- `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 
 These contracts cover `FEATURE: C10` and `FEATURE: M2`.

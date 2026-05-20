@@ -124,7 +124,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_hlc --tests
+        run: cargo check -p ai_blaise_citus_sidecar_hlc --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_hlc
 
@@ -160,7 +160,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_raft --tests
+        run: cargo check -p ai_blaise_citus_sidecar_raft --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_raft
 
@@ -184,7 +184,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_repack --tests
+        run: cargo check -p ai_blaise_citus_sidecar_repack --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_repack
 
@@ -196,7 +196,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_schema_job --tests
+        run: cargo check -p ai_blaise_citus_sidecar_schema_job --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_schema_job
 
@@ -220,6 +220,6 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_txn_status --tests
+        run: cargo check -p ai_blaise_citus_sidecar_txn_status --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_txn_status

@@ -42,6 +42,8 @@ and RLS/JWT contracts for `FEATURE: API3`, `FEATURE: API4`, and
 `FEATURE: API5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
+`sidecar/hlc/src/main.rs` emits the canonical closed-timestamp follower-read
+runner for `FEATURE: S9`.
 `sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
 tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
 `FEATURE: MCP3`.
@@ -50,19 +52,27 @@ RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
 `FEATURE: API5`, and `FEATURE: API6`.
 `sidecar/raft/src/lib.rs` validates shard-group Raft membership, leader lease,
 placement intent, quorum, and failover decisions for `FEATURE: S5`.
+`sidecar/raft/src/main.rs` emits the canonical shard-group failover runner for
+`FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
 `sidecar/repack/src/lib.rs` validates online repack command planning and
 per-shard targets for `FEATURE: R7`.
+`sidecar/repack/src/main.rs` emits the canonical online repack command runner
+for `FEATURE: R7`.
 `sidecar/schema_job/src/lib.rs` validates online-DDL worker leases, backfill,
 safety, and gh-ost shadow-table contracts for `FEATURE: C10` and
 `FEATURE: M2`.
+`sidecar/schema_job/src/main.rs` emits the canonical online-DDL worker runner
+for `FEATURE: C10` and `FEATURE: M2`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
 `sidecar/txn_status/src/lib.rs` validates parallel-commit transaction status,
 intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
+`sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status
+runner for `FEATURE: T5`.
 
 ## Operand Image
 
@@ -186,6 +196,7 @@ parallel-commit transaction-status sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
 
 ### T8: Toolkit Two-Step Aggregate Pushdown
 
@@ -886,6 +897,7 @@ consensus logic into Postgres backends.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S5` in `sidecar/raft/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-canonical`
 
 ### S6: Per-Shard Placement Generation
 
@@ -930,6 +942,7 @@ reads.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S9` in `sidecar/hlc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-canonical`
 
 ### S10: Schema-Based Tenancy
 
@@ -1135,6 +1148,7 @@ does not provide a scheduled repack CRD.
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
 
 ### R9: Cross-Tier Query Planner Input
 
@@ -1331,6 +1345,7 @@ state machine.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: C10` in `sidecar/schema_job/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 
 ### C1: CDC Sidecar
 

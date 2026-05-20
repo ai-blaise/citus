@@ -227,10 +227,61 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), Schem
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SchemaJobCanonicalReport {
+    pub worker: SchemaJobWorkerPlan,
+    pub action: SchemaJobAction,
+}
+
+pub fn canonical_schema_job_worker_plan() -> SchemaJobWorkerPlan {
+    use ai_blaise_citus_companion::SchemaJobOperation;
+
+    SchemaJobWorkerPlan {
+        job: SchemaJobPlan {
+            name: "users-add-display-name".to_string(),
+            table: "public.users".to_string(),
+            state: SchemaJobState::DeleteOnly,
+            operations: vec![SchemaJobOperation::AddColumn {
+                column: "display_name".to_string(),
+                sql_type: "text".to_string(),
+            }],
+            lease_seconds: 30,
+        },
+        worker_id: "schema-worker-a".to_string(),
+        lease: SchemaJobLease {
+            holder: "schema-worker-a".to_string(),
+            epoch: 1,
+            expires_at: "2026-05-19T12:00:00Z".to_string(),
+        },
+        backfill: BackfillPlan {
+            batch_size: 1_000,
+            max_parallel_shards: 4,
+            throttle_ms: 50,
+        },
+        safety: OnlineDdlSafetyPlan {
+            max_replication_lag_bytes: 16_777_216,
+            max_lock_ms: 500,
+            allow_blocking_cutover: false,
+        },
+        shadow: Some(GhOstShadowPlan {
+            source_table: "public.users".to_string(),
+            shadow_table: "public._users_new".to_string(),
+            changelog_table: "public._users_changelog".to_string(),
+            cutover_lock_timeout_ms: 500,
+        }),
+    }
+}
+
+pub fn canonical_schema_job_report() -> Result<SchemaJobCanonicalReport, SchemaJobSidecarError> {
+    let worker = canonical_schema_job_worker_plan();
+    let action = worker.next_action()?;
+
+    Ok(SchemaJobCanonicalReport { worker, action })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_blaise_citus_companion::SchemaJobOperation;
 
     #[test]
     fn worker_plan_maps_backfill_state_to_backfill_action() {
@@ -282,40 +333,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn canonical_report_is_deterministic() {
+        let report = canonical_schema_job_report().expect("canonical report");
+
+        assert_eq!(report.worker.job.name, "users-add-display-name");
+        assert_eq!(report.worker.worker_id, "schema-worker-a");
+        assert_eq!(report.action, SchemaJobAction::ApplyDeleteOnly);
+    }
+
     fn valid_worker_plan() -> SchemaJobWorkerPlan {
-        SchemaJobWorkerPlan {
-            job: SchemaJobPlan {
-                name: "users-add-display-name".to_string(),
-                table: "public.users".to_string(),
-                state: SchemaJobState::DeleteOnly,
-                operations: vec![SchemaJobOperation::AddColumn {
-                    column: "display_name".to_string(),
-                    sql_type: "text".to_string(),
-                }],
-                lease_seconds: 30,
-            },
-            worker_id: "schema-worker-a".to_string(),
-            lease: SchemaJobLease {
-                holder: "schema-worker-a".to_string(),
-                epoch: 1,
-                expires_at: "2026-05-19T12:00:00Z".to_string(),
-            },
-            backfill: BackfillPlan {
-                batch_size: 1_000,
-                max_parallel_shards: 4,
-                throttle_ms: 50,
-            },
-            safety: OnlineDdlSafetyPlan {
-                max_replication_lag_bytes: 16_777_216,
-                max_lock_ms: 500,
-                allow_blocking_cutover: false,
-            },
-            shadow: Some(GhOstShadowPlan {
-                source_table: "public.users".to_string(),
-                shadow_table: "public._users_new".to_string(),
-                changelog_table: "public._users_changelog".to_string(),
-                cutover_lock_timeout_ms: 500,
-            }),
-        }
+        canonical_schema_job_worker_plan()
     }
 }

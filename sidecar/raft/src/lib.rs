@@ -168,6 +168,72 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), RaftSidecar
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RaftCanonicalReport {
+    pub plan: RaftShardGroupPlan,
+    pub observed_at: HlcTimestamp,
+    pub live_nodes: Vec<String>,
+    pub decision: FailoverDecision,
+}
+
+pub fn canonical_raft_plan() -> RaftShardGroupPlan {
+    RaftShardGroupPlan {
+        shard_group: "orders-sg".to_string(),
+        term: 7,
+        leader: Some("worker-a".to_string()),
+        members: vec![
+            RaftMember {
+                node_id: "worker-a".to_string(),
+                cnpg_pod: "orders-0".to_string(),
+                voter: true,
+                placement_generation: 3,
+            },
+            RaftMember {
+                node_id: "worker-b".to_string(),
+                cnpg_pod: "orders-1".to_string(),
+                voter: true,
+                placement_generation: 4,
+            },
+            RaftMember {
+                node_id: "worker-c".to_string(),
+                cnpg_pod: "orders-2".to_string(),
+                voter: true,
+                placement_generation: 5,
+            },
+        ],
+        lease: PlacementLeasePlan {
+            holder: "worker-a".to_string(),
+            expires_at: timestamp(1_700_005_000),
+        },
+        placement_intents: vec![ShardPlacementIntent {
+            shard_id: 10,
+            target_node: "worker-c".to_string(),
+            placement_generation: 5,
+        }],
+    }
+}
+
+pub fn canonical_raft_report() -> Result<RaftCanonicalReport, RaftSidecarError> {
+    let plan = canonical_raft_plan();
+    let observed_at = timestamp(1_700_010_000);
+    let live_nodes = vec!["worker-b".to_string(), "worker-c".to_string()];
+    let decision = plan.failover_decision(&live_nodes, observed_at)?;
+
+    Ok(RaftCanonicalReport {
+        plan,
+        observed_at,
+        live_nodes,
+        decision,
+    })
+}
+
+pub fn timestamp(physical_ms: u64) -> HlcTimestamp {
+    HlcTimestamp {
+        physical_ms,
+        logical: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,47 +290,21 @@ mod tests {
         assert_eq!(plan.validate(), Err(RaftSidecarError::InvalidShardId));
     }
 
-    fn valid_plan() -> RaftShardGroupPlan {
-        RaftShardGroupPlan {
-            shard_group: "orders-sg".to_string(),
-            term: 7,
-            leader: Some("worker-a".to_string()),
-            members: vec![
-                RaftMember {
-                    node_id: "worker-a".to_string(),
-                    cnpg_pod: "orders-0".to_string(),
-                    voter: true,
-                    placement_generation: 3,
-                },
-                RaftMember {
-                    node_id: "worker-b".to_string(),
-                    cnpg_pod: "orders-1".to_string(),
-                    voter: true,
-                    placement_generation: 4,
-                },
-                RaftMember {
-                    node_id: "worker-c".to_string(),
-                    cnpg_pod: "orders-2".to_string(),
-                    voter: true,
-                    placement_generation: 5,
-                },
-            ],
-            lease: PlacementLeasePlan {
-                holder: "worker-a".to_string(),
-                expires_at: timestamp(1_700_005_000),
-            },
-            placement_intents: vec![ShardPlacementIntent {
-                shard_id: 10,
-                target_node: "worker-c".to_string(),
-                placement_generation: 5,
-            }],
-        }
+    #[test]
+    fn canonical_report_promotes_highest_generation_live_voter() {
+        let report = canonical_raft_report().expect("canonical report");
+
+        assert_eq!(report.plan.quorum_size(), 2);
+        assert_eq!(
+            report.decision,
+            FailoverDecision::Promote {
+                node_id: "worker-c".to_string(),
+                cnpg_pod: "orders-2".to_string(),
+            }
+        );
     }
 
-    fn timestamp(physical_ms: u64) -> HlcTimestamp {
-        HlcTimestamp {
-            physical_ms,
-            logical: 0,
-        }
+    fn valid_plan() -> RaftShardGroupPlan {
+        canonical_raft_plan()
     }
 }

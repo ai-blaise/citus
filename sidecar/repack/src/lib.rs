@@ -149,6 +149,43 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), Repac
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RepackCanonicalReport {
+    pub job: RepackJobPlan,
+    pub command: RepackCommandPlan,
+}
+
+pub fn canonical_repack_job() -> RepackJobPlan {
+    RepackJobPlan {
+        contract: RepackContract {
+            target: "public.orders".to_string(),
+            strategy: RepackExecutionStrategy::PgRepack,
+            max_concurrency: 2,
+        },
+        schedule: "0 3 * * 0".to_string(),
+        lock_timeout_ms: 500,
+        shard_targets: vec![
+            ShardRepackTarget {
+                shard_id: 102_008,
+                worker: "worker-a".to_string(),
+                table: "public.orders_102008".to_string(),
+            },
+            ShardRepackTarget {
+                shard_id: 102_009,
+                worker: "worker-b".to_string(),
+                table: "public.orders_102009".to_string(),
+            },
+        ],
+    }
+}
+
+pub fn canonical_repack_report() -> Result<RepackCanonicalReport, RepackSidecarError> {
+    let job = canonical_repack_job();
+    let command = job.command_plan()?;
+
+    Ok(RepackCanonicalReport { job, command })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,27 +229,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn canonical_report_is_deterministic() {
+        let report = canonical_repack_report().expect("canonical report");
+
+        assert_eq!(report.job.contract.target, "public.orders");
+        assert_eq!(report.command.executable, "pg_repack");
+        assert_eq!(report.command.shard_count, 2);
+    }
+
     fn valid_job() -> RepackJobPlan {
-        RepackJobPlan {
-            contract: RepackContract {
-                target: "public.orders".to_string(),
-                strategy: RepackExecutionStrategy::PgRepack,
-                max_concurrency: 2,
-            },
-            schedule: "0 3 * * 0".to_string(),
-            lock_timeout_ms: 500,
-            shard_targets: vec![
-                ShardRepackTarget {
-                    shard_id: 102_008,
-                    worker: "worker-a".to_string(),
-                    table: "public.orders_102008".to_string(),
-                },
-                ShardRepackTarget {
-                    shard_id: 102_009,
-                    worker: "worker-b".to_string(),
-                    table: "public.orders_102009".to_string(),
-                },
-            ],
-        }
+        canonical_repack_job()
     }
 }

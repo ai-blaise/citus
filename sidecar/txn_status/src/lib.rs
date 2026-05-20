@@ -162,6 +162,71 @@ fn validate_required_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TxnStatusCanonicalReport {
+    pub service: TxnStatusServicePlan,
+    pub record: ParallelCommitRecord,
+    pub observed_at: HlcTimestamp,
+    pub decision: TxnFinalizeDecision,
+}
+
+pub fn canonical_txn_status_service() -> TxnStatusServicePlan {
+    TxnStatusServicePlan {
+        raft_group: "txn-status-orders".to_string(),
+        voters: vec![
+            "worker-a".to_string(),
+            "worker-b".to_string(),
+            "worker-c".to_string(),
+        ],
+        clock: observed_at(1_700_000_000),
+        max_staging_ms: 5_000,
+    }
+}
+
+pub fn canonical_parallel_commit_record() -> ParallelCommitRecord {
+    ParallelCommitRecord {
+        txn_id: "txn-42".to_string(),
+        coordinator: "worker-a".to_string(),
+        status: TxnStatus::Staging,
+        staging_at: observed_at(1_700_000_000),
+        intents: vec![
+            TxnIntent {
+                shard_id: 10,
+                key_range: "[a,m)".to_string(),
+                replica_ack_count: 2,
+                required_acks: 2,
+            },
+            TxnIntent {
+                shard_id: 11,
+                key_range: "[m,z)".to_string(),
+                replica_ack_count: 2,
+                required_acks: 2,
+            },
+        ],
+    }
+}
+
+pub fn canonical_txn_status_report() -> Result<TxnStatusCanonicalReport, TxnStatusError> {
+    let service = canonical_txn_status_service();
+    let record = canonical_parallel_commit_record();
+    let observed_at = observed_at(1_700_000_010);
+    let decision = record.finalize_decision(&service, observed_at)?;
+
+    Ok(TxnStatusCanonicalReport {
+        service,
+        record,
+        observed_at,
+        decision,
+    })
+}
+
+pub fn observed_at(physical_ms: u64) -> HlcTimestamp {
+    HlcTimestamp {
+        physical_ms,
+        logical: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,46 +273,20 @@ mod tests {
         assert_eq!(decision, TxnFinalizeDecision::FallbackToTwoPhaseCommit);
     }
 
+    #[test]
+    fn canonical_report_is_deterministic() {
+        let report = canonical_txn_status_report().expect("canonical report");
+
+        assert_eq!(report.service.raft_group, "txn-status-orders");
+        assert_eq!(report.record.txn_id, "txn-42");
+        assert_eq!(report.decision, TxnFinalizeDecision::Commit);
+    }
+
     fn valid_service() -> TxnStatusServicePlan {
-        TxnStatusServicePlan {
-            raft_group: "txn-status-orders".to_string(),
-            voters: vec![
-                "worker-a".to_string(),
-                "worker-b".to_string(),
-                "worker-c".to_string(),
-            ],
-            clock: observed_at(1_700_000_000),
-            max_staging_ms: 5_000,
-        }
+        canonical_txn_status_service()
     }
 
     fn valid_record() -> ParallelCommitRecord {
-        ParallelCommitRecord {
-            txn_id: "txn-42".to_string(),
-            coordinator: "worker-a".to_string(),
-            status: TxnStatus::Staging,
-            staging_at: observed_at(1_700_000_000),
-            intents: vec![
-                TxnIntent {
-                    shard_id: 10,
-                    key_range: "[a,m)".to_string(),
-                    replica_ack_count: 2,
-                    required_acks: 2,
-                },
-                TxnIntent {
-                    shard_id: 11,
-                    key_range: "[m,z)".to_string(),
-                    replica_ack_count: 2,
-                    required_acks: 2,
-                },
-            ],
-        }
-    }
-
-    fn observed_at(physical_ms: u64) -> HlcTimestamp {
-        HlcTimestamp {
-            physical_ms,
-            logical: 0,
-        }
+        canonical_parallel_commit_record()
     }
 }

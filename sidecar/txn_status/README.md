@@ -8,5 +8,6 @@ Current implemented surface:
 - `ParallelCommitRecord`
 - `TxnIntent`
 - `TxnFinalizeDecision`
+- `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
 
 These contracts cover `FEATURE: T5`.

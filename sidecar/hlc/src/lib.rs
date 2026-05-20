@@ -193,6 +193,70 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), HlcError> {
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HlcCanonicalReport {
+    pub ticked_clock: HlcClock,
+    pub observed_clock: HlcClock,
+    pub follower_read: FollowerReadPlan,
+}
+
+pub fn canonical_clock() -> HlcClock {
+    HlcClock {
+        node_id: "worker-a".to_string(),
+        timestamp: HlcTimestamp {
+            physical_ms: 1_700_000_000,
+            logical: 1,
+        },
+        max_offset_ms: 500,
+    }
+}
+
+pub fn canonical_closed_timestamp() -> ClosedTimestampPlan {
+    ClosedTimestampPlan {
+        shard_group: "orders-sg".to_string(),
+        closed_at: HlcTimestamp {
+            physical_ms: 1_700_000_000,
+            logical: 10,
+        },
+        max_staleness_ms: 5_000,
+        replica_count: 3,
+    }
+}
+
+pub fn canonical_follower_read_plan() -> FollowerReadPlan {
+    FollowerReadPlan {
+        replica: "worker-a-replica".to_string(),
+        as_of: HlcTimestamp {
+            physical_ms: 1_700_000_000,
+            logical: 9,
+        },
+        closed_timestamp: canonical_closed_timestamp(),
+    }
+}
+
+pub fn canonical_hlc_report() -> Result<HlcCanonicalReport, HlcError> {
+    let mut ticked_clock = canonical_clock();
+    ticked_clock.tick(1_700_000_001)?;
+
+    let mut observed_clock = canonical_clock();
+    observed_clock.observe(
+        HlcTimestamp {
+            physical_ms: 1_700_000_000,
+            logical: 5,
+        },
+        1_700_000_000,
+    )?;
+
+    let follower_read = canonical_follower_read_plan();
+    follower_read.validate()?;
+
+    Ok(HlcCanonicalReport {
+        ticked_clock,
+        observed_clock,
+        follower_read,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,26 +317,20 @@ mod tests {
         assert_eq!(plan.validate(), Err(HlcError::InvalidReplicaCount));
     }
 
+    #[test]
+    fn canonical_report_is_deterministic() {
+        let report = canonical_hlc_report().expect("canonical report");
+
+        assert_eq!(report.ticked_clock.timestamp.physical_ms, 1_700_000_001);
+        assert_eq!(report.observed_clock.timestamp.logical, 6);
+        assert_eq!(report.follower_read.replica, "worker-a-replica");
+    }
+
     fn valid_clock() -> HlcClock {
-        HlcClock {
-            node_id: "worker-a".to_string(),
-            timestamp: HlcTimestamp {
-                physical_ms: 1_700_000_000,
-                logical: 1,
-            },
-            max_offset_ms: 500,
-        }
+        canonical_clock()
     }
 
     fn valid_closed_timestamp() -> ClosedTimestampPlan {
-        ClosedTimestampPlan {
-            shard_group: "orders-sg".to_string(),
-            closed_at: HlcTimestamp {
-                physical_ms: 1_700_000_000,
-                logical: 10,
-            },
-            max_staleness_ms: 5_000,
-            replica_count: 3,
-        }
+        canonical_closed_timestamp()
     }
 }
