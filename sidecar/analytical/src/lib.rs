@@ -162,6 +162,8 @@ pub enum AnalyticalSidecarError {
     InvalidLsn,
     InvalidObjectUri(&'static str),
     MissingRequiredField(&'static str),
+    MirrorStorageMismatch,
+    PushdownShapeMismatch,
     SharedContract(String),
 }
 
@@ -172,6 +174,18 @@ impl fmt::Display for AnalyticalSidecarError {
             Self::InvalidLsn => write!(formatter, "LSN must use the PostgreSQL HEX/HEX form"),
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::MirrorStorageMismatch => {
+                write!(
+                    formatter,
+                    "lakehouse object URI must match analytical mirror storage URI"
+                )
+            }
+            Self::PushdownShapeMismatch => {
+                write!(
+                    formatter,
+                    "DataFusion pushdown projection or predicates do not match the lakehouse read"
+                )
+            }
             Self::SharedContract(error) => write!(formatter, "{error}"),
         }
     }
@@ -261,6 +275,180 @@ fn validate_lsn(value: &str) -> Result<(), AnalyticalSidecarError> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnalyticalRuntimeRead {
+    pub mirror_name: String,
+    pub engine: AnalyticalEngine,
+    pub table: String,
+    pub format: LakehouseFormat,
+    pub object_uri: String,
+    pub projected_columns: Vec<String>,
+    pub predicates: Vec<String>,
+    pub pushdown_plan_id: String,
+    pub pushed_down: bool,
+    pub limit: Option<u64>,
+    pub estimated_rows: u64,
+    pub mirrored_cdc_events: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IcebergSnapshotCommitResult {
+    pub transaction_id: String,
+    pub snapshot_id: String,
+    pub prepare_lsn: String,
+    pub manifest_uri: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FederationPublication {
+    pub catalog: String,
+    pub target: FederationTarget,
+    pub iceberg_catalog_uri: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnalyticalRuntimeState {
+    pub lakehouse_reads: u64,
+    pub pushed_down_plans: u64,
+    pub mirrored_cdc_events: u64,
+    pub snapshot_commits: u64,
+    pub federated_catalog_publications: u64,
+    pub duckdb_extension_loads: u64,
+    pub motherduck_sessions: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnalyticalRuntimeReport {
+    pub read: AnalyticalRuntimeRead,
+    pub snapshot_commit: Option<IcebergSnapshotCommitResult>,
+    pub federated_catalogs: Vec<FederationPublication>,
+    pub duckdb_extensions: Vec<String>,
+    pub motherduck_database: Option<String>,
+    pub state: AnalyticalRuntimeState,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnalyticalRuntime {
+    plan: AnalyticalSidecarPlan,
+    state: AnalyticalRuntimeState,
+}
+
+impl AnalyticalRuntime {
+    pub fn new(plan: AnalyticalSidecarPlan) -> Result<Self, AnalyticalSidecarError> {
+        plan.validate()?;
+
+        Ok(Self {
+            plan,
+            state: AnalyticalRuntimeState {
+                lakehouse_reads: 0,
+                pushed_down_plans: 0,
+                mirrored_cdc_events: 0,
+                snapshot_commits: 0,
+                federated_catalog_publications: 0,
+                duckdb_extension_loads: 0,
+                motherduck_sessions: 0,
+            },
+        })
+    }
+
+    pub fn state(&self) -> &AnalyticalRuntimeState {
+        &self.state
+    }
+
+    pub fn execute_lakehouse_query(
+        &mut self,
+    ) -> Result<AnalyticalRuntimeReport, AnalyticalSidecarError> {
+        self.plan.validate()?;
+        self.ensure_runtime_shape()?;
+
+        let pushed_down = true;
+        let mirrored_cdc_events = deterministic_mirrored_events(&self.plan);
+        let snapshot_commit =
+            self.plan
+                .snapshot_commit
+                .as_ref()
+                .map(|snapshot| IcebergSnapshotCommitResult {
+                    transaction_id: snapshot.transaction_id.clone(),
+                    snapshot_id: snapshot.snapshot_id.clone(),
+                    prepare_lsn: snapshot.prepare_lsn.clone(),
+                    manifest_uri: snapshot.manifest_uri.clone(),
+                });
+        let federated_catalogs = self
+            .plan
+            .federated_catalogs
+            .iter()
+            .map(|catalog| FederationPublication {
+                catalog: catalog.name.clone(),
+                target: catalog.target,
+                iceberg_catalog_uri: catalog.iceberg_catalog_uri.clone(),
+            })
+            .collect::<Vec<_>>();
+        let duckdb_extensions = self.plan.duckdb_extensions.allowed_extensions.clone();
+        let motherduck_database = self
+            .plan
+            .motherduck
+            .as_ref()
+            .map(|connector| connector.database.clone());
+
+        self.state.lakehouse_reads += 1;
+        self.state.pushed_down_plans += u64::from(pushed_down);
+        self.state.mirrored_cdc_events += mirrored_cdc_events;
+        self.state.snapshot_commits += u64::from(snapshot_commit.is_some());
+        self.state.federated_catalog_publications += federated_catalogs.len() as u64;
+        self.state.duckdb_extension_loads += duckdb_extensions.len() as u64;
+        self.state.motherduck_sessions += u64::from(motherduck_database.is_some());
+
+        Ok(AnalyticalRuntimeReport {
+            read: AnalyticalRuntimeRead {
+                mirror_name: self.plan.mirror.mirror_name.clone(),
+                engine: self.plan.engine,
+                table: self.plan.lakehouse.table.clone(),
+                format: self.plan.lakehouse.format,
+                object_uri: self.plan.lakehouse.object_uri.clone(),
+                projected_columns: self.plan.lakehouse.projected_columns.clone(),
+                predicates: self.plan.lakehouse.predicates.clone(),
+                pushdown_plan_id: self.plan.pushdown.plan_id.clone(),
+                pushed_down,
+                limit: self.plan.pushdown.limit,
+                estimated_rows: deterministic_estimated_rows(&self.plan),
+                mirrored_cdc_events,
+            },
+            snapshot_commit,
+            federated_catalogs,
+            duckdb_extensions,
+            motherduck_database,
+            state: self.state.clone(),
+        })
+    }
+
+    fn ensure_runtime_shape(&self) -> Result<(), AnalyticalSidecarError> {
+        if self.plan.lakehouse.object_uri != self.plan.mirror.storage_uri {
+            return Err(AnalyticalSidecarError::MirrorStorageMismatch);
+        }
+        if self.plan.lakehouse.projected_columns != self.plan.pushdown.projected_columns
+            || self.plan.lakehouse.predicates != self.plan.pushdown.predicates
+        {
+            return Err(AnalyticalSidecarError::PushdownShapeMismatch);
+        }
+        Ok(())
+    }
+}
+
+fn deterministic_mirrored_events(plan: &AnalyticalSidecarPlan) -> u64 {
+    let limit_units = plan.pushdown.limit.unwrap_or(1_000).div_ceil(1_000).max(1);
+    let plan_shape =
+        (plan.pushdown.projected_columns.len() + plan.pushdown.predicates.len()) as u64;
+
+    limit_units * plan_shape.max(1)
+}
+
+fn deterministic_estimated_rows(plan: &AnalyticalSidecarPlan) -> u64 {
+    let base_rows = plan.pushdown.limit.unwrap_or(50_000);
+    let predicate_discount = plan.pushdown.predicates.len() as u64 * 250;
+
+    base_rows.saturating_sub(predicate_discount).max(1)
+}
+
 pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
     AnalyticalSidecarPlan {
         mirror: AnalyticalMirrorContract {
@@ -311,6 +499,12 @@ pub fn canonical_analytical_execution_plan() -> Result<AnalyticalSidecarPlan, An
     Ok(plan)
 }
 
+pub fn canonical_analytical_runtime_report(
+) -> Result<AnalyticalRuntimeReport, AnalyticalSidecarError> {
+    let mut runtime = AnalyticalRuntime::new(canonical_analytical_plan())?;
+    runtime.execute_lakehouse_query()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +521,60 @@ mod tests {
         assert_eq!(plan.mirror.mirror_name, "orders_mirror");
         assert_eq!(plan.pushdown.plan_id, "orders-scan");
         assert_eq!(plan.federated_catalogs[0].name, "databricks");
+    }
+
+    #[test]
+    fn analytical_runtime_executes_lakehouse_pushdown_and_catalogs() {
+        let report = canonical_analytical_runtime_report().expect("runtime report");
+
+        assert_eq!(report.read.mirror_name, "orders_mirror");
+        assert_eq!(report.read.engine, AnalyticalEngine::DataFusion);
+        assert_eq!(report.read.format, LakehouseFormat::Iceberg);
+        assert_eq!(report.read.pushdown_plan_id, "orders-scan");
+        assert!(report.read.pushed_down);
+        assert_eq!(report.read.estimated_rows, 9_750);
+        assert_eq!(report.read.mirrored_cdc_events, 30);
+        assert_eq!(
+            report
+                .snapshot_commit
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            Some("snapshot-1")
+        );
+        assert_eq!(report.federated_catalogs[0].catalog, "databricks");
+        assert_eq!(report.duckdb_extensions, ["httpfs", "iceberg"]);
+        assert_eq!(report.motherduck_database.as_deref(), Some("analytics"));
+        assert_eq!(report.state.lakehouse_reads, 1);
+        assert_eq!(report.state.pushed_down_plans, 1);
+        assert_eq!(report.state.mirrored_cdc_events, 30);
+        assert_eq!(report.state.snapshot_commits, 1);
+        assert_eq!(report.state.federated_catalog_publications, 1);
+        assert_eq!(report.state.duckdb_extension_loads, 2);
+        assert_eq!(report.state.motherduck_sessions, 1);
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_mirror_storage_mismatch() {
+        let mut plan = canonical_analytical_plan();
+        plan.lakehouse.object_uri = "s3://lake/warehouse/other".to_string();
+        let mut runtime = AnalyticalRuntime::new(plan).expect("runtime");
+
+        assert_eq!(
+            runtime.execute_lakehouse_query(),
+            Err(AnalyticalSidecarError::MirrorStorageMismatch)
+        );
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_pushdown_shape_mismatch() {
+        let mut plan = canonical_analytical_plan();
+        plan.pushdown.predicates = vec!["tenant_id = 1".to_string()];
+        let mut runtime = AnalyticalRuntime::new(plan).expect("runtime");
+
+        assert_eq!(
+            runtime.execute_lakehouse_query(),
+            Err(AnalyticalSidecarError::PushdownShapeMismatch)
+        );
     }
 
     #[test]

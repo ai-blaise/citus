@@ -27,6 +27,11 @@ lakehouse-read, Iceberg snapshot commit, federation, DuckDB extension, and
 MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 `FEATURE: L4`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`,
 `FEATURE: L12`, and `FEATURE: L13`.
+`sidecar/analytical/src/lib.rs` also runs a deterministic analytical runtime
+for those features, covering mirror materialization counters, lakehouse reads,
+DataFusion pushdown shape, Iceberg snapshot commit reporting, federated
+catalog publication, DuckDB extension loading, and MotherDuck session
+accounting.
 `sidecar/cdc/src/lib.rs` validates logical replication stream, DDL capture,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
@@ -2140,7 +2145,8 @@ calls are wired into the search path.
 **Bundled extension dep**: `pg_lake`
 
 **Summary**: Defines the analytical sidecar plan that binds a logical mirror
-to a lakehouse read path, plus a runnable canonical execution-plan emitter.
+to a lakehouse read path, plus runnable canonical execution-plan and runtime
+emitters.
 
 **Motivation**: HTAP routing needs a concrete sidecar contract before pg_lake
 or equivalent execution is wired into queries.
@@ -2153,6 +2159,7 @@ sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L1` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L2: Rust Analytical Server
 
@@ -2163,7 +2170,7 @@ sidecar.
 **Bundled extension dep**: none
 
 **Summary**: Defines Rust-native analytical engine selection for DataFusion,
-DuckDB, or pg_lake-backed execution.
+DuckDB, or pg_lake-backed execution, plus deterministic runtime accounting.
 
 **Motivation**: The analytical path should avoid a Python server in the hot
 query path.
@@ -2175,6 +2182,7 @@ analytical server.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L2` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L3: Iceberg, Parquet, and Delta Reads
 
@@ -2185,7 +2193,7 @@ analytical server.
 **Bundled extension dep**: `pg_lake`, `pg_parquet`
 
 **Summary**: Defines the lakehouse read plan for Iceberg, Parquet, and Delta
-objects.
+objects, then executes the canonical lakehouse read report.
 
 **Motivation**: Warm and cold analytical storage needs one validated format and
 object-URI contract before execution engines fan out reads.
@@ -2197,6 +2205,7 @@ tables through a sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L3` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L4: DataFusion Pushdown
 
@@ -2207,7 +2216,7 @@ tables through a sidecar.
 **Bundled extension dep**: none
 
 **Summary**: Defines projected-column, predicate, and limit pushdown contracts
-for DataFusion execution.
+for DataFusion execution and verifies their runtime shape.
 
 **Motivation**: Analytical execution has to preserve pool and planner
 predicate intent instead of scanning full object-store tables.
@@ -2218,6 +2227,7 @@ predicate intent instead of scanning full object-store tables.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L4` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L5: Iceberg Snapshot Commit At Prepare
 
@@ -2228,7 +2238,8 @@ predicate intent instead of scanning full object-store tables.
 **Bundled extension dep**: none
 
 **Summary**: Defines transaction, snapshot, prepare-LSN, and manifest URI
-contracts for aligning Iceberg snapshot commits with distributed prepare.
+contracts for aligning Iceberg snapshot commits with distributed prepare, plus
+canonical runtime commit reporting.
 
 **Motivation**: Warm-tier visibility must line up with Citus distributed
 transaction boundaries.
@@ -2239,6 +2250,7 @@ transaction boundaries.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L5` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L6: Lakehouse Federation Catalogs
 
@@ -2249,7 +2261,8 @@ transaction boundaries.
 **Bundled extension dep**: none
 
 **Summary**: Defines external Iceberg catalog publication targets for
-Snowflake, Trino, Spark, and Databricks.
+Snowflake, Trino, Spark, and Databricks, and reports canonical publication
+counts.
 
 **Motivation**: External analytical readers need a stable federation contract
 without learning Citus shard placement directly.
@@ -2261,6 +2274,7 @@ external engines.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L6` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L8: Mooncake-Style Logical-Replication Mirror
 
@@ -2271,7 +2285,8 @@ external engines.
 **Bundled extension dep**: none
 
 **Summary**: Defines the analytical mirror contract binding a CDC slot to
-mirror name and object-storage URI.
+mirror name and object-storage URI, then accounts for deterministic mirror
+materialization events in the analytical runtime.
 
 **Motivation**: HTAP without dual-write requires a validated mirror stream
 before analytical sidecars materialize warm columnar copies.
@@ -2286,6 +2301,7 @@ analytical mirror.
 - In-source: `FEATURE: L8` in `sidecar/cdc/src/lib.rs`
 - In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L9: Two-Step Aggregates Push To Workers
 
@@ -2318,7 +2334,7 @@ not this explicit Toolkit/HTAP aggregate bridge.
 **Bundled extension dep**: `pg_duckdb`
 
 **Summary**: Defines the allow-list of DuckDB extensions that analytical
-sidecars may enable.
+sidecars may enable and counts canonical runtime extension loads.
 
 **Motivation**: DuckDB extension use needs to be explicit before sidecars load
 code from extension repositories.
@@ -2329,6 +2345,7 @@ code from extension repositories.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L12` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ### L13: MotherDuck Connector
 
@@ -2339,7 +2356,7 @@ code from extension repositories.
 **Bundled extension dep**: `pg_duckdb`
 
 **Summary**: Defines MotherDuck database and token-secret binding for optional
-cloud analytical routing.
+cloud analytical routing, plus deterministic session accounting.
 
 **Motivation**: MotherDuck connectivity should be an explicit opt-in secret
 binding rather than an ambient runtime setting.
@@ -2350,6 +2367,7 @@ binding rather than an ambient runtime setting.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L13` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 
 ## Auto API
 

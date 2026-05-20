@@ -19,6 +19,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_analytical
+      - name: Run canonical analytical report
+        run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-canonical
+      - name: Run canonical analytical runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical
 
   shared:
     runs-on: ubuntu-latest
