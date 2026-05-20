@@ -27,6 +27,10 @@ more production-ready than the artifacts justified.
 8. Operand-image docs described the required extension bundle as installed for
    every operand image even though `FEATURE: Bundle1` is still an alpha
    manifest/init contract without a real full-bundle image build smoke.
+9. Production Helm values enabled alpha runtime/security intent fields for
+   protocol pipelining, PG18 `io_uring`, External Secrets, TLS, release
+   attestations, and pool CIDR allowlists even though the chart does not yet
+   render or enforce the corresponding runtime/security objects.
 
 ## Corrections
 
@@ -69,6 +73,11 @@ more production-ready than the artifacts justified.
   every binary package is installed in a runnable operand image. The production
   gap audit rejects the old operand-image overclaim until a real full-bundle
   image build smoke exists.
+- Production values now keep alpha runtime/security intent controls disabled by
+  default. The deploy check and production gap audit reject production values
+  that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
+  release attestations, or CIDR allowlists before those controls are rendered,
+  enforced, and verified end to end.
 
 ## Verification Standard
 

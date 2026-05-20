@@ -138,6 +138,51 @@ if [[ -n "${prod_enabled_sidecars}" ]]; then
   exit 1
 fi
 
+prod_enabled_alpha_intent="$(
+  python3 - "${chart_dir}/values-prod.yaml" <<'PY'
+import pathlib
+import re
+import sys
+
+values = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+
+def section(name: str) -> str:
+    match = re.search(rf"^{name}:\n(?P<body>(?:  .*\n|  \n)*)", values, re.M)
+    return match.group("body") if match else ""
+
+pool = section("pool")
+postgres = section("postgres")
+security = section("security")
+findings = []
+
+if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", pool):
+    findings.append("T7 pool.protocolPipeline.enabled")
+
+if re.search(r"networkPolicy:\n(?:    .*\n)*    cidrAllowlist:\n(?:      - .+\n)+", pool):
+    findings.append("Sec13 pool.networkPolicy.cidrAllowlist")
+
+if re.search(r"ioMethod:\s+io_uring\b", postgres):
+    findings.append("T6 postgres.ioMethod")
+
+if re.search(r"externalSecrets:\n(?:    .*\n)*    enabled:\s+true\b", security):
+    findings.append("Sec7 security.externalSecrets.enabled")
+
+if re.search(r"tls:\n(?:    .*\n)*    (clients|postgres|sidecars):\s+true\b", security):
+    findings.append("Sec8 security.tls")
+
+if re.search(r"releaseAttestation:\n(?:    .*\n)*    (sbom|cosign):\s+true\b", security):
+    findings.append("Sec9 security.releaseAttestation")
+
+print("\n".join(findings))
+PY
+)"
+
+if [[ -n "${prod_enabled_alpha_intent}" ]]; then
+  echo "values-prod.yaml must not enable alpha runtime/security intent controls by default:" >&2
+  echo "${prod_enabled_alpha_intent}" >&2
+  exit 1
+fi
+
 if grep -R "{{" "${chart_dir}/crds"; then
   echo "crds/ files must be static Kubernetes YAML, not Helm templates" >&2
   exit 1

@@ -28,6 +28,7 @@ OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
+DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
 PROD_READINESS = ROOT / "ci/ai-blaise/production-readiness-check.sh"
 IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
@@ -192,6 +193,7 @@ observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
 deploy_check = read(DEPLOY_CHECK)
 prod_values = read(PROD_VALUES)
+default_values = read(DEFAULT_VALUES)
 image_workflow = read(IMAGE_WORKFLOW)
 makefile = read(MAKEFILE)
 sources = source_text()
@@ -492,6 +494,8 @@ for target in (
 
 if "values-prod.yaml must not enable alpha sidecars by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha sidecars enabled in production values")
+if "values-prod.yaml must not enable alpha runtime/security intent controls by default" not in deploy_check:
+    fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in production values")
 inside_sidecars = False
 current_sidecar = ""
 enabled_sidecars = []
@@ -513,6 +517,50 @@ if enabled_sidecars:
         "values-prod.yaml must not enable alpha sidecars by default: "
         + ", ".join(enabled_sidecars)
     )
+
+alpha_intent_findings = []
+if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
+    alpha_intent_findings.append("T7 pool.protocolPipeline.enabled")
+if re.search(
+    r"networkPolicy:\n(?:    .*\n)*    cidrAllowlist:\n(?:      - .+\n)+",
+    prod_values,
+):
+    alpha_intent_findings.append("Sec13 pool.networkPolicy.cidrAllowlist")
+if re.search(r"ioMethod:\s+io_uring\b", prod_values):
+    alpha_intent_findings.append("T6 postgres.ioMethod")
+if re.search(r"externalSecrets:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
+    alpha_intent_findings.append("Sec7 security.externalSecrets.enabled")
+if re.search(r"tls:\n(?:    .*\n)*    (clients|postgres|sidecars):\s+true\b", prod_values):
+    alpha_intent_findings.append("Sec8 security.tls")
+if re.search(
+    r"releaseAttestation:\n(?:    .*\n)*    (sbom|cosign):\s+true\b",
+    prod_values,
+):
+    alpha_intent_findings.append("Sec9 security.releaseAttestation")
+if alpha_intent_findings:
+    fail(
+        "values-prod.yaml must not enable alpha runtime/security intent controls by default: "
+        + ", ".join(alpha_intent_findings)
+    )
+
+for phrase in (
+    "protocolPipeline:",
+    "ioMethod: io_uring",
+    "externalSecrets:",
+    "tls:",
+    "releaseAttestation:",
+    "cidrAllowlist:",
+):
+    if phrase not in default_values:
+        fail(f"values.yaml must preserve alpha security intent field: {phrase}")
+
+for phrase in (
+    "runtime and security controls are alpha intent",
+    "not active production enforcement",
+    "production values keep those alpha controls disabled",
+):
+    if phrase not in runbook_compact:
+        fail(f"production runbook must preserve runtime/security alpha guardrail: {phrase}")
 
 for path in (
     DOCS,
