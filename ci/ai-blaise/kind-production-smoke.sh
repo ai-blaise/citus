@@ -9,6 +9,7 @@ cd "${repo_root}"
 cluster="${KIND_CLUSTER:-ai-blaise-citus-prod-smoke}"
 namespace="${NAMESPACE:-ai-blaise-prod-live}"
 release="${HELM_RELEASE:-ai-blaise-prod-live}"
+chart_name="${CHART_NAME:-ai-blaise-citus}"
 registry="${IMAGE_REGISTRY:-ai-blaise-local}"
 tag="${TAG:-prod-smoke}"
 postgres_image="${POSTGRES_IMAGE:-postgres:17}"
@@ -19,7 +20,7 @@ smoke_request_memory="${SMOKE_REQUEST_MEMORY:-32Mi}"
 smoke_limit_cpu="${SMOKE_LIMIT_CPU:-250m}"
 smoke_limit_memory="${SMOKE_LIMIT_MEMORY:-256Mi}"
 
-required_commands=(docker helm kind kubectl)
+required_commands=(curl docker helm kind kubectl)
 for command_name in "${required_commands[@]}"; do
   if ! command -v "${command_name}" >/dev/null 2>&1; then
     echo "${command_name} is required for the Kubernetes production smoke" >&2
@@ -77,6 +78,168 @@ wait_for_job() {
     kubectl -n "${namespace}" logs "job/${job_name}" --all-containers=true >&2 || true
     dump_k8s_diagnostics
     exit 1
+  fi
+}
+
+wait_for_http() {
+  local url="$1"
+  local label="$2"
+  local attempt
+
+  for attempt in $(seq 1 30); do
+    if curl -fsS "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "timed out waiting for ${label} at ${url}" >&2
+  return 1
+}
+
+probe_deployment_http() {
+  local deployment="$1"
+  local component="$2"
+  local remote_port="${3:-8080}"
+  local local_port="$4"
+  local log_file
+  local port_forward_pid
+
+  log_file="$(mktemp)"
+  kubectl -n "${namespace}" port-forward \
+    --address 127.0.0.1 \
+    "deployment/${deployment}" \
+    "${local_port}:${remote_port}" >"${log_file}" 2>&1 &
+  port_forward_pid="$!"
+
+  cleanup_port_forward() {
+    kill "${port_forward_pid}" >/dev/null 2>&1 || true
+    wait "${port_forward_pid}" >/dev/null 2>&1 || true
+    rm -f "${log_file}"
+  }
+
+  if ! wait_for_http "http://127.0.0.1:${local_port}/healthz" "${component} healthz"; then
+    cat "${log_file}" >&2 || true
+    cleanup_port_forward
+    return 1
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:${local_port}/healthz" |
+    grep -F "\"component\":\"${component}\"" >/dev/null; then
+    echo "${component} /healthz did not report the expected component name" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_port_forward
+    return 1
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:${local_port}/readyz" |
+    grep -F '"ready":true' >/dev/null; then
+    echo "${component} /readyz did not report ready=true" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_port_forward
+    return 1
+  fi
+
+  if ! curl -fsS "http://127.0.0.1:${local_port}/metrics" |
+    grep -F "ai_blaise_sidecar_ready{component=\"${component}\"} 1" >/dev/null; then
+    echo "${component} /metrics did not report ai_blaise_sidecar_ready=1" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_port_forward
+    return 1
+  fi
+
+  cleanup_port_forward
+}
+
+expected_probe_component() {
+  local deployment_component="$1"
+
+  case "${deployment_component}" in
+    mcp)
+      printf '%s\n' "mcp-sidecar"
+      ;;
+    *)
+      printf '%s\n' "${deployment_component}"
+      ;;
+  esac
+}
+
+probe_pool_admin_pods() {
+  local pods
+  local pod
+  local local_port=18120
+  local total_requests=0
+
+  pods="$(
+    kubectl -n "${namespace}" get pods \
+      -l "app.kubernetes.io/name=${chart_name},app.kubernetes.io/component=pool" \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+  )"
+
+  if [[ -z "${pods}" ]]; then
+    echo "no pool pods found for admin metrics probe" >&2
+    return 1
+  fi
+
+  while IFS= read -r pod; do
+    [[ -n "${pod}" ]] || continue
+
+    local log_file
+    local port_forward_pid
+    local metrics
+    local requests
+
+    log_file="$(mktemp)"
+    kubectl -n "${namespace}" port-forward \
+      --address 127.0.0.1 \
+      "pod/${pod}" \
+      "${local_port}:8080" >"${log_file}" 2>&1 &
+    port_forward_pid="$!"
+
+    cleanup_pool_port_forward() {
+      kill "${port_forward_pid}" >/dev/null 2>&1 || true
+      wait "${port_forward_pid}" >/dev/null 2>&1 || true
+      rm -f "${log_file}"
+    }
+
+    if ! wait_for_http "http://127.0.0.1:${local_port}/readyz" "pool ${pod} readyz"; then
+      cat "${log_file}" >&2 || true
+      cleanup_pool_port_forward
+      return 1
+    fi
+
+    if ! curl -fsS "http://127.0.0.1:${local_port}/readyz" |
+      grep -F '"upstream_ready":true' >/dev/null; then
+      echo "pool pod ${pod} /readyz did not report upstream_ready=true" >&2
+      cat "${log_file}" >&2 || true
+      cleanup_pool_port_forward
+      return 1
+    fi
+
+    metrics="$(curl -fsS "http://127.0.0.1:${local_port}/metrics")"
+    if ! printf '%s\n' "${metrics}" |
+      awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
+           END { exit ready ? 0 : 1 }'; then
+      echo "pool pod ${pod} /metrics did not report upstream readiness" >&2
+      cat "${log_file}" >&2 || true
+      cleanup_pool_port_forward
+      return 1
+    fi
+
+    requests="$(
+      printf '%s\n' "${metrics}" |
+        awk '/^ai_blaise_citus_pool_requests_total / { print int($2) }'
+    )"
+    requests="${requests:-0}"
+    total_requests="$((total_requests + requests))"
+
+    cleanup_pool_port_forward
+    local_port="$((local_port + 1))"
+  done <<<"${pods}"
+
+  if [[ "${total_requests}" -lt 1 ]]; then
+    echo "pool pod metrics did not record the SQL smoke connection" >&2
+    return 1
   fi
 }
 
@@ -162,6 +325,24 @@ helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
 
 wait_for_deployments
 
+probe_deployment_http "${chart_name}-operator" operator 8080 18080
+
+sidecar_probe_port=18081
+for sidecar in "${images[@]}"; do
+  if [[ "${sidecar}" != citus-sidecar-* ]]; then
+    continue
+  fi
+
+  component="${sidecar#citus-sidecar-}"
+  probe_component="$(expected_probe_component "${component}")"
+  probe_deployment_http \
+    "${chart_name}-sidecar-${component}" \
+    "${probe_component}" \
+    8080 \
+    "${sidecar_probe_port}"
+  sidecar_probe_port="$((sidecar_probe_port + 1))"
+done
+
 kubectl -n "${namespace}" delete job ai-blaise-pool-sql-smoke >/dev/null 2>&1 || true
 cat <<'YAML' | kubectl apply -n "${namespace}" -f -
 apiVersion: batch/v1
@@ -199,6 +380,8 @@ if [[ "${sql_output}" != $'42\n42' ]]; then
   exit 1
 fi
 
+probe_pool_admin_pods
+
 kubectl -n "${namespace}" delete job ai-blaise-pool-admin-smoke >/dev/null 2>&1 || true
 cat <<'YAML' | kubectl apply -n "${namespace}" -f -
 apiVersion: batch/v1
@@ -222,15 +405,14 @@ spec:
                 local target_path="$1"
                 exec 3<>/dev/tcp/ai-blaise-citus-pool/8080
                 printf 'GET %s HTTP/1.1\r\nHost: ai-blaise-citus-pool\r\nConnection: close\r\n\r\n' "${target_path}" >&3
-                cat <&3
+                cat <&3 || true
                 exec 3<&-
                 exec 3>&-
               }
               http_get /readyz | grep -F '"upstream_ready":true'
               http_get /metrics |
                 awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
-                     /^ai_blaise_citus_pool_requests_total / && $2 >= 1 { requests = 1 }
-                     END { exit ready && requests ? 0 : 1 }'
+                     END { exit ready ? 0 : 1 }'
 YAML
 wait_for_job ai-blaise-pool-admin-smoke
 

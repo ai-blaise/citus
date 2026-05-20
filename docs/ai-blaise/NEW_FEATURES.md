@@ -3,6 +3,12 @@
 This is the canonical register of features that `ai-blaise/citus` adds beyond
 vanilla Citus. Every feature-bearing PR updates this file.
 
+Status semantics are intentionally conservative: alpha means not
+production-ready, not feature-complete, and not eligible for production release
+without separate measured evidence and an explicit status promotion. Contract,
+model, catalog, SQL-plan, and runbook entries are implementation artifacts, not
+proof that the end-to-end user-facing feature is fully integrated.
+
 `ci/ai-blaise/v2-closure-check.sh` and the `v2-closure` workflow codify the
 Rule 10 completion contract for the V2 plan: the old 79-item gap list must
 remain present in implementation `FEATURE:` markers and this register, stale
@@ -12,6 +18,9 @@ their deterministic TSV summaries.
 `e2e/src/release_gates.rs`, `ci/ai-blaise/v2-acceptance-check.sh`, and the
 `v2-acceptance` workflow codify the 15 continuous release gates from the V2
 plan, including the upstream-merge dry-run against `release-14.0`.
+`ci/ai-blaise/production-readiness-check.sh` guards the register against
+production-readiness overclaiming by verifying source/doc coverage, status
+semantics, and the whole-repo audit record.
 
 `operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
 acceptance models for the V2 operator catalog. The operator runner validates
@@ -52,7 +61,10 @@ pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
 shared TCP health/readiness/metrics server with `serve` so production
 Kubernetes pods do not depend on placeholder responder images.
 `ci/ai-blaise/kind-production-smoke.sh` installs those images into kind and
-verifies live SQL plus pool admin metrics through the Helm chart.
+verifies live operator and sidecar `/healthz`, `/readyz`, and `/metrics`
+responses from real pods, then verifies live SQL plus pool admin metrics
+through the Helm chart, including aggregate pool request counters across
+replicas.
 `companion/src/advanced_planner.rs` executes a deterministic summary for the
 broad V2 planner, tiering, regional, backup, federation, storage, and
 research-guard feature contracts through
@@ -3526,7 +3538,11 @@ queries.
 **Summary**: Builds real Rust application images for the operator, pool,
 sidecars, and `citusctl`, with the deployed services defaulting to the
 long-running `serve` command. The pool image separates PostgreSQL TCP traffic
-from admin probes and requires a configured upstream before readiness.
+from admin probes and requires a configured upstream before readiness. The
+Kubernetes production smoke also verifies live operator and sidecar health,
+readiness, and metrics over port-forwarded pod traffic before accepting the
+deployment, and aggregates pool request metrics across replicas after the SQL
+smoke so service load balancing cannot hide a cold pool pod.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
 app containers and PostgreSQL traffic path rather than synthetic responder

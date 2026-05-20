@@ -13,3 +13,4 @@ if ! printf '%s\n' "${output}" | grep -Fqx "${expected}"; then
 fi
 
 bash ci/ai-blaise/upstream-merge-dry.sh
+bash ci/ai-blaise/production-readiness-check.sh

@@ -21,6 +21,17 @@ Production deployments must run through the continuous gates before release.
 13. Slop scan.
 14. Feature docs.
 15. License.
+16. Production-readiness audit.
+
+The first 15 gates are not a blanket production certification for every custom
+feature. They verify the V2 acceptance model and the current deployment path.
+Before any production promotion, run the production-readiness audit in release
+mode and block promotion while alpha or contract-only features remain in
+release scope:
+
+```bash
+ci/ai-blaise/production-readiness-check.sh production-release
+```
 
 ## Runtime Image Gate
 
@@ -43,7 +54,11 @@ equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
 For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
 it builds the app images, installs the Helm chart, creates a real PostgreSQL
-upstream, and verifies live SQL through the pool Kubernetes service.
+upstream, verifies live SQL through the pool Kubernetes service, and
+port-forwards into the live operator plus every sidecar deployment to assert
+`/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
+port-forwards each pool pod after the SQL smoke and aggregates pool request
+metrics across replicas.
 
 ## Hardening Controls
 
@@ -61,7 +76,9 @@ upstream, and verifies live SQL through the pool Kubernetes service.
 
 ## Exit Criteria
 
-- All gates are green for the exact commit and image digest.
+- All release-scope gates are green for the exact commit and image digest.
+- No release-scope feature remains alpha, contract-only, or model-only without
+  explicit measured production evidence.
 - Runbook evidence links CI runs, Helm render output, image attestations, and
   smoke-test logs.
 - Rollback commands and PITR checkpoint are present in the release record.
