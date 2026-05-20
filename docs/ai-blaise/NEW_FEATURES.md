@@ -22,6 +22,11 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 `FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
 `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+`sidecar/analytical/src/lib.rs` validates pg_lake/DataFusion/DuckDB,
+lakehouse-read, Iceberg snapshot commit, federation, DuckDB extension, and
+MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
+`FEATURE: L4`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`,
+`FEATURE: L12`, and `FEATURE: L13`.
 `sidecar/cdc/src/lib.rs` validates logical replication stream, DDL capture,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
@@ -1604,9 +1609,139 @@ mirrors.
 
 ## HTAP
 
+### L1: pg_lake Analytical Substrate
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_lake`
+
+**Summary**: Defines the analytical sidecar plan that binds a logical mirror
+to a lakehouse read path.
+
+**Motivation**: HTAP routing needs a concrete sidecar contract before pg_lake
+or equivalent execution is wired into queries.
+
+**Citus comparison**: Vanilla Citus does not ship a pg_lake-backed analytical
+sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L1` in `sidecar/analytical/src/lib.rs`
+
+### L2: Rust Analytical Server
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines Rust-native analytical engine selection for DataFusion,
+DuckDB, or pg_lake-backed execution.
+
+**Motivation**: The analytical path should avoid a Python server in the hot
+query path.
+
+**Citus comparison**: Vanilla Citus does not include an out-of-process Rust
+analytical server.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L2` in `sidecar/analytical/src/lib.rs`
+
+### L3: Iceberg, Parquet, and Delta Reads
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_lake`, `pg_parquet`
+
+**Summary**: Defines the lakehouse read plan for Iceberg, Parquet, and Delta
+objects.
+
+**Motivation**: Warm and cold analytical storage needs one validated format and
+object-URI contract before execution engines fan out reads.
+
+**Citus comparison**: Vanilla Citus does not read Iceberg, Parquet, or Delta
+tables through a sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L3` in `sidecar/analytical/src/lib.rs`
+
+### L4: DataFusion Pushdown
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines projected-column, predicate, and limit pushdown contracts
+for DataFusion execution.
+
+**Motivation**: Analytical execution has to preserve pool and planner
+predicate intent instead of scanning full object-store tables.
+
+**Citus comparison**: Vanilla Citus does not push plans into DataFusion.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L4` in `sidecar/analytical/src/lib.rs`
+
+### L5: Iceberg Snapshot Commit At Prepare
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines transaction, snapshot, prepare-LSN, and manifest URI
+contracts for aligning Iceberg snapshot commits with distributed prepare.
+
+**Motivation**: Warm-tier visibility must line up with Citus distributed
+transaction boundaries.
+
+**Citus comparison**: Vanilla Citus has no Iceberg snapshot commit protocol.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L5` in `sidecar/analytical/src/lib.rs`
+
+### L6: Lakehouse Federation Catalogs
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines external Iceberg catalog publication targets for
+Snowflake, Trino, Spark, and Databricks.
+
+**Motivation**: External analytical readers need a stable federation contract
+without learning Citus shard placement directly.
+
+**Citus comparison**: Vanilla Citus does not publish lakehouse catalogs for
+external engines.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L6` in `sidecar/analytical/src/lib.rs`
+
 ### L8: Mooncake-Style Logical-Replication Mirror
 
-**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`, `sidecar/analytical`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1626,6 +1761,49 @@ analytical mirror.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: L8` in `sidecar/cdc/src/lib.rs`
+- In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
+
+### L12: DuckDB Extension Catalog
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_duckdb`
+
+**Summary**: Defines the allow-list of DuckDB extensions that analytical
+sidecars may enable.
+
+**Motivation**: DuckDB extension use needs to be explicit before sidecars load
+code from extension repositories.
+
+**Citus comparison**: Vanilla Citus does not manage DuckDB extension catalogs.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L12` in `sidecar/analytical/src/lib.rs`
+
+### L13: MotherDuck Connector
+
+**Overlay**: `sidecar/analytical`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_duckdb`
+
+**Summary**: Defines MotherDuck database and token-secret binding for optional
+cloud analytical routing.
+
+**Motivation**: MotherDuck connectivity should be an explicit opt-in secret
+binding rather than an ambient runtime setting.
+
+**Citus comparison**: Vanilla Citus does not include a MotherDuck connector.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L13` in `sidecar/analytical/src/lib.rs`
 
 ## Realtime
 

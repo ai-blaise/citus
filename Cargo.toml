@@ -4,6 +4,7 @@ members = [
     "e2e",
     "operator",
     "pool",
+    "sidecar/analytical",
     "sidecar/auth",
     "sidecar/backup",
     "sidecar/cdc",
