@@ -4,7 +4,8 @@ Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
 Initial critical modules: `citus_timescale`, `lsp_metadata`, `observability`,
-`auth`, `router_assist`, `schema_jobs`, and `tenants`.
+`auth`, `router_assist`, `schema_jobs`, `tenants`, and
+`toolkit_distributed`.
 
 ## Current Surface
 
@@ -25,6 +26,9 @@ Initial critical modules: `citus_timescale`, `lsp_metadata`, `observability`,
 - `SchemaJobPlan` for `FEATURE: C10` and `FEATURE: M2`
 - `TenantMovePlan`, `TenantQuotaPlan`, and `TenantArchivePlan` for
   `FEATURE: S14`, `FEATURE: TO3`, `FEATURE: TO4`, and `FEATURE: TO5`
+- `ToolkitDistributedPlan` for `FEATURE: T8`, `FEATURE: TS13`,
+  `FEATURE: TS14`, `FEATURE: TS15`, `FEATURE: TS16`, `FEATURE: TS17`, and
+  `FEATURE: L9`
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale

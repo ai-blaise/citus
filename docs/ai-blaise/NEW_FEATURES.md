@@ -187,6 +187,29 @@ parallel-commit transaction-status sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
 
+### T8: Toolkit Two-Step Aggregate Pushdown
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Defines worker partial and coordinator finalize SQL plans for
+Toolkit two-step aggregates.
+
+**Motivation**: Toolkit aggregates should execute shard-local partials before
+coordinator finalization so time-series rollups do not collapse back to a
+single-node plan.
+
+**Citus comparison**: Vanilla Citus can distribute many aggregates, but it
+does not ship a Toolkit-specific two-step aggregate bridge.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: T8` in `companion/src/toolkit_distributed.rs`
+
 ### T9: Mirroring For Canary Traffic
 
 **Overlay**: `pool/src/runtime.rs`
@@ -496,6 +519,116 @@ policies across shards.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS12` in `companion/src/citus_timescale.rs`
+
+### TS13: Distributed time_bucket_gapfill
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Adds SQL-plan contracts for shard-local gapfill with coordinator
+interpolate/locf finalization.
+
+**Motivation**: Time-series dashboards need gapfill across shards without
+moving raw samples to the coordinator.
+
+**Citus comparison**: Vanilla Citus does not provide a dedicated distributed
+gapfill bridge.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS13` in `companion/src/toolkit_distributed.rs`
+
+### TS14: Distributed Metric Toolkit Aggregates
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Adds distributed contracts for counter, gauge, and heartbeat
+Toolkit aggregates.
+
+**Motivation**: Metric rollups should use Toolkit's partial/final model while
+preserving Citus shard locality.
+
+**Citus comparison**: Vanilla Citus does not ship first-class Toolkit metric
+aggregate orchestration.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS14` in `companion/src/toolkit_distributed.rs`
+
+### TS15: Distributed Approximate Toolkit Aggregates
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Adds distributed contracts for percentile and frequency Toolkit
+aggregate rollups.
+
+**Motivation**: Approximate analytics should keep sketches shard-local until
+the final coordinator merge.
+
+**Citus comparison**: Vanilla Citus has aggregate pushdown, but not this
+Toolkit-specific approximate aggregate catalog.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS15` in `companion/src/toolkit_distributed.rs`
+
+### TS16: Distributed Toolkit Downsamplers
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Adds distributed contracts for ASAP smoothing and LTTB
+downsampling.
+
+**Motivation**: Downsampling needs to occur close to shard data before
+coordinator rendering.
+
+**Citus comparison**: Vanilla Citus does not provide Toolkit-aware
+downsampling orchestration.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS16` in `companion/src/toolkit_distributed.rs`
+
+### TS17: Distributed Toolkit State Aggregates
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Adds distributed contracts for candlestick, state, and range
+Toolkit aggregates.
+
+**Motivation**: Finance, state-machine, and range analytics need the same
+worker-partial/coordinator-final pattern as other Toolkit aggregates.
+
+**Citus comparison**: Vanilla Citus does not bundle this Toolkit aggregate
+surface.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS17` in `companion/src/toolkit_distributed.rs`
 
 ## AI / Vector
 
@@ -1942,6 +2075,28 @@ analytical mirror.
 - In-source: `FEATURE: L8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: L8` in `sidecar/cdc/src/lib.rs`
 - In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
+
+### L9: Two-Step Aggregates Push To Workers
+
+**Overlay**: `companion/src/toolkit_distributed.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `timescaledb_toolkit`
+
+**Summary**: Defines the companion contract that keeps aggregate partials on
+workers and only sends mergeable states to the coordinator.
+
+**Motivation**: HTAP rollups need to reduce network and coordinator CPU by
+finalizing after worker partials.
+
+**Citus comparison**: Vanilla Citus supports aggregate pushdown generally, but
+not this explicit Toolkit/HTAP aggregate bridge.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: L9` in `companion/src/toolkit_distributed.rs`
 
 ### L12: DuckDB Extension Catalog
 

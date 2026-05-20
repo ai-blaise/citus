@@ -7,6 +7,7 @@ pub mod observability;
 pub mod router_assist;
 pub mod schema_jobs;
 pub mod tenants;
+pub mod toolkit_distributed;
 pub mod vector;
 
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
@@ -28,6 +29,9 @@ pub use router_assist::{
 };
 pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
 pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
+pub use toolkit_distributed::{
+    ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,
+};
 pub use vector::{
     ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,
     VectorizerPlan, VectorizerSchedule, VectorizerSqlPlan, VectorizerValidationError,
@@ -55,6 +59,21 @@ mod pg18 {
             ("TS4", "distributed retention policy", "sql-plan"),
             ("TS5", "time-range shard pruner", "sql-plan"),
             ("TS8", "LSP hypertable invariants", "sql-plan"),
+            ("TS13", "distributed time_bucket_gapfill", "sql-plan"),
+            ("TS14", "distributed metric toolkit aggregates", "sql-plan"),
+            (
+                "TS15",
+                "distributed approximate toolkit aggregates",
+                "sql-plan",
+            ),
+            (
+                "TS16",
+                "distributed downsampler toolkit aggregates",
+                "sql-plan",
+            ),
+            ("TS17", "distributed state toolkit aggregates", "sql-plan"),
+            ("T8", "toolkit two-step aggregate pushdown", "sql-plan"),
+            ("L9", "worker partial aggregate pushdown", "sql-plan"),
             ("A1", "pgai-compatible vectorizer DSL", "planned"),
             ("O1", "query percentile views", "planned"),
             ("O2", "distributed stats view", "planned"),
