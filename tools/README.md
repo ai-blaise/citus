@@ -9,3 +9,7 @@ Developer and operator tools:
 - `citus-schema-designer`
 - `citus-mcp`
 - `citus-watch`
+
+`citus-lsp` now has the initial Rust diagnostic contract for distributed SQL
+editing: Citus colocation checks, distribution-column safety, tenant-filter
+hints, Timescale hypertable bridge diagnostics, and quick-fix planning.

@@ -23,6 +23,7 @@ members = [
     "sidecar/txn_status",
     "sidecar/vectorizer",
     "tools/citus-mcp",
+    "tools/citus-lsp",
     "tools/citusctl",
 ]
 resolver = "2"

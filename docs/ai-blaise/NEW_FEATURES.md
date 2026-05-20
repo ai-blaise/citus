@@ -452,6 +452,28 @@ Timescale-aware distributed hypertables.
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
 
+### TS8: LSP Rules For Hypertable Invariants
+
+**Overlay**: `tools/citus-lsp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds edit-time diagnostics for creating Timescale hypertables on
+distributed tables without the companion bridge.
+
+**Motivation**: The required Timescale integration is subtle enough that users
+need IDE feedback before invalid SQL reaches a migration or operator reconcile.
+
+**Citus comparison**: Vanilla Citus has no LSP diagnostics for Timescale
+hypertable invariants.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS8` in `tools/citus-lsp/src/lib.rs`
+
 ### TS12: Distributed Reorder Policy
 
 **Overlay**: `companion/citus_timescale`
@@ -1297,6 +1319,28 @@ operator-owned migration object.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
+
+### M5: LSP Refactor Quick-Fixes
+
+**Overlay**: `tools/citus-lsp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds typed quick-fix actions for missing Citus distribution
+columns and related colocation repairs.
+
+**Motivation**: Migrations should fail early in the editor with a concrete
+fix plan before CI or the operator has to reject a schema change.
+
+**Citus comparison**: Vanilla Citus does not provide IDE quick-fixes for
+distributed schema authoring.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M5` in `tools/citus-lsp/src/lib.rs`
 
 ### M8: citusctl Plan / Apply
 
@@ -2685,6 +2729,28 @@ workflow.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
+
+### D4: citus-lsp IDE Diagnostics
+
+**Overlay**: `tools/citus-lsp`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds the initial Citus-aware LSP analyzer contract for
+non-colocated joins, unsafe distribution-column alters, missing tenant filters,
+and missing search analyzers.
+
+**Motivation**: Developers need edit-time errors for distributed SQL rules
+rather than discovering them during deploy-time reconciliation.
+
+**Citus comparison**: Vanilla Citus does not ship an IDE language server.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
 
 ### WF2: WAL Replay Debugger Command
 
