@@ -24,6 +24,7 @@ members = [
     "sidecar/vectorizer",
     "tools/citus-mcp",
     "tools/citus-lsp",
+    "tools/citus-watch",
     "tools/citusctl",
 ]
 resolver = "2"

@@ -3180,6 +3180,28 @@ rather than discovering them during deploy-time reconciliation.
 - In-source: `FEATURE: D4` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
 
+### D12: citus-watch Dashboard
+
+**Overlay**: `tools/citus-watch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the dashboard data-source and panel contract for the
+`citus-watch` live view.
+
+**Motivation**: Operators need a single terminal dashboard that can read
+companion metadata, Prometheus metrics, and pool signals without hand-built
+queries.
+
+**Citus comparison**: Vanilla Citus does not ship a unified TUI dashboard.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
+
 ### WF2: WAL Replay Debugger Command
 
 **Overlay**: `tools/citusctl`
@@ -3521,3 +3543,26 @@ for the failure modes most likely to hurt users first.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O10` in
   `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+
+### O13: citus-watch TUI
+
+**Overlay**: `tools/citus-watch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the initial Rust contract for the `citus-watch` unified
+live view across cluster topology, shards, hypertables, EXPLAIN, rebalance,
+vectorizer backlog, search indexes, tenants, and branches.
+
+**Motivation**: Live operations need a compact, terminal-native view that
+tracks the same companion and metrics surfaces used by dashboards and alerts.
+
+**Citus comparison**: Vanilla Citus does not ship a dedicated live
+operations TUI.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
