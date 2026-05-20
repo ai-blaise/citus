@@ -2,6 +2,11 @@ name: features-doc-check
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
 
 jobs:
   check:
@@ -12,6 +17,6 @@ jobs:
           fetch-depth: 0
       - name: Check feature register updates
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: ci/ai-blaise/features-doc-check.sh

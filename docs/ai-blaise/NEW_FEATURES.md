@@ -3,6 +3,13 @@
 This is the canonical register of features that `ai-blaise/citus` adds beyond
 vanilla Citus. Every feature-bearing PR updates this file.
 
+`ci/ai-blaise/v2-closure-check.sh` and the `v2-closure` workflow codify the
+Rule 10 completion contract for the V2 plan: the old 79-item gap list must
+remain present in implementation `FEATURE:` markers and this register, stale
+completion wording is rejected, overlay crates must keep an executable target,
+and the broad operator, companion, pool, and tool canonical runners must emit
+their deterministic TSV summaries.
+
 `operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
 acceptance models for the V2 operator catalog. The operator runner validates
 canonical `CitusCluster`, `ShardGroup`, `Hypertable`, hypertable apply-plan,
