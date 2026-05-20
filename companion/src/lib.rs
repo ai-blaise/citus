@@ -2,17 +2,23 @@
 
 pub mod auth;
 pub mod citus_timescale;
+pub mod db_doctor;
 pub mod geo_distributed;
 pub mod graph_bridge;
+pub mod index_advisor;
 pub mod jsonschema_bridge;
+pub mod ledger;
 pub mod lsp_metadata;
+pub mod migration;
 pub mod observability;
+pub mod plan_freeze;
 pub mod router_assist;
 pub mod schema_jobs;
 pub mod search_bridge;
 pub mod tenants;
 pub mod toolkit_distributed;
 pub mod vector;
+pub mod webhooks;
 
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{
@@ -20,19 +26,35 @@ pub use citus_timescale::{
     AddPolicyDistributedPlan, CompanionError, CompanionSqlPlan, DistributedHypertablePlan,
     TimeRangeShardPrunerPlan, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
 };
+pub use db_doctor::{
+    CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
+    DoctorSeverity, DoctorViolation,
+};
 pub use geo_distributed::{
     GeoDistributionPlan, GeoGrid, GeoPruningPlan, GeoSqlPlan, GeoValidationError,
 };
 pub use graph_bridge::{GraphBridgeError, GraphDistributionPlan, GraphSqlPlan};
+pub use index_advisor::{
+    IndexAdvisorError, IndexAdvisorPlan, IndexAdvisorSqlPlan, IndexCandidate, IndexMethod,
+};
 pub use jsonschema_bridge::{
     JsonSchemaDistributedPlan, JsonSchemaError, JsonSchemaSqlPlan, ValidationTiming,
+};
+pub use ledger::{
+    HmacAlgorithm, LedgerChain, LedgerChainEntry, LedgerError, LedgerSealPlan, LedgerSqlPlan,
+    LedgerTransferPlan,
 };
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
+pub use migration::{MigrationError, MigrationOperation, MigrationPlan, MigrationSqlPlan};
 pub use observability::{
     DistributedStatPlan, IdleTransactionAction, IdleTransactionReaperPlan, LatencyPercentile,
     ObservabilityError, OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
+};
+pub use plan_freeze::{
+    PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,
+    PlanRegressionSample,
 };
 pub use router_assist::{
     LocalPlacementCheck, PlacementGenerationQuery, RouterAssistError, ShardForValuePlan,
@@ -50,6 +72,9 @@ pub use toolkit_distributed::{
 pub use vector::{
     ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,
     VectorizerPlan, VectorizerSchedule, VectorizerSqlPlan, VectorizerValidationError,
+};
+pub use webhooks::{
+    WebhookError, WebhookEvent, WebhookHeader, WebhookRegistrationPlan, WebhookSqlPlan,
 };
 
 #[cfg(feature = "pg18")]
@@ -97,6 +122,16 @@ mod pg18 {
             ("M13", "JSON Schema validation triggers", "sql-plan"),
             ("Geo2", "geo-aware distribution", "sql-plan"),
             ("Geo3", "geo shard pruning", "sql-plan"),
+            ("TS9", "doctor rules for cohabitation", "sql-plan"),
+            ("M7", "pre-flight cohabit-extension check", "sql-plan"),
+            ("PM3", "plan freeze companion module", "sql-plan"),
+            ("PM4", "plan regression detection", "sql-plan"),
+            ("IA3", "companion index advisor", "sql-plan"),
+            ("Sec5", "immutable ledger", "sql-plan"),
+            ("Sec6", "ledger HMAC tamper evidence", "sql-plan"),
+            ("M1", "pgroll-style expand-contract migrations", "sql-plan"),
+            ("M11", "online column-type migration", "sql-plan"),
+            ("WH2", "companion webhook helpers", "sql-plan"),
             ("A1", "pgai-compatible vectorizer DSL", "planned"),
             ("O1", "query percentile views", "planned"),
             ("O2", "distributed stats view", "planned"),

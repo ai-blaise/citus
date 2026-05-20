@@ -498,6 +498,29 @@ hypertable invariants.
 - In-source: `FEATURE: TS8` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: TS8` in `tools/citus-lsp/src/lib.rs`
 
+### TS9: Doctor Rules For Cohabitation
+
+**Overlay**: `companion/src/db_doctor.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds companion DB-doctor rules for Timescale/Citus cohabitation,
+non-colocated joins, missing distribution columns, hypertable bridge state,
+and chunk interval drift.
+
+**Motivation**: Cohabiting extensions need a SQL-visible preflight and lint
+surface so accidental violations are caught before migrations mutate schema.
+
+**Citus comparison**: Vanilla Citus does not ship pglinter-style,
+Timescale-aware cohabitation doctor rules.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: TS9` in `companion/src/db_doctor.rs`
+
 ### TS12: Distributed Reorder Policy
 
 **Overlay**: `companion/citus_timescale`
@@ -1409,6 +1432,28 @@ Pub/Sub.
 
 ## Migrations
 
+### M1: pgroll-Style Expand-Contract
+
+**Overlay**: `companion/src/migration.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines companion SQL-plan contracts for expand/contract
+migrations with bounded lock timeout and backfill batch settings.
+
+**Motivation**: Type changes, adds, drops, and renames need a reviewed
+migration unit before schema-job workers and operator CRDs execute them.
+
+**Citus comparison**: Vanilla Citus supports distributed DDL, but it does not
+ship a pgroll-style expand/contract migration layer.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M1` in `companion/src/migration.rs`
+
 ### M2: gh-ost-Style Online DDL
 
 **Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
@@ -1477,6 +1522,28 @@ distributed schema authoring.
 - In-source: `FEATURE: M5` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: M5` in `tools/citus-lsp/src/lib.rs`
 
+### M7: Pre-Flight Cohabit-Extension Check
+
+**Overlay**: `companion/src/db_doctor.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the companion preflight contract for verifying required
+shared-preload coextensions before cohabiting migrations run.
+
+**Motivation**: Operator and migration flows must refuse bad preload state
+before they install Timescale or other hook-using extension surfaces.
+
+**Citus comparison**: Vanilla Citus enforces its load-time hook guard, but it
+does not provide this controlled cohabitation preflight.
+
+**References**:
+
+- Design: `docs/ai-blaise/COHABITATION.md`
+- In-source: `FEATURE: M7` in `companion/src/db_doctor.rs`
+
 ### M8: citusctl Plan / Apply
 
 **Overlay**: `tools/citusctl`
@@ -1498,6 +1565,28 @@ two-step plan/apply semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
+
+### M11: Online Column-Type Migration
+
+**Overlay**: `companion/src/migration.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the online type-change operation used by companion
+migration plans for type promotion without blocking table rewrites.
+
+**Motivation**: Large distributed tables need type migrations that can expand,
+backfill, and contract without a long exclusive lock.
+
+**Citus comparison**: Vanilla Citus can run distributed DDL, but it does not
+ship an online column-type migration contract.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M11` in `companion/src/migration.rs`
 
 ## Multi-Region
 
@@ -2598,6 +2687,49 @@ contract to avoid split-brain authorization behavior.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
 
+### Sec5: Immutable Ledger
+
+**Overlay**: `companion/src/ledger.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgledger`
+
+**Summary**: Defines append-only transfer planning and hash-chain validation
+for the companion ledger surface.
+
+**Motivation**: Audit-heavy tenant operations need a tamper-evident record
+before automated migrations, tenant moves, and privileged actions execute.
+
+**Citus comparison**: Vanilla Citus does not ship an immutable ledger surface.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sec5` in `companion/src/ledger.rs`
+
+### Sec6: HMAC Tamper-Evidence On Ledger
+
+**Overlay**: `companion/src/ledger.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgledger`, `pgcrypto`
+
+**Summary**: Defines the `companion_ledger_seal` plan contract that seals a
+ledger transfer with an external secret reference and HMAC algorithm.
+
+**Motivation**: Ledger rows need a separable integrity seal so compromised
+database writes are detectable against an out-of-band secret.
+
+**Citus comparison**: Vanilla Citus does not provide HMAC-sealed ledger
+entries.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: Sec6` in `companion/src/ledger.rs`
+
 ### Sec12: Per-Tenant Resource Quotas
 
 **Overlay**: `pool/src/runtime.rs`
@@ -2683,6 +2815,78 @@ issuance can enforce step-up authentication.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth5` in `sidecar/auth/src/lib.rs`
 
+## Plan Management
+
+### PM3: Plan Freeze Companion Module
+
+**Overlay**: `companion/src/plan_freeze.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_hint_plan`, `sr_plan`
+
+**Summary**: Defines companion SQL-plan contracts for freezing a stable plan,
+binding it to a hint set, and auto-promoting it after enough stable
+executions.
+
+**Motivation**: Planner changes in a distributed database need an explicit
+escape hatch for stable production queries before a regression reaches users.
+
+**Citus comparison**: Vanilla Citus does not ship a plan-freeze companion
+module or auto-promotion policy.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs`
+
+### PM4: Plan Regression Detection
+
+**Overlay**: `companion/src/plan_freeze.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `pg_hint_plan`, `sr_plan`
+
+**Summary**: Adds latency and cost regression policy evaluation for frozen and
+candidate plans.
+
+**Motivation**: Auto-promoted plans need a measurable guardrail that flags
+candidate regressions before they replace a known-good plan.
+
+**Citus comparison**: Vanilla Citus exposes plans and costs, but it does not
+ship this persistent regression detector.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs`
+
+## Index Advisor
+
+### IA3: Companion Advisor
+
+**Overlay**: `companion/src/index_advisor.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `hypopg`, `pg_qualstats`
+
+**Summary**: Defines ranked index-advisor output that emits
+`CREATE INDEX CONCURRENTLY` scripts from what-if cost deltas and predicate
+counts.
+
+**Motivation**: Operators need reviewable index suggestions that rank real
+workload benefit before applying changes to distributed tables.
+
+**Citus comparison**: Vanilla Citus does not ship a HypoPG/pg_qualstats-backed
+index advisor.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: IA3` in `companion/src/index_advisor.rs`
+
 ## Webhooks
 
 ### WH1: Webhook CRD
@@ -2706,6 +2910,28 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+
+### WH2: Companion Webhook Helpers
+
+**Overlay**: `companion/src/webhooks.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines companion webhook registration and trigger-install SQL
+plans for `INSERT`, `UPDATE`, and `DELETE` events.
+
+**Motivation**: Declarative webhook CRDs need a companion SQL surface that
+turns table/event/url configuration into queue-backed triggers.
+
+**Citus comparison**: Vanilla Citus does not install outbound HTTP trigger
+helpers.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: WH2` in `companion/src/webhooks.rs`
 
 ### WH3: Reliable Delivery
 

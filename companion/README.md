@@ -3,10 +3,11 @@
 Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
-Initial critical modules: `citus_timescale`, `geo_distributed`,
-`graph_bridge`, `jsonschema_bridge`, `lsp_metadata`, `observability`, `auth`,
-`router_assist`, `schema_jobs`, `search_bridge`, `tenants`, and
-`toolkit_distributed`.
+Initial critical modules: `citus_timescale`, `db_doctor`,
+`geo_distributed`, `graph_bridge`, `index_advisor`, `jsonschema_bridge`,
+`ledger`, `lsp_metadata`, `migration`, `observability`, `plan_freeze`,
+`auth`, `router_assist`, `schema_jobs`, `search_bridge`, `tenants`,
+`toolkit_distributed`, and `webhooks`.
 
 ## Current Surface
 
@@ -23,6 +24,15 @@ Initial critical modules: `citus_timescale`, `geo_distributed`,
 - `JsonSchemaDistributedPlan` for `FEATURE: JS2` and `FEATURE: M13`
 - `GeoDistributionPlan` and `GeoPruningPlan` for `FEATURE: Geo2` and
   `FEATURE: Geo3`
+- `DbDoctorPlan`, `CohabitPreflightPlan`, and `DbDoctorReport` for
+  `FEATURE: TS9` and `FEATURE: M7`
+- `PlanFreezePlan` and `PlanRegressionSample` for `FEATURE: PM3` and
+  `FEATURE: PM4`
+- `IndexAdvisorPlan` for `FEATURE: IA3`
+- `LedgerTransferPlan`, `LedgerSealPlan`, and `LedgerChain` for
+  `FEATURE: Sec5` and `FEATURE: Sec6`
+- `MigrationPlan` for `FEATURE: M1` and `FEATURE: M11`
+- `WebhookRegistrationPlan` for `FEATURE: WH2`
 - policy plan shapes for distributed compression, retention, reorder, and
   continuous aggregate refresh
 - `OperationsGuardrailPlan` for `FEATURE: O1`, `FEATURE: O2`, `FEATURE: O3`,
