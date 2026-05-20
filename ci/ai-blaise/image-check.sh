@@ -6,6 +6,7 @@ manifest="${image_dir}/extension-manifest.tsv"
 dockerfile="${image_dir}/Dockerfile"
 load_order="${image_dir}/shared-preload-libraries.conf"
 init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
+image_overview="images/README.ai-blaise.md"
 runtime_dockerfile="images/rust-runtime/Dockerfile"
 build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
@@ -19,6 +20,7 @@ for file in \
   "${dockerfile}" \
   "${load_order}" \
   "${init_sql}" \
+  "${image_overview}" \
   "${image_dir}/README.md" \
   "${runtime_dockerfile}" \
   "${build_app_images}" \
@@ -125,6 +127,11 @@ grep -Fq "COPY extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY extensions/ai_blaise_citus.control" "${dockerfile}"
 grep -Fq "COPY extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
+grep -Fq "FEATURE: Bundle1" "${image_overview}"
+grep -Fq "full required binary extension bundle is installed" "${image_overview}"
+grep -Fq "build/initdb smoke" "${image_overview}"
+grep -Fq "not production evidence" "${image_dir}/README.md"
+grep -Fq "every binary package" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 grep -Fq "FEATURE: D13" "${build_app_images}"
 grep -Fq 'cargo build --release -p "${PACKAGE}" --bin "${BIN}"' "${runtime_dockerfile}"

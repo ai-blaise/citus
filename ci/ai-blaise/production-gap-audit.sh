@@ -15,8 +15,11 @@ DOCS = ROOT / "docs/ai-blaise/NEW_FEATURES.md"
 AUDIT = ROOT / "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
+UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
+ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
+IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
 RELEASE_GATES = ROOT / "e2e/src/release_gates.rs"
 V2_ACCEPTANCE = ROOT / "ci/ai-blaise/v2-acceptance-check.sh"
@@ -190,8 +193,11 @@ docs = read(DOCS)
 audit = read(AUDIT)
 releasing = read(RELEASING)
 runbook = read(RUNBOOK)
+upgrade_runbook = read(UPGRADE_RUNBOOK)
 e2e_doc = read(E2E_DOC)
+architecture_doc = read(ARCHITECTURE_DOC)
 bundled_extensions_doc = read(BUNDLED_EXTENSIONS_DOC)
+images_overview = read(IMAGES_OVERVIEW)
 pg_overlay_readme = read(PG_OVERLAY_README)
 release_gates = read(RELEASE_GATES)
 v2_acceptance = read(V2_ACCEPTANCE)
@@ -275,8 +281,11 @@ audit_compact = compact(audit)
 docs_compact = compact(docs)
 releasing_compact = compact(releasing)
 runbook_compact = compact(runbook)
+upgrade_runbook_compact = compact(upgrade_runbook)
 e2e_compact = compact(e2e_doc)
+architecture_compact = compact(architecture_doc)
 bundled_extensions_compact = compact(bundled_extensions_doc)
+images_overview_compact = compact(images_overview)
 pg_overlay_readme_compact = compact(pg_overlay_readme)
 
 expected_inventory = (
@@ -370,6 +379,14 @@ for phrase in (
         fail(f"BUNDLED_EXTENSIONS.md must preserve operand-image alpha guardrail: {phrase}")
 
 for phrase in (
+    "feature: bundle1` alpha contract",
+    "not production evidence that the full required binary extension bundle is installed",
+    "real operand image build/initdb smoke",
+):
+    if phrase not in images_overview_compact:
+        fail(f"images/README.ai-blaise.md must preserve operand-image alpha guardrail: {phrase}")
+
+for phrase in (
     "not production evidence that every binary package",
     "feature: bundle1` remains alpha",
     "real image build smoke verifies",
@@ -377,11 +394,32 @@ for phrase in (
     if phrase not in pg_overlay_readme_compact:
         fail(f"images/citus-pg-overlay/README.md must preserve operand-image alpha guardrail: {phrase}")
 
+for phrase in (
+    "feature: bundle1` alpha operand-image contract",
+    "not production evidence for the full operand image",
+    "real operand image build/initdb smoke",
+):
+    if phrase not in architecture_compact:
+        fail(f"ARCHITECTURE.md must preserve operand-image alpha guardrail: {phrase}")
+
+for phrase in (
+    "while bundle1 remains alpha",
+    "must not be used as production release evidence",
+    "real operand image build/initdb smoke",
+):
+    if phrase not in upgrade_runbook_compact:
+        fail(f"upgrade runbook must preserve operand-image alpha guardrail: {phrase}")
+
 for path, text in (
+    (IMAGES_OVERVIEW, images_overview_compact),
+    (ARCHITECTURE_DOC, architecture_compact),
     (BUNDLED_EXTENSIONS_DOC, bundled_extensions_compact),
     (PG_OVERLAY_README, pg_overlay_readme_compact),
 ):
     for pattern in (
+        "image directories under this tree build the citus operand image",
+        "`images/citus-pg-overlay` builds the postgres operand",
+        "sql fallback extension packaged in the operand image",
         "required bundle is installed for every ai-blaise/citus postgres operand image",
         "cloudnativepg operand image containing citus, companion, and bundled extension dependencies",
     ):
@@ -657,8 +695,11 @@ for path in (
     AUDIT,
     RELEASING,
     RUNBOOK,
+    UPGRADE_RUNBOOK,
     E2E_DOC,
+    ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
+    IMAGES_OVERVIEW,
     PG_OVERLAY_README,
 ):
     text = read(path)
