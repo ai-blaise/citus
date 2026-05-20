@@ -24,6 +24,9 @@ more production-ready than the artifacts justified.
 7. The SQL extension smoke invoked `docker exec psql` without attaching stdin,
    so its heredoc could be skipped by Docker and the smoke could pass without
    installing or exercising `ai_blaise_citus`.
+8. Operand-image docs described the required extension bundle as installed for
+   every operand image even though `FEATURE: Bundle1` is still an alpha
+   manifest/init contract without a real full-bundle image build smoke.
 
 ## Corrections
 
@@ -61,6 +64,11 @@ more production-ready than the artifacts justified.
   smoke, and the primary/standby observability replication smoke. The
   production gap audit rejects regressions that leave a promoted runtime smoke
   out of those gates.
+- The bundled-extension docs and operand-image README now explicitly state that
+  `FEATURE: Bundle1` is a manifest/init contract, not production evidence that
+  every binary package is installed in a runnable operand image. The production
+  gap audit rejects the old operand-image overclaim until a real full-bundle
+  image build smoke exists.
 
 ## Verification Standard
 

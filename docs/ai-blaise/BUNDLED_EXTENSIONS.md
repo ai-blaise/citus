@@ -1,18 +1,24 @@
 # Bundled Extensions
 
 The canonical operand-image extension contract lives in
-`images/citus-pg-overlay/extension-manifest.tsv`.
+`images/citus-pg-overlay/extension-manifest.tsv`. This is a manifest/init
+contract, not production evidence that every binary package is installed in a
+runnable operand image. `FEATURE: Bundle1` remains alpha until a real operand
+image build smoke verifies the required extension control files and initdb
+extension creation end to end.
 
 ## Required Bundle
 
-The required bundle is installed for every ai-blaise/citus Postgres operand
-image. It covers the V2 plan's mandatory Citus, TimescaleDB, vector, search,
-graph, JSON Schema, observability, security, geo, and online-maintenance
-substrates.
+The required bundle records the intended extension set for ai-blaise/citus
+Postgres operand images. It covers the V2 plan's mandatory Citus, TimescaleDB,
+vector, search, graph, JSON Schema, observability, security, geo, and
+online-maintenance substrates.
 
-Required entries are validated by `ci/ai-blaise/image-check.sh`. Cluster
-initialization uses `images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql`
-as the deterministic extension creation order.
+Required entries are statically validated by `ci/ai-blaise/image-check.sh`.
+Cluster initialization uses
+`images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql` as the
+deterministic extension creation order and intentionally fails when a required
+extension control file is absent.
 
 The overlay also installs `ai_blaise_citus`, a local SQL fallback companion
 extension. It exposes `companion_feature_status()` plus pgrx-compatible

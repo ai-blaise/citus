@@ -1,7 +1,10 @@
 # citus-pg-overlay
 
-CloudNativePG operand image containing Citus, companion, and bundled extension
-dependencies.
+CloudNativePG operand image contract for Citus, the companion SQL fallback, and
+the bundled extension policy. This directory is not production evidence that
+every binary package in the manifest is installed in a runnable operand image;
+`FEATURE: Bundle1` remains alpha until a real image build smoke verifies the
+required extension control files and initdb extension creation end to end.
 
 ## Contract
 
