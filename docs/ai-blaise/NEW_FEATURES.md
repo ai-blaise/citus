@@ -3563,8 +3563,8 @@ view contract.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines shared sidecar health, readiness, and drain state used by
-the future sidecar HTTP/gRPC health and metrics endpoints.
+**Summary**: Defines shared sidecar health, readiness, drain state, HTTP probe
+handling, Unix-socket probe serving, and Prometheus metrics emission.
 
 **Motivation**: All ai-blaise sidecars need the same readiness semantics before
 they can safely participate in Kubernetes rollout, drain, and chaos gates.
@@ -3576,6 +3576,8 @@ or a sidecar health contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O4` in `sidecar/shared/src/lib.rs`
+- In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
+- Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
 ### O5: OpenTelemetry Traces And Sidecar Deployment Contract
 

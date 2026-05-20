@@ -3,11 +3,15 @@
 // FEATURE: O4
 
 pub mod contracts;
+pub mod runtime;
 
 pub use contracts::{
     AnalyticalMirrorContract, AuthIssuerContract, BackupRestoreContract, CdcSink,
     CdcStreamContract, DeliveryRetryPolicy, RealtimeContract, RepackContract,
     RepackExecutionStrategy, SidecarContractError, SidecarRuntimeContracts, StorageContract,
+};
+pub use runtime::{
+    HttpMethod, HttpProbeRequest, HttpProbeResponse, SidecarRuntime, SidecarRuntimeError,
 };
 
 use std::time::{Duration, SystemTime};

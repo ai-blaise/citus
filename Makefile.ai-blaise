@@ -1,6 +1,6 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model emit-timescale-apply-plan build-lsp test-lsp analyze-lsp-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
+.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer build-e2e-model test-e2e-model emit-timescale-apply-plan build-lsp test-lsp analyze-lsp-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
 
 patches-check:
 	@ci/ai-blaise/patches-check.sh
@@ -24,10 +24,13 @@ test-pool:
 	cargo test -p ai_blaise_citus_pool
 
 build-sidecar-shared:
-	cargo check -p ai_blaise_citus_sidecar_shared
+	cargo check -p ai_blaise_citus_sidecar_shared --all-targets
 
 test-sidecar-shared:
 	cargo test -p ai_blaise_citus_sidecar_shared
+
+probe-sidecar-shared:
+	cargo run -q -p ai_blaise_citus_sidecar_shared -- probe-canonical
 
 build-sidecar-vectorizer:
 	cargo check -p ai_blaise_citus_sidecar_vectorizer
@@ -65,4 +68,4 @@ features-doc-check:
 slop-scan:
 	@ci/ai-blaise/slop-scan.sh
 
-gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared test-sidecar-vectorizer test-e2e-model test-lsp features-doc-check slop-scan sql-extension-smoke
+gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared probe-sidecar-shared test-sidecar-vectorizer test-e2e-model test-lsp features-doc-check slop-scan sql-extension-smoke
