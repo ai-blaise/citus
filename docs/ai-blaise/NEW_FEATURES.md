@@ -37,6 +37,9 @@ and search-aware index contracts for `FEATURE: R1`, `FEATURE: R5`,
 `sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
 database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
+`sidecar/graphql/src/lib.rs` validates pg_graphql endpoint, distributed table,
+and RLS/JWT contracts for `FEATURE: API3`, `FEATURE: API4`, and
+`FEATURE: API5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
 `sidecar/postgrest/src/lib.rs` validates auto-REST route, distributed view,
@@ -1972,9 +1975,52 @@ so requests route through Citus-aware helper views.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
 
+### API3: GraphQL Sidecar
+
+**Overlay**: `sidecar/graphql`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_graphql`
+
+**Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
+tables for the GraphQL sidecar.
+
+**Motivation**: GraphQL routing needs a typed endpoint and schema-binding
+contract before exposing pg_graphql to tenants.
+
+**Citus comparison**: Vanilla Citus does not ship a GraphQL sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API3` in `sidecar/graphql/src/lib.rs`
+
+### API4: Distributed GraphQL Tables
+
+**Overlay**: `sidecar/graphql`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_graphql`
+
+**Summary**: Binds GraphQL types to distributed tables, distribution columns,
+and companion routing functions.
+
+**Motivation**: GraphQL queries over distributed tables need explicit routing
+metadata instead of relying on generic single-node table assumptions.
+
+**Citus comparison**: Vanilla Citus does not provide GraphQL routing helpers
+for distributed tables.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API4` in `sidecar/graphql/src/lib.rs`
+
 ### API5: RLS-Aware Auto API
 
-**Overlay**: `sidecar/postgrest`
+**Overlay**: `sidecar/postgrest`, `sidecar/graphql`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1993,6 +2039,7 @@ policy.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
+- In-source: `FEATURE: API5` in `sidecar/graphql/src/lib.rs`
 
 ### API6: Auto OpenAPI Document
 

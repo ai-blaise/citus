@@ -10,6 +10,7 @@ members = [
     "sidecar/cdc",
     "sidecar/coldtier",
     "sidecar/edge_functions",
+    "sidecar/graphql",
     "sidecar/hlc",
     "sidecar/postgrest",
     "sidecar/raft",
