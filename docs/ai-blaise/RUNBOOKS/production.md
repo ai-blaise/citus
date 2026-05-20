@@ -45,10 +45,14 @@ IMAGE_REGISTRY=ghcr.io/ai-blaise TAG="${RELEASE_TAG}" \
 ```
 
 Production traffic tests must use these images, not substitute responder
-containers. The Kubernetes chart starts the operator, pool, and sidecars with
-`serve`. The pool must have `AI_BLAISE_POOL_UPSTREAM_ADDR` set and must answer
-a real PostgreSQL client query through the `postgres` service port. Probe-only
-traffic is insufficient for production signoff.
+containers. Production values start the operator and pool with `serve`, while
+alpha sidecars remain disabled by default until their feature status is
+promoted with measured production evidence. The Kubernetes smoke intentionally
+exercises the sidecar image matrix with the chart defaults so image, probe, and
+metrics regressions are still caught before a sidecar can be promoted. The pool
+must have `AI_BLAISE_POOL_UPSTREAM_ADDR` set and must answer a real PostgreSQL
+client query through the `postgres` service port. Probe-only traffic is
+insufficient for production signoff.
 Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.

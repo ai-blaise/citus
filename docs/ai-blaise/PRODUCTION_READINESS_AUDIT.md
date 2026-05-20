@@ -100,3 +100,9 @@ that this audit explicitly blocks overclaiming. In `production-release` mode it
 fails while any feature heading or source-only V2 addendum feature remains
 non-production, so release promotion cannot treat alpha contracts as
 production-ready functionality.
+
+Production Helm values must also keep alpha sidecars disabled by default.
+`values-prod.yaml` can carry replica/resource intent for those components, but
+`ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
+sidecar before the corresponding feature is promoted with measured production
+evidence.

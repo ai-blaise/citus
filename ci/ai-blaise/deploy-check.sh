@@ -123,6 +123,21 @@ for values_file in \
   done
 done
 
+prod_enabled_sidecars="$(
+  awk '
+    /^sidecars:$/ { in_sidecars = 1; next }
+    in_sidecars && /^[^[:space:]-]/ { in_sidecars = 0 }
+    in_sidecars && /^[[:space:]]*- name:/ { name = $3 }
+    in_sidecars && /^[[:space:]]+enabled:[[:space:]]+true$/ { print name }
+  ' "${chart_dir}/values-prod.yaml"
+)"
+
+if [[ -n "${prod_enabled_sidecars}" ]]; then
+  echo "values-prod.yaml must not enable alpha sidecars by default:" >&2
+  echo "${prod_enabled_sidecars}" >&2
+  exit 1
+fi
+
 if grep -R "{{" "${chart_dir}/crds"; then
   echo "crds/ files must be static Kubernetes YAML, not Helm templates" >&2
   exit 1
