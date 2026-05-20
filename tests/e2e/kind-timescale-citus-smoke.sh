@@ -95,13 +95,24 @@ kubectl wait -n "${namespace}" --for=condition=Ready pod/smoke-postgres --timeou
 kubectl exec -n "${namespace}" smoke-postgres -- \
   psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
 SHOW shared_preload_libraries;
-SHOW citus.cohabit_extensions;
+SELECT current_setting('citus.cohabit_extensions', true) AS cohabit_extensions;
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 SELECT extname
 FROM pg_extension
 WHERE extname IN ('citus', 'timescaledb')
 ORDER BY extname;
+CREATE TABLE IF NOT EXISTS citus_smoke_metrics (
+  tenant_id integer NOT NULL,
+  metric_time timestamptz NOT NULL,
+  value double precision NOT NULL
+);
+SELECT create_distributed_table('citus_smoke_metrics', 'tenant_id');
+CREATE TABLE IF NOT EXISTS timescale_smoke_metrics (
+  metric_time timestamptz NOT NULL,
+  value double precision NOT NULL
+);
+SELECT create_hypertable('timescale_smoke_metrics', 'metric_time', if_not_exists => true);
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'companion') THEN
