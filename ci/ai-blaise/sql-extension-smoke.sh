@@ -35,7 +35,8 @@ docker run \
   -e POSTGRES_PASSWORD=postgres \
   -v "${control_file}:/usr/share/postgresql/17/extension/ai_blaise_citus.control:ro" \
   -v "${sql_file}:/usr/share/postgresql/17/extension/ai_blaise_citus--0.1.0.sql:ro" \
-  -d "${postgres_image}" >/dev/null
+  -d "${postgres_image}" \
+  -c shared_preload_libraries=pg_stat_statements >/dev/null
 
 ready=0
 for _ in $(seq 1 60); do
@@ -52,7 +53,10 @@ if [[ "${ready}" != "1" ]]; then
   exit 1
 fi
 
-docker exec "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION pg_stat_statements;
+SELECT pg_stat_statements_reset();
+SELECT 1 AS ai_blaise_pg_stat_statements_seed;
 CREATE EXTENSION ai_blaise_citus;
 CREATE TABLE timescale_smoke_metrics (
   metric_time timestamptz NOT NULL,
@@ -155,10 +159,41 @@ BEGIN
     RAISE EXCEPTION 'companion_pg_stat_distributed must report the local postgres node';
   END IF;
 
-  PERFORM * FROM companion_pg_stat_statements_p95 LIMIT 1;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_pg_stat_statements_p95
+    WHERE query LIKE '%ai_blaise_pg_stat_statements_seed%'
+      AND calls >= 1
+      AND p95_ms >= 0
+  ) THEN
+    RAISE EXCEPTION 'companion_pg_stat_statements_p95 must report pg_stat_statements rows';
+  END IF;
+
   PERFORM * FROM companion_pg_dist_replication_lag LIMIT 1;
-  PERFORM * FROM companion_idle_transactions('1 second'::interval) LIMIT 1;
 END $$;
 SQL
+
+docker exec -d "${container}" sh -c \
+  "(printf 'BEGIN;\nSELECT pg_backend_pid();\n'; sleep 60; printf 'COMMIT;\n') | psql -U postgres -v ON_ERROR_STOP=1"
+
+idle_seen=0
+for _ in $(seq 1 20); do
+  idle_count="$(
+    docker exec "${container}" psql -U postgres -Atqv ON_ERROR_STOP=1 \
+      -c "SELECT count(*) FROM companion_idle_transactions('100 milliseconds'::interval) WHERE state = 'idle in transaction';"
+  )"
+  if [[ "${idle_count}" =~ ^[1-9][0-9]*$ ]]; then
+    idle_seen=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${idle_seen}" != "1" ]]; then
+  docker exec "${container}" psql -U postgres -v ON_ERROR_STOP=1 \
+    -c "SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE datname = current_database() ORDER BY pid;" >&2 || true
+  echo "companion_idle_transactions did not detect a real idle transaction" >&2
+  exit 1
+fi
 
 echo "ai_blaise_citus SQL extension smoke passed with ${postgres_image}"
