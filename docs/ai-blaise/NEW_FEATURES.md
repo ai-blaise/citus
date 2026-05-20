@@ -36,6 +36,8 @@ database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
+`sidecar/raft/src/lib.rs` validates shard-group Raft membership, leader lease,
+placement intent, quorum, and failover decisions for `FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
@@ -662,7 +664,7 @@ not ship ai-blaise's pool/operator topology mode.
 ### S5: Raft Per Shard Group
 
 **Overlay**: `sidecar/raft`, `operator/`
-**Status**: planned
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -678,7 +680,7 @@ consensus logic into Postgres backends.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- Feature marker: `FEATURE: S5`
+- In-source: `FEATURE: S5` in `sidecar/raft/src/lib.rs`
 
 ### S6: Per-Shard Placement Generation
 

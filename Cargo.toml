@@ -10,6 +10,7 @@ members = [
     "sidecar/cdc",
     "sidecar/edge_functions",
     "sidecar/hlc",
+    "sidecar/raft",
     "sidecar/realtime",
     "sidecar/schema_job",
     "sidecar/shared",
