@@ -18,6 +18,10 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 `FEATURE: RT4`, `FEATURE: Search8`, `FEATURE: Sec12`, `FEATURE: Sto1`,
 `FEATURE: Sto3`, `FEATURE: Sto4`, `FEATURE: T1`, `FEATURE: T3`, `FEATURE: T9`,
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
+`pool/src/main.rs` executes a deterministic pool runtime and shard-map summary
+for `FEATURE: Auth3`, `FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`,
+`FEATURE: T1`, `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`,
+`FEATURE: T12`, and `FEATURE: T15`.
 `images/citus-pg-overlay/extension-manifest.tsv` and
 `companion/src/extension_catalog.rs` validate the bundled, optional,
 integration-target, and hard-blocked extension contracts for
@@ -158,6 +162,7 @@ pooler.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T1` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T2: Plan Cache Placement-Generation Invalidation
 
@@ -181,6 +186,7 @@ movement but does not ship the ai-blaise pool's generation-aware cache model.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T3: Fast-Path Single-Shard Router
 
@@ -205,6 +211,7 @@ ship this pool routing layer.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T5: Parallel Commit Transaction Status
 
@@ -272,6 +279,7 @@ before they become default paths.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T9` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T12: Pool HTAP Routing
 
@@ -293,6 +301,7 @@ pool starts classifying real SQL.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T12` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T15: Transaction Pipelining In Pool
 
@@ -315,6 +324,7 @@ pipelining contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T15` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ## TimescaleDB Integration
 
@@ -1230,6 +1240,7 @@ contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R10` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ## Change Data And Branching
 
@@ -1771,6 +1782,7 @@ GeoIP and edge-replica behavior can be enforced.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR5` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### MR8: Leader Pinning Per Region
 
@@ -2778,6 +2790,7 @@ paths without repeatedly hitting the auth sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth3` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### Sec1: RLS Helpers
 
@@ -2885,6 +2898,7 @@ can be isolated reliably.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### Auth2: Tenant-Aware Claims
 
@@ -3864,7 +3878,7 @@ run-operations-canonical`, depending on whether the row is backed by
 | Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` |
 | T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` |
 | T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` |
-| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
+| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs`, `pool/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
 | T10 | Bulk protocol fetch path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has no ai-blaise bulk-fetch contract. | `FEATURE: T10` |
 | T11 | DistSQL physical pushdown | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this DistSQL contract. | `FEATURE: T11` |
 | T13 | Distributed cursors | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate multi-shard cursor state this way. | `FEATURE: T13` |
