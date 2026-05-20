@@ -3475,3 +3475,49 @@ deployment objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
+
+### O6: Grafana Dashboards As ConfigMaps
+
+**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds Helm-rendered Grafana dashboard ConfigMaps for Citus query
+latency, distributed replication lag, vectorizer backlog, sidecar readiness,
+and pool error rate.
+
+**Motivation**: Operators need installable dashboards with the chart instead
+of hand-maintained JSON pasted into each cluster.
+
+**Citus comparison**: Vanilla Citus does not ship ai-blaise dashboard
+ConfigMaps.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O6` in
+  `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+
+### O10: Alert Rules For Top Pains
+
+**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds optional `PrometheusRule` alerts for replication lag,
+sidecar readiness, vectorizer backlog, and pool error rate.
+
+**Motivation**: The V2 chaos and production gates need chart-owned alert rules
+for the failure modes most likely to hurt users first.
+
+**Citus comparison**: Vanilla Citus does not ship these ai-blaise alert rules.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: O10` in
+  `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`

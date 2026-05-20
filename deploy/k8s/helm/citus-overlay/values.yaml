@@ -96,6 +96,18 @@ sidecars:
     enabled: true
     replicas: 1
 
+observability:
+  grafanaDashboards:
+    enabled: true
+    folder: ai-blaise-citus
+  alertRules:
+    enabled: false
+    interval: 30s
+    thresholds:
+      replicationLagSeconds: 60
+      vectorizerBacklog: 1000
+      poolErrorRatePercent: 5
+
 tools:
   enabled: false
   image:

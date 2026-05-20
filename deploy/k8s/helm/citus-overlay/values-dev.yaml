@@ -59,3 +59,9 @@ sidecars:
 
 tools:
   enabled: true
+
+observability:
+  grafanaDashboards:
+    enabled: true
+  alertRules:
+    enabled: false

@@ -9,6 +9,11 @@ operator, pool, all Rust sidecars, optional tools, and CRD packaging contracts.
 It does not vendor CNPG, monitoring, secrets, ingress, storage, or backup
 platform charts; those remain external platform responsibilities.
 
+The chart also carries ai-blaise-owned observability artifacts: Grafana
+dashboard ConfigMaps and optional `PrometheusRule` alerts. These resources are
+plain Kubernetes/monitoring objects and assume the platform already provides
+the matching controllers.
+
 `values.yaml`, `values-dev.yaml`, and `values-prod.yaml` deliberately list the
 same sidecar names so environment overlays cannot silently drop a daemon from
 the install path. `ci/ai-blaise/deploy-check.sh` enforces that list.

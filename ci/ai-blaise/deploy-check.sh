@@ -11,6 +11,8 @@ required_files=(
   "${chart_dir}/templates/operator-rbac.yaml"
   "${chart_dir}/templates/operator-service.yaml"
   "${chart_dir}/templates/operator-servicemonitor.yaml"
+  "${chart_dir}/templates/observability-dashboards.yaml"
+  "${chart_dir}/templates/observability-prometheusrules.yaml"
   "${chart_dir}/templates/pool-deployment.yaml"
   "${chart_dir}/templates/pool-service.yaml"
   "${chart_dir}/templates/sidecar-deployments.yaml"
@@ -35,8 +37,13 @@ grep -q '^name: ai-blaise-citus-overlay$' "${chart_dir}/Chart.yaml"
 grep -q '^global:$' "${chart_dir}/values.yaml"
 grep -q '^operator:$' "${chart_dir}/values.yaml"
 grep -q '^pool:$' "${chart_dir}/values.yaml"
+grep -q '^observability:$' "${chart_dir}/values.yaml"
 grep -q '^sidecarDefaults:$' "${chart_dir}/values.yaml"
 grep -q '^sidecars:$' "${chart_dir}/values.yaml"
+grep -q 'FEATURE: O6' "${chart_dir}/templates/observability-dashboards.yaml"
+grep -q 'FEATURE: O10' "${chart_dir}/templates/observability-prometheusrules.yaml"
+grep -q 'kind: ConfigMap' "${chart_dir}/templates/observability-dashboards.yaml"
+grep -q 'kind: PrometheusRule' "${chart_dir}/templates/observability-prometheusrules.yaml"
 
 required_sidecars=(
   analytical auth backup cdc coldtier edge-functions graphql hlc mcp
