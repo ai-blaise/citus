@@ -63,6 +63,9 @@ placement intent, quorum, and failover decisions for `FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
+`sidecar/realtime/src/lib.rs` also models deterministic realtime runtime
+fan-out for those features, covering active connections, filtered subscribers,
+frame sizing, delivered message counts, and presence snapshot accounting.
 `sidecar/repack/src/lib.rs` validates online repack command planning and
 per-shard targets for `FEATURE: R7`.
 `sidecar/repack/src/main.rs` emits the canonical online repack command runner
@@ -2503,6 +2506,7 @@ broadcasts.
 - In-source: `FEATURE: RT1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT1` in `sidecar/realtime/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
 ### RT2: Per-Tenant Topic Isolation
 
@@ -2524,6 +2528,7 @@ isolated per tenant.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT2` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT2` in `sidecar/realtime/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
 ### RT3: Realtime Filter Expressions
 
@@ -2546,6 +2551,7 @@ event over the socket.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT3` in `sidecar/realtime/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
 ### RT4: Presence
 
@@ -2567,6 +2573,7 @@ sidecar can account for subscribers consistently.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT4` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT4` in `sidecar/realtime/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
 ## Edge Functions
 

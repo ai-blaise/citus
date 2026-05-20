@@ -208,6 +208,7 @@ pub enum RealtimeSidecarError {
     CdcContract(String),
     InvalidTimestamp,
     MissingRequiredField(&'static str),
+    RecipientConnectionMissing,
     SharedContract(String),
     TenantMismatch,
 }
@@ -220,6 +221,12 @@ impl fmt::Display for RealtimeSidecarError {
                 write!(formatter, "online_at must be an RFC3339 UTC timestamp")
             }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::RecipientConnectionMissing => {
+                write!(
+                    formatter,
+                    "broadcast recipient did not match an active connection"
+                )
+            }
             Self::SharedContract(error) => write!(formatter, "{error}"),
             Self::TenantMismatch => {
                 write!(formatter, "presence user tenant must match presence tenant")
@@ -247,6 +254,138 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), RealtimeSid
         return Err(RealtimeSidecarError::MissingRequiredField(field));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeConnection {
+    pub connection_id: String,
+    pub user_id: String,
+    pub tenant_id: String,
+    pub topic: String,
+}
+
+impl From<&RealtimeSubscription> for RealtimeConnection {
+    fn from(subscription: &RealtimeSubscription) -> Self {
+        Self {
+            connection_id: subscription.connection_id.clone(),
+            user_id: subscription.user_id.clone(),
+            tenant_id: subscription.tenant_id.clone(),
+            topic: subscription.topic.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeDelivery {
+    pub connection_id: String,
+    pub user_id: String,
+    pub tenant_id: String,
+    pub topic: String,
+    pub frame_bytes: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeRuntimeBroadcast {
+    pub topic: String,
+    pub tenant_id: String,
+    pub operation: CdcOperation,
+    pub deliveries: Vec<RealtimeDelivery>,
+    pub filtered_connections: usize,
+    pub presence_users: Vec<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeRuntimeState {
+    pub active_connections: usize,
+    pub broadcasts: u64,
+    pub delivered_messages: u64,
+    pub presence_snapshots: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeRuntimeReport {
+    pub broadcast: RealtimeRuntimeBroadcast,
+    pub state: RealtimeRuntimeState,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RealtimeRuntime {
+    plan: RealtimeSidecarPlan,
+    connections: Vec<RealtimeConnection>,
+    state: RealtimeRuntimeState,
+}
+
+impl RealtimeRuntime {
+    pub fn new(plan: RealtimeSidecarPlan) -> Result<Self, RealtimeSidecarError> {
+        plan.validate()?;
+        let connections = plan
+            .subscriptions
+            .iter()
+            .map(RealtimeConnection::from)
+            .collect::<Vec<_>>();
+
+        Ok(Self {
+            state: RealtimeRuntimeState {
+                active_connections: connections.len(),
+                broadcasts: 0,
+                delivered_messages: 0,
+                presence_snapshots: 0,
+            },
+            plan,
+            connections,
+        })
+    }
+
+    pub fn state(&self) -> &RealtimeRuntimeState {
+        &self.state
+    }
+
+    pub fn dispatch_cdc_event(
+        &mut self,
+        event: &CdcEventEnvelope,
+    ) -> Result<RealtimeRuntimeBroadcast, RealtimeSidecarError> {
+        let plan = self.plan.broadcast_plan(event)?;
+        let mut deliveries = Vec::with_capacity(plan.recipients.len());
+        for recipient in &plan.recipients {
+            let connection = self
+                .connections
+                .iter()
+                .find(|connection| connection.connection_id == *recipient)
+                .ok_or(RealtimeSidecarError::RecipientConnectionMissing)?;
+            deliveries.push(RealtimeDelivery {
+                connection_id: connection.connection_id.clone(),
+                user_id: connection.user_id.clone(),
+                tenant_id: connection.tenant_id.clone(),
+                topic: connection.topic.clone(),
+                frame_bytes: deterministic_frame_bytes(event),
+            });
+        }
+
+        let presence_users = plan
+            .presence_snapshot
+            .as_ref()
+            .map(|presence| presence.online_users.clone())
+            .unwrap_or_default();
+
+        self.state.broadcasts += 1;
+        self.state.delivered_messages += deliveries.len() as u64;
+        if !presence_users.is_empty() {
+            self.state.presence_snapshots += 1;
+        }
+
+        Ok(RealtimeRuntimeBroadcast {
+            topic: plan.topic,
+            tenant_id: plan.tenant_id,
+            operation: plan.operation,
+            filtered_connections: self.connections.len().saturating_sub(deliveries.len()),
+            deliveries,
+            presence_users,
+        })
+    }
+}
+
+fn deterministic_frame_bytes(event: &CdcEventEnvelope) -> u64 {
+    128 + (event.columns.len() as u64 * 16)
 }
 
 pub fn canonical_realtime_plan() -> RealtimeSidecarPlan {
@@ -330,6 +469,16 @@ pub fn canonical_broadcast_plan() -> Result<RealtimeBroadcastPlan, RealtimeSidec
     canonical_realtime_plan().broadcast_plan(&canonical_realtime_event())
 }
 
+pub fn canonical_realtime_runtime_report() -> Result<RealtimeRuntimeReport, RealtimeSidecarError> {
+    let mut runtime = RealtimeRuntime::new(canonical_realtime_plan())?;
+    let broadcast = runtime.dispatch_cdc_event(&canonical_realtime_event())?;
+
+    Ok(RealtimeRuntimeReport {
+        broadcast,
+        state: runtime.state().clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -361,6 +510,38 @@ mod tests {
             broadcast.presence_snapshot.expect("presence").online_users,
             vec!["user-a".to_string()]
         );
+    }
+
+    #[test]
+    fn realtime_runtime_dispatches_to_matching_connection() {
+        let report = canonical_realtime_runtime_report().expect("runtime report");
+
+        assert_eq!(report.broadcast.topic, "orders");
+        assert_eq!(report.broadcast.tenant_id, "tenant-a");
+        assert_eq!(report.broadcast.deliveries.len(), 1);
+        assert_eq!(report.broadcast.deliveries[0].connection_id, "conn-a");
+        assert_eq!(report.broadcast.deliveries[0].user_id, "user-a");
+        assert_eq!(report.broadcast.deliveries[0].frame_bytes, 160);
+        assert_eq!(report.broadcast.filtered_connections, 2);
+        assert_eq!(report.broadcast.presence_users, vec!["user-a".to_string()]);
+        assert_eq!(report.state.active_connections, 3);
+        assert_eq!(report.state.broadcasts, 1);
+        assert_eq!(report.state.delivered_messages, 1);
+        assert_eq!(report.state.presence_snapshots, 1);
+    }
+
+    #[test]
+    fn realtime_runtime_tracks_filtered_event() {
+        let mut runtime = RealtimeRuntime::new(canonical_realtime_plan()).expect("runtime");
+        let broadcast = runtime
+            .dispatch_cdc_event(&valid_event("tenant-a", "refunded"))
+            .expect("broadcast");
+
+        assert!(broadcast.deliveries.is_empty());
+        assert_eq!(broadcast.filtered_connections, 3);
+        assert_eq!(runtime.state().broadcasts, 1);
+        assert_eq!(runtime.state().delivered_messages, 0);
+        assert_eq!(runtime.state().presence_snapshots, 1);
     }
 
     #[test]

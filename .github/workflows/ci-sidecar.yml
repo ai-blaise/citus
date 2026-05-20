@@ -183,6 +183,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_realtime
+      - name: Run canonical realtime broadcast
+        run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-canonical
+      - name: Run canonical realtime runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical
 
   repack:
     runs-on: ubuntu-latest
