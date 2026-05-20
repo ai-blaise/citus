@@ -68,3 +68,27 @@ jobs:
         run: cargo check -p ai_blaise_citus_schema_designer --tests
       - name: Test
         run: cargo test -p ai_blaise_citus_schema_designer
+
+  tui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_tui --tests
+      - name: Test
+        run: cargo test -p ai_blaise_citus_tui
+
+  admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: cargo check -p ai_blaise_citus_admin --tests
+      - name: Test
+        run: cargo test -p ai_blaise_citus_admin

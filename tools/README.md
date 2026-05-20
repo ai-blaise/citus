@@ -19,3 +19,9 @@ view over companion metadata, Prometheus metrics, and pool-side signals.
 
 `citus-schema-designer` now has the initial Rust visualization contract for
 distribution, hypertable, search-index, webhook, and live shard-map overlays.
+
+`citus-tui` now has the initial Rust session contract for the rainfrog-based
+terminal shell panels and guarded operator actions.
+
+`citus-admin` now has the initial Rust route and action contract for the
+WhoDB-based web administration surface.

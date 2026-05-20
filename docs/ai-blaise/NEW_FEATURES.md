@@ -3179,6 +3179,30 @@ workflow.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
 
+### D3: citus-tui Interactive Shell
+
+**Overlay**: `tools/citus-tui`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the initial contract for the rainfrog-based terminal UI
+shell with Citus-specific panels and guarded operator actions.
+
+**Motivation**: Operators need an interactive terminal workflow that can inspect
+cluster topology, shards, hypertables, search indexes, vectorizer backlog,
+tenants, and branches while keeping mutating workflows behind explicit safety
+gates.
+
+**Citus comparison**: Vanilla Citus does not include an interactive terminal
+administration shell.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D3` in `tools/citus-tui/src/lib.rs`
+
 ### D4: citus-lsp IDE Diagnostics
 
 **Overlay**: `tools/citus-lsp`
@@ -3201,6 +3225,28 @@ rather than discovering them during deploy-time reconciliation.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D4` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
+
+### D5: citus-admin Web UI
+
+**Overlay**: `tools/citus-admin`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the initial route and action contract for the WhoDB-based
+web administration UI.
+
+**Motivation**: Administrators need a browser UI for topology, shard,
+Timescale, vectorizer, branch, tenant, backup, and realtime debugging
+workflows, with mutating actions requiring exact confirmations.
+
+**Citus comparison**: Vanilla Citus does not ship a web administration UI.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D5` in `tools/citus-admin/src/lib.rs`
 
 ### D6: citus-schema-designer Visual
 

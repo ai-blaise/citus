@@ -23,8 +23,10 @@ members = [
     "sidecar/txn_status",
     "sidecar/vectorizer",
     "tools/citus-mcp",
+    "tools/citus-admin",
     "tools/citus-lsp",
     "tools/citus-schema-designer",
+    "tools/citus-tui",
     "tools/citus-watch",
     "tools/citusctl",
 ]

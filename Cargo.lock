@@ -12,6 +12,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_admin"
+version = "0.1.0"
+
+[[package]]
 name = "ai_blaise_citus_companion"
 version = "0.1.0"
 dependencies = [
@@ -161,6 +165,10 @@ version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_shared",
 ]
+
+[[package]]
+name = "ai_blaise_citus_tui"
+version = "0.1.0"
 
 [[package]]
 name = "ai_blaise_citus_watch"
