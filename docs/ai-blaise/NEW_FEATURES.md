@@ -1779,7 +1779,7 @@ tooling.
 **Bundled extension dep**: none
 
 **Summary**: Defines schedule and archive URI contracts for the backup sidecar,
-plus a runnable canonical backup/PITR emitter.
+plus runnable canonical backup/PITR emitters for plan and execution state.
 
 **Motivation**: Backup execution needs a sidecar contract that matches the
 operator CRD before WAL archive implementation begins.
@@ -1793,6 +1793,7 @@ tooling.
 - In-source: `FEATURE: B1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: B1` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 
 ### B2: Backup CRD
 
@@ -1837,6 +1838,7 @@ and sidecar code execute recovery.
 - In-source: `FEATURE: B3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: B3` in `sidecar/backup/src/lib.rs`
 - In-source: `FEATURE: B3` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 
 ### B4: Backup-As-Data-Source
 
@@ -1859,6 +1861,7 @@ to become explicit read-only data sources.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B4` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: B4` in `sidecar/backup/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 
 ### B5: Time-Travel Query Intent
 
@@ -1903,6 +1906,7 @@ deployment-specific tooling.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
 - In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 
 ## Tenant Operations
 
