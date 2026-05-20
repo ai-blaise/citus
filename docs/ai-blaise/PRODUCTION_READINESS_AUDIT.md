@@ -70,10 +70,14 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 161
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Every feature heading is
-still `Status: alpha`. The remaining 79 source markers are represented as V2
-completion references or addendum rows rather than standalone feature headings.
-This is acceptable for catalog integrity, but it is not a production claim.
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Two narrow headings are
+`Status: production-ready` because they have live VM/GitHub evidence: `D13`
+for the production runtime image matrix and `O4` for the shared sidecar
+health/readiness/metrics runtime. The other 159 feature headings remain
+`Status: alpha`. The remaining 79 source markers are represented as V2
+completion references or addendum rows rather than standalone feature headings;
+those rows also remain alpha. This is acceptable for catalog integrity, but it
+is not a production claim for the full feature plan.
 The audit guard also reports 77 feature headings without an explicit
 Executable, CI, Acceptance, SQL runtime, or SQL extension reference line; those
 entries may still have source markers, but they are not independently
@@ -90,9 +94,9 @@ they are replaced by measured evidence:
    and expected thresholds, but several values are canonical model data rather
    than results from live performance, chaos, multi-region, vectorizer, search,
    and HTAP harnesses.
-3. Alpha feature register. The register intentionally keeps all feature
-   headings alpha until each feature has production evidence for its runtime
-   behavior, rollback behavior, security posture, and operational ownership.
+3. Alpha feature register. The register intentionally keeps feature headings
+   alpha until each feature has production evidence for its runtime behavior,
+   rollback behavior, security posture, and operational ownership.
 
 `ci/ai-blaise/production-readiness-check.sh` now enforces this boundary. In
 normal audit mode it verifies source/doc synchronization, status semantics, and
