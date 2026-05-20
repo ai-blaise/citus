@@ -35,7 +35,25 @@ grep -q '^name: ai-blaise-citus-overlay$' "${chart_dir}/Chart.yaml"
 grep -q '^global:$' "${chart_dir}/values.yaml"
 grep -q '^operator:$' "${chart_dir}/values.yaml"
 grep -q '^pool:$' "${chart_dir}/values.yaml"
+grep -q '^sidecarDefaults:$' "${chart_dir}/values.yaml"
 grep -q '^sidecars:$' "${chart_dir}/values.yaml"
+
+required_sidecars=(
+  analytical auth backup cdc coldtier edge-functions graphql hlc mcp
+  postgrest raft realtime repack schema-job storage txn-status vectorizer
+)
+
+for values_file in \
+  "${chart_dir}/values.yaml" \
+  "${chart_dir}/values-dev.yaml" \
+  "${chart_dir}/values-prod.yaml"; do
+  for sidecar in "${required_sidecars[@]}"; do
+    if ! grep -Eq "^[[:space:]]*- name: ${sidecar}$" "${values_file}"; then
+      echo "missing sidecar ${sidecar} in ${values_file}" >&2
+      exit 1
+    fi
+  done
+done
 
 if grep -R "{{" "${chart_dir}/crds"; then
   echo "crds/ files must be static Kubernetes YAML, not Helm templates" >&2

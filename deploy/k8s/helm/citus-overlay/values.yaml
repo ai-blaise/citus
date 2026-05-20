@@ -32,46 +32,69 @@ pool:
       cpu: "1"
       memory: 1Gi
 
+sidecarDefaults:
+  tag: "0.1.0"
+  port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
 sidecars:
-  - name: vectorizer
+  - name: analytical
     enabled: true
-    image:
-      repository: citus-sidecar-vectorizer
-      tag: "0.1.0"
     replicas: 1
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
-  - name: cdc
-    enabled: true
-    image:
-      repository: citus-sidecar-cdc
-      tag: "0.1.0"
-    replicas: 1
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
   - name: auth
     enabled: true
-    image:
-      repository: citus-sidecar-auth
-      tag: "0.1.0"
     replicas: 1
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
+  - name: backup
+    enabled: true
+    replicas: 1
+  - name: cdc
+    enabled: true
+    replicas: 1
+  - name: coldtier
+    enabled: true
+    replicas: 1
+  - name: edge-functions
+    enabled: true
+    replicas: 1
+  - name: graphql
+    enabled: true
+    replicas: 1
+  - name: hlc
+    enabled: true
+    replicas: 1
+  - name: mcp
+    enabled: true
+    replicas: 1
+  - name: postgrest
+    enabled: true
+    replicas: 1
+  - name: raft
+    enabled: true
+    replicas: 1
+  - name: realtime
+    enabled: true
+    replicas: 1
+  - name: repack
+    enabled: true
+    replicas: 1
+  - name: schema-job
+    enabled: true
+    replicas: 1
+  - name: storage
+    enabled: true
+    replicas: 1
+  - name: txn-status
+    enabled: true
+    replicas: 1
+  - name: vectorizer
+    enabled: true
+    replicas: 1
 
 tools:
   enabled: false

@@ -1,5 +1,9 @@
 {{- range .Values.sidecars }}
 {{- if .enabled }}
+{{- $repository := default (printf "citus-sidecar-%s" .name) (dig "image" "repository" "" .) }}
+{{- $tag := default $.Values.sidecarDefaults.tag (dig "image" "tag" "" .) }}
+{{- $port := default $.Values.sidecarDefaults.port .port }}
+{{- $resources := default $.Values.sidecarDefaults.resources .resources }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -21,13 +25,13 @@ spec:
     spec:
       containers:
         - name: {{ .name }}
-          image: {{ include "citus-overlay.image" (dict "Values" $.Values "repository" .image.repository "tag" .image.tag) }}
+          image: {{ include "citus-overlay.image" (dict "Values" $.Values "repository" $repository "tag" $tag) }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
           ports:
             - name: http
-              containerPort: 8080
+              containerPort: {{ $port }}
           resources:
-            {{- toYaml .resources | nindent 12 }}
+            {{- toYaml $resources | nindent 12 }}
 ---
 {{- end }}
 {{- end }}
