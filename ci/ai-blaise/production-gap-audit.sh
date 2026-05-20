@@ -21,10 +21,14 @@ V2_ACCEPTANCE = ROOT / "ci/ai-blaise/v2-acceptance-check.sh"
 SQL_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
+TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
+OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
 PROD_READINESS = ROOT / "ci/ai-blaise/production-readiness-check.sh"
+IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
 
 SOURCE_ROOTS = [
     "companion",
@@ -179,9 +183,13 @@ v2_acceptance = read(V2_ACCEPTANCE)
 sql_smoke = read(SQL_SMOKE)
 image_check = read(IMAGE_CHECK)
 pool_smoke = read(POOL_SMOKE)
+timescale_smoke = read(TIMESCALE_SMOKE)
+observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
 deploy_check = read(DEPLOY_CHECK)
 prod_values = read(PROD_VALUES)
+image_workflow = read(IMAGE_WORKFLOW)
+makefile = read(MAKEFILE)
 sources = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", sources))
@@ -386,6 +394,39 @@ for phrase in (
         fail(f"pool-proxy-smoke.sh is missing live SQL proof marker: {phrase}")
 
 for phrase in (
+    "timescale/timescaledb:latest-pg17",
+    "CREATE EXTENSION IF NOT EXISTS timescaledb",
+    "SELECT apply_distribute_hypertable",
+    "SELECT apply_compression_policy_distributed",
+    "SELECT apply_retention_policy_distributed",
+    "SELECT apply_reorder_policy_distributed",
+    "SELECT apply_continuous_aggregate_distributed",
+    "SELECT apply_time_range_shard_pruner",
+    "_timescaledb_catalog.hypertable",
+    "companion_timescale_bridge_state",
+):
+    if phrase not in timescale_smoke:
+        fail(f"timescale-bridge-smoke.sh is missing real Timescale proof marker: {phrase}")
+    if phrase not in image_check:
+        fail(f"image-check.sh must statically guard Timescale smoke marker: {phrase}")
+
+for phrase in (
+    "wal_level=replica",
+    "pg_basebackup",
+    "pg_is_in_recovery()",
+    "companion_pg_stat_distributed",
+    "companion_pg_dist_replication_lag",
+    "state = 'streaming'",
+):
+    if phrase not in observability_replication_smoke:
+        fail(
+            "observability-replication-smoke.sh is missing live replication proof marker: "
+            + phrase
+        )
+    if phrase not in image_check:
+        fail(f"image-check.sh must statically guard observability smoke marker: {phrase}")
+
+for phrase in (
     "kind create cluster",
     "scripts/citus-scale/build-app-images.sh",
     "helm upgrade --install",
@@ -399,6 +440,22 @@ for phrase in (
 ):
     if phrase not in kind_smoke:
         fail(f"kind-production-smoke.sh is missing live deployment proof marker: {phrase}")
+
+for phrase in (
+    "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",
+    "REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh",
+    "REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh",
+):
+    if phrase not in image_workflow:
+        fail(f"ci-image.yml must run production runtime smoke: {phrase}")
+
+for target in (
+    "sql-extension-smoke",
+    "timescale-bridge-smoke",
+    "observability-replication-smoke",
+):
+    if target not in makefile.split("gate-close:", 1)[-1]:
+        fail(f"gate-close must include {target}")
 
 if "values-prod.yaml must not enable alpha sidecars by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha sidecars enabled in production values")
