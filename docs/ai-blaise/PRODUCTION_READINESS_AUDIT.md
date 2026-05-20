@@ -35,6 +35,23 @@ more production-ready than the artifacts justified.
     with every app image enabled, but it did not install `values-prod.yaml`.
     Production-value claims were therefore guarded statically but not exercised
     through a live Helm rollout and pool traffic path.
+11. The Argo application used `values-prod.yaml` but still tracked
+    `ai-blaise/bootstrap-v2`; GitOps could therefore deploy an older branch
+    after production fixes landed on the `main` release branch.
+12. The operator ClusterRole granted wildcard ai-blaise resources and Secret
+    access even though the current production operator path only serves
+    probes/metrics and External Secrets integration remains alpha.
+13. The Argo application enabled self-heal but disabled pruning, so stale alpha
+    deployments from an earlier non-production profile could survive after
+    switching GitOps to `values-prod.yaml`.
+14. The Timescale bridge smoke treated a successful connection as readiness
+    even though the TimescaleDB image can accept temporary init-time
+    connections while its init scripts are still creating `timescaledb`,
+    producing a duplicate extension-key race in CI.
+15. Most custom CI workflows still ran on the obsolete
+    `ai-blaise/bootstrap-v2` branch after `main` became the release branch,
+    so stale branch pushes could receive production-readiness signals that no
+    longer matched the GitOps release target.
 
 ## Corrections
 
@@ -82,14 +99,28 @@ more production-ready than the artifacts justified.
   that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
   release attestations, or CIDR allowlists before those controls are rendered,
   enforced, and verified end to end.
+- Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
+  wildcard grant, and it no longer grants Secret access while secret binding
+  remains alpha. The deploy check and production gap audit reject wildcard CRD
+  resources or Secret permissions in the operator role.
 - The Kubernetes production smoke now runs two live Helm profiles in kind. The
   exhaustive image-matrix profile still proves every Rust app image can serve
   probes and pool SQL traffic, and a separate `values-prod.yaml` profile proves
   that production values install with operator/pool replicas, no alpha sidecar
   or tools deployments, monitoring CRDs present, and live SQL through the pool.
 - The Argo application now uses `values-prod.yaml` so GitOps deployment matches
-  the production profile, and the deploy workflow plus `gate-close` now invoke
-  the live kind production smoke instead of leaving D13 as VM-only evidence.
+  the production profile, targets the `main` release branch, and the deploy
+  workflow plus `gate-close` now invoke the live kind production smoke instead
+  of leaving D13 as VM-only evidence.
+- The Argo application now prunes stale rendered resources, self-heals drift,
+  creates the target namespace, and prunes last so disabled alpha sidecars or
+  tools cannot persist merely because they were created by a previous profile.
+- The Timescale bridge smoke now waits for the TimescaleDB image init process
+  to complete before it runs bridge SQL, preventing CI from racing the image's
+  own `timescaledb` extension creation.
+- Custom CI push triggers now target only `main` and `ai-blaise/dev`; the
+  deploy check and production gap audit reject any `ci-*` workflow that still
+  targets the stale `ai-blaise/bootstrap-v2` branch.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:

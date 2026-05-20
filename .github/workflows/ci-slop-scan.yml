@@ -2,6 +2,10 @@ name: slop-scan
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
 
 jobs:
   scan:

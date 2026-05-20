@@ -21,6 +21,8 @@ start with `serve`. The operator and sidecars expose shared `/healthz`,
 its `postgres` port and admin probes on its separate `admin` port; its
 readiness probe checks that `pool.upstream.host:pool.upstream.port` accepts TCP
 connections.
+The operator RBAC enumerates the ai-blaise CRDs it watches and avoids Secret
+access while External Secrets integration remains alpha.
 
 `values.yaml`, `values-dev.yaml`, and `values-prod.yaml` deliberately list the
 same sidecar names so environment overlays cannot silently drop a daemon from
@@ -33,5 +35,7 @@ loads it into kind, installs the Helm chart with a real PostgreSQL upstream,
 and verifies SQL plus admin metrics through the pool service. It now installs
 both the exhaustive image-matrix chart profile and the production
 `values-prod.yaml` profile, where alpha sidecars and tools remain disabled.
-The Argo application uses `values-prod.yaml` so GitOps deploys the same
-production profile that the smoke verifies.
+The Argo application targets the `main` release branch, uses
+`values-prod.yaml`, creates the target namespace, and prunes stale rendered
+resources so GitOps deploys the same production profile that the smoke
+verifies without leaving disabled alpha workloads behind.

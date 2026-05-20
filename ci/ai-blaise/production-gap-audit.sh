@@ -32,12 +32,15 @@ DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
 ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
 DASHBOARD_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml"
 PROMRULE_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml"
+OPERATOR_RBAC_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/operator-rbac.yaml"
 PROD_READINESS = ROOT / "ci/ai-blaise/production-readiness-check.sh"
 IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
 DEPLOY_WORKFLOW = ROOT / ".github/workflows/ci-deploy.yml"
 POOL_WORKFLOW = ROOT / ".github/workflows/ci-pool.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
+SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
+CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 
 SOURCE_ROOTS = [
@@ -204,11 +207,13 @@ default_values = read(DEFAULT_VALUES)
 argo_app = read(ARGO_APP)
 dashboard_template = read(DASHBOARD_TEMPLATE)
 promrule_template = read(PROMRULE_TEMPLATE)
+operator_rbac_template = read(OPERATOR_RBAC_TEMPLATE)
 image_workflow = read(IMAGE_WORKFLOW)
 deploy_workflow = read(DEPLOY_WORKFLOW)
 pool_workflow = read(POOL_WORKFLOW)
 operator_workflow = read(OPERATOR_WORKFLOW)
 sidecar_workflow = read(SIDECAR_WORKFLOW)
+slop_workflow = read(SLOP_WORKFLOW)
 makefile = read(MAKEFILE)
 sources = source_text()
 
@@ -453,6 +458,7 @@ for phrase in (
 
 for phrase in (
     "timescale/timescaledb:latest-pg17",
+    "PostgreSQL init process complete",
     "CREATE EXTENSION IF NOT EXISTS timescaledb",
     "SELECT apply_distribute_hypertable",
     "SELECT apply_compression_policy_distributed",
@@ -509,6 +515,11 @@ for phrase in (
 
 if "values-prod.yaml" not in argo_app or "valueFiles:" not in argo_app:
     fail("Argo application must install the production values profile")
+if "targetRevision: main" not in argo_app:
+    fail("Argo application must target the main release branch")
+for phrase in ("prune: true", "selfHeal: true", "CreateNamespace=true", "PruneLast=true"):
+    if phrase not in argo_app:
+        fail(f"Argo production application must preserve sync guardrail: {phrase}")
 
 if "kind-production-smoke:" not in deploy_workflow:
     fail("deploy workflow must include the live Kubernetes production smoke job")
@@ -522,12 +533,21 @@ if "kind-production-smoke" not in gate_close_dependencies:
     fail("gate-close must include the live Kubernetes production smoke")
 
 for path, text in (
+    (DEPLOY_WORKFLOW, deploy_workflow),
     (POOL_WORKFLOW, pool_workflow),
     (OPERATOR_WORKFLOW, operator_workflow),
     (SIDECAR_WORKFLOW, sidecar_workflow),
+    (SLOP_WORKFLOW, slop_workflow),
 ):
-    if "ai-blaise/bootstrap-v2" not in text:
-        fail(f"{path} must run on ai-blaise/bootstrap-v2 pushes")
+    if "- main" not in text or "- ai-blaise/dev" not in text:
+        fail(f"{path} must run on main and ai-blaise/dev pushes")
+
+for path in CUSTOM_CI_WORKFLOWS:
+    text = read(path)
+    if "- main" not in text or "- ai-blaise/dev" not in text:
+        fail(f"{path} must run on main and ai-blaise/dev pushes")
+    if "- ai-blaise/bootstrap-v2" in text:
+        fail(f"{path} must not target stale ai-blaise/bootstrap-v2")
 
 for path, text in (
     (DASHBOARD_TEMPLATE, dashboard_template),
@@ -537,6 +557,14 @@ for path, text in (
         fail(f"{path} must query the sidecar metric emitted by runtime.rs")
     if "ai_blaise_citus_sidecar_ready" in text:
         fail(f"{path} contains stale sidecar metric name ai_blaise_citus_sidecar_ready")
+
+if 'resources: ["*"]' in operator_rbac_template:
+    fail("operator RBAC must enumerate ai-blaise resources explicitly")
+if '"secrets"' in operator_rbac_template:
+    fail("operator RBAC must not grant Secret access while secret binding is alpha")
+for resource in ("citusclusters", "hypertables", "scheduledrepacks"):
+    if resource not in operator_rbac_template:
+        fail(f"operator RBAC must include explicit resource: {resource}")
 
 for phrase in (
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",

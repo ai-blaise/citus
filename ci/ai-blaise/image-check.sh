@@ -230,6 +230,7 @@ grep -Fq "apply_compression_policy_distributed must require TimescaleDB dependen
 grep -Fq "apply_continuous_aggregate_distributed must require TimescaleDB dependency" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_idle_transactions('100 milliseconds'::interval)" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale/timescaledb:latest-pg17" "${timescale_bridge_smoke}"
+grep -Fq "PostgreSQL init process complete" "${timescale_bridge_smoke}"
 grep -Fq "CREATE EXTENSION IF NOT EXISTS timescaledb" "${timescale_bridge_smoke}"
 grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_distribute_hypertable" "${timescale_bridge_smoke}"
