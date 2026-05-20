@@ -457,10 +457,10 @@ delegating to trusted preexisting hooks where the Citus path can safely do so.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Defines the Kubernetes `Hypertable` spec and typed reconcile plan
-that drive distributed hypertable creation, compression, retention, continuous
-aggregate, and time-range shard-pruner reconciliation through ordered companion
-SQL plans.
+**Summary**: Defines the Kubernetes `Hypertable` spec and typed guarded apply
+plan that drive distributed hypertable creation, compression, retention,
+continuous aggregate, and time-range shard-pruner reconciliation through
+ordered companion SQL steps.
 
 **Motivation**: The TimescaleDB bridge needs a declarative operator surface so
 cluster state can be reconciled repeatedly instead of hand-applied.
@@ -473,6 +473,9 @@ Timescale-aware distributed hypertables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
+  (`HypertableApplyPlan` creates `ai_blaise_citus`, checks
+  `companion_feature_status()`, verifies Timescale/Citus cohabitation, then
+  applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
 
 ### TS8: LSP Rules For Hypertable Invariants

@@ -21,6 +21,9 @@ sidecar deployment resources, online migration DSL, conflict resolution, FDW
 federation, hybrid search, outbound webhooks, edge functions, and online
 repack scheduling.
 
-`operator/src/reconcile/hypertable.rs` converts that spec into ordered
-companion SQL plans so the future kube reconciler has one typed execution plan
-to apply.
+`operator/src/reconcile/hypertable.rs` converts that spec into a typed apply
+plan. The plan creates the `ai_blaise_citus` companion extension, checks
+`companion_feature_status()` for executable features, verifies
+`citus.cohabit_extensions` contains `timescaledb`, then runs the ordered
+companion SQL for distributed hypertables, policies, continuous aggregates, and
+time-range shard pruning.

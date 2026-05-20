@@ -30,6 +30,10 @@ The first end-to-end acceptance path is:
 
 The companion crate starts with pure Rust planning and validation types, then
 exposes them through two database surfaces: a `pg18`-gated pgrx module and an
-`ai_blaise_citus` SQL fallback extension packaged in the operand image. The SQL
-fallback is smoke-tested with Docker in CI so `CREATE EXTENSION ai_blaise_citus`
-is verified before the compiled pgrx library becomes the only runtime surface.
+`ai_blaise_citus` SQL fallback extension packaged in the operand image. The
+Hypertable operator reconcile path now wraps those companion plans in a guarded
+apply plan: create the extension, validate `companion_feature_status()`, assert
+Timescale/Citus cohabitation, then run the ordered TS1/TS2/TS3/TS4/TS5 SQL.
+The SQL fallback is smoke-tested with Docker in CI so
+`CREATE EXTENSION ai_blaise_citus` is verified before the compiled pgrx library
+becomes the only runtime surface.

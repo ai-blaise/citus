@@ -13,6 +13,9 @@ use crate::crds::hypertable::{
     RetentionPolicy,
 };
 
+pub const AI_BLAISE_CITUS_EXTENSION: &str = "ai_blaise_citus";
+pub const TIMESCALEDB_EXTENSION: &str = "timescaledb";
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HypertableReconcilePlan {
     pub distributed_hypertable: DistributedHypertablePlan,
@@ -80,6 +83,94 @@ impl HypertableReconcilePlan {
             .collect::<Vec<_>>()
             .join("\n")
     }
+
+    pub fn apply_plan(&self) -> HypertableApplyPlan {
+        let mut steps = vec![
+            HypertableApplyStep::new(
+                "ensure_ai_blaise_citus_extension",
+                "TS7",
+                format!("CREATE EXTENSION IF NOT EXISTS {AI_BLAISE_CITUS_EXTENSION};"),
+                true,
+            ),
+            HypertableApplyStep::new(
+                "guard_companion_feature_status",
+                "TS7",
+                companion_status_guard_sql(&self.sql_plans),
+                true,
+            ),
+            HypertableApplyStep::new(
+                "guard_citus_timescaledb_cohabitation",
+                "TS6",
+                cohabitation_guard_sql(),
+                true,
+            ),
+        ];
+
+        steps.extend(
+            self.sql_plans
+                .iter()
+                .enumerate()
+                .map(|(index, sql_plan)| HypertableApplyStep::from_companion_plan(index, sql_plan)),
+        );
+
+        HypertableApplyPlan { steps }
+    }
+
+    pub fn apply_sql_script(&self) -> String {
+        self.apply_plan().sql_script()
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HypertableApplyPlan {
+    pub steps: Vec<HypertableApplyStep>,
+}
+
+impl HypertableApplyPlan {
+    pub fn sql_script(&self) -> String {
+        self.steps
+            .iter()
+            .map(|step| step.sql.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HypertableApplyStep {
+    pub name: String,
+    pub feature_id: String,
+    pub sql: String,
+    pub idempotent: bool,
+}
+
+impl HypertableApplyStep {
+    fn new(
+        name: impl Into<String>,
+        feature_id: impl Into<String>,
+        sql: impl Into<String>,
+        idempotent: bool,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            feature_id: feature_id.into(),
+            sql: sql.into(),
+            idempotent,
+        }
+    }
+
+    fn from_companion_plan(index: usize, sql_plan: &CompanionSqlPlan) -> Self {
+        Self::new(
+            format!(
+                "apply_companion_sql_{:02}_{}",
+                index + 1,
+                sql_plan.feature_id.to_ascii_lowercase()
+            ),
+            sql_plan.feature_id,
+            sql_plan.script(),
+            false,
+        )
+    }
 }
 
 fn compression_policy(
@@ -130,6 +221,63 @@ fn continuous_aggregate_plan(
         )?),
         _ => Ok(plan),
     }
+}
+
+fn companion_status_guard_sql(sql_plans: &[CompanionSqlPlan]) -> String {
+    let feature_values = sql_plans
+        .iter()
+        .map(|plan| format!("({})", sql_literal(plan.feature_id)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        r#"DO $ai_blaise_citus$
+DECLARE
+    missing_feature text;
+BEGIN
+    IF EXISTS (SELECT 1 FROM companion_feature_status() WHERE status = 'planned') THEN
+        RAISE EXCEPTION 'companion_feature_status must not report planned features';
+    END IF;
+
+    SELECT required.feature_id INTO missing_feature
+    FROM (VALUES {feature_values}) AS required(feature_id)
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM companion_feature_status() status
+        WHERE status.feature_id = required.feature_id
+    )
+    LIMIT 1;
+
+    IF missing_feature IS NOT NULL THEN
+        RAISE EXCEPTION 'companion_feature_status must report %', missing_feature;
+    END IF;
+END
+$ai_blaise_citus$;"#
+    )
+}
+
+fn cohabitation_guard_sql() -> String {
+    format!(
+        r#"DO $ai_blaise_citus$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM regexp_split_to_table(
+            COALESCE(current_setting('citus.cohabit_extensions', true), ''),
+            '\s*,\s*'
+        ) AS cohabit_extension(extension_name)
+        WHERE lower(cohabit_extension.extension_name) = {timescaledb}
+    ) THEN
+        RAISE EXCEPTION 'citus.cohabit_extensions must include {TIMESCALEDB_EXTENSION}';
+    END IF;
+END
+$ai_blaise_citus$;"#,
+        timescaledb = sql_literal(TIMESCALEDB_EXTENSION)
+    )
+}
+
+fn sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -207,6 +355,33 @@ mod tests {
             plan.continuous_aggregates[0].schedule.as_deref(),
             Some("15 minutes")
         );
+
+        let apply_plan = plan.apply_plan();
+        assert_eq!(apply_plan.steps.len(), 8);
+        assert_eq!(apply_plan.steps[0].name, "ensure_ai_blaise_citus_extension");
+        assert_eq!(apply_plan.steps[0].feature_id, "TS7");
+        assert!(apply_plan.steps[0].idempotent);
+        assert_eq!(apply_plan.steps[1].name, "guard_companion_feature_status");
+        assert!(apply_plan.steps[1].idempotent);
+        assert_eq!(
+            apply_plan.steps[2].name,
+            "guard_citus_timescaledb_cohabitation"
+        );
+        assert_eq!(apply_plan.steps[3].feature_id, "TS1");
+        assert_eq!(apply_plan.steps[4].feature_id, "TS2");
+        assert_eq!(apply_plan.steps[5].feature_id, "TS4");
+        assert_eq!(apply_plan.steps[6].feature_id, "TS3");
+        assert_eq!(apply_plan.steps[7].feature_id, "TS5");
+        assert!(!apply_plan.steps[3].idempotent);
+
+        let apply_sql = plan.apply_sql_script();
+        assert!(apply_sql.starts_with("CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;"));
+        assert!(apply_sql.contains("companion_feature_status()"));
+        assert!(apply_sql.contains("VALUES ('TS1'), ('TS2'), ('TS4'), ('TS3'), ('TS5')"));
+        assert!(apply_sql.contains("citus.cohabit_extensions"));
+        assert!(apply_sql.contains("timescaledb"));
+        assert!(apply_sql.contains("create_distributed_table"));
+        assert!(apply_sql.contains("enable_time_range_shard_pruner"));
     }
 
     #[test]

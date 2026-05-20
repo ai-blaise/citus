@@ -273,6 +273,19 @@ mod tests {
             .reconcile
             .sql_script()
             .contains("enable_time_range_shard_pruner"));
+        let apply_plan = plan.reconcile.apply_plan();
+        assert_eq!(apply_plan.steps[0].name, "ensure_ai_blaise_citus_extension");
+        assert_eq!(
+            apply_plan.steps[2].name,
+            "guard_citus_timescaledb_cohabitation"
+        );
+        assert!(apply_plan
+            .sql_script()
+            .contains("CREATE EXTENSION IF NOT EXISTS ai_blaise_citus"));
+        assert!(apply_plan
+            .sql_script()
+            .contains("companion_feature_status()"));
+        assert!(apply_plan.sql_script().contains("citus.cohabit_extensions"));
         assert_eq!(
             plan.gates,
             vec![

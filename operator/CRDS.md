@@ -4,7 +4,7 @@ Initial CRD surface from the V2 plan:
 
 - `CitusCluster` (`FEATURE: S4`, initial Rust spec implemented)
 - `ShardGroup` (`FEATURE: S2`, initial Rust spec implemented)
-- `Hypertable` (`FEATURE: TS7`, initial Rust spec implemented)
+- `Hypertable` (`FEATURE: TS7`, Rust spec and guarded apply plan implemented)
 - `Branch` (`FEATURE: R2`, `FEATURE: C6`, `FEATURE: C7`, `FEATURE: C8`,
   initial Rust spec implemented)
 - `Vectorizer` (`FEATURE: A8`, initial Rust spec implemented)

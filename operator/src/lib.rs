@@ -45,4 +45,6 @@ pub use crds::vectorizer::{
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
-pub use reconcile::hypertable::{HypertableReconcileError, HypertableReconcilePlan};
+pub use reconcile::hypertable::{
+    HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
+};
