@@ -39,6 +39,9 @@ database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
+`sidecar/postgrest/src/lib.rs` validates auto-REST route, distributed view,
+RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
+`FEATURE: API5`, and `FEATURE: API6`.
 `sidecar/raft/src/lib.rs` validates shard-group Raft membership, leader lease,
 placement intent, quorum, and failover decisions for `FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
@@ -1925,6 +1928,92 @@ binding rather than an ambient runtime setting.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L13` in `sidecar/analytical/src/lib.rs`
+
+## Auto API
+
+### API1: PostgREST Sidecar
+
+**Overlay**: `sidecar/postgrest`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgrest`
+
+**Summary**: Defines schemas and REST routes exposed by the PostgREST sidecar.
+
+**Motivation**: Auto-REST needs a validated route surface before the sidecar
+starts serving table-backed endpoints.
+
+**Citus comparison**: Vanilla Citus does not ship a PostgREST sidecar.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API1` in `sidecar/postgrest/src/lib.rs`
+
+### API2: Distributed PostgREST Views
+
+**Overlay**: `sidecar/postgrest`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgrest`
+
+**Summary**: Binds REST routes to helper views with distribution column and
+shard-count metadata.
+
+**Motivation**: Auto-REST over distributed tables needs a stable view contract
+so requests route through Citus-aware helper views.
+
+**Citus comparison**: Vanilla Citus does not generate PostgREST helper views.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
+
+### API5: RLS-Aware Auto API
+
+**Overlay**: `sidecar/postgrest`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Requires RLS, JWT secret references, and tenant claims for
+auto-API routes.
+
+**Motivation**: Auto-generated APIs must preserve tenant isolation rather than
+exposing raw distributed tables.
+
+**Citus comparison**: Vanilla Citus does not enforce RLS-aware auto-API
+policy.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
+
+### API6: Auto OpenAPI Document
+
+**Overlay**: `sidecar/postgrest`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgrest`
+
+**Summary**: Defines the OpenAPI path, title, and version served by the
+PostgREST sidecar.
+
+**Motivation**: Client generation and API inspection need a predictable
+OpenAPI endpoint.
+
+**Citus comparison**: Vanilla Citus does not serve OpenAPI documents.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
 
 ## Realtime
 

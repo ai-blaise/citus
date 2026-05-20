@@ -11,6 +11,7 @@ members = [
     "sidecar/coldtier",
     "sidecar/edge_functions",
     "sidecar/hlc",
+    "sidecar/postgrest",
     "sidecar/raft",
     "sidecar/realtime",
     "sidecar/schema_job",
