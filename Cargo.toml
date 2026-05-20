@@ -12,6 +12,7 @@ members = [
     "sidecar/edge_functions",
     "sidecar/graphql",
     "sidecar/hlc",
+    "sidecar/mcp",
     "sidecar/postgrest",
     "sidecar/raft",
     "sidecar/realtime",

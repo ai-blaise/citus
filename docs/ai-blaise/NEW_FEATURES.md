@@ -42,6 +42,9 @@ and RLS/JWT contracts for `FEATURE: API3`, `FEATURE: API4`, and
 `FEATURE: API5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
+`sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
+tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
+`FEATURE: MCP3`.
 `sidecar/postgrest/src/lib.rs` validates auto-REST route, distributed view,
 RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
 `FEATURE: API5`, and `FEATURE: API6`.
@@ -2573,7 +2576,7 @@ policy.
 
 ### MCP1: citus-mcp Server
 
-**Overlay**: `tools/citus-mcp`
+**Overlay**: `tools/citus-mcp`, `sidecar/mcp`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -2591,10 +2594,11 @@ direct database or Kubernetes access.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP1` in `tools/citus-mcp/src/lib.rs`
+- In-source: `FEATURE: MCP1` in `sidecar/mcp/src/lib.rs`
 
 ### MCP2: Safe-Mode Tools
 
-**Overlay**: `tools/citus-mcp`
+**Overlay**: `tools/citus-mcp`, `sidecar/mcp`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -2612,10 +2616,11 @@ unless explicitly allowed.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP2` in `tools/citus-mcp/src/lib.rs`
+- In-source: `FEATURE: MCP2` in `sidecar/mcp/src/lib.rs`
 
 ### MCP3: Tenant-Scoped Tools
 
-**Overlay**: `tools/citus-mcp`
+**Overlay**: `tools/citus-mcp`, `sidecar/mcp`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -2633,6 +2638,7 @@ multi-tenant production usage.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP3` in `tools/citus-mcp/src/lib.rs`
+- In-source: `FEATURE: MCP3` in `sidecar/mcp/src/lib.rs`
 
 ## Operations / DX
 
