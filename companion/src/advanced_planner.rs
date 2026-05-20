@@ -105,6 +105,72 @@ pub enum PlannerSurfaceKind {
     },
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AdvancedPlannerExecutionReport {
+    pub surface_count: usize,
+    pub lookup_surfaces: usize,
+    pub lookup_min_partitions: u32,
+    pub max_batch_rows: u32,
+    pub distributed_sql_worker_tasks: u32,
+    pub transaction_state_surfaces: usize,
+    pub transaction_shard_budget: u32,
+    pub policy_surfaces: usize,
+    pub policy_required_inputs: usize,
+    pub storage_domains: usize,
+    pub research_guards: usize,
+}
+
+impl AdvancedPlannerExecutionReport {
+    fn from_contract(contract: &AdvancedPlannerContract) -> Result<Self, AdvancedPlannerError> {
+        contract.validate()?;
+
+        let mut report = Self {
+            surface_count: contract.surfaces.len(),
+            lookup_surfaces: 0,
+            lookup_min_partitions: 0,
+            max_batch_rows: 0,
+            distributed_sql_worker_tasks: 0,
+            transaction_state_surfaces: 0,
+            transaction_shard_budget: 0,
+            policy_surfaces: 0,
+            policy_required_inputs: 0,
+            storage_domains: 0,
+            research_guards: 0,
+        };
+
+        for surface in &contract.surfaces {
+            match &surface.kind {
+                PlannerSurfaceKind::Lookup { min_partitions } => {
+                    report.lookup_surfaces += 1;
+                    report.lookup_min_partitions += min_partitions;
+                }
+                PlannerSurfaceKind::BatchTransfer { max_batch_rows } => {
+                    report.max_batch_rows = report.max_batch_rows.max(*max_batch_rows);
+                }
+                PlannerSurfaceKind::DistributedSql { worker_tasks } => {
+                    report.distributed_sql_worker_tasks += worker_tasks;
+                }
+                PlannerSurfaceKind::TransactionState { max_open_shards } => {
+                    report.transaction_state_surfaces += 1;
+                    report.transaction_shard_budget += max_open_shards;
+                }
+                PlannerSurfaceKind::Policy { required_inputs } => {
+                    report.policy_surfaces += 1;
+                    report.policy_required_inputs += required_inputs.len();
+                }
+                PlannerSurfaceKind::StorageDomain { .. } => {
+                    report.storage_domains += 1;
+                }
+                PlannerSurfaceKind::ResearchGuard { .. } => {
+                    report.research_guards += 1;
+                }
+            }
+        }
+
+        Ok(report)
+    }
+}
+
 impl PlannerSurfaceKind {
     fn validate(&self) -> Result<(), AdvancedPlannerError> {
         match self {
@@ -242,6 +308,11 @@ pub fn canonical_advanced_planner_contract() -> AdvancedPlannerContract {
             research_guard("Edge2", "libsql read-tier research guard"),
         ],
     }
+}
+
+pub fn canonical_advanced_planner_execution_report(
+) -> Result<AdvancedPlannerExecutionReport, AdvancedPlannerError> {
+    AdvancedPlannerExecutionReport::from_contract(&canonical_advanced_planner_contract())
 }
 
 fn lookup(feature_id: &'static str, name: &str, reference: &str) -> PlannerSurface {
@@ -390,6 +461,23 @@ mod tests {
 
         assert_eq!(contract.validate(), Ok(()));
         assert_eq!(contract.surfaces.len(), ADVANCED_PLANNER_FEATURE_IDS.len());
+    }
+
+    #[test]
+    fn advanced_planner_execution_report_is_deterministic() {
+        let report = canonical_advanced_planner_execution_report().expect("execution report");
+
+        assert_eq!(report.surface_count, 27);
+        assert_eq!(report.lookup_surfaces, 1);
+        assert_eq!(report.lookup_min_partitions, 1);
+        assert_eq!(report.max_batch_rows, 4096);
+        assert_eq!(report.distributed_sql_worker_tasks, 2);
+        assert_eq!(report.transaction_state_surfaces, 2);
+        assert_eq!(report.transaction_shard_budget, 256);
+        assert_eq!(report.policy_surfaces, 19);
+        assert_eq!(report.policy_required_inputs, 40);
+        assert_eq!(report.storage_domains, 1);
+        assert_eq!(report.research_guards, 2);
     }
 
     #[test]

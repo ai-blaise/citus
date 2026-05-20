@@ -25,8 +25,9 @@ pub mod vector;
 pub mod webhooks;
 
 pub use advanced_planner::{
-    canonical_advanced_planner_contract, AdvancedPlannerContract, AdvancedPlannerError,
-    PlannerSurface, PlannerSurfaceKind,
+    canonical_advanced_planner_contract, canonical_advanced_planner_execution_report,
+    AdvancedPlannerContract, AdvancedPlannerError, AdvancedPlannerExecutionReport, PlannerSurface,
+    PlannerSurfaceKind,
 };
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{
@@ -69,8 +70,9 @@ pub use observability::{
     ObservabilityError, OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
 };
 pub use ops_contracts::{
-    canonical_operations_readiness_contract, OperationsCheck, OperationsContractError,
-    OperationsGate, OperationsReadinessContract,
+    canonical_operations_readiness_contract, canonical_operations_readiness_report,
+    OperationsCheck, OperationsContractError, OperationsGate, OperationsReadinessContract,
+    OperationsReadinessReport,
 };
 pub use plan_freeze::{
     PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,

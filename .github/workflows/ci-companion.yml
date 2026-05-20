@@ -16,6 +16,10 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_companion --tests
+        run: cargo check -p ai_blaise_citus_companion --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_companion
+      - name: Run canonical advanced planner contract report
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
+      - name: Run canonical operations readiness report
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical

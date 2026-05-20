@@ -22,6 +22,13 @@ the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
 optional, and hard-blocked extension image contract for `FEATURE: Bundle1`,
 `FEATURE: Search1`, `FEATURE: G1`, `FEATURE: JS1`, `FEATURE: PM1`,
 `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`.
+`companion/src/advanced_planner.rs` executes a deterministic summary for the
+broad V2 planner, tiering, regional, backup, federation, storage, and
+research-guard feature contracts through
+`companion/src/bin/companion_contracts.rs`.
+`companion/src/ops_contracts.rs` executes a deterministic readiness summary
+for install, deploy-wrapper, runbook, MCP, security, realtime-client,
+io_uring, and protocol-pipeline gates through the same companion binary.
 `sidecar/analytical/src/lib.rs` validates pg_lake/DataFusion/DuckDB,
 lakehouse-read, Iceberg snapshot commit, federation, DuckDB extension, and
 MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
@@ -3779,6 +3786,12 @@ operations TUI.
 The entries below close the V2 catalog surfaces that are implemented as
 contracts in the companion, deployment, pool, MCP, image, and runbook overlays.
 Each row records the vanilla Citus comparison and the grepable source marker.
+The broad companion contract rows are executable through
+`cargo run -p ai_blaise_citus_companion --bin companion_contracts --
+run-advanced-planner-canonical` or
+`cargo run -p ai_blaise_citus_companion --bin companion_contracts --
+run-operations-canonical`, depending on whether the row is backed by
+`companion/src/advanced_planner.rs` or `companion/src/ops_contracts.rs`.
 
 | ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference |
 |---|---|---|---|---|---|

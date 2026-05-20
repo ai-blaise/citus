@@ -75,6 +75,48 @@ pub enum OperationsGate {
     Compatibility { client: String, protocol: String },
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct OperationsReadinessReport {
+    pub check_count: usize,
+    pub helm_renders: usize,
+    pub script_contracts: usize,
+    pub runbooks: usize,
+    pub runtime_toggles: usize,
+    pub security_controls: usize,
+    pub compatibility_checks: usize,
+}
+
+impl OperationsReadinessReport {
+    fn from_contract(
+        contract: &OperationsReadinessContract,
+    ) -> Result<Self, OperationsContractError> {
+        contract.validate()?;
+
+        let mut report = Self {
+            check_count: contract.checks.len(),
+            helm_renders: 0,
+            script_contracts: 0,
+            runbooks: 0,
+            runtime_toggles: 0,
+            security_controls: 0,
+            compatibility_checks: 0,
+        };
+
+        for check in &contract.checks {
+            match &check.gate {
+                OperationsGate::HelmRender { .. } => report.helm_renders += 1,
+                OperationsGate::ScriptContract { .. } => report.script_contracts += 1,
+                OperationsGate::Runbook { .. } => report.runbooks += 1,
+                OperationsGate::RuntimeToggle { .. } => report.runtime_toggles += 1,
+                OperationsGate::SecurityPolicy { .. } => report.security_controls += 1,
+                OperationsGate::Compatibility { .. } => report.compatibility_checks += 1,
+            }
+        }
+
+        Ok(report)
+    }
+}
+
 impl OperationsGate {
     fn validate(&self) -> Result<(), OperationsContractError> {
         match self {
@@ -132,6 +174,11 @@ pub fn canonical_operations_readiness_contract() -> OperationsReadinessContract 
             runtime("T7", "pool.protocol_pipeline", "enabled"),
         ],
     }
+}
+
+pub fn canonical_operations_readiness_report(
+) -> Result<OperationsReadinessReport, OperationsContractError> {
+    OperationsReadinessReport::from_contract(&canonical_operations_readiness_contract())
 }
 
 fn helm(feature_id: &'static str, values_file: &str) -> OperationsCheck {
@@ -236,6 +283,19 @@ mod tests {
 
         assert_eq!(contract.validate(), Ok(()));
         assert_eq!(contract.checks.len(), OPERATIONS_CONTRACT_FEATURE_IDS.len());
+    }
+
+    #[test]
+    fn operations_readiness_report_is_deterministic() {
+        let report = canonical_operations_readiness_report().expect("readiness report");
+
+        assert_eq!(report.check_count, 15);
+        assert_eq!(report.helm_renders, 1);
+        assert_eq!(report.script_contracts, 2);
+        assert_eq!(report.runbooks, 3);
+        assert_eq!(report.runtime_toggles, 2);
+        assert_eq!(report.security_controls, 6);
+        assert_eq!(report.compatibility_checks, 1);
     }
 
     #[test]

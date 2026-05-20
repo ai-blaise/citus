@@ -57,17 +57,25 @@ and `webhooks`.
   surfaces, including `FEATURE: T4`, `FEATURE: T10`, `FEATURE: T11`,
   `FEATURE: T13`, `FEATURE: T14`, `FEATURE: TS10`, `FEATURE: TS11`,
   `FEATURE: S1`, `FEATURE: S3`, `FEATURE: S8`, `FEATURE: S12`,
-  `FEATURE: MR3`, `FEATURE: MR6`, `FEATURE: B4`, and `FEATURE: Sto2`
+  `FEATURE: MR3`, `FEATURE: MR6`, `FEATURE: B4`, and `FEATURE: Sto2`;
+  `companion_contracts run-advanced-planner-canonical` emits the deterministic
+  execution summary used by CI.
 - `OperationsReadinessContract` for Helm install, wrapper, runbook, MCP,
   security, realtime client, io_uring, and protocol pipeline gates, including
   `FEATURE: D7`, `FEATURE: D8`, `FEATURE: D9`, `FEATURE: D10`,
   `FEATURE: D11`, `FEATURE: MR9`, `FEATURE: RT5`, `FEATURE: S7`,
   `FEATURE: A9`, `FEATURE: Sec7`, `FEATURE: Sec8`, `FEATURE: Sec9`,
-  `FEATURE: Sec13`, `FEATURE: T6`, and `FEATURE: T7`
+  `FEATURE: Sec13`, `FEATURE: T6`, and `FEATURE: T7`;
+  `companion_contracts run-operations-canonical` emits the deterministic
+  readiness summary used by CI.
 - `COMPANION_FEATURE_STATUSES` as the canonical status table exposed by the
   pgrx `companion_feature_status()` function and by the SQL fallback extension
   packaged in the operand image.
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
+Use `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- \
+run-advanced-planner-canonical` and `cargo run -p ai_blaise_citus_companion \
+--bin companion_contracts -- run-operations-canonical` to emit TSV reports for
+the broad V2 companion contracts.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale
 bridge functions.
