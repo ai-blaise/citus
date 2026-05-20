@@ -27,11 +27,19 @@ source_ids="$(mktemp)"
 doc_ids="$(mktemp)"
 trap 'rm -f "${source_ids}" "${doc_ids}"' EXIT
 
-rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' "${scan_paths[@]}" \
+extract_feature_ids() {
+  if command -v rg >/dev/null 2>&1; then
+    rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' "$@" || true
+  else
+    grep -RhoE 'FEATURE: [A-Za-z][A-Za-z0-9]*' "$@" 2>/dev/null || true
+  fi
+}
+
+extract_feature_ids "${scan_paths[@]}" \
   | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
   | sort -u >"${source_ids}"
 
-rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' docs/ai-blaise/NEW_FEATURES.md \
+extract_feature_ids docs/ai-blaise/NEW_FEATURES.md \
   | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
   | sort -u >"${doc_ids}"
 
