@@ -11,6 +11,7 @@
 use ai_blaise_citus_sidecar_shared::{
     CdcSink, CdcStreamContract, DeliveryRetryPolicy, SidecarContractError,
 };
+use serde_json::Value;
 use std::error::Error;
 use std::fmt;
 
@@ -322,19 +323,154 @@ pub struct SinkDeliveryPlan {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LogicalReplicationFrame {
+    pub start_lsn: String,
+    pub end_lsn: String,
+    pub payload: String,
+}
+
+impl LogicalReplicationFrame {
+    pub fn validate(&self) -> Result<(), CdcSidecarError> {
+        validate_lsn(&self.start_lsn)?;
+        validate_lsn(&self.end_lsn)?;
+        validate_required("replication.payload", &self.payload)?;
+        if lsn_to_u64(&self.end_lsn)? < lsn_to_u64(&self.start_lsn)? {
+            return Err(CdcSidecarError::InvalidLsn);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ReplicationAck {
+    pub write_lsn: String,
+    pub flush_lsn: String,
+    pub apply_lsn: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CdcRuntimeState {
+    pub slot_name: String,
+    pub last_received_lsn: String,
+    pub last_delivered_lsn: String,
+    pub acked_flush_lsn: String,
+    pub delivered_events: u64,
+    pub delivered_sink_writes: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CdcRuntimeDelivery {
+    pub event: CdcEventEnvelope,
+    pub delivery: CdcDeliveryPlan,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CdcRuntimeBatch {
+    pub start_lsn: String,
+    pub end_lsn: String,
+    pub deliveries: Vec<CdcRuntimeDelivery>,
+    pub ack: ReplicationAck,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CdcRuntimeReport {
+    pub batch: CdcRuntimeBatch,
+    pub state: CdcRuntimeState,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CdcRuntime {
+    plan: CdcSidecarPlan,
+    state: CdcRuntimeState,
+}
+
+impl CdcRuntime {
+    pub fn new(plan: CdcSidecarPlan) -> Result<Self, CdcSidecarError> {
+        plan.validate()?;
+        let checkpoint = plan
+            .slot
+            .confirmed_flush_lsn
+            .clone()
+            .unwrap_or_else(|| "0/0".to_string());
+        validate_lsn(&checkpoint)?;
+
+        Ok(Self {
+            state: CdcRuntimeState {
+                slot_name: plan.slot.slot_name.clone(),
+                last_received_lsn: checkpoint.clone(),
+                last_delivered_lsn: checkpoint.clone(),
+                acked_flush_lsn: checkpoint,
+                delivered_events: 0,
+                delivered_sink_writes: 0,
+            },
+            plan,
+        })
+    }
+
+    pub fn state(&self) -> &CdcRuntimeState {
+        &self.state
+    }
+
+    pub fn apply_wal2json_frame(
+        &mut self,
+        frame: &LogicalReplicationFrame,
+    ) -> Result<CdcRuntimeBatch, CdcSidecarError> {
+        frame.validate()?;
+        let events = decode_wal2json_frame(frame)?;
+        if events.is_empty() {
+            return Err(CdcSidecarError::MissingRequiredField("wal2json.change"));
+        }
+
+        let mut deliveries = Vec::with_capacity(events.len());
+        let mut delivered_sink_writes = 0_u64;
+        for event in events {
+            let delivery = self.plan.delivery_plan(&event)?;
+            delivered_sink_writes += delivery.routed_sinks.len() as u64;
+            deliveries.push(CdcRuntimeDelivery { event, delivery });
+        }
+
+        self.state.last_received_lsn = frame.end_lsn.clone();
+        self.state.last_delivered_lsn = frame.end_lsn.clone();
+        self.state.acked_flush_lsn = frame.end_lsn.clone();
+        self.state.delivered_events += deliveries.len() as u64;
+        self.state.delivered_sink_writes += delivered_sink_writes;
+
+        Ok(CdcRuntimeBatch {
+            start_lsn: frame.start_lsn.clone(),
+            end_lsn: frame.end_lsn.clone(),
+            deliveries,
+            ack: ReplicationAck {
+                write_lsn: frame.end_lsn.clone(),
+                flush_lsn: frame.end_lsn.clone(),
+                apply_lsn: frame.end_lsn.clone(),
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CdcSidecarError {
+    ColumnValueMismatch,
     InvalidHttpUrl(&'static str),
     InvalidIdentifier(&'static str),
     InvalidLsn,
     InvalidNatsUrl,
     InvalidObjectUri(&'static str),
+    InvalidWal2Json(String),
     MissingRequiredField(&'static str),
     SharedContract(String),
+    UnsupportedOperation(String),
 }
 
 impl fmt::Display for CdcSidecarError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ColumnValueMismatch => {
+                write!(
+                    formatter,
+                    "wal2json columnnames and columnvalues lengths differ"
+                )
+            }
             Self::InvalidHttpUrl(field) => {
                 write!(formatter, "{field} must start with http:// or https://")
             }
@@ -344,8 +480,12 @@ impl fmt::Display for CdcSidecarError {
             Self::InvalidLsn => write!(formatter, "LSN must use the PostgreSQL HEX/HEX form"),
             Self::InvalidNatsUrl => write!(formatter, "NATS server URL must start with nats://"),
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
+            Self::InvalidWal2Json(error) => write!(formatter, "invalid wal2json payload: {error}"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::SharedContract(error) => write!(formatter, "{error}"),
+            Self::UnsupportedOperation(operation) => {
+                write!(formatter, "unsupported wal2json operation: {operation}")
+            }
         }
     }
 }
@@ -412,6 +552,16 @@ fn validate_lsn(value: &str) -> Result<(), CdcSidecarError> {
     }
 }
 
+fn lsn_to_u64(value: &str) -> Result<u64, CdcSidecarError> {
+    validate_lsn(value)?;
+    let (high, low) = value.split_once('/').ok_or(CdcSidecarError::InvalidLsn)?;
+    let high = u64::from_str_radix(high, 16).map_err(|_| CdcSidecarError::InvalidLsn)?;
+    let low = u64::from_str_radix(low, 16).map_err(|_| CdcSidecarError::InvalidLsn)?;
+    high.checked_shl(32)
+        .and_then(|shifted| shifted.checked_add(low))
+        .ok_or(CdcSidecarError::InvalidLsn)
+}
+
 fn validate_http_url(field: &'static str, value: &str) -> Result<(), CdcSidecarError> {
     validate_required(field, value)?;
     if value.starts_with("http://") || value.starts_with("https://") {
@@ -437,6 +587,107 @@ fn validate_nats_url(value: &str) -> Result<(), CdcSidecarError> {
     } else {
         Err(CdcSidecarError::InvalidNatsUrl)
     }
+}
+
+pub fn decode_wal2json_frame(
+    frame: &LogicalReplicationFrame,
+) -> Result<Vec<CdcEventEnvelope>, CdcSidecarError> {
+    frame.validate()?;
+    let root: Value = serde_json::from_str(&frame.payload)
+        .map_err(|error| CdcSidecarError::InvalidWal2Json(error.to_string()))?;
+    let changes = json_array(&root, "change")?;
+    let mut events = Vec::with_capacity(changes.len());
+
+    for change in changes {
+        let operation = operation_from_wal2json(json_string(change, "kind")?)?;
+        let schema = json_string(change, "schema")?.to_string();
+        let table = json_string(change, "table")?.to_string();
+        let column_names = json_string_array(change, "columnnames")?;
+        let column_values = json_value_array(change, "columnvalues")?;
+        if column_names.len() != column_values.len() {
+            return Err(CdcSidecarError::ColumnValueMismatch);
+        }
+
+        let mut columns = Vec::with_capacity(column_names.len());
+        let mut tenant_id = None;
+        for (name, value) in column_names.into_iter().zip(column_values.into_iter()) {
+            let value = json_scalar_to_string(value)?;
+            if name == "tenant_id" {
+                tenant_id = value.clone();
+            }
+            columns.push(CdcColumnValue { name, value });
+        }
+
+        let event = CdcEventEnvelope {
+            lsn: frame.end_lsn.clone(),
+            schema,
+            table,
+            tenant_id: tenant_id.ok_or(CdcSidecarError::MissingRequiredField("event.tenant_id"))?,
+            operation,
+            columns,
+        };
+        event.validate()?;
+        events.push(event);
+    }
+
+    Ok(events)
+}
+
+fn operation_from_wal2json(operation: &str) -> Result<CdcOperation, CdcSidecarError> {
+    match operation {
+        "insert" => Ok(CdcOperation::Insert),
+        "update" => Ok(CdcOperation::Update),
+        "delete" => Ok(CdcOperation::Delete),
+        "truncate" => Ok(CdcOperation::Truncate),
+        other => Err(CdcSidecarError::UnsupportedOperation(other.to_string())),
+    }
+}
+
+fn json_array<'a>(value: &'a Value, field: &'static str) -> Result<&'a [Value], CdcSidecarError> {
+    value
+        .get(field)
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .ok_or(CdcSidecarError::MissingRequiredField(field))
+}
+
+fn json_string<'a>(value: &'a Value, field: &'static str) -> Result<&'a str, CdcSidecarError> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or(CdcSidecarError::MissingRequiredField(field))
+}
+
+fn json_string_array(value: &Value, field: &'static str) -> Result<Vec<String>, CdcSidecarError> {
+    json_array(value, field)?
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(ToString::to_string)
+                .ok_or(CdcSidecarError::MissingRequiredField(field))
+        })
+        .collect()
+}
+
+fn json_value_array<'a>(
+    value: &'a Value,
+    field: &'static str,
+) -> Result<Vec<&'a Value>, CdcSidecarError> {
+    Ok(json_array(value, field)?.iter().collect())
+}
+
+fn json_scalar_to_string(value: &Value) -> Result<Option<String>, CdcSidecarError> {
+    Ok(match value {
+        Value::Null => None,
+        Value::Bool(value) => Some(value.to_string()),
+        Value::Number(value) => Some(value.to_string()),
+        Value::String(value) => Some(value.clone()),
+        _ => {
+            return Err(CdcSidecarError::InvalidWal2Json(
+                "columnvalues must contain scalar values".to_string(),
+            ))
+        }
+    })
 }
 
 pub fn sink_plan_from_shared(
@@ -582,6 +833,24 @@ pub fn canonical_delivery_plan() -> Result<CdcDeliveryPlan, CdcSidecarError> {
     canonical_cdc_plan().delivery_plan(&canonical_cdc_event())
 }
 
+pub fn canonical_wal2json_frame() -> LogicalReplicationFrame {
+    LogicalReplicationFrame {
+        start_lsn: "16/B374D848".to_string(),
+        end_lsn: "16/B374D900".to_string(),
+        payload: r#"{"change":[{"kind":"insert","schema":"public","table":"orders","columnnames":["id","tenant_id","status","email"],"columnvalues":[1,"tenant-a","paid","person@example.com"]}]}"#.to_string(),
+    }
+}
+
+pub fn canonical_cdc_runtime_report() -> Result<CdcRuntimeReport, CdcSidecarError> {
+    let mut runtime = CdcRuntime::new(canonical_cdc_plan())?;
+    let batch = runtime.apply_wal2json_frame(&canonical_wal2json_frame())?;
+
+    Ok(CdcRuntimeReport {
+        batch,
+        state: runtime.state().clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,6 +881,40 @@ mod tests {
             vec!["webhook", "realtime", "nats", "pubsub"]
         );
         assert_eq!(delivery.anonymized_columns, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn wal2json_frame_decodes_to_cdc_event() {
+        let events = decode_wal2json_frame(&canonical_wal2json_frame()).expect("decode frame");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].lsn, "16/B374D900");
+        assert_eq!(events[0].tenant_id, "tenant-a");
+        assert_eq!(events[0].operation, CdcOperation::Insert);
+        assert_eq!(events[0].columns[2].value.as_deref(), Some("paid"));
+    }
+
+    #[test]
+    fn runtime_applies_wal2json_frame_and_advances_ack() {
+        let report = canonical_cdc_runtime_report().expect("runtime report");
+
+        assert_eq!(report.batch.deliveries.len(), 1);
+        assert_eq!(report.batch.deliveries[0].delivery.routed_sinks.len(), 4);
+        assert_eq!(report.batch.ack.flush_lsn, "16/B374D900");
+        assert_eq!(report.state.acked_flush_lsn, "16/B374D900");
+        assert_eq!(report.state.delivered_events, 1);
+        assert_eq!(report.state.delivered_sink_writes, 4);
+    }
+
+    #[test]
+    fn wal2json_frame_rejects_mismatched_column_values() {
+        let mut frame = canonical_wal2json_frame();
+        frame.payload = r#"{"change":[{"kind":"insert","schema":"public","table":"orders","columnnames":["id","tenant_id"],"columnvalues":[1]}]}"#.to_string();
+
+        assert_eq!(
+            decode_wal2json_frame(&frame),
+            Err(CdcSidecarError::ColumnValueMismatch)
+        );
     }
 
     #[test]

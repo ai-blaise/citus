@@ -31,6 +31,9 @@ MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
 `FEATURE: L8`, and `FEATURE: WH3`.
+`sidecar/cdc/src/lib.rs` also applies canonical wal2json frames, fan-out
+delivery plans, and replication ack/checkpoint state for the same CDC feature
+surface.
 `sidecar/coldtier/src/lib.rs` validates cold-tier layer files, tier movement,
 and search-aware index contracts for `FEATURE: R1`, `FEATURE: R5`,
 `FEATURE: R9`, and `FEATURE: Search8`.
@@ -1370,6 +1373,7 @@ sidecar.
 - In-source: `FEATURE: C1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: C1` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ### C2: Schema-Aware CDC Sinks
 
@@ -1392,6 +1396,7 @@ coordination.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C2` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ### C3: CDC PII Anonymization
 
@@ -1414,6 +1419,7 @@ logical replication streams.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C3` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ### C14: CDC NATS Sink
 
@@ -1436,6 +1442,7 @@ retry and dead-letter policy as webhook and realtime sinks.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C14` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: C14` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ### C15: CDC GCP Pub/Sub Sink
 
@@ -1459,6 +1466,7 @@ Pub/Sub.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C15` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: C15` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ## Migrations
 
@@ -2264,6 +2272,7 @@ analytical mirror.
 - In-source: `FEATURE: L8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: L8` in `sidecar/cdc/src/lib.rs`
 - In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ### L9: Two-Step Aggregates Push To Workers
 
@@ -3018,6 +3027,7 @@ before delivery sidecars can be trusted.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: WH3` in `sidecar/cdc/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
 ## Storage
 
