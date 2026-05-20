@@ -1029,7 +1029,7 @@ tenant-level online migration plan.
 **Bundled extension dep**: `pg_lake`, `pg_parquet`
 
 **Summary**: Defines table-granular image and delta layer files for cold shard
-storage on object stores.
+storage on object stores, plus a runnable canonical move-plan emitter.
 
 **Motivation**: Cold shard data needs a predictable object layout before
 operators can evict low-temperature shards from the hot tier.
@@ -1041,6 +1041,7 @@ tier.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R1` in `sidecar/coldtier/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-canonical`
 
 ### R2: Scale-To-Zero Compute
 
@@ -1745,7 +1746,8 @@ tooling.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines schedule and archive URI contracts for the backup sidecar.
+**Summary**: Defines schedule and archive URI contracts for the backup sidecar,
+plus a runnable canonical backup/PITR emitter.
 
 **Motivation**: Backup execution needs a sidecar contract that matches the
 operator CRD before WAL archive implementation begins.
@@ -1758,6 +1760,7 @@ tooling.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: B1` in `sidecar/backup/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-canonical`
 
 ### B2: Backup CRD
 
@@ -2101,7 +2104,7 @@ calls are wired into the search path.
 **Bundled extension dep**: `pg_lake`
 
 **Summary**: Defines the analytical sidecar plan that binds a logical mirror
-to a lakehouse read path.
+to a lakehouse read path, plus a runnable canonical execution-plan emitter.
 
 **Motivation**: HTAP routing needs a concrete sidecar contract before pg_lake
 or equivalent execution is wired into queries.
@@ -2113,6 +2116,7 @@ sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L1` in `sidecar/analytical/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 
 ### L2: Rust Analytical Server
 
@@ -2542,7 +2546,7 @@ sidecar can account for subscribers consistently.
 **Bundled extension dep**: `deno`
 
 **Summary**: Defines Deno runtime launch plans for HTTP, scheduled, and
-CDC-triggered edge functions.
+CDC-triggered edge functions, plus a runnable canonical launch emitter.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -2554,6 +2558,7 @@ runtime.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
 
 ### EF2: Bun Runtime Alternative
 
@@ -3006,7 +3011,7 @@ before delivery sidecars can be trusted.
 **Bundled extension dep**: none
 
 **Summary**: Defines bucket and metadata-table contracts for the storage
-sidecar.
+sidecar, plus a runnable canonical metadata/presign emitter.
 
 **Motivation**: S3-compatible file storage needs a stable table and bucket
 mapping before upload/download paths are implemented.
@@ -3018,6 +3023,7 @@ mapping before upload/download paths are implemented.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto1` in `sidecar/storage/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-canonical`
 
 ### Sto3: Presigned URL Signing
 

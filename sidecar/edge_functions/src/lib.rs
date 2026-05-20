@@ -306,13 +306,75 @@ fn validate_object_uri(field: &'static str, value: &str) -> Result<(), EdgeFunct
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeFunctionCanonicalReport {
+    pub plan: EdgeFunctionPlan,
+    pub launch: RuntimeLaunchPlan,
+    pub invocation: InvocationRequest,
+}
+
+pub fn canonical_edge_function_plan() -> EdgeFunctionPlan {
+    EdgeFunctionPlan {
+        name: "order_created".to_string(),
+        runtime: EdgeFunctionRuntime::Deno,
+        source: FunctionSource::Inline {
+            code: "export default async function handler(request) { return Response.json({ ok: true }); }"
+                .to_string(),
+        },
+        triggers: vec![
+            FunctionTrigger::Http {
+                path: "/orders".to_string(),
+            },
+            FunctionTrigger::CdcEvent {
+                table: "public.orders".to_string(),
+                operation: CdcOperation::Insert,
+            },
+        ],
+        env_secret_refs: vec!["orders-api-key".to_string()],
+        db_callback: Some(DbCallbackPlan {
+            uds_path: "/var/run/postgresql/.s.PGSQL.5432".to_string(),
+            database: "app".to_string(),
+            role: "edge_runtime".to_string(),
+            statement_timeout_ms: 1_000,
+        }),
+    }
+}
+
+pub fn canonical_invocation_request() -> InvocationRequest {
+    InvocationRequest {
+        function_name: "order_created".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        trigger: FunctionTrigger::CdcEvent {
+            table: "public.orders".to_string(),
+            operation: CdcOperation::Insert,
+        },
+        payload_bytes: 512,
+        timeout_ms: 1_000,
+    }
+}
+
+pub fn canonical_edge_function_report() -> Result<EdgeFunctionCanonicalReport, EdgeFunctionError> {
+    let plan = canonical_edge_function_plan();
+    let launch = plan.launch_plan()?;
+    let invocation = canonical_invocation_request();
+    invocation.validate()?;
+
+    Ok(EdgeFunctionCanonicalReport {
+        plan,
+        launch,
+        invocation,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn deno_function_renders_launch_plan_with_db_callback() {
-        let launch = valid_deno_plan().launch_plan().expect("launch plan");
+        let launch = canonical_edge_function_plan()
+            .launch_plan()
+            .expect("launch plan");
 
         assert_eq!(launch.executable, "deno");
         assert_eq!(launch.args[0], "run");
@@ -320,6 +382,15 @@ mod tests {
             launch.db_callback_socket.as_deref(),
             Some("/var/run/postgresql/.s.PGSQL.5432")
         );
+    }
+
+    #[test]
+    fn canonical_edge_function_report_is_deterministic() {
+        let report = canonical_edge_function_report().expect("canonical report");
+
+        assert_eq!(report.launch.function_name, "order_created");
+        assert_eq!(report.launch.executable, "deno");
+        assert_eq!(report.invocation.payload_bytes, 512);
     }
 
     #[test]
@@ -346,7 +417,7 @@ mod tests {
 
     #[test]
     fn db_callback_requires_absolute_uds_path() {
-        let mut plan = valid_deno_plan();
+        let mut plan = canonical_edge_function_plan();
         plan.db_callback = Some(DbCallbackPlan {
             uds_path: "postgres/.s.PGSQL.5432".to_string(),
             database: "app".to_string(),
@@ -386,32 +457,5 @@ mod tests {
             request.validate(),
             Err(EdgeFunctionError::InvalidPayloadSize)
         );
-    }
-
-    fn valid_deno_plan() -> EdgeFunctionPlan {
-        EdgeFunctionPlan {
-            name: "order_created".to_string(),
-            runtime: EdgeFunctionRuntime::Deno,
-            source: FunctionSource::Inline {
-                code: "export default async function handler(request) { return Response.json({ ok: true }); }"
-                    .to_string(),
-            },
-            triggers: vec![
-                FunctionTrigger::Http {
-                    path: "/orders".to_string(),
-                },
-                FunctionTrigger::CdcEvent {
-                    table: "public.orders".to_string(),
-                    operation: CdcOperation::Insert,
-                },
-            ],
-            env_secret_refs: vec!["orders-api-key".to_string()],
-            db_callback: Some(DbCallbackPlan {
-                uds_path: "/var/run/postgresql/.s.PGSQL.5432".to_string(),
-                database: "app".to_string(),
-                role: "edge_runtime".to_string(),
-                statement_timeout_ms: 1_000,
-            }),
-        }
     }
 }

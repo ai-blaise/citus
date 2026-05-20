@@ -10,6 +10,8 @@ Current implemented surface:
 - `ObjectMetadataRecord`
 - `PresignedUrlPlan`
 - `AntivirusPlan`
+- `canonical_storage_report()`
+- `cargo run -p ai_blaise_citus_sidecar_storage -- run-canonical`
 
 These contracts cover `FEATURE: Sto1`, `FEATURE: Sto3`, `FEATURE: Sto4`, and
 `FEATURE: Sto5`.

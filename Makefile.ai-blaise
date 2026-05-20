@@ -1,6 +1,6 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer run-vectorizer-canonical build-sidecar-cdc test-sidecar-cdc run-cdc-canonical build-sidecar-realtime test-sidecar-realtime run-realtime-canonical build-e2e-model test-e2e-model emit-timescale-apply-plan build-lsp test-lsp analyze-lsp-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
+.PHONY: patches-check build-companion test-companion build-operator test-operator build-pool test-pool build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer run-vectorizer-canonical build-sidecar-cdc test-sidecar-cdc run-cdc-canonical build-sidecar-realtime test-sidecar-realtime run-realtime-canonical build-sidecar-storage test-sidecar-storage run-storage-canonical build-sidecar-backup test-sidecar-backup run-backup-canonical build-sidecar-edge-functions test-sidecar-edge-functions run-edge-functions-canonical build-sidecar-analytical test-sidecar-analytical run-analytical-canonical build-sidecar-coldtier test-sidecar-coldtier run-coldtier-canonical build-e2e-model test-e2e-model emit-timescale-apply-plan build-lsp test-lsp analyze-lsp-canonical kind-smoke sql-extension-smoke features-doc-check slop-scan gate-close
 
 patches-check:
 	@ci/ai-blaise/patches-check.sh
@@ -59,6 +59,51 @@ test-sidecar-realtime:
 run-realtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-canonical
 
+build-sidecar-storage:
+	cargo check -p ai_blaise_citus_sidecar_storage --all-targets
+
+test-sidecar-storage:
+	cargo test -p ai_blaise_citus_sidecar_storage
+
+run-storage-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_storage -- run-canonical
+
+build-sidecar-backup:
+	cargo check -p ai_blaise_citus_sidecar_backup --all-targets
+
+test-sidecar-backup:
+	cargo test -p ai_blaise_citus_sidecar_backup
+
+run-backup-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_backup -- run-canonical
+
+build-sidecar-edge-functions:
+	cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
+
+test-sidecar-edge-functions:
+	cargo test -p ai_blaise_citus_sidecar_edge_functions
+
+run-edge-functions-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-canonical
+
+build-sidecar-analytical:
+	cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
+
+test-sidecar-analytical:
+	cargo test -p ai_blaise_citus_sidecar_analytical
+
+run-analytical-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-canonical
+
+build-sidecar-coldtier:
+	cargo check -p ai_blaise_citus_sidecar_coldtier --all-targets
+
+test-sidecar-coldtier:
+	cargo test -p ai_blaise_citus_sidecar_coldtier
+
+run-coldtier-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical
+
 build-e2e-model:
 	cargo check -p ai_blaise_citus_e2e
 
@@ -89,4 +134,4 @@ features-doc-check:
 slop-scan:
 	@ci/ai-blaise/slop-scan.sh
 
-gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared probe-sidecar-shared test-sidecar-vectorizer run-vectorizer-canonical test-sidecar-cdc run-cdc-canonical test-sidecar-realtime run-realtime-canonical test-e2e-model test-lsp features-doc-check slop-scan sql-extension-smoke
+gate-close: patches-check test-companion test-operator test-pool test-sidecar-shared probe-sidecar-shared test-sidecar-vectorizer run-vectorizer-canonical test-sidecar-cdc run-cdc-canonical test-sidecar-realtime run-realtime-canonical test-sidecar-storage run-storage-canonical test-sidecar-backup run-backup-canonical test-sidecar-edge-functions run-edge-functions-canonical test-sidecar-analytical run-analytical-canonical test-sidecar-coldtier run-coldtier-canonical test-e2e-model test-lsp features-doc-check slop-scan sql-extension-smoke

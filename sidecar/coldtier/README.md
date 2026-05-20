@@ -10,6 +10,8 @@ Current implemented surface:
 - `LayerFile`
 - `SearchColdTierPlan`
 - `TierMovePlan`
+- `canonical_move_plans()`
+- `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-canonical`
 
 These contracts cover `FEATURE: R1`, `FEATURE: R5`, `FEATURE: R9`, and
 `FEATURE: Search8`.

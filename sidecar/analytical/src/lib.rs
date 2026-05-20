@@ -261,18 +261,77 @@ fn validate_lsn(value: &str) -> Result<(), AnalyticalSidecarError> {
     }
 }
 
+pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
+    AnalyticalSidecarPlan {
+        mirror: AnalyticalMirrorContract {
+            source_slot: "ai_blaise_cdc".to_string(),
+            mirror_name: "orders_mirror".to_string(),
+            storage_uri: "s3://lake/warehouse/orders".to_string(),
+            search_index_enabled: true,
+        },
+        engine: AnalyticalEngine::DataFusion,
+        lakehouse: LakehouseReadPlan {
+            table: "public.orders".to_string(),
+            format: LakehouseFormat::Iceberg,
+            object_uri: "s3://lake/warehouse/orders".to_string(),
+            projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
+            predicates: vec!["total > 0".to_string()],
+        },
+        pushdown: DataFusionPushdownPlan {
+            plan_id: "orders-scan".to_string(),
+            projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
+            predicates: vec!["total > 0".to_string()],
+            limit: Some(10_000),
+        },
+        snapshot_commit: Some(IcebergSnapshotCommitPlan {
+            transaction_id: "tx-1".to_string(),
+            snapshot_id: "snapshot-1".to_string(),
+            prepare_lsn: "16/B374D848".to_string(),
+            manifest_uri: "s3://lake/warehouse/orders/metadata/manifest.avro".to_string(),
+        }),
+        federated_catalogs: vec![FederatedCatalog {
+            name: "databricks".to_string(),
+            target: FederationTarget::Databricks,
+            iceberg_catalog_uri: "s3://lake/catalog".to_string(),
+        }],
+        duckdb_extensions: DuckDbExtensionCatalog {
+            allowed_extensions: vec!["httpfs".to_string(), "iceberg".to_string()],
+        },
+        motherduck: Some(MotherDuckConnector {
+            database: "analytics".to_string(),
+            token_secret_ref: "motherduck-token".to_string(),
+        }),
+    }
+}
+
+pub fn canonical_analytical_execution_plan() -> Result<AnalyticalSidecarPlan, AnalyticalSidecarError>
+{
+    let plan = canonical_analytical_plan();
+    plan.validate()?;
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn analytical_sidecar_plan_validates_lakehouse_and_federation() {
-        assert_eq!(valid_plan().validate(), Ok(()));
+        assert_eq!(canonical_analytical_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_analytical_execution_plan_is_deterministic() {
+        let plan = canonical_analytical_execution_plan().expect("canonical plan");
+
+        assert_eq!(plan.mirror.mirror_name, "orders_mirror");
+        assert_eq!(plan.pushdown.plan_id, "orders-scan");
+        assert_eq!(plan.federated_catalogs[0].name, "databricks");
     }
 
     #[test]
     fn lakehouse_read_requires_projection() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_analytical_plan();
         plan.lakehouse.projected_columns = Vec::new();
 
         assert_eq!(
@@ -285,7 +344,7 @@ mod tests {
 
     #[test]
     fn snapshot_commit_requires_lsn() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_analytical_plan();
         plan.snapshot_commit = Some(IcebergSnapshotCommitPlan {
             transaction_id: "tx-1".to_string(),
             snapshot_id: "snapshot-1".to_string(),
@@ -298,7 +357,7 @@ mod tests {
 
     #[test]
     fn motherduck_requires_token_secret() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_analytical_plan();
         plan.motherduck = Some(MotherDuckConnector {
             database: "analytics".to_string(),
             token_secret_ref: " ".to_string(),
@@ -310,48 +369,5 @@ mod tests {
                 "motherduck.token_secret_ref"
             ))
         );
-    }
-
-    fn valid_plan() -> AnalyticalSidecarPlan {
-        AnalyticalSidecarPlan {
-            mirror: AnalyticalMirrorContract {
-                source_slot: "ai_blaise_cdc".to_string(),
-                mirror_name: "orders_mirror".to_string(),
-                storage_uri: "s3://lake/warehouse/orders".to_string(),
-                search_index_enabled: true,
-            },
-            engine: AnalyticalEngine::DataFusion,
-            lakehouse: LakehouseReadPlan {
-                table: "public.orders".to_string(),
-                format: LakehouseFormat::Iceberg,
-                object_uri: "s3://lake/warehouse/orders".to_string(),
-                projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
-                predicates: vec!["total > 0".to_string()],
-            },
-            pushdown: DataFusionPushdownPlan {
-                plan_id: "orders-scan".to_string(),
-                projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
-                predicates: vec!["total > 0".to_string()],
-                limit: Some(10_000),
-            },
-            snapshot_commit: Some(IcebergSnapshotCommitPlan {
-                transaction_id: "tx-1".to_string(),
-                snapshot_id: "snapshot-1".to_string(),
-                prepare_lsn: "16/B374D848".to_string(),
-                manifest_uri: "s3://lake/warehouse/orders/metadata/manifest.avro".to_string(),
-            }),
-            federated_catalogs: vec![FederatedCatalog {
-                name: "databricks".to_string(),
-                target: FederationTarget::Databricks,
-                iceberg_catalog_uri: "s3://lake/catalog".to_string(),
-            }],
-            duckdb_extensions: DuckDbExtensionCatalog {
-                allowed_extensions: vec!["httpfs".to_string(), "iceberg".to_string()],
-            },
-            motherduck: Some(MotherDuckConnector {
-                database: "analytics".to_string(),
-                token_secret_ref: "motherduck-token".to_string(),
-            }),
-        }
     }
 }

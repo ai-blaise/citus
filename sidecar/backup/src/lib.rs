@@ -182,23 +182,94 @@ fn validate_timestamp(value: &str) -> Result<(), BackupSidecarError> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct BackupCanonicalReport {
+    pub job: BackupJobPlan,
+    pub restore: PitrRestorePlan,
+    pub queryable_branch: QueryableBackupBranchPlan,
+}
+
+pub fn canonical_backup_job() -> BackupJobPlan {
+    BackupJobPlan {
+        cluster: "prod".to_string(),
+        contract: BackupRestoreContract {
+            schedule: "0 */6 * * *".to_string(),
+            archive_uri: "s3://backups/prod".to_string(),
+            pitr_target: Some("2026-05-19T12:00:00Z".to_string()),
+            queryable_branch_name: Some("prod-at-noon".to_string()),
+        },
+        base_backup: BaseBackupPlan {
+            destination_uri: "s3://backups/prod/base".to_string(),
+            retention_days: 30,
+            concurrency: 2,
+        },
+        wal_archive: WalArchivePlan {
+            slot_name: "ai_blaise_wal".to_string(),
+            archive_uri: "s3://backups/prod/wal".to_string(),
+            compression: WalCompression::Zstd,
+        },
+        encryption: Some(BackupEncryptionPlan {
+            kms_key_ref: "aws-kms-prod".to_string(),
+        }),
+    }
+}
+
+pub fn canonical_pitr_restore_plan() -> PitrRestorePlan {
+    PitrRestorePlan {
+        cluster: "prod".to_string(),
+        source_archive_uri: "s3://backups/prod".to_string(),
+        target_time: "2026-05-19T12:00:00Z".to_string(),
+        target_cluster: "restore-prod".to_string(),
+    }
+}
+
+pub fn canonical_queryable_branch_plan() -> QueryableBackupBranchPlan {
+    QueryableBackupBranchPlan {
+        branch_name: "prod-at-noon".to_string(),
+        source_archive_uri: "s3://backups/prod".to_string(),
+        target_time: "2026-05-19T12:00:00Z".to_string(),
+        read_only: true,
+    }
+}
+
+pub fn canonical_backup_report() -> Result<BackupCanonicalReport, BackupSidecarError> {
+    let job = canonical_backup_job();
+    let restore = canonical_pitr_restore_plan();
+    let queryable_branch = canonical_queryable_branch_plan();
+
+    job.validate()?;
+    restore.validate()?;
+    queryable_branch.validate()?;
+
+    Ok(BackupCanonicalReport {
+        job,
+        restore,
+        queryable_branch,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn backup_job_plan_validates_base_and_wal_archive() {
-        assert_eq!(valid_backup_job().validate(), Ok(()));
+        assert_eq!(canonical_backup_job().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_backup_report_is_deterministic() {
+        let report = canonical_backup_report().expect("canonical report");
+
+        assert_eq!(report.job.cluster, "prod");
+        assert_eq!(report.restore.target_cluster, "restore-prod");
+        assert_eq!(report.queryable_branch.branch_name, "prod-at-noon");
     }
 
     #[test]
     fn pitr_restore_requires_utc_timestamp() {
-        let restore = PitrRestorePlan {
-            cluster: "prod".to_string(),
-            source_archive_uri: "s3://backups/prod".to_string(),
-            target_time: "2026-05-19 12:00:00".to_string(),
-            target_cluster: "restore-prod".to_string(),
-        };
+        let mut restore = canonical_pitr_restore_plan();
+        restore.target_time = "2026-05-19 12:00:00".to_string();
 
         assert_eq!(
             restore.validate(),
@@ -208,12 +279,8 @@ mod tests {
 
     #[test]
     fn queryable_branch_must_be_read_only() {
-        let branch = QueryableBackupBranchPlan {
-            branch_name: "prod-at-noon".to_string(),
-            source_archive_uri: "s3://backups/prod".to_string(),
-            target_time: "2026-05-19T12:00:00Z".to_string(),
-            read_only: false,
-        };
+        let mut branch = canonical_queryable_branch_plan();
+        branch.read_only = false;
 
         assert_eq!(
             branch.validate(),
@@ -223,7 +290,7 @@ mod tests {
 
     #[test]
     fn backup_job_rejects_missing_kms_key() {
-        let mut job = valid_backup_job();
+        let mut job = canonical_backup_job();
         job.encryption = Some(BackupEncryptionPlan {
             kms_key_ref: " ".to_string(),
         });
@@ -234,30 +301,5 @@ mod tests {
                 "encryption.kms_key_ref"
             ))
         );
-    }
-
-    fn valid_backup_job() -> BackupJobPlan {
-        BackupJobPlan {
-            cluster: "prod".to_string(),
-            contract: BackupRestoreContract {
-                schedule: "0 */6 * * *".to_string(),
-                archive_uri: "s3://backups/prod".to_string(),
-                pitr_target: Some("2026-05-19T12:00:00Z".to_string()),
-                queryable_branch_name: Some("prod-at-noon".to_string()),
-            },
-            base_backup: BaseBackupPlan {
-                destination_uri: "s3://backups/prod/base".to_string(),
-                retention_days: 30,
-                concurrency: 2,
-            },
-            wal_archive: WalArchivePlan {
-                slot_name: "ai_blaise_wal".to_string(),
-                archive_uri: "s3://backups/prod/wal".to_string(),
-                compression: WalCompression::Zstd,
-            },
-            encryption: Some(BackupEncryptionPlan {
-                kms_key_ref: "aws-kms-prod".to_string(),
-            }),
-        }
     }
 }

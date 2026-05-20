@@ -180,18 +180,93 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), StorageSide
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct StorageCanonicalReport {
+    pub plan: StorageSidecarPlan,
+    pub metadata: ObjectMetadataRecord,
+    pub presigned_url: PresignedUrlPlan,
+}
+
+pub fn canonical_storage_plan() -> StorageSidecarPlan {
+    StorageSidecarPlan {
+        contract: StorageContract {
+            bucket: "tenant-files".to_string(),
+            metadata_table: "storage.objects".to_string(),
+            presigned_url_ttl_seconds: 900,
+            acl_tenant_column: "tenant_id".to_string(),
+        },
+        provider: ObjectStoreProvider::S3,
+        buckets: vec![BucketPolicy {
+            bucket: "tenant-files".to_string(),
+            tenant_id: "tenant-a".to_string(),
+            acl: BucketAcl::TenantReadWrite,
+            max_object_bytes: 10_485_760,
+        }],
+        antivirus: Some(AntivirusPlan {
+            scanner_endpoint: "http://clamav.storage.svc:3310".to_string(),
+            quarantine_bucket: "quarantine".to_string(),
+            fail_closed: true,
+        }),
+    }
+}
+
+pub fn canonical_metadata_record() -> ObjectMetadataRecord {
+    ObjectMetadataRecord {
+        bucket: "tenant-files".to_string(),
+        object_key: "orders/1.pdf".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        content_type: "application/pdf".to_string(),
+        size_bytes: 42,
+    }
+}
+
+pub fn canonical_presigned_url_plan() -> PresignedUrlPlan {
+    PresignedUrlPlan {
+        bucket: "tenant-files".to_string(),
+        object_key: "orders/1.pdf".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        method: PresignedMethod::Put,
+        ttl_seconds: 900,
+    }
+}
+
+pub fn canonical_storage_report() -> Result<StorageCanonicalReport, StorageSidecarError> {
+    let plan = canonical_storage_plan();
+    let metadata = canonical_metadata_record();
+    let presigned_url = canonical_presigned_url_plan();
+
+    plan.validate()?;
+    metadata.validate()?;
+    presigned_url.validate()?;
+
+    Ok(StorageCanonicalReport {
+        plan,
+        metadata,
+        presigned_url,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn storage_sidecar_plan_validates_bucket_and_antivirus() {
-        assert_eq!(valid_plan().validate(), Ok(()));
+        assert_eq!(canonical_storage_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_storage_report_is_deterministic() {
+        let report = canonical_storage_report().expect("canonical report");
+
+        assert_eq!(report.plan.contract.bucket, "tenant-files");
+        assert_eq!(report.metadata.object_key, "orders/1.pdf");
+        assert_eq!(report.presigned_url.ttl_seconds, 900);
     }
 
     #[test]
     fn metadata_record_requires_positive_size() {
-        let mut metadata = valid_metadata();
+        let mut metadata = canonical_metadata_record();
         metadata.size_bytes = 0;
 
         assert_eq!(
@@ -202,13 +277,8 @@ mod tests {
 
     #[test]
     fn presigned_url_requires_ttl() {
-        let plan = PresignedUrlPlan {
-            bucket: "tenant-files".to_string(),
-            object_key: "orders/1.pdf".to_string(),
-            tenant_id: "tenant-a".to_string(),
-            method: PresignedMethod::Put,
-            ttl_seconds: 0,
-        };
+        let mut plan = canonical_presigned_url_plan();
+        plan.ttl_seconds = 0;
 
         assert_eq!(
             plan.validate(),
@@ -228,38 +298,5 @@ mod tests {
             plan.validate(),
             Err(StorageSidecarError::InvalidScannerEndpoint)
         );
-    }
-
-    fn valid_plan() -> StorageSidecarPlan {
-        StorageSidecarPlan {
-            contract: StorageContract {
-                bucket: "tenant-files".to_string(),
-                metadata_table: "storage.objects".to_string(),
-                presigned_url_ttl_seconds: 900,
-                acl_tenant_column: "tenant_id".to_string(),
-            },
-            provider: ObjectStoreProvider::S3,
-            buckets: vec![BucketPolicy {
-                bucket: "tenant-files".to_string(),
-                tenant_id: "tenant-a".to_string(),
-                acl: BucketAcl::TenantReadWrite,
-                max_object_bytes: 10_485_760,
-            }],
-            antivirus: Some(AntivirusPlan {
-                scanner_endpoint: "http://clamav.storage.svc:3310".to_string(),
-                quarantine_bucket: "quarantine".to_string(),
-                fail_closed: true,
-            }),
-        }
-    }
-
-    fn valid_metadata() -> ObjectMetadataRecord {
-        ObjectMetadataRecord {
-            bucket: "tenant-files".to_string(),
-            object_key: "orders/1.pdf".to_string(),
-            tenant_id: "tenant-a".to_string(),
-            content_type: "application/pdf".to_string(),
-            size_bytes: 42,
-        }
     }
 }

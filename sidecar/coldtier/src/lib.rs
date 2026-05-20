@@ -241,13 +241,52 @@ fn validate_object_uri(field: &'static str, value: &str) -> Result<(), ColdTierE
     }
 }
 
+pub fn canonical_cold_tier_plan() -> ColdTierPlan {
+    ColdTierPlan {
+        policy: TierPolicy {
+            hot_min_score: 80,
+            warm_min_score: 40,
+            cold_max_score: 20,
+        },
+        shards: vec![ColdShard {
+            shard_id: 42,
+            table: "public.events".to_string(),
+            current_tier: StorageTier::Hot,
+            temperature_score: 10,
+            object_uri: "s3://cold-tier/events/42".to_string(),
+            format: ColdTierFormat::Iceberg,
+            layers: vec![
+                LayerFile {
+                    uri: "s3://cold-tier/events/42/image.parquet".to_string(),
+                    kind: LayerKind::Image,
+                    bytes: 1024,
+                },
+                LayerFile {
+                    uri: "s3://cold-tier/events/42/delta-1.parquet".to_string(),
+                    kind: LayerKind::Delta,
+                    bytes: 128,
+                },
+            ],
+        }],
+        search: Some(SearchColdTierPlan {
+            tantivy_index_uri: "s3://cold-tier/indexes/events".to_string(),
+            lancedb_index_uri: Some("s3://cold-tier/indexes/events-vector".to_string()),
+            indexed_columns: vec!["body".to_string(), "embedding".to_string()],
+        }),
+    }
+}
+
+pub fn canonical_move_plans() -> Result<Vec<TierMovePlan>, ColdTierError> {
+    canonical_cold_tier_plan().move_plans()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn cold_tier_plan_calculates_move_plans() {
-        let moves = valid_plan().move_plans().expect("move plans");
+        let moves = canonical_cold_tier_plan().move_plans().expect("move plans");
 
         assert_eq!(
             moves,
@@ -262,8 +301,17 @@ mod tests {
     }
 
     #[test]
+    fn canonical_move_plans_are_deterministic() {
+        let moves = canonical_move_plans().expect("canonical moves");
+
+        assert_eq!(moves.len(), 1);
+        assert_eq!(moves[0].shard_id, 42);
+        assert_eq!(moves[0].to, StorageTier::Cold);
+    }
+
+    #[test]
     fn policy_requires_ordered_thresholds() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_cold_tier_plan();
         plan.policy = TierPolicy {
             hot_min_score: 50,
             warm_min_score: 75,
@@ -275,7 +323,7 @@ mod tests {
 
     #[test]
     fn layer_requires_positive_size() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_cold_tier_plan();
         plan.shards[0].layers[0].bytes = 0;
 
         assert_eq!(plan.validate(), Err(ColdTierError::InvalidLayerSize));
@@ -283,7 +331,7 @@ mod tests {
 
     #[test]
     fn search_plan_requires_indexed_columns() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_cold_tier_plan();
         plan.search = Some(SearchColdTierPlan {
             tantivy_index_uri: "s3://cold-tier/indexes/events".to_string(),
             lancedb_index_uri: None,
@@ -296,40 +344,5 @@ mod tests {
                 "search.indexed_columns"
             ))
         );
-    }
-
-    fn valid_plan() -> ColdTierPlan {
-        ColdTierPlan {
-            policy: TierPolicy {
-                hot_min_score: 80,
-                warm_min_score: 40,
-                cold_max_score: 20,
-            },
-            shards: vec![ColdShard {
-                shard_id: 42,
-                table: "public.events".to_string(),
-                current_tier: StorageTier::Hot,
-                temperature_score: 10,
-                object_uri: "s3://cold-tier/events/42".to_string(),
-                format: ColdTierFormat::Iceberg,
-                layers: vec![
-                    LayerFile {
-                        uri: "s3://cold-tier/events/42/image.parquet".to_string(),
-                        kind: LayerKind::Image,
-                        bytes: 1024,
-                    },
-                    LayerFile {
-                        uri: "s3://cold-tier/events/42/delta-1.parquet".to_string(),
-                        kind: LayerKind::Delta,
-                        bytes: 128,
-                    },
-                ],
-            }],
-            search: Some(SearchColdTierPlan {
-                tantivy_index_uri: "s3://cold-tier/indexes/events".to_string(),
-                lancedb_index_uri: Some("s3://cold-tier/indexes/events-vector".to_string()),
-                indexed_columns: vec!["body".to_string(), "embedding".to_string()],
-            }),
-        }
     }
 }
