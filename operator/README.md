@@ -27,3 +27,8 @@ plan. The plan creates the `ai_blaise_citus` companion extension, checks
 `citus.cohabit_extensions` contains `timescaledb`, then runs the ordered
 companion SQL for distributed hypertables, policies, continuous aggregates, and
 time-range shard pruning.
+
+`cargo run -p ai_blaise_citus_operator -- run-canonical` validates the
+canonical V2 operator surface and emits a deterministic TSV summary covering
+`CitusCluster`, `ShardGroup`, `Hypertable`, the hypertable apply plan, and the
+operator catalog CRDs.

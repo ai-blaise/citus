@@ -3,14 +3,18 @@
 This is the canonical register of features that `ai-blaise/citus` adds beyond
 vanilla Citus. Every feature-bearing PR updates this file.
 
-`e2e/src/operator_catalog.rs` is the current pure-Rust acceptance model for
-the V2 operator catalog. It validates canonical specs for `FEATURE: A8`,
+`operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
+acceptance models for the V2 operator catalog. The operator runner validates
+canonical `CitusCluster`, `ShardGroup`, `Hypertable`, hypertable apply-plan,
+and catalog specs for `FEATURE: S2`, `FEATURE: S4`, `FEATURE: TS7`,
+`FEATURE: A8`,
 `FEATURE: B2`, `FEATURE: B6`, `FEATURE: C4`, `FEATURE: C5`, `FEATURE: C6`,
 `FEATURE: C7`, `FEATURE: C8`, `FEATURE: C9`, `FEATURE: EF3`, `FEATURE: F1`,
 `FEATURE: M3`, `FEATURE: MR1`, `FEATURE: MR2`, `FEATURE: MR4`, `FEATURE: MR8`,
 `FEATURE: O5`, `FEATURE: R2`, `FEATURE: R7`, `FEATURE: S10`, `FEATURE: S11`,
 `FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
-`FEATURE: TO5`, and `FEATURE: WH1`.
+`FEATURE: TO5`, and `FEATURE: WH1`, then emits the deterministic TSV summary
+with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
 `e2e/src/runtime_contracts.rs` validates canonical runtime contracts for
 `FEATURE: Auth1`, `FEATURE: Auth3`, `FEATURE: B1`, `FEATURE: B3`,
 `FEATURE: B4`, `FEATURE: C1`, `FEATURE: L8`, `FEATURE: MR5`, `FEATURE: R7`,
