@@ -747,7 +747,8 @@ BEGIN
     RETURN format(
 $plan$CREATE MATERIALIZED VIEW %1$I
 WITH (timescaledb.continuous) AS
-%2$s;
+%2$s
+WITH NO DATA;
 SELECT add_continuous_aggregate_policy(%1$L, start_offset => %3$L::interval, end_offset => %4$L::interval, schedule_interval => %5$L::interval);
 SELECT companion_internal.add_continuous_aggregate_distributed(%1$L, %2$L, %3$L::interval, %4$L::interval, %5$L::interval);$plan$,
         view_name,
@@ -804,7 +805,7 @@ BEGIN
     );
 
     EXECUTE format(
-        'CREATE MATERIALIZED VIEW %I WITH (timescaledb.continuous) AS %s',
+        'CREATE MATERIALIZED VIEW %I WITH (timescaledb.continuous) AS %s WITH NO DATA',
         name,
         query
     );

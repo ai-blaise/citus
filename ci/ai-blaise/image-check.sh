@@ -10,6 +10,7 @@ runtime_dockerfile="images/rust-runtime/Dockerfile"
 build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
+timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -20,7 +21,8 @@ for file in \
   "${image_dir}/README.md" \
   "${runtime_dockerfile}" \
   "${build_app_images}" \
-  "${pool_proxy_smoke}"; do
+  "${pool_proxy_smoke}" \
+  "${timescale_bridge_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -29,6 +31,10 @@ done
 
 if [[ ! -x "${build_app_images}" ]]; then
   echo "missing executable app image build matrix: ${build_app_images}" >&2
+  exit 1
+fi
+if [[ ! -x "${timescale_bridge_smoke}" ]]; then
+  echo "missing executable Timescale bridge smoke: ${timescale_bridge_smoke}" >&2
   exit 1
 fi
 
@@ -199,6 +205,7 @@ grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_bla
 grep -Fq "CREATE FUNCTION apply_distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION add_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION apply_compression_policy_distributed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "WITH NO DATA" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION time_range_shard_pruner" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE VIEW companion_timescale_bridge_state" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -208,7 +215,25 @@ grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_retention_policy_distributed" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_reorder_policy_distributed" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_time_range_shard_pruner" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_compression_policy_distributed must require TimescaleDB dependency" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "apply_continuous_aggregate_distributed must require TimescaleDB dependency" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_idle_transactions('100 milliseconds'::interval)" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "timescale/timescaledb:latest-pg17" "${timescale_bridge_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS timescaledb" "${timescale_bridge_smoke}"
+grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_distribute_hypertable" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_compression_policy_distributed" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_retention_policy_distributed" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_reorder_policy_distributed" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_continuous_aggregate_distributed" "${timescale_bridge_smoke}"
+grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_bridge_smoke}"
+grep -Fq "_timescaledb_catalog.hypertable" "${timescale_bridge_smoke}"
+grep -Fq "companion_timescale_bridge_state" "${timescale_bridge_smoke}"
 
 if grep -RIn "'planned'\\|planned" "${image_dir}/extensions"; then
   echo "companion SQL extension must not expose planned feature statuses" >&2

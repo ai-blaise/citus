@@ -675,7 +675,7 @@ policies across shards.
 ### TS18: Executable Timescale Bridge State
 
 **Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`, `citus`
@@ -690,12 +690,27 @@ of only returning SQL text that references missing internal routines.
 **Citus comparison**: Vanilla Citus does not expose a TimescaleDB bridge state
 catalog or apply functions for Timescale policy fanout.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, creates the bridge-state
+catalog, exercises public apply entrypoints where plain PostgreSQL can safely
+emulate dependency calls, requires durable `companion_timescale_bridge_state`
+rows for all six bridge feature ids, and verifies that compression/CAGG apply
+paths fail closed when TimescaleDB dependency functions are absent.
+`ci/ai-blaise/timescale-bridge-smoke.sh` then installs the same extension into
+a real `timescale/timescaledb:latest-pg17` container, stubs only the Citus
+distribution entrypoint, and verifies real TimescaleDB hypertable,
+compression, retention, reorder, continuous aggregate, and bridge-state
+behavior. This status applies only to the installable bridge-state SQL
+surface; the broader distributed TimescaleDB integration features it records
+remain alpha until proven against real TimescaleDB/Citus cohabitation.
+
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - SQL extension: `FEATURE: TS18` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/timescale-bridge-smoke.sh`
 
 ### TS13: Distributed time_bucket_gapfill
 
