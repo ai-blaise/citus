@@ -1187,8 +1187,8 @@ movement.
 **Bundled extension dep**: `pg_repack`
 
 **Summary**: Defines the scheduled repack policy surface for online shard-table
-maintenance, with strategy selection for `pg_repack` and future PostgreSQL 19
-`REPACK CONCURRENTLY`.
+maintenance, with strategy selection for `pg_repack` and the PostgreSQL 19
+`REPACK CONCURRENTLY` path modeled by the repack sidecar.
 
 **Motivation**: Repack cadence and target tables need to be auditable and
 reconciled rather than run as one-off maintenance commands.
@@ -1260,8 +1260,8 @@ contract.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgactive`
 
-**Summary**: Defines table-scoped conflict policy for future active-active
-reference-table replication.
+**Summary**: Defines table-scoped conflict policy for active-active
+reference-table replication contracts.
 
 **Motivation**: Cross-region writes need explicit resolution rules before
 replication can be enabled safely.
@@ -1282,8 +1282,8 @@ policy objects.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `spock`
 
-**Summary**: Carries the seven conflict classes used by the future
-replication-conflict companion and active-active reconcilers.
+**Summary**: Carries the seven conflict classes used by replication-conflict
+companion contracts and active-active reconcilers.
 
 **Motivation**: Conflict resolution cannot be observable or testable if all
 conflicts collapse into one undifferentiated failure state.
@@ -1346,8 +1346,8 @@ or ad hoc suspend state.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Establishes typed branch identity and source-cluster state for a
-future atomic branch promotion reconciler.
+**Summary**: Establishes typed branch identity and source-cluster state for
+atomic branch promotion workflows.
 
 **Motivation**: Promote/cut-over workflows need the same branch object that
 created and suspended the branch, so status and ownership stay consistent.
@@ -1554,8 +1554,8 @@ ship a pgroll-style expand/contract migration layer.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the schema-job operation/state model used by future
-trigger and backfill based online DDL.
+**Summary**: Defines the schema-job operation/state model used by trigger and
+backfill based online DDL.
 
 **Motivation**: Online DDL needs explicit state transitions and lease
 validation before a sidecar or companion UDF can execute it.
@@ -1801,8 +1801,8 @@ GeoIP and edge-replica behavior can be enforced.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries leader-pinning intent on regions so future HA reconcilers
-can constrain primaries to chosen failure domains.
+**Summary**: Carries leader-pinning intent on regions so HA reconcilers can
+constrain primaries to chosen failure domains.
 
 **Motivation**: Multi-region clusters need explicit write-leader placement to
 control latency and failover behavior.
@@ -1851,7 +1851,7 @@ tooling.
 **Bundled extension dep**: none
 
 **Summary**: Defines backup schedule, retention, object-store target, and
-provider for the future backup sidecar reconciler.
+provider consumed by the backup sidecar reconciler and runtime contracts.
 
 **Motivation**: PITR and backup-as-data-source workflows need an auditable
 declarative schedule.
@@ -2809,8 +2809,8 @@ paths without repeatedly hitting the auth sidecar.
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the tenant RLS policy plan used by future `auth.*`
-companion UDFs.
+**Summary**: Defines the tenant RLS policy plan used by auth SQL surfaces and
+sidecar policy checks.
 
 **Motivation**: Tenant-safe auto-API and pool integration need one validated
 mapping from session claims to tenant columns.
