@@ -40,6 +40,9 @@ and search-aware index contracts for `FEATURE: R1`, `FEATURE: R5`,
 `sidecar/edge_functions/src/lib.rs` validates Deno/Bun runtime launch, UDS
 database callback, and triggered invocation contracts for `FEATURE: EF1`,
 `FEATURE: EF2`, `FEATURE: EF4`, and `FEATURE: EF5`.
+`sidecar/edge_functions/src/lib.rs` also executes a deterministic runtime host
+for those features, covering trigger authorization, DB callback timeout bounds,
+runtime command materialization, and invocation accounting.
 `sidecar/graphql/src/lib.rs` validates pg_graphql endpoint, distributed table,
 and RLS/JWT contracts for `FEATURE: API3`, `FEATURE: API4`, and
 `FEATURE: API5`.
@@ -2589,6 +2592,7 @@ runtime.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 
 ### EF2: Bun Runtime Alternative
 
@@ -2609,6 +2613,7 @@ the sidecar needs runtime selection without changing the CRD shape.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF2` in `sidecar/edge_functions/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 
 ### EF3: Function CRD
 
@@ -2652,6 +2657,7 @@ callback path.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF4` in `sidecar/edge_functions/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 
 ### EF5: Triggered Edge Functions
 
@@ -2674,6 +2680,7 @@ from schedules or CDC events.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF5` in `sidecar/edge_functions/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 
 ## Security / Auth
 

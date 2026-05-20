@@ -211,6 +211,7 @@ impl InvocationRequest {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum EdgeFunctionError {
+    FunctionNameMismatch,
     InvalidHttpPath,
     InvalidIdentifier(&'static str),
     InvalidInvocationTimeout,
@@ -219,12 +220,20 @@ pub enum EdgeFunctionError {
     InvalidStatementTimeout,
     InvalidUdsPath,
     InvalidUrl(&'static str),
+    InvocationTimeoutExceedsPlan {
+        timeout_ms: u32,
+        max_timeout_ms: u32,
+    },
     MissingRequiredField(&'static str),
+    TriggerNotAllowed,
 }
 
 impl fmt::Display for EdgeFunctionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::FunctionNameMismatch => {
+                write!(formatter, "invocation function_name does not match plan")
+            }
             Self::InvalidHttpPath => write!(formatter, "HTTP trigger path must start with /"),
             Self::InvalidIdentifier(field) => write!(formatter, "{field} must be a SQL identifier"),
             Self::InvalidInvocationTimeout => {
@@ -241,7 +250,15 @@ impl fmt::Display for EdgeFunctionError {
             Self::InvalidUrl(field) => {
                 write!(formatter, "{field} must start with http:// or https://")
             }
+            Self::InvocationTimeoutExceedsPlan {
+                timeout_ms,
+                max_timeout_ms,
+            } => write!(
+                formatter,
+                "invocation timeout {timeout_ms} exceeds runtime callback bound {max_timeout_ms}"
+            ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::TriggerNotAllowed => write!(formatter, "invocation trigger is not configured"),
         }
     }
 }
@@ -313,6 +330,120 @@ pub struct EdgeFunctionCanonicalReport {
     pub invocation: InvocationRequest,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum InvocationStatus {
+    Succeeded,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeFunctionExecution {
+    pub function_name: String,
+    pub runtime: EdgeFunctionRuntime,
+    pub command: Vec<String>,
+    pub trigger: FunctionTrigger,
+    pub tenant_id: String,
+    pub payload_bytes: u64,
+    pub response_bytes: u64,
+    pub db_callback_used: bool,
+    pub status: InvocationStatus,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeFunctionRuntimeState {
+    pub launched_functions: u64,
+    pub invocations: u64,
+    pub db_callbacks: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeFunctionRuntimeReport {
+    pub launch: RuntimeLaunchPlan,
+    pub execution: EdgeFunctionExecution,
+    pub state: EdgeFunctionRuntimeState,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeFunctionRuntimeHost {
+    plan: EdgeFunctionPlan,
+    launch: RuntimeLaunchPlan,
+    state: EdgeFunctionRuntimeState,
+}
+
+impl EdgeFunctionRuntimeHost {
+    pub fn new(plan: EdgeFunctionPlan) -> Result<Self, EdgeFunctionError> {
+        let launch = plan.launch_plan()?;
+
+        Ok(Self {
+            plan,
+            launch,
+            state: EdgeFunctionRuntimeState {
+                launched_functions: 1,
+                invocations: 0,
+                db_callbacks: 0,
+            },
+        })
+    }
+
+    pub fn state(&self) -> &EdgeFunctionRuntimeState {
+        &self.state
+    }
+
+    pub fn launch(&self) -> &RuntimeLaunchPlan {
+        &self.launch
+    }
+
+    pub fn invoke(
+        &mut self,
+        request: &InvocationRequest,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        request.validate()?;
+        if request.function_name != self.plan.name {
+            return Err(EdgeFunctionError::FunctionNameMismatch);
+        }
+        if !self
+            .plan
+            .triggers
+            .iter()
+            .any(|trigger| trigger == &request.trigger)
+        {
+            return Err(EdgeFunctionError::TriggerNotAllowed);
+        }
+        if let Some(callback) = &self.plan.db_callback {
+            if request.timeout_ms > callback.statement_timeout_ms {
+                return Err(EdgeFunctionError::InvocationTimeoutExceedsPlan {
+                    timeout_ms: request.timeout_ms,
+                    max_timeout_ms: callback.statement_timeout_ms,
+                });
+            }
+        }
+
+        let db_callback_used = self.plan.db_callback.is_some();
+        self.state.invocations += 1;
+        if db_callback_used {
+            self.state.db_callbacks += 1;
+        }
+
+        let mut command = vec![self.launch.executable.clone()];
+        command.extend(self.launch.args.clone());
+
+        Ok(EdgeFunctionExecution {
+            function_name: request.function_name.clone(),
+            runtime: self.plan.runtime,
+            command,
+            trigger: request.trigger.clone(),
+            tenant_id: request.tenant_id.clone(),
+            payload_bytes: request.payload_bytes,
+            response_bytes: deterministic_response_bytes(request.payload_bytes),
+            db_callback_used,
+            status: InvocationStatus::Succeeded,
+        })
+    }
+}
+
+fn deterministic_response_bytes(payload_bytes: u64) -> u64 {
+    (payload_bytes / 2) + 64
+}
+
 pub fn canonical_edge_function_plan() -> EdgeFunctionPlan {
     EdgeFunctionPlan {
         name: "order_created".to_string(),
@@ -366,6 +497,18 @@ pub fn canonical_edge_function_report() -> Result<EdgeFunctionCanonicalReport, E
     })
 }
 
+pub fn canonical_edge_function_runtime_report(
+) -> Result<EdgeFunctionRuntimeReport, EdgeFunctionError> {
+    let mut runtime = EdgeFunctionRuntimeHost::new(canonical_edge_function_plan())?;
+    let execution = runtime.invoke(&canonical_invocation_request())?;
+
+    Ok(EdgeFunctionRuntimeReport {
+        launch: runtime.launch().clone(),
+        execution,
+        state: runtime.state().clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,6 +534,61 @@ mod tests {
         assert_eq!(report.launch.function_name, "order_created");
         assert_eq!(report.launch.executable, "deno");
         assert_eq!(report.invocation.payload_bytes, 512);
+    }
+
+    #[test]
+    fn edge_function_runtime_invokes_cdc_trigger_and_tracks_state() {
+        let report = canonical_edge_function_runtime_report().expect("runtime report");
+
+        assert_eq!(report.execution.function_name, "order_created");
+        assert_eq!(report.execution.runtime, EdgeFunctionRuntime::Deno);
+        assert_eq!(
+            report.execution.command,
+            vec![
+                "deno".to_string(),
+                "run".to_string(),
+                "--allow-env".to_string(),
+                "--allow-net=unix".to_string(),
+                "inline.ts".to_string(),
+            ]
+        );
+        assert_eq!(report.execution.response_bytes, 320);
+        assert!(report.execution.db_callback_used);
+        assert_eq!(report.execution.status, InvocationStatus::Succeeded);
+        assert_eq!(report.state.launched_functions, 1);
+        assert_eq!(report.state.invocations, 1);
+        assert_eq!(report.state.db_callbacks, 1);
+    }
+
+    #[test]
+    fn edge_function_runtime_rejects_unconfigured_trigger() {
+        let mut runtime =
+            EdgeFunctionRuntimeHost::new(canonical_edge_function_plan()).expect("runtime");
+        let mut request = canonical_invocation_request();
+        request.trigger = FunctionTrigger::Http {
+            path: "/admin".to_string(),
+        };
+
+        assert_eq!(
+            runtime.invoke(&request),
+            Err(EdgeFunctionError::TriggerNotAllowed)
+        );
+    }
+
+    #[test]
+    fn edge_function_runtime_rejects_callback_timeout_over_plan() {
+        let mut runtime =
+            EdgeFunctionRuntimeHost::new(canonical_edge_function_plan()).expect("runtime");
+        let mut request = canonical_invocation_request();
+        request.timeout_ms = 1_001;
+
+        assert_eq!(
+            runtime.invoke(&request),
+            Err(EdgeFunctionError::InvocationTimeoutExceedsPlan {
+                timeout_ms: 1_001,
+                max_timeout_ms: 1_000,
+            })
+        );
     }
 
     #[test]

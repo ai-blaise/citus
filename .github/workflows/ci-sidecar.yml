@@ -107,6 +107,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_edge_functions
+      - name: Run canonical edge-function report
+        run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-canonical
+      - name: Run canonical edge-function runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
 
   graphql:
     runs-on: ubuntu-latest
