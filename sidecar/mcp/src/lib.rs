@@ -4,7 +4,7 @@
 // FEATURE: MCP2
 // FEATURE: MCP3
 
-use ai_blaise_citus_mcp::{McpToolError, McpToolRequest, SafeMode};
+use ai_blaise_citus_mcp::{McpTool, McpToolError, McpToolRequest, SafeMode, TenantScope};
 use std::error::Error;
 use std::fmt;
 
@@ -115,19 +115,59 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), McpSidecarE
     Ok(())
 }
 
+pub fn canonical_mcp_plan() -> McpSidecarPlan {
+    McpSidecarPlan {
+        listen_addr: "127.0.0.1:8088".to_string(),
+        auth: McpAuthPlan {
+            issuer: "https://auth.example.com".to_string(),
+            audience: "citus-mcp".to_string(),
+            tenant_claim: "tenant_id".to_string(),
+        },
+        session_policy: McpSessionPolicy {
+            safe_mode: SafeMode::Required,
+            max_concurrent_sessions: 16,
+            idle_timeout_seconds: 300,
+        },
+        allowed_requests: vec![McpToolRequest {
+            tool: McpTool::RunExplain {
+                sql: "select * from public.orders where tenant_id = $1".to_string(),
+            },
+            tenant_scope: Some(TenantScope {
+                tenant_id: "tenant-a".to_string(),
+                allowed_schemas: vec!["tenant_a".to_string()],
+            }),
+            safe_mode: SafeMode::Required,
+        }],
+    }
+}
+
+pub fn canonical_mcp_execution_plan() -> Result<McpSidecarPlan, McpSidecarError> {
+    let plan = canonical_mcp_plan();
+    plan.validate()?;
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ai_blaise_citus_mcp::{McpTool, TenantScope};
 
     #[test]
     fn mcp_sidecar_plan_validates_safe_tenant_scoped_requests() {
-        assert_eq!(valid_plan().validate(), Ok(()));
+        assert_eq!(canonical_mcp_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_mcp_execution_plan_is_deterministic() {
+        let plan = canonical_mcp_execution_plan().expect("canonical plan");
+
+        assert_eq!(plan.listen_addr, "127.0.0.1:8088");
+        assert_eq!(plan.session_policy.max_concurrent_sessions, 16);
+        assert_eq!(plan.allowed_requests.len(), 1);
     }
 
     #[test]
     fn safe_session_policy_rejects_non_safe_request() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_mcp_plan();
         plan.allowed_requests[0].safe_mode = SafeMode::Disabled;
 
         assert_eq!(plan.validate(), Err(McpSidecarError::UnsafeSessionPolicy));
@@ -135,7 +175,7 @@ mod tests {
 
     #[test]
     fn destructive_tool_is_denied_by_tool_contract() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_mcp_plan();
         plan.allowed_requests.push(McpToolRequest {
             tool: McpTool::TenantArchive {
                 tenant_name: "tenant-a".to_string(),
@@ -150,31 +190,5 @@ mod tests {
                 "safe mode denied a destructive tool".to_string()
             ))
         );
-    }
-
-    fn valid_plan() -> McpSidecarPlan {
-        McpSidecarPlan {
-            listen_addr: "127.0.0.1:8088".to_string(),
-            auth: McpAuthPlan {
-                issuer: "https://auth.example.com".to_string(),
-                audience: "citus-mcp".to_string(),
-                tenant_claim: "tenant_id".to_string(),
-            },
-            session_policy: McpSessionPolicy {
-                safe_mode: SafeMode::Required,
-                max_concurrent_sessions: 16,
-                idle_timeout_seconds: 300,
-            },
-            allowed_requests: vec![McpToolRequest {
-                tool: McpTool::RunExplain {
-                    sql: "select * from public.orders where tenant_id = $1".to_string(),
-                },
-                tenant_scope: Some(TenantScope {
-                    tenant_id: "tenant-a".to_string(),
-                    allowed_schemas: vec!["tenant_a".to_string()],
-                }),
-                safe_mode: SafeMode::Required,
-            }],
-        }
     }
 }

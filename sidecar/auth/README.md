@@ -11,6 +11,8 @@ Current implemented surface:
 - `OidcProviderConfig`
 - `MfaPolicy`
 - `AuthSidecarPlan`
+- `canonical_auth_report()`
+- `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 These contracts cover `FEATURE: Auth1`, `FEATURE: Auth2`, `FEATURE: Auth4`,
 and `FEATURE: Auth5`.

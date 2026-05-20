@@ -188,18 +188,59 @@ fn validate_path(field: &'static str, value: &str) -> Result<(), PostgrestSideca
     }
 }
 
+pub fn canonical_postgrest_plan() -> PostgrestSidecarPlan {
+    PostgrestSidecarPlan {
+        schemas: vec!["public".to_string(), "api".to_string()],
+        routes: vec![RestRoute {
+            schema: "public".to_string(),
+            table: "orders".to_string(),
+            methods: vec![RestMethod::Get, RestMethod::Post],
+            distributed_view: Some(DistributedViewBinding {
+                view_name: "api.orders".to_string(),
+                distribution_column: "tenant_id".to_string(),
+                shard_count: 32,
+            }),
+        }],
+        auth: ApiAuthPolicy {
+            rls_required: true,
+            jwt_secret_ref: "postgrest-jwt-secret".to_string(),
+            tenant_claim: "tenant_id".to_string(),
+        },
+        openapi: OpenApiPlan {
+            path: "/openapi.json".to_string(),
+            title: "ai-blaise Citus API".to_string(),
+            version: "v1alpha1".to_string(),
+        },
+    }
+}
+
+pub fn canonical_postgrest_execution_plan() -> Result<PostgrestSidecarPlan, PostgrestSidecarError> {
+    let plan = canonical_postgrest_plan();
+    plan.validate()?;
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn postgrest_plan_validates_distributed_route_and_openapi() {
-        assert_eq!(valid_plan().validate(), Ok(()));
+        assert_eq!(canonical_postgrest_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_postgrest_execution_plan_is_deterministic() {
+        let plan = canonical_postgrest_execution_plan().expect("canonical plan");
+
+        assert_eq!(plan.openapi.path, "/openapi.json");
+        assert_eq!(plan.routes[0].table, "orders");
+        assert_eq!(plan.auth.tenant_claim, "tenant_id");
     }
 
     #[test]
     fn distributed_view_requires_shard_count() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_postgrest_plan();
         plan.routes[0]
             .distributed_view
             .as_mut()
@@ -214,7 +255,7 @@ mod tests {
 
     #[test]
     fn auto_api_requires_rls() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_postgrest_plan();
         plan.auth.rls_required = false;
 
         assert_eq!(plan.validate(), Err(PostgrestSidecarError::RlsRequired));
@@ -222,38 +263,12 @@ mod tests {
 
     #[test]
     fn openapi_path_must_be_absolute() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_postgrest_plan();
         plan.openapi.path = "openapi.json".to_string();
 
         assert_eq!(
             plan.validate(),
             Err(PostgrestSidecarError::InvalidPath("openapi.path"))
         );
-    }
-
-    fn valid_plan() -> PostgrestSidecarPlan {
-        PostgrestSidecarPlan {
-            schemas: vec!["public".to_string(), "api".to_string()],
-            routes: vec![RestRoute {
-                schema: "public".to_string(),
-                table: "orders".to_string(),
-                methods: vec![RestMethod::Get, RestMethod::Post],
-                distributed_view: Some(DistributedViewBinding {
-                    view_name: "api.orders".to_string(),
-                    distribution_column: "tenant_id".to_string(),
-                    shard_count: 32,
-                }),
-            }],
-            auth: ApiAuthPolicy {
-                rls_required: true,
-                jwt_secret_ref: "postgrest-jwt-secret".to_string(),
-                tenant_claim: "tenant_id".to_string(),
-            },
-            openapi: OpenApiPlan {
-                path: "/openapi.json".to_string(),
-                title: "ai-blaise Citus API".to_string(),
-                version: "v1alpha1".to_string(),
-            },
-        }
     }
 }

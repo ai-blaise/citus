@@ -219,25 +219,107 @@ fn validate_required_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AuthCanonicalReport {
+    pub sidecar: AuthSidecarPlan,
+    pub issue_plan: JwtIssuePlan,
+    pub introspection: TokenIntrospectionPlan,
+}
+
+pub fn canonical_issuer() -> AuthIssuerContract {
+    AuthIssuerContract {
+        issuer: "https://auth.example.com".to_string(),
+        signing_key_ref: "jwt-signing-key".to_string(),
+        token_ttl_seconds: 3_600,
+        tenant_claim: "tenant_id".to_string(),
+    }
+}
+
+pub fn canonical_claims() -> TokenClaims {
+    TokenClaims {
+        subject: "user-123".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        role: "authenticated".to_string(),
+        jwt_id: "jti-123".to_string(),
+        custom_claims: vec![CustomClaim {
+            name: "email".to_string(),
+            value: "user@example.com".to_string(),
+        }],
+    }
+}
+
+pub fn canonical_auth_sidecar_plan() -> AuthSidecarPlan {
+    AuthSidecarPlan {
+        issuer: canonical_issuer(),
+        oidc_providers: vec![OidcProviderConfig {
+            name: "github".to_string(),
+            issuer_url: "https://github.example".to_string(),
+            client_id_secret_ref: "github-client-id".to_string(),
+            client_secret_ref: "github-client-secret".to_string(),
+            scopes: vec!["openid".to_string(), "email".to_string()],
+        }],
+        mfa: Some(MfaPolicy {
+            totp_enabled: true,
+            webauthn_enabled: true,
+            max_attempts: 3,
+        }),
+    }
+}
+
+pub fn canonical_jwt_issue_request() -> JwtIssueRequest {
+    JwtIssueRequest {
+        issuer: canonical_issuer(),
+        algorithm: SigningAlgorithm::Rs256,
+        claims: canonical_claims(),
+        audience: "postgres".to_string(),
+    }
+}
+
+pub fn canonical_token_introspection_plan() -> TokenIntrospectionPlan {
+    TokenIntrospectionPlan {
+        issuer: "https://auth.example.com".to_string(),
+        jwt_id: "jti-123".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        cache_ttl_seconds: 300,
+    }
+}
+
+pub fn canonical_auth_report() -> Result<AuthCanonicalReport, AuthSidecarError> {
+    let sidecar = canonical_auth_sidecar_plan();
+    let issue_plan = canonical_jwt_issue_request().plan()?;
+    let introspection = canonical_token_introspection_plan();
+
+    sidecar.validate()?;
+    introspection.validate()?;
+
+    Ok(AuthCanonicalReport {
+        sidecar,
+        issue_plan,
+        introspection,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn jwt_issue_request_renders_auditable_plan() {
-        let request = JwtIssueRequest {
-            issuer: valid_issuer(),
-            algorithm: SigningAlgorithm::Rs256,
-            claims: valid_claims(),
-            audience: "postgres".to_string(),
-        };
-
-        let plan = request.plan().expect("issue plan");
+        let plan = canonical_jwt_issue_request().plan().expect("issue plan");
 
         assert_eq!(plan.issuer, "https://auth.example.com");
         assert_eq!(plan.signing_key_ref, "jwt-signing-key");
         assert_eq!(plan.tenant_id, "tenant-a");
         assert_eq!(plan.ttl_seconds, 3_600);
+    }
+
+    #[test]
+    fn canonical_auth_report_is_deterministic() {
+        let report = canonical_auth_report().expect("canonical report");
+
+        assert_eq!(report.issue_plan.subject, "user-123");
+        assert_eq!(report.introspection.cache_ttl_seconds, 300);
+        assert_eq!(report.sidecar.oidc_providers[0].name, "github");
     }
 
     #[test]
@@ -266,44 +348,6 @@ mod tests {
 
     #[test]
     fn auth_sidecar_plan_validates_oidc_and_mfa() {
-        let plan = AuthSidecarPlan {
-            issuer: valid_issuer(),
-            oidc_providers: vec![OidcProviderConfig {
-                name: "github".to_string(),
-                issuer_url: "https://github.example".to_string(),
-                client_id_secret_ref: "github-client-id".to_string(),
-                client_secret_ref: "github-client-secret".to_string(),
-                scopes: vec!["openid".to_string(), "email".to_string()],
-            }],
-            mfa: Some(MfaPolicy {
-                totp_enabled: true,
-                webauthn_enabled: true,
-                max_attempts: 3,
-            }),
-        };
-
-        assert_eq!(plan.validate(), Ok(()));
-    }
-
-    fn valid_issuer() -> AuthIssuerContract {
-        AuthIssuerContract {
-            issuer: "https://auth.example.com".to_string(),
-            signing_key_ref: "jwt-signing-key".to_string(),
-            token_ttl_seconds: 3_600,
-            tenant_claim: "tenant_id".to_string(),
-        }
-    }
-
-    fn valid_claims() -> TokenClaims {
-        TokenClaims {
-            subject: "user-123".to_string(),
-            tenant_id: "tenant-a".to_string(),
-            role: "authenticated".to_string(),
-            jwt_id: "jti-123".to_string(),
-            custom_claims: vec![CustomClaim {
-                name: "email".to_string(),
-                value: "user@example.com".to_string(),
-            }],
-        }
+        assert_eq!(canonical_auth_sidecar_plan().validate(), Ok(()));
     }
 }

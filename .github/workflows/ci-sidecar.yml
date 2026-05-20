@@ -52,7 +52,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_auth --tests
+        run: cargo check -p ai_blaise_citus_sidecar_auth --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_auth
 
@@ -112,7 +112,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_graphql --tests
+        run: cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_graphql
 
@@ -136,7 +136,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_mcp --tests
+        run: cargo check -p ai_blaise_citus_sidecar_mcp --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_mcp
 
@@ -148,7 +148,7 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_postgrest --tests
+        run: cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_postgrest
 

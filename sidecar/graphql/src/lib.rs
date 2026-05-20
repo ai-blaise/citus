@@ -154,18 +154,56 @@ fn validate_path(field: &'static str, value: &str) -> Result<(), GraphqlSidecarE
     }
 }
 
+pub fn canonical_graphql_plan() -> GraphqlSidecarPlan {
+    GraphqlSidecarPlan {
+        endpoint_path: "/graphql/v1".to_string(),
+        schema_bindings: vec![GraphqlSchemaBinding {
+            pg_schema: "public".to_string(),
+            graphql_namespace: "public_api".to_string(),
+            exposed_tables: vec!["orders".to_string(), "customers".to_string()],
+        }],
+        distributed_bindings: vec![DistributedGraphqlBinding {
+            type_name: "Order".to_string(),
+            table: "public.orders".to_string(),
+            distribution_column: "tenant_id".to_string(),
+            route_function: "companion.route_distributed_graphql".to_string(),
+        }],
+        auth: GraphqlAuthPolicy {
+            rls_required: true,
+            jwt_secret_ref: "graphql-jwt-secret".to_string(),
+            tenant_claim: "tenant_id".to_string(),
+            introspection_enabled: false,
+        },
+    }
+}
+
+pub fn canonical_graphql_execution_plan() -> Result<GraphqlSidecarPlan, GraphqlSidecarError> {
+    let plan = canonical_graphql_plan();
+    plan.validate()?;
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn graphql_plan_validates_distributed_binding() {
-        assert_eq!(valid_plan().validate(), Ok(()));
+        assert_eq!(canonical_graphql_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn canonical_graphql_execution_plan_is_deterministic() {
+        let plan = canonical_graphql_execution_plan().expect("canonical plan");
+
+        assert_eq!(plan.endpoint_path, "/graphql/v1");
+        assert_eq!(plan.schema_bindings[0].graphql_namespace, "public_api");
+        assert_eq!(plan.distributed_bindings[0].type_name, "Order");
     }
 
     #[test]
     fn graphql_route_function_must_be_qualified() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_graphql_plan();
         plan.distributed_bindings[0].route_function = "route_orders".to_string();
 
         assert_eq!(
@@ -178,7 +216,7 @@ mod tests {
 
     #[test]
     fn graphql_auth_requires_rls() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_graphql_plan();
         plan.auth.rls_required = false;
 
         assert_eq!(plan.validate(), Err(GraphqlSidecarError::RlsRequired));
@@ -186,35 +224,12 @@ mod tests {
 
     #[test]
     fn graphql_endpoint_path_must_be_absolute() {
-        let mut plan = valid_plan();
+        let mut plan = canonical_graphql_plan();
         plan.endpoint_path = "graphql/v1".to_string();
 
         assert_eq!(
             plan.validate(),
             Err(GraphqlSidecarError::InvalidPath("endpoint_path"))
         );
-    }
-
-    fn valid_plan() -> GraphqlSidecarPlan {
-        GraphqlSidecarPlan {
-            endpoint_path: "/graphql/v1".to_string(),
-            schema_bindings: vec![GraphqlSchemaBinding {
-                pg_schema: "public".to_string(),
-                graphql_namespace: "public_api".to_string(),
-                exposed_tables: vec!["orders".to_string(), "customers".to_string()],
-            }],
-            distributed_bindings: vec![DistributedGraphqlBinding {
-                type_name: "Order".to_string(),
-                table: "public.orders".to_string(),
-                distribution_column: "tenant_id".to_string(),
-                route_function: "companion.route_distributed_graphql".to_string(),
-            }],
-            auth: GraphqlAuthPolicy {
-                rls_required: true,
-                jwt_secret_ref: "graphql-jwt-secret".to_string(),
-                tenant_claim: "tenant_id".to_string(),
-                introspection_enabled: false,
-            },
-        }
     }
 }

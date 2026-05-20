@@ -2324,7 +2324,8 @@ binding rather than an ambient runtime setting.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
 
-**Summary**: Defines schemas and REST routes exposed by the PostgREST sidecar.
+**Summary**: Defines schemas and REST routes exposed by the PostgREST
+sidecar, plus a runnable canonical route emitter.
 
 **Motivation**: Auto-REST needs a validated route surface before the sidecar
 starts serving table-backed endpoints.
@@ -2335,6 +2336,7 @@ starts serving table-backed endpoints.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API1` in `sidecar/postgrest/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ### API2: Distributed PostgREST Views
 
@@ -2366,7 +2368,7 @@ so requests route through Citus-aware helper views.
 **Bundled extension dep**: `pg_graphql`
 
 **Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
-tables for the GraphQL sidecar.
+tables for the GraphQL sidecar, plus a runnable canonical binding emitter.
 
 **Motivation**: GraphQL routing needs a typed endpoint and schema-binding
 contract before exposing pg_graphql to tenants.
@@ -2377,6 +2379,7 @@ contract before exposing pg_graphql to tenants.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API3` in `sidecar/graphql/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
 
 ### API4: Distributed GraphQL Tables
 
@@ -2656,7 +2659,7 @@ from schedules or CDC events.
 **Bundled extension dep**: none
 
 **Summary**: Defines issuer, signing key reference, token TTL, and tenant claim
-contract for the auth sidecar.
+contract for the auth sidecar, plus a runnable canonical token-plan emitter.
 
 **Motivation**: SQL helpers and the pool need the same token contract before
 the auth sidecar starts issuing JWTs.
@@ -2668,6 +2671,7 @@ the auth sidecar starts issuing JWTs.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Auth1` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ### Auth3: Token Introspection Cache
 
@@ -3101,7 +3105,8 @@ policy.
 **Bundled extension dep**: none
 
 **Summary**: Defines the Model Context Protocol tool request contract for
-cluster inspection and guarded operations.
+cluster inspection and guarded operations, plus a runnable canonical sidecar
+session emitter.
 
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
@@ -3113,6 +3118,7 @@ direct database or Kubernetes access.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP1` in `tools/citus-mcp/src/lib.rs`
 - In-source: `FEATURE: MCP1` in `sidecar/mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 
 ### MCP2: Safe-Mode Tools
 
