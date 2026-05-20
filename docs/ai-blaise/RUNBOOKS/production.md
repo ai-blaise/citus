@@ -21,6 +21,17 @@ Production deployments must run through the continuous gates before release.
 13. Slop scan.
 14. Feature docs.
 15. License.
+16. Production-readiness audit.
+
+The first 15 gates are not a blanket production certification for every custom
+feature. They verify the V2 acceptance model and the current deployment path.
+Before any production promotion, run the production-readiness audit in release
+mode and block promotion while alpha or contract-only features remain in
+release scope:
+
+```bash
+ci/ai-blaise/production-readiness-check.sh production-release
+```
 
 ## Runtime Image Gate
 
@@ -65,7 +76,9 @@ metrics across replicas.
 
 ## Exit Criteria
 
-- All gates are green for the exact commit and image digest.
+- All release-scope gates are green for the exact commit and image digest.
+- No release-scope feature remains alpha, contract-only, or model-only without
+  explicit measured production evidence.
 - Runbook evidence links CI runs, Helm render output, image attestations, and
   smoke-test logs.
 - Rollback commands and PITR checkpoint are present in the release record.
