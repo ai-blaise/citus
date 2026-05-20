@@ -31,6 +31,15 @@ pool:
     limits:
       cpu: "1"
       memory: 1Gi
+  protocolPipeline:
+    enabled: true
+    maxInFlight: 32
+  networkPolicy:
+    cidrAllowlist:
+      - 10.0.0.0/8
+
+postgres:
+  ioMethod: io_uring
 
 sidecarDefaults:
   tag: "0.1.0"
@@ -107,6 +116,18 @@ observability:
       replicationLagSeconds: 60
       vectorizerBacklog: 1000
       poolErrorRatePercent: 5
+
+security:
+  externalSecrets:
+    enabled: true
+    secretStoreRef: ai-blaise-cluster-secrets
+  tls:
+    clients: true
+    postgres: true
+    sidecars: true
+  releaseAttestation:
+    sbom: true
+    cosign: true
 
 tools:
   enabled: false

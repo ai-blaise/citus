@@ -3,6 +3,12 @@ operator:
 
 pool:
   replicas: 1
+  networkPolicy:
+    cidrAllowlist:
+      - 10.0.0.0/8
+
+postgres:
+  ioMethod: io_uring
 
 sidecars:
   - name: analytical
@@ -65,3 +71,14 @@ observability:
     enabled: true
   alertRules:
     enabled: false
+
+security:
+  externalSecrets:
+    enabled: false
+  tls:
+    clients: false
+    postgres: false
+    sidecars: false
+  releaseAttestation:
+    sbom: true
+    cosign: false

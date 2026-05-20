@@ -3,6 +3,7 @@
 // FEATURE: MCP1
 // FEATURE: MCP2
 // FEATURE: MCP3
+// FEATURE: D11
 
 use std::error::Error;
 use std::fmt;

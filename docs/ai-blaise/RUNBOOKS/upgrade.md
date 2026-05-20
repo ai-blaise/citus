@@ -1,11 +1,34 @@
 # Upgrade Runbook
 
-This runbook is a starting point for the first release train.
+`FEATURE: D9`
 
-The upgrade workflow must:
+Use this runbook for canary upgrades of the ai-blaise/citus overlay and operand
+image.
 
-1. Fetch upstream Citus.
-2. Run `make -f Makefile.ai-blaise patches-check`.
-3. Rebuild overlay images.
-4. Run the cohabitation and e2e gates.
-5. Publish release notes with `NEW_FEATURES.md` deltas.
+## Inputs
+
+- Target upstream Citus commit and ai-blaise release branch.
+- Current `patches/series` output.
+- Operand image digest with extension manifest and SBOM.
+- Helm values for the canary namespace.
+- Rollback branch, backup checkpoint, and PITR timestamp.
+
+## Canary Flow
+
+1. Fetch upstream Citus and re-run the patch series gate.
+2. Build the operand image and validate bundled, optional, and hard-blocked
+   extensions.
+3. Render Helm with production values and apply it to the canary namespace.
+4. Run cohabitation, plan-cache, latency, branch, vectorizer, search, HTAP,
+   multi-region, chaos, slop, feature-doc, license, and image gates.
+5. Mirror read traffic through the pool with a capped sample.
+6. Promote canary writes only after plan-freeze and regression checks pass.
+7. Publish release notes with `NEW_FEATURES.md` deltas and image digests.
+
+## Rollback
+
+1. Disable mirrored writes.
+2. Restore pool routing to the previous release.
+3. Reconcile branch and tenant status.
+4. Keep the failed canary namespace for forensic inspection until logs,
+   metrics, and WAL replay notes are captured.

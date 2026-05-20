@@ -3,11 +3,12 @@
 Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
-Initial critical modules: `citus_timescale`, `db_doctor`,
-`geo_distributed`, `graph_bridge`, `index_advisor`, `jsonschema_bridge`,
-`ledger`, `lsp_metadata`, `migration`, `observability`, `plan_freeze`,
-`auth`, `router_assist`, `schema_jobs`, `search_bridge`, `tenants`,
-`toolkit_distributed`, and `webhooks`.
+Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
+`db_doctor`, `extension_catalog`, `geo_distributed`, `graph_bridge`,
+`index_advisor`, `jsonschema_bridge`, `ledger`, `lsp_metadata`, `migration`,
+`observability`, `ops_contracts`, `plan_freeze`, `router_assist`,
+`schema_jobs`, `search_bridge`, `tenants`, `toolkit_distributed`, `vector`,
+and `webhooks`.
 
 ## Current Surface
 
@@ -47,6 +48,22 @@ Initial critical modules: `citus_timescale`, `db_doctor`,
 - `ToolkitDistributedPlan` for `FEATURE: T8`, `FEATURE: TS13`,
   `FEATURE: TS14`, `FEATURE: TS15`, `FEATURE: TS16`, `FEATURE: TS17`, and
   `FEATURE: L9`
+- `ExtensionContract` for the V2 bundled and optional extension surfaces,
+  including `FEATURE: A7`, `FEATURE: Search1`, `FEATURE: G1`,
+  `FEATURE: JS1`, `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: O7`,
+  `FEATURE: Sec3`, and `FEATURE: WF1`
+- `AdvancedPlannerContract` for remaining planner, tiering, time-travel,
+  cursor, savepoint, regional, backup, federation, storage, and research-guard
+  surfaces, including `FEATURE: T4`, `FEATURE: T10`, `FEATURE: T11`,
+  `FEATURE: T13`, `FEATURE: T14`, `FEATURE: TS10`, `FEATURE: TS11`,
+  `FEATURE: S1`, `FEATURE: S3`, `FEATURE: S8`, `FEATURE: S12`,
+  `FEATURE: MR3`, `FEATURE: MR6`, `FEATURE: B4`, and `FEATURE: Sto2`
+- `OperationsReadinessContract` for Helm install, wrapper, runbook, MCP,
+  security, realtime client, io_uring, and protocol pipeline gates, including
+  `FEATURE: D7`, `FEATURE: D8`, `FEATURE: D9`, `FEATURE: D10`,
+  `FEATURE: D11`, `FEATURE: MR9`, `FEATURE: RT5`, `FEATURE: S7`,
+  `FEATURE: A9`, `FEATURE: Sec7`, `FEATURE: Sec8`, `FEATURE: Sec9`,
+  `FEATURE: Sec13`, `FEATURE: T6`, and `FEATURE: T7`
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale

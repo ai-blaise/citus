@@ -24,6 +24,7 @@ required_extensions=(
 optional_extensions=(
   hypopg pg_qualstats pg_stat_kcache pg_wait_sampling pgsentinel pgsql-http
   pg_net pgl_ddl_deploy pg_track_settings pg_lake pg_duckdb pgactive
+  pg_subscription_pg_failover
   oracle_fdw mysql_fdw mongo_fdw tds_fdw pgmq pgque pg_parquet pg_squeeze
   pg_show_plans pg_stat_monitor pg_walinspect pg_safeupdate anon vchord
   pg_hint_plan sr_plan pgledger pglinter omnigres

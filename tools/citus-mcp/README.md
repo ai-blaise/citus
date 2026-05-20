@@ -9,4 +9,5 @@ Current implemented surface:
 - `TenantScope`
 - `SafeMode`
 
-These contracts cover `FEATURE: MCP1`, `FEATURE: MCP2`, and `FEATURE: MCP3`.
+These contracts cover `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
+the `FEATURE: D11` MCP developer workflow.

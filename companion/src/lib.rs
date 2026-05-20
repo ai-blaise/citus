@@ -1,8 +1,10 @@
 //! ai-blaise Citus companion extension core.
 
+pub mod advanced_planner;
 pub mod auth;
 pub mod citus_timescale;
 pub mod db_doctor;
+pub mod extension_catalog;
 pub mod geo_distributed;
 pub mod graph_bridge;
 pub mod index_advisor;
@@ -11,6 +13,7 @@ pub mod ledger;
 pub mod lsp_metadata;
 pub mod migration;
 pub mod observability;
+pub mod ops_contracts;
 pub mod plan_freeze;
 pub mod router_assist;
 pub mod schema_jobs;
@@ -20,6 +23,10 @@ pub mod toolkit_distributed;
 pub mod vector;
 pub mod webhooks;
 
+pub use advanced_planner::{
+    canonical_advanced_planner_contract, AdvancedPlannerContract, AdvancedPlannerError,
+    PlannerSurface, PlannerSurfaceKind,
+};
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{
     distribute_hypertable_plan, AddContinuousAggregateDistributedPlan, AddPolicyDistributed,
@@ -29,6 +36,10 @@ pub use citus_timescale::{
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
     DoctorSeverity, DoctorViolation,
+};
+pub use extension_catalog::{
+    v2_extension_contracts, validate_extension_contracts, ExtensionCatalogError,
+    ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
 };
 pub use geo_distributed::{
     GeoDistributionPlan, GeoGrid, GeoPruningPlan, GeoSqlPlan, GeoValidationError,
@@ -51,6 +62,10 @@ pub use migration::{MigrationError, MigrationOperation, MigrationPlan, Migration
 pub use observability::{
     DistributedStatPlan, IdleTransactionAction, IdleTransactionReaperPlan, LatencyPercentile,
     ObservabilityError, OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
+};
+pub use ops_contracts::{
+    canonical_operations_readiness_contract, OperationsCheck, OperationsContractError,
+    OperationsGate, OperationsReadinessContract,
 };
 pub use plan_freeze::{
     PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,

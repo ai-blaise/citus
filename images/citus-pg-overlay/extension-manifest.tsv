@@ -22,6 +22,7 @@ plv8|required|PostgreSQL|binary-package|EF6|In-database JavaScript UDF substrate
 pg_uuidv7|required|PostgreSQL|binary-package|M12|Monotonic UUID helper.
 pg_repack|required|BSD-style|binary-package|R7|Online repack until PG19 REPACK CONCURRENTLY.
 pg_failover_slots|required|PostgreSQL|binary-package|C12|Logical replication slot failover.
+pg_subscription_pg_failover|optional|PostgreSQL|binary-package|C13|Logical subscription failover state.
 pg_warm|required|PostgreSQL|binary-package|R11|Replica cold-start cache warming.
 pgcrypto|required|PostgreSQL|core-extension|Sec14|Core crypto primitives.
 pg_trgm|required|PostgreSQL|core-extension|Search5|Trigram search support.

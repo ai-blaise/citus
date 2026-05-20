@@ -3656,3 +3656,84 @@ operations TUI.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
+
+## V2 Completion Register Addendum
+
+The entries below close the V2 catalog surfaces that are implemented as
+contracts in the companion, deployment, pool, MCP, image, and runbook overlays.
+Each row records the vanilla Citus comparison and the grepable source marker.
+
+| ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference |
+|---|---|---|---|---|---|
+| A7 | pgvector cohabitation | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not pin a bundled vector-extension contract. | `FEATURE: A7` |
+| A9 | Secret binding via External Secrets | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define vector-provider secret binding. | `FEATURE: A9` |
+| A10 | Streaming chat completion UDF | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define streaming LLM SQL surfaces. | `FEATURE: A10` |
+| A11 | Semantic catalog text-to-SQL | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a tenant-scoped semantic catalog. | `FEATURE: A11` |
+| A12 | vchord alternate vector index | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not track optional vector-index alternatives. | `FEATURE: A12` |
+| C11 | DDL replication via pgl_ddl_deploy | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle cross-region DDL replication policy. | `FEATURE: C11` |
+| C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` |
+| C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` |
+| D7 | Helm one-line install | `companion/src/ops_contracts.rs` and `deploy/k8s/helm/citus-overlay` | alpha | Vanilla Citus does not ship this overlay chart. | `FEATURE: D7` |
+| D8 | Infrastructure deploy wrapper | `companion/src/ops_contracts.rs` and `scripts/citus-scale/deploy.sh` | alpha | Vanilla Citus does not ship the ai-blaise deploy wrapper. | `FEATURE: D8` |
+| D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` |
+| D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` |
+| D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |
+| EF6 | In-database JavaScript and Rust UDF substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle plv8/plrust as a platform contract. | `FEATURE: EF6` |
+| Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` |
+| Edge2 | libsql read-tier research guard | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a libsql-shaped research gate. | `FEATURE: Edge2` |
+| F3 | Iceberg federation to warehouses | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Iceberg warehouse federation. | `FEATURE: F3` |
+| F4 | postgres_fdw credential rotation | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not prescribe FDW secret rotation. | `FEATURE: F4` |
+| F5 | Outbound HTTP extensions | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgsql-http or pg_net policy. | `FEATURE: F5` |
+| Geo1 | PostGIS bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require PostGIS in every operand image. | `FEATURE: Geo1` |
+| IA2 | pg_qualstats bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle predicate-stat advisor inputs. | `FEATURE: IA2` |
+| L7 | Citus columnar analytical path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has columnar storage but not this tiering contract. | `FEATURE: L7` |
+| L10 | Cross-tier query planner | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not combine hot, warm, and cold tiers. | `FEATURE: L10` |
+| L11 | pg_parquet bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package Parquet helpers as part of its image. | `FEATURE: L11` |
+| M4 | Schema drift detection | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile declarative schema drift. | `FEATURE: M4` |
+| M6 | DDL replication | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle pgl_ddl_deploy policy. | `FEATURE: M6` |
+| M10 | Track settings drift | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_track_settings. | `FEATURE: M10` |
+| M12 | UUIDv7 primary keys | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle monotonic UUID helpers. | `FEATURE: M12` |
+| MR3 | Locality-prefixed primary keys | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not encode region in key policy. | `FEATURE: MR3` |
+| MR6 | Closed-timestamp time travel | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose bounded-staleness time travel. | `FEATURE: MR6` |
+| MR7 | Cross-region active-active references | `companion/src/extension_catalog.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not package pgactive conflict-policy gates. | `FEATURE: MR7` |
+| MR9 | Region survival runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/disaster-recovery.md` | alpha | Vanilla Citus does not ship this regional DR runbook. | `FEATURE: MR9` |
+| O7 | Wait-event sampling | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_wait_sampling/pgsentinel. | `FEATURE: O7` |
+| O8 | OS metrics via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pgnodemx. | `FEATURE: O8` |
+| O9 | Kernel stats via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_stat_kcache. | `FEATURE: O9` |
+| O11 | pg_stat_monitor alternative | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_stat_monitor. | `FEATURE: O11` |
+| O12 | pg_show_plans live plans | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require live plan inspection. | `FEATURE: O12` |
+| PM2 | sr_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle saved-plan backends. | `FEATURE: PM2` |
+| R3 | Columnstore-on-worker policy | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this worker tiering policy. | `FEATURE: R3` |
+| R6 | Bloat-free queue substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgque/pgmq as queue policy. | `FEATURE: R6` |
+| R8 | Non-hypertable cold columnar path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this cold-tier policy. | `FEATURE: R8` |
+| R11 | pg_warm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_warm in operand images. | `FEATURE: R11` |
+| R12 | Per-shard temperature ranking | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not maintain shard temperature scores. | `FEATURE: R12` |
+| RT5 | Phoenix-channel-compatible realtime client | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not provide realtime client compatibility gates. | `FEATURE: RT5` |
+| S1 | Auto shard split | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose declarative split intent. | `FEATURE: S1` |
+| S3 | Clone-node fast scale-out | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus exposes clone-node primitives but not this operator contract. | `FEATURE: S3` |
+| S7 | Cross-region replication via pgactive | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not bundle pgactive policy gates. | `FEATURE: S7` |
+| S8 | Locality-prefixed PKs | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define region-prefixed key policy. | `FEATURE: S8` |
+| S12 | Tablespaces by region | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile region tablespace intent. | `FEATURE: S12` |
+| Search4 | RUM index bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require RUM search indexes. | `FEATURE: Search4` |
+| Search5 | pg_trgm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require trigram search support. | `FEATURE: Search5` |
+| Search6 | citext bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require citext search semantics. | `FEATURE: Search6` |
+| Sec3 | pgaudit and file audit | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require this audit bundle. | `FEATURE: Sec3` |
+| Sec4 | pgsodium crypto | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle libsodium crypto policy. | `FEATURE: Sec4` |
+| Sec7 | External Secrets integration | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not prescribe External Secrets refs. | `FEATURE: Sec7` |
+| Sec8 | TLS everywhere | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not enforce this full overlay TLS contract. | `FEATURE: Sec8` |
+| Sec9 | SBOM and cosign attestation | `companion/src/ops_contracts.rs` and release gates | alpha | Vanilla Citus does not require ai-blaise release attestations. | `FEATURE: Sec9` |
+| Sec10 | pg_safeupdate guard | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_safeupdate policy. | `FEATURE: Sec10` |
+| Sec11 | CDC anonymization extension | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle anonymization policy. | `FEATURE: Sec11` |
+| Sec13 | CIDR access control | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define pool CIDR policy. | `FEATURE: Sec13` |
+| Sec14 | pgcrypto bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not document pgcrypto as overlay policy. | `FEATURE: Sec14` |
+| Sec15 | Encryption-at-rest with CMK | `companion/src/extension_catalog.rs` and Helm values | alpha | Vanilla Citus does not prescribe pgsodium-backed CMK controls. | `FEATURE: Sec15` |
+| Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` |
+| T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` |
+| T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` |
+| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
+| T10 | Bulk protocol fetch path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has no ai-blaise bulk-fetch contract. | `FEATURE: T10` |
+| T11 | DistSQL physical pushdown | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this DistSQL contract. | `FEATURE: T11` |
+| T13 | Distributed cursors | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate multi-shard cursor state this way. | `FEATURE: T13` |
+| T14 | Distributed savepoints | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate savepoints through this contract. | `FEATURE: T14` |
+| TS10 | Hierarchical CAGGs distributed | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not fan out hierarchical CAGGs across workers. | `FEATURE: TS10` |
+| TS11 | Bloom filters on segmentby | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Timescale segmentby bloom fanout. | `FEATURE: TS11` |

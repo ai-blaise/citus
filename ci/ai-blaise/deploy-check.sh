@@ -37,13 +37,30 @@ grep -q '^name: ai-blaise-citus-overlay$' "${chart_dir}/Chart.yaml"
 grep -q '^global:$' "${chart_dir}/values.yaml"
 grep -q '^operator:$' "${chart_dir}/values.yaml"
 grep -q '^pool:$' "${chart_dir}/values.yaml"
+grep -q '^postgres:$' "${chart_dir}/values.yaml"
 grep -q '^observability:$' "${chart_dir}/values.yaml"
+grep -q '^security:$' "${chart_dir}/values.yaml"
 grep -q '^sidecarDefaults:$' "${chart_dir}/values.yaml"
 grep -q '^sidecars:$' "${chart_dir}/values.yaml"
+grep -q 'ioMethod: io_uring' "${chart_dir}/values.yaml"
+grep -q 'protocolPipeline:' "${chart_dir}/values.yaml"
+grep -q 'cidrAllowlist:' "${chart_dir}/values.yaml"
+grep -q 'externalSecrets:' "${chart_dir}/values.yaml"
+grep -q 'releaseAttestation:' "${chart_dir}/values.yaml"
 grep -q 'FEATURE: O6' "${chart_dir}/templates/observability-dashboards.yaml"
 grep -q 'FEATURE: O10' "${chart_dir}/templates/observability-prometheusrules.yaml"
 grep -q 'kind: ConfigMap' "${chart_dir}/templates/observability-dashboards.yaml"
 grep -q 'kind: PrometheusRule' "${chart_dir}/templates/observability-prometheusrules.yaml"
+
+if [[ ! -x scripts/citus-scale/deploy.sh ]]; then
+  echo "missing executable D8 deploy wrapper: scripts/citus-scale/deploy.sh" >&2
+  exit 1
+fi
+
+grep -q 'FEATURE: D8' scripts/citus-scale/deploy.sh
+grep -q 'FEATURE: D9' docs/ai-blaise/RUNBOOKS/upgrade.md
+grep -q 'FEATURE: D10' docs/ai-blaise/RUNBOOKS/production.md
+grep -q 'FEATURE: MR9' docs/ai-blaise/RUNBOOKS/disaster-recovery.md
 
 required_sidecars=(
   analytical auth backup cdc coldtier edge-functions graphql hlc mcp
