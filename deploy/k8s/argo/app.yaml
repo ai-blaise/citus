@@ -6,7 +6,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/ai-blaise/citus
-    targetRevision: ai-blaise/bootstrap-v2
+    targetRevision: main
     path: deploy/k8s/helm/citus-overlay
     helm:
       valueFiles:
@@ -16,5 +16,8 @@ spec:
     namespace: ai-blaise-citus
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true

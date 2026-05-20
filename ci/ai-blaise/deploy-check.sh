@@ -9,6 +9,7 @@ pool_workflow=".github/workflows/ci-pool.yml"
 operator_workflow=".github/workflows/ci-operator.yml"
 sidecar_workflow=".github/workflows/ci-sidecar.yml"
 makefile="Makefile.ai-blaise"
+custom_workflows=(.github/workflows/ci-*.yml)
 required_files=(
   "${argo_app}"
   "${kind_smoke}"
@@ -95,6 +96,16 @@ grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/sidecar-deployments.yaml
 grep -q 'readinessProbe:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'livenessProbe:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/sidecar-deployments.yaml"
+if grep -q 'resources: \["\*"\]' "${chart_dir}/templates/operator-rbac.yaml"; then
+  echo "operator RBAC must enumerate ai-blaise resources explicitly" >&2
+  exit 1
+fi
+if grep -q '"secrets"' "${chart_dir}/templates/operator-rbac.yaml"; then
+  echo "operator RBAC must not grant Secret access while secret binding is alpha" >&2
+  exit 1
+fi
+grep -q 'citusclusters' "${chart_dir}/templates/operator-rbac.yaml"
+grep -q 'scheduledrepacks' "${chart_dir}/templates/operator-rbac.yaml"
 
 if [[ ! -x scripts/citus-scale/deploy.sh ]]; then
   echo "missing executable D8 deploy wrapper: scripts/citus-scale/deploy.sh" >&2
@@ -132,15 +143,29 @@ grep -q 'FEATURE: D9' docs/ai-blaise/RUNBOOKS/upgrade.md
 grep -q 'FEATURE: D10' docs/ai-blaise/RUNBOOKS/production.md
 grep -q 'FEATURE: MR9' docs/ai-blaise/RUNBOOKS/disaster-recovery.md
 grep -q 'helm:' "${argo_app}"
+grep -q 'targetRevision: main' "${argo_app}"
 grep -q 'valueFiles:' "${argo_app}"
 grep -q 'values-prod.yaml' "${argo_app}"
+grep -q 'prune: true' "${argo_app}"
+grep -q 'selfHeal: true' "${argo_app}"
+grep -q 'CreateNamespace=true' "${argo_app}"
+grep -q 'PruneLast=true' "${argo_app}"
 grep -q 'Install Helm for rendered chart checks' "${deploy_workflow}"
 grep -q 'kind-production-smoke:' "${deploy_workflow}"
 grep -q 'Run live Kubernetes production smoke' "${deploy_workflow}"
 grep -q 'bash ci/ai-blaise/kind-production-smoke.sh' "${deploy_workflow}"
 grep -Eq '^gate-close: .*kind-production-smoke' "${makefile}"
-for workflow in "${pool_workflow}" "${operator_workflow}" "${sidecar_workflow}"; do
-  grep -q 'ai-blaise/bootstrap-v2' "${workflow}"
+for workflow in "${deploy_workflow}" "${pool_workflow}" "${operator_workflow}" "${sidecar_workflow}"; do
+  grep -q -- '- main' "${workflow}"
+  grep -q -- '- ai-blaise/dev' "${workflow}"
+done
+for workflow in "${custom_workflows[@]}"; do
+  grep -q -- '- main' "${workflow}"
+  grep -q -- '- ai-blaise/dev' "${workflow}"
+  if grep -q -- '- ai-blaise/bootstrap-v2' "${workflow}"; then
+    echo "custom CI workflow must not target stale bootstrap branch: ${workflow}" >&2
+    exit 1
+  fi
 done
 
 required_sidecars=(

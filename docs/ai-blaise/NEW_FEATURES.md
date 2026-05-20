@@ -3579,15 +3579,16 @@ images.
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
 
-Production evidence: PR #3 and merge commit `537711d89` passed the VM
-kind production smoke using the real Rust image matrix, live operator and
-sidecar `/healthz`, `/readyz`, and `/metrics` probes, real PostgreSQL traffic
-through the pool service, and per-pod pool request metric aggregation. GitHub
-Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
-The deploy workflow and `gate-close` now run
-`ci/ai-blaise/kind-production-smoke.sh` as a live integration gate. That smoke
-separately verifies the exhaustive image-matrix profile and the
-`values-prod.yaml` profile with alpha workloads disabled.
+Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
+passed local and VM verification of the kind production smoke using the real
+Rust image matrix, live operator and sidecar `/healthz`, `/readyz`, and
+`/metrics` probes, real PostgreSQL traffic through the pool service, per-pod
+pool request metric aggregation, and a separate `values-prod.yaml` profile
+with alpha workloads disabled. The deploy workflow and `gate-close` run
+`ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
+`deploy/k8s/argo/app.yaml` targets the `main` release branch and
+`values-prod.yaml` for GitOps deployment with namespace creation and pruning
+enabled.
 
 **References**:
 
@@ -3902,11 +3903,12 @@ they can safely participate in Kubernetes rollout, drain, and chaos gates.
 **Citus comparison**: Vanilla Citus does not ship out-of-process Rust sidecars
 or a sidecar health contract.
 
-Production evidence: PR #3 and merge commit `537711d89` passed the VM
-kind production smoke that port-forwarded into the live operator and every
-deployed sidecar and verified `/healthz`, `/readyz`, and `/metrics` from the
-actual pods. Production values still keep alpha feature sidecars disabled by
-default; this status applies only to the shared probe/metrics runtime.
+Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
+passed local and VM verification of the kind production smoke that
+port-forwarded into the live operator and every deployed sidecar and verified
+`/healthz`, `/readyz`, and `/metrics` from the actual pods. Production values
+still keep alpha feature sidecars disabled by default; this status applies
+only to the shared probe/metrics runtime.
 
 **References**:
 

@@ -11,10 +11,27 @@ metadata:
   name: {{ include "citus-overlay.name" . }}-operator
 rules:
   - apiGroups: ["ai-blaise.com"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    resources:
+      - backups
+      - branches
+      - citusclusters
+      - conflictpolicies
+      - federations
+      - functions
+      - hypertables
+      - migrations
+      - regions
+      - scheduledrepacks
+      - searchindexes
+      - shardgroups
+      - sidecars
+      - survivalgoals
+      - tenants
+      - vectorizers
+      - webhooks
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
-    resources: ["configmaps", "events", "secrets", "services"]
+    resources: ["configmaps", "events", "services"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
