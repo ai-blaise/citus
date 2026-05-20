@@ -115,6 +115,12 @@ that this audit explicitly blocks overclaiming. In `production-release` mode it
 fails while any feature heading or source-only V2 addendum feature remains
 non-production, so release promotion cannot treat alpha contracts as
 production-ready functionality.
+`ci/ai-blaise/production-gap-audit.sh` enforces the same line from the other
+direction: the V2 acceptance model must not be cited as production evidence,
+`v2-acceptance-check.sh` must stay out of `production-release` mode, modeled
+release-gate constants must remain documented as non-production evidence, and
+the SQL/Kubernetes smoke guards must keep proving real stdin, live Postgres,
+live pool SQL traffic, and live pod probe traffic.
 
 Production Helm values must also keep alpha sidecars disabled by default.
 `values-prod.yaml` can carry replica/resource intent for those components, but

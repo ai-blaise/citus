@@ -20,7 +20,10 @@ their deterministic TSV summaries.
 plan, including the upstream-merge dry-run against `release-14.0`.
 `ci/ai-blaise/production-readiness-check.sh` guards the register against
 production-readiness overclaiming by verifying source/doc coverage, status
-semantics, and the whole-repo audit record.
+semantics, and the whole-repo audit record. `ci/ai-blaise/production-gap-audit.sh`
+adds the stricter production path guard: V2 acceptance models and contract
+runners must remain visible as prerequisites, not production evidence for
+alpha functionality.
 
 `operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
 acceptance models for the V2 operator catalog. The operator runner validates
