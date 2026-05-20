@@ -13,6 +13,35 @@ if [[ -z "${base}" ]]; then
 fi
 
 feature_paths='^(companion/src/|sidecar/[^/]+/src/|pool/src/|operator/src/crds/|e2e/src/|patches/|tools/[^/]+/src/)'
+scan_paths=(
+  companion
+  sidecar
+  pool
+  operator
+  e2e
+  tools
+  patches
+)
+
+source_ids="$(mktemp)"
+doc_ids="$(mktemp)"
+trap 'rm -f "${source_ids}" "${doc_ids}"' EXIT
+
+rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' "${scan_paths[@]}" \
+  | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
+  | sort -u >"${source_ids}"
+
+rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' docs/ai-blaise/NEW_FEATURES.md \
+  | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
+  | sort -u >"${doc_ids}"
+
+missing_ids="$(comm -23 "${source_ids}" "${doc_ids}")"
+
+if [[ -n "${missing_ids}" ]]; then
+  echo "source FEATURE markers missing from docs/ai-blaise/NEW_FEATURES.md:" >&2
+  echo "${missing_ids}" >&2
+  exit 1
+fi
 
 added_files="$(git diff --name-only --diff-filter=A "${base}" "${head}" \
   | grep -E "${feature_paths}" || true)"

@@ -420,6 +420,7 @@ delegating to trusted preexisting hooks where the Citus path can safely do so.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source marker after patch application:
+  `FEATURE: TS6` in
   `src/backend/distributed/shared_library_init.c`,
   `src/backend/distributed/planner/distributed_planner.c`,
   `src/backend/distributed/executor/multi_executor.c`,
