@@ -12,3 +12,8 @@ kind smoke script:
 The model is intentionally pure Rust so it can run in every pull request, while
 `tests/e2e/kind-timescale-citus-smoke.sh` consumes the same scenario shape for
 contract and live cluster checks.
+
+`release_gate_report` emits the canonical V2 release-gate TSV for the 15
+continuous gates in the plan. The `v2-acceptance` CI workflow asserts that all
+15 gates are represented and that the upstream-merge dry-run is pinned to the
+current release branch.

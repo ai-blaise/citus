@@ -9,6 +9,9 @@ remain present in implementation `FEATURE:` markers and this register, stale
 completion wording is rejected, overlay crates must keep an executable target,
 and the broad operator, companion, pool, and tool canonical runners must emit
 their deterministic TSV summaries.
+`e2e/src/release_gates.rs`, `ci/ai-blaise/v2-acceptance-check.sh`, and the
+`v2-acceptance` workflow codify the 15 continuous release gates from the V2
+plan, including the upstream-merge dry-run against `release-14.0`.
 
 `operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
 acceptance models for the V2 operator catalog. The operator runner validates

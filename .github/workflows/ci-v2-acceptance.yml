@@ -1,0 +1,20 @@
+name: v2-acceptance
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+      - ai-blaise/bootstrap-v2
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check V2 acceptance gates
+        run: bash ci/ai-blaise/v2-acceptance-check.sh
