@@ -124,9 +124,32 @@ ORDER BY c.id;
 SELECT 1 FROM citus_add_node('localhost', :worker_3_port);
 SELECT 1 FROM citus_add_node('localhost', :worker_4_port);
 
+CREATE FUNCTION task_command_label(command text)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $function$
+WITH command_shard AS (
+    SELECT COALESCE(
+        SUBSTRING($1 FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)'),
+        SUBSTRING($1 FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
+    )::bigint AS shard_id
+)
+SELECT COALESCE(
+    CASE
+        WHEN partition_entry.partmethod = 'n' AND partition_entry.repmodel = 't'
+            THEN shard_entry.logicalrelid::regclass::text
+        ELSE 'colocation ' || partition_entry.colocationid::text
+    END,
+    $1)
+FROM command_shard
+LEFT JOIN pg_dist_shard shard_entry ON shard_entry.shardid = command_shard.shard_id
+LEFT JOIN pg_dist_partition partition_entry ON partition_entry.logicalrelid = shard_entry.logicalrelid;
+$function$;
+
 SELECT * FROM get_rebalance_table_shards_plan() ORDER BY shardid;
 
-SET client_min_messages TO DEBUG1;
+SET client_min_messages TO NOTICE;
 
 SELECT citus_rebalance_start AS job_id from citus_rebalance_start(
     shard_transfer_mode := 'force_logical',
@@ -142,31 +165,16 @@ SELECT citus_rebalance_wait();
 -- see the dependencies of the tasks scheduled by the background rebalancer
 SELECT * from pg_dist_background_task_depend ORDER BY job_id, task_id, depends_on;
 
--- Temporary hack to eliminate SET application name from command until we get the
--- background job enhancement done.
-SELECT D.task_id,
-       (SELECT
-        CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-            ELSE
-                T.command
-        END
-       FROM pg_dist_background_task T WHERE T.task_id = D.task_id),
-       D.depends_on,
-       (SELECT
-       CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-        ELSE
-            T.command
-       END
-       FROM pg_dist_background_task T WHERE T.task_id = D.depends_on)
-FROM pg_dist_background_task_depend D  WHERE job_id in (:job_id) ORDER BY D.task_id, D.depends_on ASC;
+COPY (
+    SELECT format('%s depends on %s',
+                  task_command_label(task.command),
+                  task_command_label(dependency.command)) AS dependency
+    FROM pg_dist_background_task_depend D
+    JOIN pg_dist_background_task task ON task.task_id = D.task_id
+    JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
+    WHERE D.job_id in (:job_id)
+    ORDER BY dependency
+) TO STDOUT;
 
 
 TRUNCATE pg_dist_background_job CASCADE;
@@ -200,7 +208,7 @@ SELECT 1 FROM citus_add_node('localhost', :worker_6_port);
 
 SELECT * FROM get_rebalance_table_shards_plan() ORDER BY shardid;
 
-SET client_min_messages TO DEBUG1;
+SET client_min_messages TO NOTICE;
 
 SELECT citus_rebalance_start AS job_id from citus_rebalance_start(
     shard_transfer_mode := 'block_writes',
@@ -214,31 +222,16 @@ SELECT citus_rebalance_wait();
 
 -- see the dependencies of the tasks scheduled by the background rebalancer
 SELECT * from pg_dist_background_task_depend ORDER BY job_id, task_id, depends_on;
--- Temporary hack to eliminate SET application name from command until we get the
--- background job enhancement done.
-SELECT D.task_id,
-       (SELECT
-        CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-            ELSE
-                T.command
-        END
-       FROM pg_dist_background_task T WHERE T.task_id = D.task_id),
-       D.depends_on,
-       (SELECT
-       CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-        ELSE
-            T.command
-       END
-       FROM pg_dist_background_task T WHERE T.task_id = D.depends_on)
-FROM pg_dist_background_task_depend D  WHERE job_id in (:job_id) ORDER BY D.task_id, D.depends_on ASC;
+COPY (
+    SELECT format('%s depends on %s',
+                  task_command_label(task.command),
+                  task_command_label(dependency.command)) AS dependency
+    FROM pg_dist_background_task_depend D
+    JOIN pg_dist_background_task task ON task.task_id = D.task_id
+    JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
+    WHERE D.job_id in (:job_id)
+    ORDER BY dependency
+) TO STDOUT;
 
 SELECT
     c.id AS customer_id,

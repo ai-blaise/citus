@@ -189,6 +189,28 @@ SELECT 1 FROM citus_add_node('localhost', :worker_4_port);
         1
 (1 row)
 
+CREATE FUNCTION task_command_label(command text)
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $function$
+WITH command_shard AS (
+    SELECT COALESCE(
+        SUBSTRING($1 FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)'),
+        SUBSTRING($1 FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
+    )::bigint AS shard_id
+)
+SELECT COALESCE(
+    CASE
+        WHEN partition_entry.partmethod = 'n' AND partition_entry.repmodel = 't'
+            THEN shard_entry.logicalrelid::regclass::text
+        ELSE 'colocation ' || partition_entry.colocationid::text
+    END,
+    $1)
+FROM command_shard
+LEFT JOIN pg_dist_shard shard_entry ON shard_entry.shardid = command_shard.shard_id
+LEFT JOIN pg_dist_partition partition_entry ON partition_entry.logicalrelid = shard_entry.logicalrelid;
+$function$;
 SELECT * FROM get_rebalance_table_shards_plan() ORDER BY shardid;
   table_name  | shardid  | shard_size | sourcename | sourceport | targetname | targetport
 ---------------------------------------------------------------------
@@ -206,23 +228,11 @@ SELECT * FROM get_rebalance_table_shards_plan() ORDER BY shardid;
  table2_colg3 | 85674021 |          0 | localhost  |      57638 | localhost  |      57639
 (12 rows)
 
-SET client_min_messages TO DEBUG1;
+SET client_min_messages TO NOTICE;
 SELECT citus_rebalance_start AS job_id from citus_rebalance_start(
     shard_transfer_mode := 'force_logical',
     parallel_transfer_colocated_shards := true,
     parallel_transfer_reference_tables := true) \gset
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg3
 NOTICE:  Scheduled 6 moves as job xxx
 DETAIL:  Rebalance scheduled as background job
 HINT:  To monitor progress, run: SELECT * FROM citus_rebalance_status();
@@ -269,59 +279,40 @@ SELECT * from pg_dist_background_task_depend ORDER BY job_id, task_id, depends_o
   17777 |    1013 |       1007
 (24 rows)
 
--- Temporary hack to eliminate SET application name from command until we get the
--- background job enhancement done.
-SELECT D.task_id,
-       (SELECT
-        CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-            ELSE
-                T.command
-        END
-       FROM pg_dist_background_task T WHERE T.task_id = D.task_id),
-       D.depends_on,
-       (SELECT
-       CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-        ELSE
-            T.command
-       END
-       FROM pg_dist_background_task T WHERE T.task_id = D.depends_on)
-FROM pg_dist_background_task_depend D  WHERE job_id in (:job_id) ORDER BY D.task_id, D.depends_on ASC;
- task_id | command  | depends_on | command
----------------------------------------------------------------------
-    1001 | 85674025 |       1000 | 85674024
-    1002 | 85674026 |       1000 | 85674024
-    1002 | 85674026 |       1001 | 85674025
-    1003 | 85674026 |       1000 | 85674024
-    1003 | 85674026 |       1001 | 85674025
-    1003 | 85674026 |       1002 | 85674026
-    1005 | 85674025 |       1004 | 85674024
-    1006 | 85674026 |       1004 | 85674024
-    1006 | 85674026 |       1005 | 85674025
-    1007 | 85674026 |       1004 | 85674024
-    1007 | 85674026 |       1005 | 85674025
-    1007 | 85674026 |       1006 | 85674026
-    1008 | 85674001 |       1003 | 85674026
-    1008 | 85674001 |       1007 | 85674026
-    1009 | 85674000 |       1003 | 85674026
-    1009 | 85674000 |       1007 | 85674026
-    1010 | 85674009 |       1003 | 85674026
-    1010 | 85674009 |       1007 | 85674026
-    1011 | 85674008 |       1003 | 85674026
-    1011 | 85674008 |       1007 | 85674026
-    1012 | 85674017 |       1003 | 85674026
-    1012 | 85674017 |       1007 | 85674026
-    1013 | 85674016 |       1003 | 85674026
-    1013 | 85674016 |       1007 | 85674026
-(24 rows)
-
+COPY (
+    SELECT format('%s depends on %s',
+                  task_command_label(task.command),
+                  task_command_label(dependency.command)) AS dependency
+    FROM pg_dist_background_task_depend D
+    JOIN pg_dist_background_task task ON task.task_id = D.task_id
+    JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
+    WHERE D.job_id in (:job_id)
+    ORDER BY dependency
+) TO STDOUT;
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50051 depends on order_items
+colocation 50051 depends on order_items
+colocation 50051 depends on order_items
+colocation 50051 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+order_items depends on customers
+order_items depends on customers
+order_items depends on customers
+order_items depends on customers
+order_items depends on order_items
+order_items depends on order_items
+order_items depends on orders
+order_items depends on orders
+order_items depends on orders
+order_items depends on orders
+orders depends on customers
+orders depends on customers
 TRUNCATE pg_dist_background_job CASCADE;
 TRUNCATE pg_dist_background_task CASCADE;
 TRUNCATE pg_dist_background_task_depend;
@@ -395,23 +386,11 @@ SELECT * FROM get_rebalance_table_shards_plan() ORDER BY shardid;
  table2_colg3 | 85674021 |          0 | localhost  |      57639 | localhost  |      57642
 (8 rows)
 
-SET client_min_messages TO DEBUG1;
+SET client_min_messages TO NOTICE;
 SELECT citus_rebalance_start AS job_id from citus_rebalance_start(
     shard_transfer_mode := 'block_writes',
     parallel_transfer_colocated_shards := true,
     parallel_transfer_reference_tables := true) \gset
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg2
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg3
-DEBUG:  skipping child tables for relation named: table1_colg1
-DEBUG:  skipping child tables for relation named: table1_colg2
 NOTICE:  Scheduled 4 moves as job xxx
 DETAIL:  Rebalance scheduled as background job
 HINT:  To monitor progress, run: SELECT * FROM citus_rebalance_status();
@@ -448,55 +427,36 @@ SELECT * from pg_dist_background_task_depend ORDER BY job_id, task_id, depends_o
   17778 |    1025 |       1021
 (20 rows)
 
--- Temporary hack to eliminate SET application name from command until we get the
--- background job enhancement done.
-SELECT D.task_id,
-       (SELECT
-        CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-            ELSE
-                T.command
-        END
-       FROM pg_dist_background_task T WHERE T.task_id = D.task_id),
-       D.depends_on,
-       (SELECT
-       CASE
-            WHEN T.command LIKE '%citus_internal.citus_internal_copy_single_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'citus_internal\.citus_internal_copy_single_shard_placement\((\d+)')
-            WHEN T.command LIKE '%pg_catalog.citus_move_shard_placement%' THEN
-                SUBSTRING(T.command FROM 'pg_catalog\.citus_move_shard_placement\((\d+)')
-        ELSE
-            T.command
-       END
-       FROM pg_dist_background_task T WHERE T.task_id = D.depends_on)
-FROM pg_dist_background_task_depend D  WHERE job_id in (:job_id) ORDER BY D.task_id, D.depends_on ASC;
- task_id | command  | depends_on | command
----------------------------------------------------------------------
-    1015 | 85674025 |       1014 | 85674024
-    1016 | 85674026 |       1014 | 85674024
-    1016 | 85674026 |       1015 | 85674025
-    1017 | 85674026 |       1014 | 85674024
-    1017 | 85674026 |       1015 | 85674025
-    1017 | 85674026 |       1016 | 85674026
-    1019 | 85674025 |       1018 | 85674024
-    1020 | 85674026 |       1018 | 85674024
-    1020 | 85674026 |       1019 | 85674025
-    1021 | 85674026 |       1018 | 85674024
-    1021 | 85674026 |       1019 | 85674025
-    1021 | 85674026 |       1020 | 85674026
-    1022 | 85674016 |       1017 | 85674026
-    1022 | 85674016 |       1021 | 85674026
-    1023 | 85674017 |       1017 | 85674026
-    1023 | 85674017 |       1021 | 85674026
-    1024 | 85674003 |       1017 | 85674026
-    1024 | 85674003 |       1021 | 85674026
-    1025 | 85674001 |       1017 | 85674026
-    1025 | 85674001 |       1021 | 85674026
-(20 rows)
-
+COPY (
+    SELECT format('%s depends on %s',
+                  task_command_label(task.command),
+                  task_command_label(dependency.command)) AS dependency
+    FROM pg_dist_background_task_depend D
+    JOIN pg_dist_background_task task ON task.task_id = D.task_id
+    JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
+    WHERE D.job_id in (:job_id)
+    ORDER BY dependency
+) TO STDOUT;
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50050 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+colocation 50052 depends on order_items
+order_items depends on customers
+order_items depends on customers
+order_items depends on customers
+order_items depends on customers
+order_items depends on order_items
+order_items depends on order_items
+order_items depends on orders
+order_items depends on orders
+order_items depends on orders
+order_items depends on orders
+orders depends on customers
+orders depends on customers
 SELECT
     c.id AS customer_id,
     c.name AS customer_name,
