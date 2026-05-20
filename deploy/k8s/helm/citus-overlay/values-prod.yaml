@@ -21,55 +21,55 @@ postgres:
 
 sidecars:
   - name: analytical
-    enabled: true
+    enabled: false
     replicas: 2
   - name: auth
-    enabled: true
+    enabled: false
     replicas: 2
   - name: backup
-    enabled: true
+    enabled: false
     replicas: 2
   - name: cdc
-    enabled: true
+    enabled: false
     replicas: 2
   - name: coldtier
-    enabled: true
+    enabled: false
     replicas: 2
   - name: edge-functions
-    enabled: true
+    enabled: false
     replicas: 2
   - name: graphql
-    enabled: true
+    enabled: false
     replicas: 2
   - name: hlc
-    enabled: true
+    enabled: false
     replicas: 2
   - name: mcp
-    enabled: true
+    enabled: false
     replicas: 2
   - name: postgrest
-    enabled: true
+    enabled: false
     replicas: 2
   - name: raft
-    enabled: true
+    enabled: false
     replicas: 3
   - name: realtime
-    enabled: true
+    enabled: false
     replicas: 2
   - name: repack
-    enabled: true
+    enabled: false
     replicas: 2
   - name: schema-job
-    enabled: true
+    enabled: false
     replicas: 2
   - name: storage
-    enabled: true
+    enabled: false
     replicas: 2
   - name: txn-status
-    enabled: true
+    enabled: false
     replicas: 2
   - name: vectorizer
-    enabled: true
+    enabled: false
     replicas: 2
 
 tools:
