@@ -128,9 +128,92 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), McpToolErro
     Ok(())
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct McpExecutionReport {
+    pub requests: usize,
+    pub tenant_scoped_requests: usize,
+    pub safe_mode_required: usize,
+    pub destructive_denials: usize,
+}
+
+pub fn canonical_mcp_requests() -> Vec<McpToolRequest> {
+    vec![
+        McpToolRequest {
+            tool: McpTool::ListShards,
+            tenant_scope: Some(canonical_tenant_scope()),
+            safe_mode: SafeMode::Required,
+        },
+        McpToolRequest {
+            tool: McpTool::QueryWithTimeout {
+                sql: "SELECT count(*) FROM tenant_a.orders".to_string(),
+                timeout_ms: 1_000,
+            },
+            tenant_scope: Some(canonical_tenant_scope()),
+            safe_mode: SafeMode::Required,
+        },
+        McpToolRequest {
+            tool: McpTool::RebalanceDryRun {
+                shard_group: "tenant".to_string(),
+            },
+            tenant_scope: None,
+            safe_mode: SafeMode::Required,
+        },
+    ]
+}
+
+pub fn canonical_mcp_execution_report() -> Result<McpExecutionReport, McpToolError> {
+    let requests = canonical_mcp_requests();
+    for request in &requests {
+        request.validate()?;
+    }
+
+    let denied_request = McpToolRequest {
+        tool: McpTool::TenantArchive {
+            tenant_name: "tenant-a".to_string(),
+        },
+        tenant_scope: Some(canonical_tenant_scope()),
+        safe_mode: SafeMode::Required,
+    };
+    let destructive_denials =
+        usize::from(denied_request.validate() == Err(McpToolError::UnsafeToolDenied));
+
+    Ok(McpExecutionReport {
+        requests: requests.len(),
+        tenant_scoped_requests: requests
+            .iter()
+            .filter(|request| request.tenant_scope.is_some())
+            .count(),
+        safe_mode_required: requests
+            .iter()
+            .filter(|request| request.safe_mode == SafeMode::Required)
+            .count(),
+        destructive_denials,
+    })
+}
+
+fn canonical_tenant_scope() -> TenantScope {
+    TenantScope {
+        tenant_id: "tenant-a".to_string(),
+        allowed_schemas: vec!["tenant_a".to_string()],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_mcp_execution_report_is_deterministic() {
+        assert_eq!(
+            canonical_mcp_execution_report(),
+            Ok(McpExecutionReport {
+                requests: 3,
+                tenant_scoped_requests: 2,
+                safe_mode_required: 3,
+                destructive_denials: 1,
+            })
+        );
+    }
 
     #[test]
     fn safe_tenant_scoped_query_passes() {

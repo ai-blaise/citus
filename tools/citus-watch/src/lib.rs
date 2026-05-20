@@ -184,37 +184,41 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), WatchError>
     Ok(())
 }
 
+pub fn canonical_watch_dashboard() -> WatchDashboardPlan {
+    WatchDashboardPlan {
+        refresh_interval_seconds: 5,
+        data_sources: vec![
+            WatchDataSource::Prometheus {
+                base_url: "http://prometheus.monitoring.svc:9090".to_string(),
+            },
+            WatchDataSource::CompanionView {
+                view_name: "companion.distributed_tables".to_string(),
+            },
+            WatchDataSource::PoolMetrics {
+                uds_path: "/var/run/ai-blaise/pool.sock".to_string(),
+            },
+        ],
+        panels: vec![
+            WatchPanel::ClusterTopology,
+            WatchPanel::Shards { max_rows: 200 },
+            WatchPanel::Hypertables { max_rows: 100 },
+            WatchPanel::CitusExplain,
+            WatchPanel::Rebalance,
+            WatchPanel::VectorizerBacklog,
+            WatchPanel::SearchIndexes,
+            WatchPanel::Tenants,
+            WatchPanel::Branches,
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn dashboard_plan_covers_unified_live_view() {
-        let plan = WatchDashboardPlan {
-            refresh_interval_seconds: 5,
-            data_sources: vec![
-                WatchDataSource::Prometheus {
-                    base_url: "http://prometheus.monitoring.svc:9090".to_string(),
-                },
-                WatchDataSource::CompanionView {
-                    view_name: "companion.distributed_tables".to_string(),
-                },
-                WatchDataSource::PoolMetrics {
-                    uds_path: "/var/run/ai-blaise/pool.sock".to_string(),
-                },
-            ],
-            panels: vec![
-                WatchPanel::ClusterTopology,
-                WatchPanel::Shards { max_rows: 200 },
-                WatchPanel::Hypertables { max_rows: 100 },
-                WatchPanel::CitusExplain,
-                WatchPanel::Rebalance,
-                WatchPanel::VectorizerBacklog,
-                WatchPanel::SearchIndexes,
-                WatchPanel::Tenants,
-                WatchPanel::Branches,
-            ],
-        };
+        let plan = canonical_watch_dashboard();
 
         let queries = plan.queries().unwrap();
         assert_eq!(queries.len(), 9);

@@ -17,9 +17,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_mcp --tests
+        run: cargo check -p ai_blaise_citus_mcp --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_mcp
+      - name: Run canonical MCP tool report
+        run: cargo run -q -p ai_blaise_citus_mcp -- run-canonical
 
   citusctl:
     runs-on: ubuntu-latest
@@ -53,9 +55,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_watch --tests
+        run: cargo check -p ai_blaise_citus_watch --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_watch
+      - name: Run canonical watch dashboard report
+        run: cargo run -q -p ai_blaise_citus_watch -- run-canonical
 
   schema-designer:
     runs-on: ubuntu-latest
@@ -65,9 +69,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_schema_designer --tests
+        run: cargo check -p ai_blaise_citus_schema_designer --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_schema_designer
+      - name: Run canonical schema-designer report
+        run: cargo run -q -p ai_blaise_citus_schema_designer -- run-canonical
 
   tui:
     runs-on: ubuntu-latest
@@ -77,9 +83,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_tui --tests
+        run: cargo check -p ai_blaise_citus_tui --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_tui
+      - name: Run canonical TUI report
+        run: cargo run -q -p ai_blaise_citus_tui -- run-canonical
 
   admin:
     runs-on: ubuntu-latest
@@ -89,6 +97,8 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_admin --tests
+        run: cargo check -p ai_blaise_citus_admin --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_admin
+      - name: Run canonical admin report
+        run: cargo run -q -p ai_blaise_citus_admin -- run-canonical

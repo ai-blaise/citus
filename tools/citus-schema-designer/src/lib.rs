@@ -267,47 +267,51 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), SchemaDesig
     Ok(())
 }
 
+pub fn canonical_schema_designer_model() -> SchemaDesignerModel {
+    SchemaDesignerModel {
+        tables: vec![DesignerTable {
+            name: "public.events".to_string(),
+            columns: vec![
+                DesignerColumn {
+                    name: "tenant_id".to_string(),
+                    sql_type: "uuid".to_string(),
+                    nullable: false,
+                },
+                DesignerColumn {
+                    name: "created_at".to_string(),
+                    sql_type: "timestamptz".to_string(),
+                    nullable: false,
+                },
+            ],
+            distribution: Some(DistributionOverlay {
+                distribution_column: "tenant_id".to_string(),
+                colocation_group: "tenant".to_string(),
+                shard_count: 32,
+            }),
+            hypertable: Some(HypertableOverlay {
+                time_column: "created_at".to_string(),
+                chunk_interval: "1 day".to_string(),
+            }),
+            search_indexes: 1,
+            webhook_count: 2,
+        }],
+        relationships: Vec::new(),
+        shard_map: vec![ShardPlacementVisual {
+            table: "public.events".to_string(),
+            shard_id: 102_008,
+            worker: "worker-1".to_string(),
+            state: PlacementState::Active,
+        }],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn schema_designer_outputs_live_overlay_layers() {
-        let model = SchemaDesignerModel {
-            tables: vec![DesignerTable {
-                name: "public.events".to_string(),
-                columns: vec![
-                    DesignerColumn {
-                        name: "tenant_id".to_string(),
-                        sql_type: "uuid".to_string(),
-                        nullable: false,
-                    },
-                    DesignerColumn {
-                        name: "created_at".to_string(),
-                        sql_type: "timestamptz".to_string(),
-                        nullable: false,
-                    },
-                ],
-                distribution: Some(DistributionOverlay {
-                    distribution_column: "tenant_id".to_string(),
-                    colocation_group: "tenant".to_string(),
-                    shard_count: 32,
-                }),
-                hypertable: Some(HypertableOverlay {
-                    time_column: "created_at".to_string(),
-                    chunk_interval: "1 day".to_string(),
-                }),
-                search_indexes: 1,
-                webhook_count: 2,
-            }],
-            relationships: Vec::new(),
-            shard_map: vec![ShardPlacementVisual {
-                table: "public.events".to_string(),
-                shard_id: 102008,
-                worker: "worker-1".to_string(),
-                state: PlacementState::Active,
-            }],
-        };
+        let model = canonical_schema_designer_model();
 
         let layers = model.overlay_layers().unwrap();
         assert!(layers

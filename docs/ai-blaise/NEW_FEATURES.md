@@ -108,6 +108,10 @@ enforcement, metadata persistence, and antivirus quarantine decisions.
 intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
 `sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status
 runner for `FEATURE: T5`.
+The tool overlays expose deterministic canonical runners for their library
+contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
+`tools/citus-schema-designer/src/main.rs`, `tools/citus-tui/src/main.rs`, and
+`tools/citus-watch/src/main.rs`.
 
 ## Operand Image
 
@@ -1673,6 +1677,7 @@ live shard-map overlay model.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M9` in `tools/citus-schema-designer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_schema_designer -- run-canonical`
 
 ### M11: Online Column-Type Migration
 
@@ -3223,6 +3228,7 @@ direct database or Kubernetes access.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP1` in `tools/citus-mcp/src/lib.rs`
 - In-source: `FEATURE: MCP1` in `sidecar/mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 
 ### MCP2: Safe-Mode Tools
@@ -3246,6 +3252,8 @@ unless explicitly allowed.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP2` in `tools/citus-mcp/src/lib.rs`
 - In-source: `FEATURE: MCP2` in `sidecar/mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 
 ### MCP3: Tenant-Scoped Tools
 
@@ -3268,6 +3276,8 @@ multi-tenant production usage.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MCP3` in `tools/citus-mcp/src/lib.rs`
 - In-source: `FEATURE: MCP3` in `sidecar/mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 
 ## Operations / DX
 
@@ -3337,6 +3347,7 @@ administration shell.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D3` in `tools/citus-tui/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_tui -- run-canonical`
 
 ### D4: citus-lsp IDE Diagnostics
 
@@ -3383,6 +3394,7 @@ workflows, with mutating actions requiring exact confirmations.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D5` in `tools/citus-admin/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_admin -- run-canonical`
 
 ### D6: citus-schema-designer Visual
 
@@ -3405,6 +3417,7 @@ live CRD or companion state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D6` in `tools/citus-schema-designer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_schema_designer -- run-canonical`
 
 ### D12: citus-watch Dashboard
 
@@ -3427,6 +3440,7 @@ queries.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
 ### WF2: WAL Replay Debugger Command
 
@@ -3798,6 +3812,7 @@ operations TUI.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
 ## V2 Completion Register Addendum
 
@@ -3825,7 +3840,7 @@ run-operations-canonical`, depending on whether the row is backed by
 | D8 | Infrastructure deploy wrapper | `companion/src/ops_contracts.rs` and `scripts/citus-scale/deploy.sh` | alpha | Vanilla Citus does not ship the ai-blaise deploy wrapper. | `FEATURE: D8` |
 | D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` |
 | D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` |
-| D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |
+| D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |
 | EF6 | In-database JavaScript and Rust UDF substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle plv8/plrust as a platform contract. | `FEATURE: EF6` |
 | Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` |
 | Edge2 | libsql read-tier research guard | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a libsql-shaped research gate. | `FEATURE: Edge2` |
