@@ -472,6 +472,7 @@ hypertable invariants.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: TS8` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: TS8` in `tools/citus-lsp/src/lib.rs`
 
 ### TS12: Distributed Reorder Policy
@@ -1340,6 +1341,7 @@ distributed schema authoring.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: M5` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: M5` in `tools/citus-lsp/src/lib.rs`
 
 ### M8: citusctl Plan / Apply
@@ -2750,6 +2752,7 @@ rather than discovering them during deploy-time reconciliation.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: D4` in `companion/src/lsp_metadata.rs`
 - In-source: `FEATURE: D4` in `tools/citus-lsp/src/lib.rs`
 
 ### WF2: WAL Replay Debugger Command

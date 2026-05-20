@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod citus_timescale;
+pub mod lsp_metadata;
 pub mod observability;
 pub mod router_assist;
 pub mod schema_jobs;
@@ -13,6 +14,9 @@ pub use citus_timescale::{
     distribute_hypertable_plan, AddContinuousAggregateDistributedPlan, AddPolicyDistributed,
     AddPolicyDistributedPlan, CompanionError, CompanionSqlPlan, DistributedHypertablePlan,
     TimeRangeShardPrunerPlan, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
+};
+pub use lsp_metadata::{
+    LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
 pub use observability::{
     DistributedStatPlan, IdleTransactionAction, IdleTransactionReaperPlan, LatencyPercentile,
@@ -50,6 +54,7 @@ mod pg18 {
             ("TS3", "distributed continuous aggregates", "sql-plan"),
             ("TS4", "distributed retention policy", "sql-plan"),
             ("TS5", "time-range shard pruner", "sql-plan"),
+            ("TS8", "LSP hypertable invariants", "sql-plan"),
             ("A1", "pgai-compatible vectorizer DSL", "planned"),
             ("O1", "query percentile views", "planned"),
             ("O2", "distributed stats view", "planned"),
@@ -66,6 +71,8 @@ mod pg18 {
             ("TO3", "tenant migration online", "planned"),
             ("TO4", "tenant archive", "planned"),
             ("TO5", "tenant region affinity", "planned"),
+            ("D4", "citus-lsp metadata views", "sql-plan"),
+            ("M5", "LSP migration quick-fix metadata", "sql-plan"),
         ])
     }
 
