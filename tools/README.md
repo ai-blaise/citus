@@ -26,13 +26,15 @@ CI.
 editing: Citus colocation checks, distribution-column safety, tenant-filter
 hints, Timescale hypertable bridge diagnostics, and quick-fix planning.
 
-`citus-watch` now has the initial Rust dashboard contract for the unified live
-view over companion metadata, Prometheus metrics, and pool-side signals.
+`citus-watch` now has the initial Rust dashboard contract for the unified
+operator view over companion metadata, Prometheus metrics, and pool-side
+signals.
 `cargo run -p ai_blaise_citus_watch -- run-canonical` emits the deterministic
 watch dashboard summary used by CI.
 
 `citus-schema-designer` now has the initial Rust visualization contract for
-distribution, hypertable, search-index, webhook, and live shard-map overlays.
+distribution, hypertable, search-index, webhook, and operator shard-map
+overlays.
 `cargo run -p ai_blaise_citus_schema_designer -- run-canonical` emits the
 deterministic overlay-layer summary used by CI.
 

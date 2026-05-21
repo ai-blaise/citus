@@ -18,7 +18,7 @@ TimescaleDB cohabitation.
 This patch intentionally does not infer hook ownership from function pointers.
 The GUC is a deployment-level trust contract, not production evidence. Supported
 coextensions are safe for production only after a real Citus+TimescaleDB
-cohabitation smoke records the exact image digest, command log, and CI or VM run
+cohabitation smoke records the image identity, command path, and CI or VM run
 in the production-readiness audit.
 ---
  src/backend/distributed/shared_library_init.c | 110 +++++++++++++++++++++----

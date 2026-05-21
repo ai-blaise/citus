@@ -330,7 +330,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "D10",
-        feature_name: "production hardening runbook",
+        feature_name: "release hardening runbook",
         status: "ops-contract",
     },
     FeatureStatus {

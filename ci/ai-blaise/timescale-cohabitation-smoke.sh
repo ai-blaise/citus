@@ -175,17 +175,26 @@ SQL
 
 mkdir -p "$(dirname "${evidence_file}")"
 image_id="$(docker image inspect --format '{{.Id}}' "${image}")"
+if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "Timescale/Citus cohabitation image did not report a stable image identity: ${image_id}" >&2
+  exit 1
+fi
+
 base_digest="$(
   docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${base_image}" 2>/dev/null |
     awk 'NR == 1 { print; exit }'
 )"
+git_sha="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
+command_path="postgres -c shared_preload_libraries=timescaledb,citus -c citus.cohabit_extensions=timescaledb"
 {
-  printf 'image\timage_id\tbase_image\tbase_digest\tshared_preload_libraries\tcohabit_extensions\n'
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf 'git_sha\timage\timage_id\tbase_image\tbase_digest\tcommand_path\tshared_preload_libraries\tcohabit_extensions\n'
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "${git_sha}" \
     "${image}" \
     "${image_id}" \
     "${base_image}" \
     "${base_digest}" \
+    "${command_path}" \
     "timescaledb,citus" \
     "timescaledb"
 } >"${evidence_file}"

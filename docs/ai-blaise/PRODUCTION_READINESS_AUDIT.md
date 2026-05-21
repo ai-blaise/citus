@@ -119,6 +119,20 @@ more production-ready than the artifacts justified.
     operations, and live dashboard views. Even when future-prerequisite framed,
     those phrases made alpha contracts read closer to promoted runtime behavior
     than their status allowed.
+31. The first alpha wording guard covered only a narrow set of standalone
+    feature headings. Other alpha headings, source-only addendum rows, and tool
+    READMEs still used stable/live/production phrasing for contracts that are
+    not promoted runtime behavior.
+32. The Makefile target for the real Timescale/Citus cohabitation smoke already
+    failed closed with `REQUIRE_DOCKER=1`, but the production gap audit did not
+    explicitly enforce that target contract. A future edit could have weakened
+    the local release gate while the audit still checked only the script and
+    GitHub workflow paths.
+33. The TS6 reference patch still said cohabitation promotion required an exact
+    image digest and command log, while the executable smoke recorded an image
+    identity but not the commit and command path in its evidence file. The
+    wording and evidence schema needed to agree so a production audit cannot
+    point at evidence the script does not actually produce.
 
 ## Corrections
 
@@ -309,6 +323,17 @@ more production-ready than the artifacts justified.
   tenant scoping, and citus-watch dashboard/TUI contracts. The production gap
   audit rejects the stale phrases so alpha contracts stay visibly
   non-production.
+- Alpha wording cleanup now also covers source-only addendum rows and tool
+  READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, O5, and
+  O12 wording uses versioned, operator, release, or measured-evidence language
+  instead of stable/live/production phrasing for alpha contracts.
+- The production gap audit now explicitly checks that the
+  `timescale-cohabitation-smoke` Makefile target runs with `REQUIRE_DOCKER=1`,
+  matching the live cohabitation script and GitHub image workflow guardrails.
+- The Timescale/Citus cohabitation smoke evidence file now records the Git SHA,
+  stable Docker image identity, base image reference, command path, preload
+  libraries, and cohabitation allowlist. The TS6 reference patch and docs now
+  use that same evidence contract.
 
 ## Verification Standard
 
@@ -342,8 +367,9 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Production-ready observability chart claims require parsed Grafana JSON,
   exact panel/PromQL contracts, live installed ConfigMap/PrometheusRule
   resources, and guarded pool error-rate expressions.
-- Alpha feature docs must not use production-sounding wording for unpromoted
-  contracts; use runtime, tenant-workload, or operator-workflow language until
+- Alpha feature docs, source-only addendum rows, and tool READMEs must not use
+  production-sounding wording for unpromoted contracts; use versioned, runtime,
+  tenant-workload, release-hardening, or operator-workflow language until
   measured production evidence supports a status promotion.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.

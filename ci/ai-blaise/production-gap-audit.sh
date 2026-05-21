@@ -496,6 +496,18 @@ if non_production_with_prod_evidence:
     )
 
 stale_alpha_production_phrases = [
+    ("T1", "stable GUC"),
+    ("S6", "stable helper APIs"),
+    ("M9", "live shard-placement overlays"),
+    ("M9", "live shard-map overlay model"),
+    ("L6", "stable federation contract"),
+    ("API2", "stable view contract"),
+    ("PM3", "freezing a stable plan"),
+    ("PM3", "stable executions"),
+    ("Sto4", "live only in object-store policy"),
+    ("D6", "stable model"),
+    ("D6", "live CRD or companion state"),
+    ("O5", "live VM/Kubernetes evidence"),
     ("T15", "production `serve` data plane"),
     ("A5", "provider calls run in production"),
     ("PM3", "stable production queries"),
@@ -511,6 +523,37 @@ for feature_id, phrase in stale_alpha_production_phrases:
         fail(f"{feature_id} feature heading is required for alpha wording guard")
     if compact(phrase) in compact(entry["body"]):
         fail(f"{feature_id} alpha heading contains production-sounding stale phrase: {phrase}")
+
+stale_alpha_addendum_phrases = [
+    ("D10", "Production hardening runbook"),
+    ("O12", "pg_show_plans live plans"),
+    ("O12", "live plan inspection"),
+]
+for feature_id, phrase in stale_alpha_addendum_phrases:
+    row = addendum_by_id.get(feature_id)
+    if row is None:
+        fail(f"{feature_id} source-only addendum row is required for alpha wording guard")
+    row_text = " ".join(row.values())
+    if compact(phrase) in compact(row_text):
+        fail(f"{feature_id} source-only addendum row contains production-sounding stale phrase: {phrase}")
+
+stale_alpha_readme_phrases = {
+    ROOT / "tools/README.md": (
+        "unified live view",
+        "live shard-map overlays",
+    ),
+    ROOT / "tools/citus-schema-designer/README.md": (
+        "live shard placements",
+    ),
+    ROOT / "sidecar/shared/README.md": (
+        "live VM/Kubernetes evidence",
+    ),
+}
+for path, phrases in stale_alpha_readme_phrases.items():
+    text = compact(read(path))
+    for phrase in phrases:
+        if compact(phrase) in text:
+            fail(f"{path} contains production-sounding stale alpha phrase: {phrase}")
 
 audit_compact = compact(audit)
 docs_compact = compact(docs)
@@ -665,7 +708,7 @@ for pattern in (
 for phrase in (
     "deployment-level trust contract, not production evidence",
     "real citus+timescaledb cohabitation smoke",
-    "exact image digest, command log, and ci or vm run",
+    "image identity, command path, and ci or vm run",
 ):
     if phrase not in ts6_patch_compact:
         fail(f"TS6 patch metadata must preserve cohabitation evidence boundary: {phrase}")
@@ -993,6 +1036,9 @@ for phrase in (
     "pg_dist_partition",
     "expected six Timescale bridge feature ids",
     "timescale-cohabitation-evidence.tsv",
+    "stable image identity",
+    "git_sha",
+    "command_path",
 ):
     if phrase not in timescale_cohabitation_smoke:
         fail(
@@ -1130,6 +1176,10 @@ for target, command in (
     ("pool-proxy-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh"),
     ("sql-extension-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/sql-extension-smoke.sh"),
     ("timescale-bridge-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/timescale-bridge-smoke.sh"),
+    (
+        "timescale-cohabitation-smoke",
+        "REQUIRE_DOCKER=1 ci/ai-blaise/timescale-cohabitation-smoke.sh",
+    ),
     (
         "observability-replication-smoke",
         "REQUIRE_DOCKER=1 ci/ai-blaise/observability-replication-smoke.sh",

@@ -306,6 +306,9 @@ grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_cohabitation_smoke}
 grep -Fq "pg_dist_partition" "${timescale_cohabitation_smoke}"
 grep -Fq "expected six Timescale bridge feature ids" "${timescale_cohabitation_smoke}"
 grep -Fq "timescale-cohabitation-evidence.tsv" "${timescale_cohabitation_smoke}"
+grep -Fq "stable image identity" "${timescale_cohabitation_smoke}"
+grep -Fq "git_sha" "${timescale_cohabitation_smoke}"
+grep -Fq "command_path" "${timescale_cohabitation_smoke}"
 if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_cohabitation_smoke}"; then
   echo "real Timescale/Citus cohabitation smoke must not stub create_distributed_table" >&2
   exit 1

@@ -27,7 +27,7 @@ with this Citus fork and `ai_blaise_citus` installed, starts PostgreSQL with
 `citus.cohabit_extensions=timescaledb`, creates real `citus`, `timescaledb`,
 and `ai_blaise_citus` extensions, verifies real Citus distribution metadata in
 `pg_dist_partition`, and runs the bridge apply functions without defining a
-Citus stub. The script records the image identity in
+Citus stub. The script records the Git SHA, image identity, and command path in
 `artifacts/timescale-cohabitation-evidence.tsv`.
 
 When the allowlist is non-empty, Citus stores any preexisting planner,
