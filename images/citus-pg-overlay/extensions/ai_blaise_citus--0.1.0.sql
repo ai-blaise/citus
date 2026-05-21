@@ -76,7 +76,7 @@ AS $$
         ('D7', 'Helm one-line install', 'ops-contract'),
         ('D8', 'infrastructure deploy wrapper', 'ops-contract'),
         ('D9', 'canary upgrade runbook', 'ops-contract'),
-        ('D10', 'production hardening runbook', 'ops-contract'),
+        ('D10', 'release hardening runbook', 'ops-contract'),
         ('D11', 'MCP developer workflow', 'ops-contract'),
         ('MR9', 'region survival runbook', 'ops-contract'),
         ('RT5', 'Phoenix-channel-compatible realtime client', 'ops-contract'),

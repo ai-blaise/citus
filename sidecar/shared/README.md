@@ -12,7 +12,8 @@ sidecar contract validation.
 
 Tracing and OpenTelemetry export are not implemented in this shared runtime.
 `FEATURE: O5` remains alpha for the sidecar deployment contract until real
-trace emission, collector wiring, and live VM/Kubernetes evidence are added.
+trace emission, collector wiring, and measured VM/Kubernetes evidence are
+added.
 Configuration loading and PostgreSQL connection helpers are also outside the
 current shared runtime surface.
 

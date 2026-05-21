@@ -191,7 +191,7 @@ federation extension policy.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool settings-bucket contract and stable GUC
+**Summary**: Defines the pool settings-bucket contract and versioned GUC
 fingerprint for sharing worker connections across sessions with identical
 tracked GUC state.
 
@@ -570,7 +570,7 @@ real `timescale/timescaledb:latest-pg17` image with this Citus fork installed,
 starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
 `citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
 and `ai_blaise_citus` in the same server. The VM run in the production audit
-records the image identity and command path, and the smoke is part of
+records the Git SHA, image identity, and command path, and the smoke is part of
 `make -f Makefile.ai-blaise gate-close`.
 
 **References**:
@@ -1093,7 +1093,7 @@ consensus logic into Postgres backends.
 **Summary**: Defines companion-side placement generation and local-placement
 query contracts used by plan-cache invalidation and router fast paths.
 
-**Motivation**: Pool and companion routing need stable helper APIs before
+**Motivation**: Pool and companion routing need versioned helper APIs before
 placement-generation invalidation can move beyond the pool model.
 
 **Citus comparison**: Vanilla Citus tracks shard placements but does not
@@ -1830,13 +1830,13 @@ two-step plan/apply semantics.
 **Bundled extension dep**: none
 
 **Summary**: Defines schema visualization data for distribution, hypertable,
-search-index, webhook, and live shard-placement overlays.
+search-index, webhook, and operator shard-placement overlays.
 
 **Motivation**: Distributed schema design needs visual output that shows shard
 and extension-specific state rather than only ordinary table relationships.
 
 **Citus comparison**: Vanilla Citus does not ship a visual schema designer or
-live shard-map overlay model.
+operator shard-map overlay model.
 
 **References**:
 
@@ -2486,7 +2486,7 @@ transaction boundaries.
 Snowflake, Trino, Spark, and Databricks, and reports canonical publication
 counts.
 
-**Motivation**: External analytical readers need a stable federation contract
+**Motivation**: External analytical readers need a versioned federation contract
 without learning Citus shard placement directly.
 
 **Citus comparison**: Vanilla Citus does not publish lakehouse catalogs for
@@ -2627,7 +2627,7 @@ starts serving table-backed endpoints.
 **Summary**: Binds REST routes to helper views with distribution column and
 shard-count metadata.
 
-**Motivation**: Auto-REST over distributed tables needs a stable view contract
+**Motivation**: Auto-REST over distributed tables needs a versioned view contract
 so requests route through Citus-aware helper views.
 
 **Citus comparison**: Vanilla Citus does not generate PostgREST helper views.
@@ -3219,8 +3219,8 @@ issuance can enforce step-up authentication.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_hint_plan`, `sr_plan`
 
-**Summary**: Defines companion SQL-plan contracts for freezing a stable plan,
-binding it to a hint set, and auto-promoting it after enough stable
+**Summary**: Defines companion SQL-plan contracts for freezing a repeatable
+plan, binding it to a hint set, and auto-promoting it after enough consistent
 executions.
 
 **Motivation**: Planner changes in a distributed database need an explicit
@@ -3415,8 +3415,8 @@ URLs.
 
 **Summary**: Carries tenant-column ACL binding for object metadata rows.
 
-**Motivation**: Storage ACLs must line up with tenant RLS rather than live only
-in object-store policy.
+**Motivation**: Storage ACLs must line up with tenant RLS rather than existing
+only in object-store policy.
 
 **Citus comparison**: Vanilla Citus does not manage storage ACLs.
 
@@ -3655,9 +3655,9 @@ workflows, with mutating actions requiring exact confirmations.
 **Summary**: Defines the initial contract for the DrawDB-based visual schema
 designer's Citus overlays.
 
-**Motivation**: Schema designers need a stable model for distribution,
+**Motivation**: Schema designers need a versioned model for distribution,
 hypertable, search, webhook, and shard-placement layers before the UI reads
-live CRD or companion state.
+operator CRD or companion state.
 
 **Citus comparison**: Vanilla Citus does not include a visual schema designer.
 
@@ -4166,7 +4166,7 @@ only to the shared probe/metrics runtime.
 replicas, resources, and type-specific configuration across the V2 sidecar
 surface. The current implementation does not emit or export OpenTelemetry
 traces; trace propagation remains unimplemented until real runtime code,
-collector wiring, and live VM/Kubernetes evidence are added.
+collector wiring, and measured VM/Kubernetes evidence are added.
 
 **Motivation**: Rollout behavior is only useful if every sidecar is declared
 and reconciled through a consistent resource contract.
@@ -4298,7 +4298,7 @@ evidence.
 | C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
+| D10 | Release hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` | `cargo run -p ai_blaise_citus_mcp -- run-canonical` |
 | EF6 | In-database JavaScript and Rust UDF substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle plv8/plrust as a platform contract. | `FEATURE: EF6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
@@ -4327,7 +4327,7 @@ evidence.
 | O8 | OS metrics via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pgnodemx. | `FEATURE: O8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | O9 | Kernel stats via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_stat_kcache. | `FEATURE: O9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | O11 | pg_stat_monitor alternative | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_stat_monitor. | `FEATURE: O11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| O12 | pg_show_plans live plans | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require live plan inspection. | `FEATURE: O12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
+| O12 | pg_show_plans plan-inspection contract | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require plan-inspection packaging. | `FEATURE: O12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | PM1 | pg_hint_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package hint-plan policy as an overlay contract. | `FEATURE: PM1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | PM2 | sr_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle saved-plan backends. | `FEATURE: PM2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | R3 | Columnstore-on-worker policy | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this worker tiering policy. | `FEATURE: R3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
