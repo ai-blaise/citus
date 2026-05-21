@@ -18,6 +18,7 @@ RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
 UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
 DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
+COHABITATION_DOC = ROOT / "docs/ai-blaise/COHABITATION.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
@@ -47,6 +48,8 @@ SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
 CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
+TS6_PATCH = ROOT / "patches/0001-allow-trusted-hook-coextensions.patch"
+KIND_TIMESCALE_SMOKE = ROOT / "tests/e2e/kind-timescale-citus-smoke.sh"
 CUSTOM_CONTRACT_READMES = [
     ROOT / path
     for path in (
@@ -243,6 +246,7 @@ runbook = read(RUNBOOK)
 upgrade_runbook = read(UPGRADE_RUNBOOK)
 dr_runbook = read(DR_RUNBOOK)
 e2e_doc = read(E2E_DOC)
+cohabitation_doc = read(COHABITATION_DOC)
 architecture_doc = read(ARCHITECTURE_DOC)
 bundled_extensions_doc = read(BUNDLED_EXTENSIONS_DOC)
 images_overview = read(IMAGES_OVERVIEW)
@@ -255,6 +259,7 @@ pool_smoke = read(POOL_SMOKE)
 timescale_smoke = read(TIMESCALE_SMOKE)
 observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
+kind_timescale_smoke = read(KIND_TIMESCALE_SMOKE)
 deploy_check = read(DEPLOY_CHECK)
 deploy_script = read(DEPLOY_SCRIPT)
 prod_values = read(PROD_VALUES)
@@ -270,6 +275,7 @@ operator_workflow = read(OPERATOR_WORKFLOW)
 sidecar_workflow = read(SIDECAR_WORKFLOW)
 slop_workflow = read(SLOP_WORKFLOW)
 makefile = read(MAKEFILE)
+ts6_patch = read(TS6_PATCH)
 sources = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", sources))
@@ -333,6 +339,7 @@ runbook_compact = compact(runbook)
 upgrade_runbook_compact = compact(upgrade_runbook)
 dr_runbook_compact = compact(dr_runbook)
 e2e_compact = compact(e2e_doc)
+cohabitation_compact = compact(cohabitation_doc)
 architecture_compact = compact(architecture_doc)
 bundled_extensions_compact = compact(bundled_extensions_doc)
 images_overview_compact = compact(images_overview)
@@ -390,9 +397,17 @@ for pattern in (
     "idle transaction reaper",
     "o2: distributed stats view",
     "coordinator and worker behavior to debug distributed plans",
+    "validated cohabitation",
 ):
     if pattern in docs_compact:
         fail(f"NEW_FEATURES.md contains stale production-ready overclaim: {pattern}")
+for phrase in (
+    "citus.cohabit_extensions` is a deployment-level trust contract, not production evidence",
+    "real citus+timescaledb cohabitation smoke records the exact image digest",
+    "validates the configured timescale/citus cohabitation precondition",
+):
+    if phrase not in docs_compact:
+        fail(f"NEW_FEATURES.md must preserve cohabitation evidence boundary: {phrase}")
 
 for phrase in (
     "release prerequisites, not a waiver for alpha features",
@@ -439,6 +454,39 @@ for phrase in (
         fail(f"E2E.md must preserve model-disclosure phrase: {phrase}")
 
 for phrase in (
+    "current suite boundary is intentionally conservative",
+    "not production evidence for hook-chain safety",
+    "live kind smoke is opt-in",
+    "requires a real operand image containing postgres, citus, timescaledb, and `ai_blaise_citus`",
+    "exact image digest, command log, and ci or vm run",
+):
+    if phrase not in cohabitation_compact:
+        fail(f"COHABITATION.md must preserve cohabitation evidence boundary: {phrase}")
+
+ts6_patch_compact = compact(ts6_patch)
+for pattern in (
+    "operator-controlled path for validated",
+    "validated with citus",
+):
+    if pattern in ts6_patch_compact:
+        fail(f"TS6 patch metadata/code hint contains stale validation overclaim: {pattern}")
+for phrase in (
+    "deployment-level trust contract, not production evidence",
+    "real citus+timescaledb cohabitation smoke",
+    "exact image digest, command log, and ci or vm run",
+):
+    if phrase not in ts6_patch_compact:
+        fail(f"TS6 patch metadata must preserve cohabitation evidence boundary: {phrase}")
+
+kind_timescale_smoke_compact = compact(kind_timescale_smoke)
+for phrase in (
+    "contract-only check verified",
+    "run live cohabitation evidence",
+):
+    if phrase not in kind_timescale_smoke_compact:
+        fail(f"kind-timescale-citus-smoke.sh must preserve contract-only evidence boundary: {phrase}")
+
+for phrase in (
     "manifest/init contract, not production evidence",
     "feature: bundle1` remains alpha",
     "real operand image build smoke verifies",
@@ -466,9 +514,11 @@ for phrase in (
     "feature: bundle1` alpha operand-image contract",
     "not production evidence for the full operand image",
     "real operand image build/initdb smoke",
+    "not production evidence for hook-chain safety",
+    "real citus+timescaledb cohabitation smoke records the exact image",
 ):
     if phrase not in architecture_compact:
-        fail(f"ARCHITECTURE.md must preserve operand-image alpha guardrail: {phrase}")
+        fail(f"ARCHITECTURE.md must preserve alpha evidence boundary: {phrase}")
 
 for phrase in (
     "while bundle1 remains alpha",

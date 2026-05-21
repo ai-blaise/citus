@@ -37,5 +37,8 @@ not production evidence for the full operand image because the required binary
 extension bundle is not yet proven by a real operand image build/initdb smoke.
 The Hypertable operator reconcile path now wraps those companion plans in a
 guarded apply plan: create the extension, validate
-`companion_feature_status()`, assert Timescale/Citus cohabitation, then run the
-ordered TS1/TS2/TS3/TS4/TS5 SQL.
+`companion_feature_status()`, validate the configured Timescale/Citus
+cohabitation precondition, then run the ordered TS1/TS2/TS3/TS4/TS5 SQL. That
+precondition is not production evidence for hook-chain safety; TS6 remains
+alpha until a real Citus+TimescaleDB cohabitation smoke records the exact image
+digest, command log, and CI or VM run in the production-readiness audit.

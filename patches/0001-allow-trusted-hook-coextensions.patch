@@ -9,14 +9,16 @@ Citus currently errors during preload if planner, utility, executor, or explain
 hooks are already registered. That is correct as the default because Citus
 expects to be the innermost hook in several paths.
 
-ai-blaise/citus needs an explicit, operator-controlled path for validated
+ai-blaise/citus needs an explicit, operator-controlled path for trusted
 cohabitation tests. Add a postmaster GUC, citus.cohabit_extensions, that allows
 startup to continue when preexisting hooks are present and the deployment has
 listed trusted coextensions. The first target is TimescaleDB cohabitation.
 
 This patch intentionally does not infer hook ownership from function pointers.
-The GUC is a deployment-level trust contract and the cohabitation test suite is
-responsible for proving listed extensions are safe.
+The GUC is a deployment-level trust contract, not production evidence. Listed
+extensions are safe for production only after a real Citus+TimescaleDB
+cohabitation smoke records the exact image digest, command log, and CI or VM
+run in the production-readiness audit.
 ---
  src/backend/distributed/shared_library_init.c | 106 +++++++++++++++++++++----
  1 file changed, 91 insertions(+), 15 deletions(-)
@@ -84,8 +86,8 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		gettext_noop("Lists extensions allowed to install hooks before Citus."),
 +		gettext_noop("Citus normally must be loaded before PostgreSQL planner, "
 +					 "utility, executor, and explain hooks are installed. This "
-+					 "setting lists extensions whose hook chains have been "
-+					 "validated with Citus and may be trusted during preload."),
++					 "setting lists extensions the operator trusts during "
++					 "preload."),
 +		&CohabitExtensions,
 +		"",
 +		PGC_POSTMASTER,
@@ -114,12 +116,12 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +	 * pg_stat_statements et. al.) we have to be loaded before other hooks
 +	 * (thus as the innermost/last running hook) to be able to do our
 +	 * duties. For simplicity insist that all hooks are previously unused unless
-+	 * the operator explicitly opts into a validated cohabitation chain.
++	 * the operator explicitly opts into a trusted cohabitation chain.
 +	 */
 +	ereport(ERROR, (errmsg("Citus has to be loaded first"),
 +					errhint("Place citus at the beginning of "
 +							"shared_preload_libraries or configure "
-+							"citus.cohabit_extensions for validated "
++							"citus.cohabit_extensions for trusted "
 +							"coextensions.")));
 +}
 +
