@@ -295,19 +295,20 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 162
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Seven narrow headings are
-`Status: production-ready` because they have live VM/GitHub evidence: `D13`
-for the production runtime image matrix, `O4` for the shared sidecar
-health/readiness/metrics runtime, `O1` for the installable
+The current feature inventory contains 240 source `FEATURE:` markers and 163
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Eight narrow headings are
+`Status: production-ready` because they have live VM/GitHub evidence: `D8`
+for the production-safe deploy wrapper, `D13` for the production runtime image
+matrix, `O4` for the shared sidecar health/readiness/metrics runtime, `O1`
+for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
 streaming standby, and `R4` for the installable idle transaction detection SQL
-surface, and `Sec13` for pool CIDR access control with live allowed and denied
+surface, plus `Sec13` for pool CIDR access control with live allowed and denied
 SQL traffic proof. `TS18` remains alpha until real Citus+TimescaleDB
 cohabitation is verified without a stubbed distribution entrypoint. The other
 155 feature headings remain
-`Status: alpha`. The remaining 78 source markers are represented as V2
+`Status: alpha`. The remaining 77 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.
