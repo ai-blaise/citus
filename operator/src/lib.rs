@@ -45,6 +45,16 @@ pub use crds::vectorizer::{
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
+pub use reconcile::citus_cluster::{
+    CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan, CnpgClusterPlan,
+    PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
+    POOL_DEPLOYMENT_NAME_SUFFIX, POSTGRES_SHARED_PRELOAD_LIBRARIES,
+};
 pub use reconcile::hypertable::{
     HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
+};
+pub use reconcile::shard_group::{
+    ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
+    TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
+    CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
 };
