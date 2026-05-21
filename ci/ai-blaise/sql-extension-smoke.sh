@@ -88,6 +88,14 @@ CREATE TABLE timescale_bridge_call_log (
   called_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE control_plane_smoke_orders (
+  order_id bigserial PRIMARY KEY,
+  tenant_id text NOT NULL,
+  amount_cents integer NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb
+);
+
 CREATE FUNCTION create_hypertable(
   table_name regclass,
   time_column text,
@@ -187,6 +195,10 @@ DECLARE
   hash_index_again integer;
   range_index integer;
   plan_violation boolean;
+  migration_sql text;
+  advisor_sql text;
+  webhook_trigger_sql text;
+  webhook_event_count integer;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -217,11 +229,162 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'PM3', 'PM4', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'PM3', 'PM4', 'M1', 'M11', 'IA3', 'WH2', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 13 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, PM3, PM4, and observability features as sql-runtime';
+  ) <> 17 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, PM3, PM4, M1, M11, IA3, WH2, and observability features as sql-runtime';
   END IF;
+
+  PERFORM companion_internal.migrate_start(
+    'orders-expand-contract',
+    'control_plane_smoke_orders',
+    5000,
+    1000
+  );
+  migration_sql := companion_internal.migration_add_column(
+    'region',
+    'text',
+    '''us-east1'''
+  );
+  IF migration_sql NOT LIKE 'ALTER TABLE control_plane_smoke_orders ADD COLUMN IF NOT EXISTS region text DEFAULT %' THEN
+    RAISE EXCEPTION 'M1 migration_add_column did not render bounded expand DDL: %', migration_sql;
+  END IF;
+  migration_sql := companion_internal.migration_online_type_change(
+    'amount_cents',
+    'integer',
+    'bigint',
+    'amount_cents::bigint'
+  );
+  IF migration_sql NOT LIKE '%amount_cents__ai_blaise_new bigint%' THEN
+    RAISE EXCEPTION 'M11 online type-change helper did not render shadow-column DDL: %', migration_sql;
+  END IF;
+  PERFORM companion_internal.migrate_complete('orders-expand-contract');
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_migration_runs
+    WHERE migration_name = 'orders-expand-contract'
+      AND table_name = 'control_plane_smoke_orders'
+      AND status = 'completed'
+  ) THEN
+    RAISE EXCEPTION 'M1 migration run was not completed and visible';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM companion_migration_operations
+    WHERE migration_name = 'orders-expand-contract'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'M1/M11 migration operations were not recorded';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.migration_drop_column('orphan_column');
+    RAISE EXCEPTION 'M1 migration operation ran without migrate_start';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'no active companion migration; call companion_internal.migrate_start first' THEN
+        RAISE;
+      END IF;
+  END;
+  PERFORM companion_internal.migrate_start(
+    'orders-bad-type-change',
+    'control_plane_smoke_orders',
+    5000,
+    1000
+  );
+  BEGIN
+    PERFORM companion_internal.migration_online_type_change(
+      'amount_cents',
+      'integer',
+      'integer',
+      'amount_cents'
+    );
+    RAISE EXCEPTION 'M11 online type-change accepted identical types';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'from_type and to_type must differ' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.index_advisor_record_candidate(
+    '15 minutes',
+    'control_plane_smoke_orders',
+    'control_plane_orders_tenant_created_idx',
+    ARRAY['tenant_id', 'created_at'],
+    'btree',
+    1000,
+    700,
+    12
+  );
+  SELECT create_index_sql
+  INTO advisor_sql
+  FROM companion_index_advisor_ranked(10)
+  WHERE index_name = 'control_plane_orders_tenant_created_idx'::name;
+  IF advisor_sql NOT LIKE 'CREATE INDEX CONCURRENTLY IF NOT EXISTS control_plane_orders_tenant_created_idx ON control_plane_smoke_orders USING btree %' THEN
+    RAISE EXCEPTION 'IA3 ranked advisor did not render CREATE INDEX CONCURRENTLY SQL: %', advisor_sql;
+  END IF;
+  BEGIN
+    PERFORM companion_internal.index_advisor_record_candidate(
+      '15 minutes',
+      'control_plane_smoke_orders',
+      'control_plane_orders_bad_idx',
+      ARRAY['tenant_id'],
+      'btree',
+      1000,
+      1200,
+      1
+    );
+    RAISE EXCEPTION 'IA3 accepted a non-improving candidate';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'estimated_cost_after must be lower than estimated_cost_before' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.webhook_register(
+    'orders-webhook',
+    'control_plane_smoke_orders',
+    'https://hooks.example.test/orders',
+    '{"Authorization": "secret://webhooks/orders"}'::jsonb,
+    5
+  );
+  webhook_trigger_sql := companion_internal.install_webhook_trigger(
+    'control_plane_smoke_orders',
+    ARRAY['INSERT', 'UPDATE'],
+    'companion.webhook_queue',
+    'orders-webhook'
+  );
+  IF webhook_trigger_sql NOT LIKE 'CREATE TRIGGER companion_webhook_% AFTER INSERT OR UPDATE ON control_plane_smoke_orders%' THEN
+    RAISE EXCEPTION 'WH2 install_webhook_trigger did not render/install trigger SQL: %', webhook_trigger_sql;
+  END IF;
+  INSERT INTO control_plane_smoke_orders(tenant_id, amount_cents, metadata)
+  VALUES ('tenant-a', 100, '{"source":"insert"}'::jsonb);
+  UPDATE control_plane_smoke_orders
+  SET amount_cents = 125
+  WHERE tenant_id = 'tenant-a';
+  SELECT count(*)
+  INTO webhook_event_count
+  FROM companion_webhook_events
+  WHERE webhook_name = 'orders-webhook'
+    AND queue_name = 'companion.webhook_queue';
+  IF webhook_event_count <> 2 THEN
+    RAISE EXCEPTION 'WH2 webhook trigger did not enqueue INSERT and UPDATE rows';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.webhook_register(
+      'bad-webhook',
+      'control_plane_smoke_orders',
+      'secret://orders',
+      '{}'::jsonb,
+      1
+    );
+    RAISE EXCEPTION 'WH2 accepted a non-http webhook URL';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'url must be http or https' THEN
+        RAISE;
+      END IF;
+  END;
 
   PERFORM companion_internal.plan_freeze('query-hash-1', '<Plan><Node /></Plan>', 'orders_hint');
   PERFORM companion_internal.plan_auto_promote('query-hash-1', 100, 7);
