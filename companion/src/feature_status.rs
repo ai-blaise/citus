@@ -269,51 +269,6 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
         status: "sql-plan",
     },
     FeatureStatus {
-        feature_id: "A7",
-        feature_name: "pgvector cohabitation",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "Search1",
-        feature_name: "pg_search bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "G1",
-        feature_name: "Apache AGE bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "JS1",
-        feature_name: "pg_jsonschema bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "PM1",
-        feature_name: "pg_hint_plan bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "IA1",
-        feature_name: "hypopg bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "O7",
-        feature_name: "wait-event sampling",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "Sec3",
-        feature_name: "pgaudit and file audit",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "WF1",
-        feature_name: "WAL inspection from SQL",
-        status: "image-contract",
-    },
-    FeatureStatus {
         feature_id: "D7",
         feature_name: "Helm one-line install",
         status: "ops-contract",
@@ -387,6 +342,196 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
         feature_id: "T7",
         feature_name: "pipelined client protocol in pool",
         status: "ops-contract",
+    },
+    FeatureStatus {
+        feature_id: "A7",
+        feature_name: "pgvector cohabitation",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "A12",
+        feature_name: "vchord alternate vector index",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C11",
+        feature_name: "DDL replication via pgl_ddl_deploy",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C12",
+        feature_name: "replication-slot failover",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C13",
+        feature_name: "subscription failover",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "EF6",
+        feature_name: "in-database JavaScript and Rust UDF substrate",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "F2",
+        feature_name: "foreign data wrapper bundle",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "F5",
+        feature_name: "outbound HTTP extensions",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "G1",
+        feature_name: "Apache AGE bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Geo1",
+        feature_name: "PostGIS bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "IA1",
+        feature_name: "HypoPG bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "IA2",
+        feature_name: "pg_qualstats bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "JS1",
+        feature_name: "pg_jsonschema bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "L11",
+        feature_name: "pg_parquet bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M6",
+        feature_name: "DDL replication",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M10",
+        feature_name: "track settings drift",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M12",
+        feature_name: "UUIDv7 primary keys",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "MR7",
+        feature_name: "cross-region active-active references",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O7",
+        feature_name: "wait-event sampling",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O8",
+        feature_name: "OS metrics via SQL",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O9",
+        feature_name: "kernel stats via SQL",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O11",
+        feature_name: "pg_stat_monitor alternative",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O12",
+        feature_name: "pg_show_plans plan-inspection contract",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "PM1",
+        feature_name: "pg_hint_plan bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "PM2",
+        feature_name: "sr_plan bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "R6",
+        feature_name: "bloat-free queue substrate",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "R11",
+        feature_name: "pg_warm bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search1",
+        feature_name: "pg_search bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search4",
+        feature_name: "RUM index bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search5",
+        feature_name: "pg_trgm bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search6",
+        feature_name: "citext bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec3",
+        feature_name: "pgaudit and file audit",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec4",
+        feature_name: "pgsodium crypto",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec10",
+        feature_name: "pg_safeupdate guard",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec11",
+        feature_name: "CDC anonymization extension",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec14",
+        feature_name: "pgcrypto bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec15",
+        feature_name: "encryption-at-rest with CMK",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "WF1",
+        feature_name: "pg_walinspect forensic workflow",
+        status: "extension-catalog-runtime",
     },
 ];
 

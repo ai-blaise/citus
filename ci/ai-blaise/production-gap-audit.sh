@@ -30,6 +30,7 @@ SQL_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 LSP_SMOKE = ROOT / "ci/ai-blaise/citus-lsp-smoke.sh"
+MCP_SMOKE = ROOT / "ci/ai-blaise/mcp-stdio-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
@@ -298,6 +299,7 @@ slop_workflow = read(SLOP_WORKFLOW)
 tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
 lsp_smoke = read(LSP_SMOKE)
+mcp_smoke = read(MCP_SMOKE)
 ts6_patch = read(TS6_PATCH)
 shared_library_init = read(SHARED_LIBRARY_INIT)
 sources = source_text()
@@ -371,94 +373,7 @@ if set(addendum_by_id) != source_only_ids:
         + ", ".join(sorted(set(addendum_by_id) - source_only_ids))
     )
 
-source_only_evidence_requirements = {
-    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical": {
-        "A7",
-        "A12",
-        "C11",
-        "C12",
-        "C13",
-        "EF6",
-        "F2",
-        "F5",
-        "G1",
-        "Geo1",
-        "IA1",
-        "IA2",
-        "JS1",
-        "L11",
-        "M6",
-        "M10",
-        "M12",
-        "MR7",
-        "O7",
-        "O8",
-        "O9",
-        "O11",
-        "O12",
-        "PM1",
-        "PM2",
-        "R6",
-        "R11",
-        "Search1",
-        "Search4",
-        "Search5",
-        "Search6",
-        "Sec3",
-        "Sec4",
-        "Sec10",
-        "Sec11",
-        "Sec14",
-        "Sec15",
-        "WF1",
-    },
-    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical": {
-        "A10",
-        "A11",
-        "Edge1",
-        "Edge2",
-        "F3",
-        "F4",
-        "L7",
-        "L10",
-        "M4",
-        "MR3",
-        "MR6",
-        "R3",
-        "R8",
-        "R12",
-        "S1",
-        "S3",
-        "S8",
-        "S12",
-        "Sto2",
-        "T4",
-        "T10",
-        "T11",
-        "T13",
-        "T14",
-        "TS10",
-        "TS11",
-    },
-    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical": {
-        "A9",
-        "D9",
-        "D10",
-        "MR9",
-        "RT5",
-        "S7",
-        "Sec7",
-        "Sec8",
-        "Sec9",
-        "T6",
-    },
-    "cargo run -p ai_blaise_citus_mcp -- run-canonical": {
-        "D11",
-    },
-    "cargo run -p ai_blaise_citus_pool -- run-canonical": {
-        "T7",
-    },
-}
+source_only_evidence_requirements = {}
 expected_source_only_evidence_ids = set().union(*source_only_evidence_requirements.values())
 if expected_source_only_evidence_ids != source_only_ids:
     fail(
@@ -500,7 +415,7 @@ for phrase in (
     "without waiting for the first result",
     "pipeline_one",
     "pipeline_two",
-    "broader transaction-batching, shard-aware routing, and `FEATURE: T7` source-only pipeline contract remain alpha",
+    "broader transaction-batching, shard-aware routing, and `FEATURE: T7` pipeline contract remain alpha",
     "ci/ai-blaise/pool-proxy-smoke.sh",
 ):
     if compact(phrase) not in compact(t15_entry["body"]):
@@ -1014,6 +929,66 @@ for feature_id, required_phrases in (
         if compact(phrase) not in compact(entry["body"]):
             fail(f"{feature_id} production-ready boundary is missing: {phrase}")
 
+extension_catalog_runtime_ids = {
+    "A7",
+    "A12",
+    "C11",
+    "C12",
+    "C13",
+    "EF6",
+    "F2",
+    "F5",
+    "G1",
+    "Geo1",
+    "IA1",
+    "IA2",
+    "JS1",
+    "L11",
+    "M6",
+    "M10",
+    "M12",
+    "MR7",
+    "O7",
+    "O8",
+    "O9",
+    "O11",
+    "O12",
+    "PM1",
+    "PM2",
+    "R6",
+    "R11",
+    "Search1",
+    "Search4",
+    "Search5",
+    "Search6",
+    "Sec3",
+    "Sec4",
+    "Sec10",
+    "Sec11",
+    "Sec14",
+    "Sec15",
+    "WF1",
+}
+for feature_id in sorted(extension_catalog_runtime_ids):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for extension-catalog SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow extension-catalog SQL runtime")
+    for phrase in (
+        "installable SQL extension catalog runtime",
+        "companion_internal.seed_extension_catalog",
+        "companion_extension_catalog",
+        "companion_extension_feature_coverage",
+        "companion_extension_required",
+        "companion_required_preload_libraries",
+        "hard-blocked extensions fail closed",
+        "Actual binary extension installation, full operand image build, initdb extension creation, and operator package reconciliation remain alpha",
+        "ci/ai-blaise/sql-extension-smoke.sh",
+    ):
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} extension-catalog production-ready boundary is missing: {phrase}")
+
 for feature_id, required_phrases in (
     (
         "Sec5",
@@ -1123,18 +1098,15 @@ for feature_id, phrase in stale_alpha_production_phrases:
     if compact(phrase) in compact(entry["body"]):
         fail(f"{feature_id} alpha heading contains production-sounding stale phrase: {phrase}")
 
-stale_alpha_addendum_phrases = [
+stale_alpha_contract_heading_phrases = [
     ("D10", "Production hardening runbook"),
-    ("O12", "pg_show_plans live plans"),
-    ("O12", "live plan inspection"),
 ]
-for feature_id, phrase in stale_alpha_addendum_phrases:
-    row = addendum_by_id.get(feature_id)
-    if row is None:
-        fail(f"{feature_id} source-only addendum row is required for alpha wording guard")
-    row_text = " ".join(row.values())
-    if compact(phrase) in compact(row_text):
-        fail(f"{feature_id} source-only addendum row contains production-sounding stale phrase: {phrase}")
+for feature_id, phrase in stale_alpha_contract_heading_phrases:
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for alpha wording guard")
+    if compact(phrase) in compact(entry["body"]):
+        fail(f"{feature_id} alpha heading contains production-sounding stale phrase: {phrase}")
 
 stale_alpha_readme_phrases = {
     ROOT / "tools/README.md": (
@@ -1190,21 +1162,27 @@ if expected_alpha_count not in audit_compact:
     fail(
         "PRODUCTION_READINESS_AUDIT.md must report the current alpha heading count"
     )
-expected_source_only_count = (
-    f"remaining {len(source_only_ids)} source markers are represented as v2 completion addendum rows"
-)
-if expected_source_only_count not in audit_compact:
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current source-only addendum row count"
+if source_only_ids:
+    expected_source_only_count = (
+        f"remaining {len(source_only_ids)} source markers are represented as v2 completion addendum rows"
     )
-if "every addendum row has a deterministic executable evidence command" not in audit_compact:
-    fail("PRODUCTION_READINESS_AUDIT.md must state source-only addendum evidence coverage")
+    if expected_source_only_count not in audit_compact:
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must report the current source-only addendum row count"
+        )
+    if "every addendum row has a deterministic executable evidence command" not in audit_compact:
+        fail("PRODUCTION_READINESS_AUDIT.md must state source-only addendum evidence coverage")
 
-expected_source_only = f"remaining {len(source_only_ids)} source markers"
-if expected_source_only not in audit_compact:
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current source-only/addendum count"
-    )
+    expected_source_only = f"remaining {len(source_only_ids)} source markers"
+    if expected_source_only not in audit_compact:
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must report the current source-only/addendum count"
+        )
+else:
+    if "no remaining source-only feature markers" not in audit_compact:
+        fail("PRODUCTION_READINESS_AUDIT.md must state that source-only feature markers are closed")
+    if "former v2 addendum rows were promoted to alpha feature headings with deterministic executable evidence" not in audit_compact:
+        fail("PRODUCTION_READINESS_AUDIT.md must document the promoted V2 addendum rows")
 
 for phrase in (
     "not production-ready as a whole",
@@ -1401,6 +1379,48 @@ for feature_id in sorted(operator_canonical_ids):
     if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in entry["body"]:
         fail(f"{feature_id} must cite the operator canonical runner as alpha contract evidence")
 evidence_runner_requirements = {
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical": {
+        "A10",
+        "A11",
+        "Edge1",
+        "Edge2",
+        "F3",
+        "F4",
+        "L7",
+        "L10",
+        "M4",
+        "MR3",
+        "MR6",
+        "R3",
+        "R8",
+        "R12",
+        "S1",
+        "S3",
+        "S8",
+        "S12",
+        "Sto2",
+        "T4",
+        "T10",
+        "T11",
+        "T13",
+        "T14",
+        "TS10",
+        "TS11",
+    },
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical": {
+        "A9",
+        "D9",
+        "D10",
+        "D11",
+        "MR9",
+        "RT5",
+        "S7",
+        "Sec7",
+        "Sec8",
+        "Sec9",
+        "T6",
+        "T7",
+    },
     "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical": {
         "A1",
         "API4",
@@ -1460,6 +1480,12 @@ evidence_runner_requirements = {
         "M8",
         "WF2",
     },
+    "cargo run -p ai_blaise_citus_mcp -- run-canonical": {
+        "D11",
+    },
+    "cargo run -p ai_blaise_citus_pool -- run-canonical": {
+        "T7",
+    },
 }
 for command, feature_ids in sorted(evidence_runner_requirements.items()):
     line = f"Executable: `{command}`"
@@ -1496,6 +1522,35 @@ if "bash ci/ai-blaise/citusctl-smoke.sh" not in tools_workflow:
     fail("tools workflow must run the citusctl plan-id smoke for D2")
 if "citusctl-smoke" not in makefile:
     fail("Makefile gate-close must include the citusctl plan-id smoke for D2")
+
+for feature_id in ("MCP1", "MCP2", "MCP3", "D11"):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for MCP stdio production evidence")
+    for phrase in (
+        "ci/ai-blaise/mcp-stdio-smoke.sh",
+        "serve-stdio",
+        "JSON-RPC",
+    ):
+        if phrase not in entry["body"]:
+            fail(f"{feature_id} must cite MCP stdio production evidence marker: {phrase}")
+for phrase in (
+    "FEATURE: MCP1 MCP2 MCP3 D11",
+    "serve-stdio",
+    "\"method\": \"initialize\"",
+    "\"method\": \"tools/list\"",
+    "\"name\": \"query_with_timeout\"",
+    "\"name\": \"tenant_archive\"",
+    "safe mode denied a destructive tool",
+    "tenant_scope is required",
+    "ai_blaise_citus_mcp stdio smoke passed",
+):
+    if phrase not in mcp_smoke:
+        fail(f"mcp-stdio-smoke.sh is missing real stdio proof marker: {phrase}")
+if "bash ci/ai-blaise/mcp-stdio-smoke.sh" not in tools_workflow:
+    fail("tools workflow must run the MCP stdio smoke")
+if "mcp-stdio-smoke" not in makefile:
+    fail("Makefile gate-close must include the MCP stdio smoke")
 
 for phrase in (
     "citus-lsp file-backed smoke passed",
@@ -1679,6 +1734,12 @@ for phrase in (
     "Sec6 ledger seals must reject deletion",
     "Sec6 ledger seal accepted an unsupported algorithm",
     "uid claim must not be empty",
+    "companion_internal.seed_extension_catalog",
+    "companion_extension_feature_coverage",
+    "companion_extension_required('A7')",
+    "companion_required_preload_libraries",
+    "extension catalog hard-block conflict check did not flag orioledb",
+    "extension catalog accepted empty feature ids",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
 ):
@@ -1789,6 +1850,18 @@ for phrase in (
     "CREATE FUNCTION companion_internal.plan_tenant_move",
     "CREATE FUNCTION companion_internal.plan_tenant_archive",
     "CREATE FUNCTION companion_internal.set_tenant_region_affinity",
+    "CREATE TABLE IF NOT EXISTS companion_internal.extension_catalog_contracts",
+    "CREATE VIEW companion_extension_catalog",
+    "CREATE VIEW companion_extension_feature_coverage",
+    "CREATE FUNCTION companion_internal.register_extension_contract",
+    "CREATE FUNCTION companion_internal.seed_extension_catalog",
+    "CREATE FUNCTION companion_extension_required",
+    "CREATE FUNCTION companion_required_preload_libraries",
+    "CREATE FUNCTION companion_extension_conflicts",
+    "CREATE FUNCTION companion_internal.assert_extension_allowed",
+    "'A7', 'pgvector cohabitation', 'extension-catalog-runtime'",
+    "'Search1', 'pg_search bundled', 'extension-catalog-runtime'",
+    "'Sec15', 'encryption-at-rest with CMK', 'extension-catalog-runtime'",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",

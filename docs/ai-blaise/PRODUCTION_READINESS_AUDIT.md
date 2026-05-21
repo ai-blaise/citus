@@ -120,7 +120,7 @@ more production-ready than the artifacts justified.
     those phrases made alpha contracts read closer to promoted runtime behavior
     than their status allowed.
 31. The first alpha wording guard covered only a narrow set of standalone
-    feature headings. Other alpha headings, source-only addendum rows, and tool
+    feature headings. Other alpha headings, former addendum entries, and tool
     READMEs still used stable/live/production phrasing for contracts that are
     not promoted runtime behavior.
 32. The Makefile target for the real Timescale/Citus cohabitation smoke already
@@ -343,7 +343,7 @@ more production-ready than the artifacts justified.
   tenant scoping, and citus-watch dashboard/TUI contracts. The production gap
   audit rejects the stale phrases so alpha contracts stay visibly
   non-production.
-- Alpha wording cleanup now also covers source-only addendum rows and tool
+- Alpha wording cleanup now also covers the former addendum entries and tool
   READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, O5, and
   O12 wording uses versioned, operator, release, or measured-evidence language
   instead of stable/live/production phrasing for alpha contracts.
@@ -461,7 +461,7 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Production-ready observability chart claims require parsed Grafana JSON,
   exact panel/PromQL contracts, live installed ConfigMap/PrometheusRule
   resources, and guarded pool error-rate expressions.
-- Alpha feature docs, source-only addendum rows, and tool READMEs must not use
+- Alpha feature docs, former addendum entries, and tool READMEs must not use
   production-sounding wording for unpromoted contracts; use versioned, runtime,
   tenant-workload, release-hardening, or operator-workflow language until
   measured production evidence supports a status promotion.
@@ -508,8 +508,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 57 narrow headings
+The current feature inventory contains 240 source `FEATURE:` markers and 240
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -539,14 +539,22 @@ installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
 runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
 and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
 aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
-`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes. The
-other 107
+`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes, plus
+`A7`, `A12`, `C11`, `C12`, `C13`, `EF6`, `F2`, `F5`, `G1`, `Geo1`, `IA1`,
+`IA2`, `JS1`, `L11`, `M6`, `M10`, `M12`, `MR7`, `O7`, `O8`, `O9`, `O11`,
+`O12`, `PM1`, `PM2`, `R6`, `R11`, `Search1`, `Search4`, `Search5`,
+`Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
+for the installable SQL extension catalog runtime that records required,
+optional, integration-target, preload, feature-coverage, and hard-block
+extension contracts, plus `MCP1`, `MCP2`, `MCP3`, and `D11` for the real
+`tools/citus-mcp` stdio JSON-RPC server, safe-mode denial, tenant-scope
+validation, and developer workflow smoke. The
+other 141
 feature headings remain
-`Status: alpha`. The remaining 76 source markers are represented as V2
-completion addendum rows rather than standalone feature headings; every
-addendum row has a deterministic executable evidence command and remains
-alpha. This is acceptable for catalog integrity, but it is not a production
-claim for the full feature plan.
+`Status: alpha`. There are no remaining source-only feature markers: the
+former V2 addendum rows were promoted to alpha feature headings with
+deterministic executable evidence. This is acceptable for catalog integrity,
+but it is not a production claim for the full feature plan.
 Every feature heading now has an explicit Executable, CI, Acceptance, SQL
 runtime, or SQL extension reference line. Those references are alpha contract
 evidence unless the entry is also marked `Status: production-ready`; they keep
@@ -571,7 +579,7 @@ they are replaced by measured evidence:
 `ci/ai-blaise/production-readiness-check.sh` now enforces this boundary. In
 normal audit mode it verifies source/doc synchronization, status semantics, and
 that this audit explicitly blocks overclaiming. In `production-release` mode it
-fails while any feature heading or source-only V2 addendum feature remains
+fails while any feature heading remains
 non-production, so release promotion cannot treat alpha contracts as
 production-ready functionality.
 `ci/ai-blaise/production-gap-audit.sh` enforces the same line from the other

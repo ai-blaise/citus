@@ -38,6 +38,9 @@ version = "0.1.0"
 [[package]]
 name = "ai_blaise_citus_mcp"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "ai_blaise_citus_operator"

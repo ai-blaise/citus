@@ -361,6 +361,18 @@ grep -Fq "CREATE FUNCTION companion_internal.schema_job_advance" "${image_dir}/e
 grep -Fq "CREATE FUNCTION companion_internal.plan_tenant_move" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.plan_tenant_archive" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.set_tenant_region_affinity" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.extension_catalog_contracts" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_extension_catalog" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_extension_feature_coverage" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.register_extension_contract" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.seed_extension_catalog" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_extension_required" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_required_preload_libraries" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_extension_conflicts" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.assert_extension_allowed" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'A7', 'pgvector cohabitation', 'extension-catalog-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Search1', 'pg_search bundled', 'extension-catalog-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Sec15', 'encryption-at-rest with CMK', 'extension-catalog-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S6', 'placement generation helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S13', 'range routing helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -441,6 +453,12 @@ grep -Fq "Sec5 ledger entries must reject mutation" ci/ai-blaise/sql-extension-s
 grep -Fq "Sec6 ledger seals must reject deletion" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "Sec6 ledger seal accepted an unsupported algorithm" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.seed_extension_catalog" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_extension_feature_coverage" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_extension_required('A7')" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_required_preload_libraries" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "extension catalog hard-block conflict check did not flag orioledb" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "extension catalog accepted empty feature ids" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_retention_policy_distributed" ci/ai-blaise/sql-extension-smoke.sh

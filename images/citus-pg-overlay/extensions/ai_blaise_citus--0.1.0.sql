@@ -340,6 +340,15 @@ CREATE TABLE IF NOT EXISTS companion_internal.tenant_region_affinities (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.extension_catalog_contracts (
+    extension_name text PRIMARY KEY,
+    tier text NOT NULL CHECK (tier IN ('required', 'optional', 'integration-target', 'hard-block')),
+    feature_ids text[] NOT NULL CHECK (cardinality(feature_ids) > 0),
+    requires_preload boolean NOT NULL DEFAULT false,
+    policy text NOT NULL,
+    registered_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -414,7 +423,312 @@ AS $$
         ('Sec9', 'SBOM and cosign attestation', 'ops-contract'),
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
-        ('T7', 'pipelined client protocol in pool', 'ops-contract')
+        ('T7', 'pipelined client protocol in pool', 'ops-contract'),
+        ('A7', 'pgvector cohabitation', 'extension-catalog-runtime'),
+        ('A12', 'vchord alternate vector index', 'extension-catalog-runtime'),
+        ('C11', 'DDL replication via pgl_ddl_deploy', 'extension-catalog-runtime'),
+        ('C12', 'replication-slot failover', 'extension-catalog-runtime'),
+        ('C13', 'subscription failover', 'extension-catalog-runtime'),
+        ('EF6', 'in-database JavaScript and Rust UDF substrate', 'extension-catalog-runtime'),
+        ('F2', 'foreign data wrapper bundle', 'extension-catalog-runtime'),
+        ('F5', 'outbound HTTP extensions', 'extension-catalog-runtime'),
+        ('G1', 'Apache AGE bundled', 'extension-catalog-runtime'),
+        ('Geo1', 'PostGIS bundled', 'extension-catalog-runtime'),
+        ('IA1', 'HypoPG bundled', 'extension-catalog-runtime'),
+        ('IA2', 'pg_qualstats bundled', 'extension-catalog-runtime'),
+        ('JS1', 'pg_jsonschema bundled', 'extension-catalog-runtime'),
+        ('L11', 'pg_parquet bundled', 'extension-catalog-runtime'),
+        ('M6', 'DDL replication', 'extension-catalog-runtime'),
+        ('M10', 'track settings drift', 'extension-catalog-runtime'),
+        ('M12', 'UUIDv7 primary keys', 'extension-catalog-runtime'),
+        ('MR7', 'cross-region active-active references', 'extension-catalog-runtime'),
+        ('O7', 'wait-event sampling', 'extension-catalog-runtime'),
+        ('O8', 'OS metrics via SQL', 'extension-catalog-runtime'),
+        ('O9', 'kernel stats via SQL', 'extension-catalog-runtime'),
+        ('O11', 'pg_stat_monitor alternative', 'extension-catalog-runtime'),
+        ('O12', 'pg_show_plans plan-inspection contract', 'extension-catalog-runtime'),
+        ('PM1', 'pg_hint_plan bundled', 'extension-catalog-runtime'),
+        ('PM2', 'sr_plan bundled', 'extension-catalog-runtime'),
+        ('R6', 'bloat-free queue substrate', 'extension-catalog-runtime'),
+        ('R11', 'pg_warm bundled', 'extension-catalog-runtime'),
+        ('Search1', 'pg_search bundled', 'extension-catalog-runtime'),
+        ('Search4', 'RUM index bundled', 'extension-catalog-runtime'),
+        ('Search5', 'pg_trgm bundled', 'extension-catalog-runtime'),
+        ('Search6', 'citext bundled', 'extension-catalog-runtime'),
+        ('Sec3', 'pgaudit and file audit', 'extension-catalog-runtime'),
+        ('Sec4', 'pgsodium crypto', 'extension-catalog-runtime'),
+        ('Sec10', 'pg_safeupdate guard', 'extension-catalog-runtime'),
+        ('Sec11', 'CDC anonymization extension', 'extension-catalog-runtime'),
+        ('Sec14', 'pgcrypto bundled', 'extension-catalog-runtime'),
+        ('Sec15', 'encryption-at-rest with CMK', 'extension-catalog-runtime'),
+        ('WF1', 'pg_walinspect forensic workflow', 'extension-catalog-runtime')
+$$;
+
+-- FEATURE: A7
+-- FEATURE: A12
+-- FEATURE: C11
+-- FEATURE: C12
+-- FEATURE: C13
+-- FEATURE: EF6
+-- FEATURE: F2
+-- FEATURE: F5
+-- FEATURE: G1
+-- FEATURE: Geo1
+-- FEATURE: IA1
+-- FEATURE: IA2
+-- FEATURE: JS1
+-- FEATURE: L11
+-- FEATURE: M6
+-- FEATURE: M10
+-- FEATURE: M12
+-- FEATURE: MR7
+-- FEATURE: O7
+-- FEATURE: O8
+-- FEATURE: O9
+-- FEATURE: O11
+-- FEATURE: O12
+-- FEATURE: PM1
+-- FEATURE: PM2
+-- FEATURE: R6
+-- FEATURE: R11
+-- FEATURE: Search1
+-- FEATURE: Search4
+-- FEATURE: Search5
+-- FEATURE: Search6
+-- FEATURE: Sec3
+-- FEATURE: Sec4
+-- FEATURE: Sec10
+-- FEATURE: Sec11
+-- FEATURE: Sec14
+-- FEATURE: Sec15
+-- FEATURE: WF1
+CREATE VIEW companion_extension_catalog AS
+SELECT
+    extension_name,
+    tier,
+    feature_ids,
+    requires_preload,
+    policy,
+    registered_at
+FROM companion_internal.extension_catalog_contracts;
+
+CREATE VIEW companion_extension_feature_coverage AS
+SELECT
+    extension_name,
+    tier,
+    unnest(feature_ids) AS feature_id,
+    requires_preload,
+    policy
+FROM companion_internal.extension_catalog_contracts;
+
+CREATE FUNCTION companion_internal.register_extension_contract(
+    p_extension_name text,
+    p_tier text,
+    p_feature_ids text[],
+    p_requires_preload boolean DEFAULT false,
+    p_policy text DEFAULT ''
+)
+RETURNS text
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    normalized_name text;
+    normalized_tier text;
+    normalized_feature_ids text[];
+BEGIN
+    normalized_name := lower(btrim(p_extension_name));
+    normalized_tier := lower(btrim(p_tier));
+
+    IF normalized_name IS NULL OR normalized_name = '' THEN
+        RAISE EXCEPTION 'extension_name must not be empty';
+    END IF;
+    IF normalized_tier NOT IN ('required', 'optional', 'integration-target', 'hard-block') THEN
+        RAISE EXCEPTION 'unsupported extension tier: %', p_tier;
+    END IF;
+    SELECT array_agg(DISTINCT btrim(feature_id) ORDER BY btrim(feature_id))
+    INTO normalized_feature_ids
+    FROM unnest(p_feature_ids) AS feature_id
+    WHERE feature_id IS NOT NULL AND btrim(feature_id) <> '';
+    IF normalized_feature_ids IS NULL OR cardinality(normalized_feature_ids) = 0 THEN
+        RAISE EXCEPTION 'feature_ids must not be empty';
+    END IF;
+    IF normalized_tier = 'hard-block' AND p_requires_preload THEN
+        RAISE EXCEPTION 'hard-blocked extensions cannot require preload';
+    END IF;
+
+    INSERT INTO companion_internal.extension_catalog_contracts(
+        extension_name,
+        tier,
+        feature_ids,
+        requires_preload,
+        policy
+    )
+    VALUES (
+        normalized_name,
+        normalized_tier,
+        normalized_feature_ids,
+        COALESCE(p_requires_preload, false),
+        COALESCE(NULLIF(btrim(p_policy), ''), 'no policy recorded')
+    )
+    ON CONFLICT (extension_name) DO UPDATE
+    SET tier = EXCLUDED.tier,
+        feature_ids = EXCLUDED.feature_ids,
+        requires_preload = EXCLUDED.requires_preload,
+        policy = EXCLUDED.policy,
+        registered_at = now();
+
+    RETURN normalized_name;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.seed_extension_catalog()
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    seeded integer;
+BEGIN
+    WITH seed(extension_name, tier, feature_ids, requires_preload, policy) AS (
+        VALUES
+            ('pgvector', 'required', ARRAY['A7'], false, 'Vector similarity extension'),
+            ('vchord', 'optional', ARRAY['A12'], false, 'Alternate vector index'),
+            ('pgl_ddl_deploy', 'optional', ARRAY['C11','M6'], false, 'DDL replication across regions'),
+            ('pg_failover_slots', 'required', ARRAY['C12'], true, 'Logical replication slot failover'),
+            ('pg_subscription_pg_failover', 'optional', ARRAY['C13'], false, 'Logical subscription failover state'),
+            ('plrust', 'required', ARRAY['EF6'], true, 'Rust UDF substrate'),
+            ('plv8', 'required', ARRAY['EF6'], true, 'In-database JavaScript UDF substrate'),
+            ('oracle_fdw', 'optional', ARRAY['F2'], false, 'Oracle migration and federation FDW'),
+            ('mysql_fdw', 'optional', ARRAY['F2'], false, 'MySQL migration and federation FDW'),
+            ('mongo_fdw', 'optional', ARRAY['F2'], false, 'Mongo migration and federation FDW'),
+            ('tds_fdw', 'optional', ARRAY['F2'], false, 'SQL Server migration and federation FDW'),
+            ('pgsql-http', 'optional', ARRAY['F5'], false, 'Outbound HTTP from SQL'),
+            ('pg_net', 'optional', ARRAY['F5'], false, 'Async outbound HTTP from SQL'),
+            ('age', 'required', ARRAY['G1'], true, 'Apache AGE graph query substrate'),
+            ('postgis', 'required', ARRAY['Geo1'], false, 'Geospatial functions for distributed geo features'),
+            ('hypopg', 'optional', ARRAY['IA1'], false, 'What-if indexing for advisor'),
+            ('pg_qualstats', 'optional', ARRAY['IA2'], false, 'Predicate stats for advisor'),
+            ('pg_jsonschema', 'required', ARRAY['JS1'], false, 'JSON Schema validation substrate'),
+            ('pg_parquet', 'optional', ARRAY['L11'], false, 'Parquet read/write helper'),
+            ('pg_track_settings', 'optional', ARRAY['M10'], false, 'Configuration drift tracking'),
+            ('pg_uuidv7', 'required', ARRAY['M12'], false, 'Monotonic UUID helper'),
+            ('pgactive', 'optional', ARRAY['MR7'], true, 'Cross-region active-active for reference tables'),
+            ('pg_wait_sampling', 'optional', ARRAY['O7'], true, 'Wait-event sampling'),
+            ('pgsentinel', 'optional', ARRAY['O7'], true, 'ASH-style wait diagnostics'),
+            ('pgnodemx', 'required', ARRAY['O8'], false, 'OS and cgroup metrics through SQL'),
+            ('pg_stat_kcache', 'optional', ARRAY['O9'], true, 'Kernel CPU and IO per statement'),
+            ('pg_stat_monitor', 'optional', ARRAY['O11'], true, 'Alternative statement histogram view'),
+            ('pg_show_plans', 'optional', ARRAY['O12'], true, 'Live plan inspection'),
+            ('pg_hint_plan', 'optional', ARRAY['PM1'], true, 'Hint-driven plan management'),
+            ('sr_plan', 'optional', ARRAY['PM2'], true, 'Saved-plan backend'),
+            ('pgmq', 'optional', ARRAY['R6'], false, 'Alternative queue substrate'),
+            ('pgque', 'optional', ARRAY['R6'], false, 'Bloat-free queue substrate'),
+            ('pg_warm', 'required', ARRAY['R11'], true, 'Replica cold-start cache warming'),
+            ('pg_search', 'required', ARRAY['Search1'], true, 'BM25 and hybrid search substrate'),
+            ('rum', 'required', ARRAY['Search4'], false, 'Alternate full-text index'),
+            ('pg_trgm', 'required', ARRAY['Search5'], false, 'Trigram search support'),
+            ('citext', 'required', ARRAY['Search6'], false, 'Case-insensitive text type'),
+            ('pgaudit', 'required', ARRAY['Sec3'], true, 'SQL audit baseline'),
+            ('pgauditlogtofile', 'required', ARRAY['Sec3'], true, 'File-backed audit log sink'),
+            ('pgsodium', 'required', ARRAY['Sec4','Sec15'], true, 'Libsodium crypto and encryption helpers'),
+            ('pg_safeupdate', 'optional', ARRAY['Sec10'], true, 'Guard accidental full-table writes'),
+            ('anon', 'optional', ARRAY['Sec11'], false, 'CDC anonymization substrate'),
+            ('pgcrypto', 'required', ARRAY['Sec14'], false, 'Core crypto primitives'),
+            ('pg_walinspect', 'optional', ARRAY['WF1'], false, 'WAL inspection from SQL'),
+            ('omnigres', 'integration-target', ARRAY['F5'], false, 'Reference-only HTTP/API stack')
+    ), upserted AS (
+        INSERT INTO companion_internal.extension_catalog_contracts(
+            extension_name,
+            tier,
+            feature_ids,
+            requires_preload,
+            policy
+        )
+        SELECT extension_name, tier, feature_ids, requires_preload, policy
+        FROM seed
+        ON CONFLICT (extension_name) DO UPDATE
+        SET tier = EXCLUDED.tier,
+            feature_ids = EXCLUDED.feature_ids,
+            requires_preload = EXCLUDED.requires_preload,
+            policy = EXCLUDED.policy,
+            registered_at = now()
+        RETURNING 1
+    )
+    SELECT count(*) INTO seeded FROM upserted;
+
+    RETURN seeded;
+END;
+$$;
+
+CREATE FUNCTION companion_extension_required(p_feature_id text)
+RETURNS TABLE(extension_name text, tier text, requires_preload boolean)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF p_feature_id IS NULL OR btrim(p_feature_id) = '' THEN
+        RAISE EXCEPTION 'feature_id must not be empty';
+    END IF;
+
+    RETURN QUERY
+    SELECT c.extension_name, c.tier, c.requires_preload
+    FROM companion_internal.extension_catalog_contracts AS c
+    WHERE btrim(p_feature_id) = ANY(c.feature_ids)
+      AND c.tier <> 'hard-block'
+    ORDER BY c.tier, c.extension_name;
+END;
+$$;
+
+CREATE FUNCTION companion_required_preload_libraries()
+RETURNS text[]
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(array_agg(extension_name ORDER BY extension_name), ARRAY[]::text[])
+    FROM companion_internal.extension_catalog_contracts
+    WHERE requires_preload AND tier <> 'hard-block'
+$$;
+
+CREATE FUNCTION companion_extension_conflicts(p_extension_name text)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF p_extension_name IS NULL OR btrim(p_extension_name) = '' THEN
+        RAISE EXCEPTION 'extension_name must not be empty';
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1
+        FROM companion_internal.extension_catalog_contracts
+        WHERE extension_name = lower(btrim(p_extension_name))
+          AND tier = 'hard-block'
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.assert_extension_allowed(p_extension_name text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    contract_tier text;
+BEGIN
+    IF p_extension_name IS NULL OR btrim(p_extension_name) = '' THEN
+        RAISE EXCEPTION 'extension_name must not be empty';
+    END IF;
+
+    SELECT tier INTO contract_tier
+    FROM companion_internal.extension_catalog_contracts
+    WHERE extension_name = lower(btrim(p_extension_name));
+
+    IF contract_tier IS NULL THEN
+        RAISE EXCEPTION 'extension is not registered: %', p_extension_name;
+    END IF;
+    IF contract_tier = 'hard-block' THEN
+        RAISE EXCEPTION 'extension is hard-blocked: %', p_extension_name;
+    END IF;
+END;
 $$;
 
 -- FEATURE: Search2
