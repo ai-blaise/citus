@@ -268,6 +268,25 @@ grep -Fq "CREATE FUNCTION companion_internal.plan_freeze" "${image_dir}/extensio
 grep -Fq "CREATE FUNCTION companion_internal.plan_auto_promote" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.plan_regression_guard" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_plan_regression_violates" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.migration_runs" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.migration_operations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_migration_runs" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_migration_operations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.migrate_start" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.migration_add_column" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.migration_online_type_change" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.migrate_complete" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.index_advisor_candidates" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_index_advisor_candidates" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.index_advisor_record_candidate" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_index_advisor_ranked" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.webhook_registrations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.webhook_triggers" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.webhook_events" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_webhook_registrations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_webhook_events" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.webhook_register" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.install_webhook_trigger" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE VIEW companion_shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.bump_placement_generation" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -293,6 +312,10 @@ grep -Fq "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'" "${image_dir}/ex
 grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'PM3', 'plan freeze companion module', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'PM4', 'plan regression detection', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'M1', 'pgroll-style expand-contract migrations', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'M11', 'online column-type migration', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'IA3', 'companion index advisor', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'WH2', 'companion webhook helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S6', 'placement generation helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S13', 'range routing helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -326,6 +349,22 @@ grep -Fq "PM4 regression guard flagged an allowed candidate" ci/ai-blaise/sql-ex
 grep -Fq "PM4 regression samples were not recorded" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PM3 plan_freeze accepted an empty query hash" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PM4 regression guard accepted an unknown frozen plan" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.migrate_start" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.migration_add_column" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.migration_online_type_change" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_migration_runs" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "M1 migration run was not completed and visible" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "M1/M11 migration operations were not recorded" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "M11 online type-change accepted identical types" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.index_advisor_record_candidate" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_index_advisor_ranked" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "IA3 ranked advisor did not render CREATE INDEX CONCURRENTLY SQL" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "IA3 accepted a non-improving candidate" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.webhook_register" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.install_webhook_trigger" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_webhook_events" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "WH2 webhook trigger did not enqueue INSERT and UPDATE rows" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "WH2 accepted a non-http webhook URL" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_internal.bump_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_local_placement_matches" ci/ai-blaise/sql-extension-smoke.sh

@@ -1740,13 +1740,25 @@ Pub/Sub.
 ### M1: pgroll-Style Expand-Contract
 
 **Overlay**: `companion/src/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines companion SQL-plan contracts for expand/contract
-migrations with bounded lock timeout and backfill batch settings.
+**Summary**: Provides an installable SQL migration run registry and operation
+renderer for expand/contract migrations with bounded lock timeout and backfill
+batch settings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.migrate_start(...)`,
+`companion_internal.migration_add_column(...)`,
+`companion_internal.migrate_complete(...)`, and
+`companion_migration_operations` record a completed migration with rendered
+bounded expand DDL. The smoke verifies operations cannot run without an active
+migration. Actual distributed DDL execution, schema-job workers, online
+backfill, lock orchestration, rollback execution, and operator CRD
+reconciliation remain alpha.
 
 **Motivation**: Type changes, adds, drops, and renames need a reviewed
 migration unit before schema-job workers and operator CRDs execute them.
@@ -1758,7 +1770,10 @@ ship a pgroll-style expand/contract migration layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M1` in `companion/src/migration.rs`
+- SQL runtime: `FEATURE: M1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M2: gh-ost-Style Online DDL
 
@@ -1914,13 +1929,22 @@ operator shard-map overlay model.
 ### M11: Online Column-Type Migration
 
 **Overlay**: `companion/src/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the online type-change operation used by companion
-migration plans for type promotion without blocking table rewrites.
+**Summary**: Provides an installable SQL online type-change helper that records
+shadow-column DDL for companion migration plans.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.migration_online_type_change(...)` records shadow-column
+DDL in `companion_migration_operations`. The smoke verifies identical source
+and target types fail closed. Actual backfill workers, trigger-based dual
+writes, cutover, validation scans, rollback, and distributed table rewrite
+orchestration remain alpha.
 
 **Motivation**: Large distributed tables need type migrations that can expand,
 backfill, and contract without a long exclusive lock.
@@ -1932,7 +1956,10 @@ ship an online column-type migration contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M11` in `companion/src/migration.rs`
+- SQL runtime: `FEATURE: M11` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Multi-Region
 
@@ -3432,14 +3459,23 @@ alpha.
 ### IA3: Companion Advisor
 
 **Overlay**: `companion/src/index_advisor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `hypopg`, `pg_qualstats`
 
-**Summary**: Defines ranked index-advisor output that emits
-`CREATE INDEX CONCURRENTLY` scripts from what-if cost deltas and predicate
-counts.
+**Summary**: Provides an installable SQL index-advisor candidate registry and
+ranking view that emits `CREATE INDEX CONCURRENTLY` scripts from cost deltas
+and predicate counts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.index_advisor_record_candidate(...)` records a ranked
+candidate, `companion_index_advisor_ranked(...)` emits `CREATE INDEX
+CONCURRENTLY` SQL, and verifies non-improving candidates fail closed. HypoPG and
+pg_qualstats workload mining, automatic index creation, distributed index
+rollout, and write-amplification governance remain alpha.
 
 **Motivation**: Operators need reviewable index suggestions that rank real
 workload benefit before applying changes to distributed tables.
@@ -3451,7 +3487,10 @@ index advisor.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: IA3` in `companion/src/index_advisor.rs`
+- SQL runtime: `FEATURE: IA3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Webhooks
 
@@ -3481,13 +3520,23 @@ management.
 ### WH2: Companion Webhook Helpers
 
 **Overlay**: `companion/src/webhooks.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines companion webhook registration and trigger-install SQL
-plans for `INSERT`, `UPDATE`, and `DELETE` events.
+**Summary**: Provides installable SQL webhook registration and trigger queue
+helpers for `INSERT`, `UPDATE`, and `DELETE` events.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.webhook_register(...)`,
+`companion_internal.install_webhook_trigger(...)`, and
+`companion_webhook_events` register a webhook, install a table trigger, and
+verifies INSERT and UPDATE rows are enqueued. The smoke also verifies non-http
+webhook URLs fail closed. Outbound HTTP delivery, retry workers,
+dead-letter queues, secret resolution, and operator webhook CRDs remain alpha.
 
 **Motivation**: Declarative webhook CRDs need a companion SQL surface that
 turns table/event/url configuration into queue-backed triggers.
@@ -3499,7 +3548,10 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH2` in `companion/src/webhooks.rs`
+- SQL runtime: `FEATURE: WH2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### WH3: Reliable Delivery
 

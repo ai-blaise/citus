@@ -156,7 +156,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "IA3",
         feature_name: "companion index advisor",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec5",
@@ -171,17 +171,17 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "M1",
         feature_name: "pgroll-style expand-contract migrations",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M11",
         feature_name: "online column-type migration",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "WH2",
         feature_name: "companion webhook helpers",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "O1",

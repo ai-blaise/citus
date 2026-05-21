@@ -55,6 +55,84 @@ CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_samples (
     recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.migration_runs (
+    migration_name text PRIMARY KEY,
+    table_name text NOT NULL,
+    lock_timeout_ms integer NOT NULL CHECK (lock_timeout_ms > 0),
+    backfill_batch_size integer NOT NULL CHECK (backfill_batch_size > 0),
+    status text NOT NULL CHECK (status IN ('running', 'completed')),
+    started_at timestamptz NOT NULL DEFAULT now(),
+    completed_at timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.migration_operations (
+    operation_id bigserial PRIMARY KEY,
+    migration_name text NOT NULL
+        REFERENCES companion_internal.migration_runs(migration_name) ON DELETE CASCADE,
+    operation_type text NOT NULL,
+    column_name text NOT NULL,
+    sql_type text,
+    default_expression text,
+    new_column_name text,
+    from_type text,
+    to_type text,
+    cast_expression text,
+    rendered_sql text NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.index_advisor_candidates (
+    candidate_id bigserial PRIMARY KEY,
+    workload_window text NOT NULL,
+    table_name text NOT NULL,
+    index_name name NOT NULL,
+    columns text[] NOT NULL CHECK (cardinality(columns) > 0),
+    index_method text NOT NULL CHECK (
+        index_method IN ('btree', 'gin', 'gist', 'brin', 'rum', 'hnsw')
+    ),
+    estimated_cost_before numeric NOT NULL CHECK (estimated_cost_before > 0),
+    estimated_cost_after numeric NOT NULL CHECK (estimated_cost_after >= 0),
+    qual_count bigint NOT NULL CHECK (qual_count > 0),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT index_advisor_candidates_improves
+        CHECK (estimated_cost_after < estimated_cost_before)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.webhook_registrations (
+    webhook_name text PRIMARY KEY,
+    table_name text NOT NULL,
+    url text NOT NULL,
+    headers jsonb NOT NULL DEFAULT '{}'::jsonb,
+    max_retries integer NOT NULL CHECK (max_retries > 0),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.webhook_triggers (
+    trigger_id bigserial PRIMARY KEY,
+    webhook_name text NOT NULL
+        REFERENCES companion_internal.webhook_registrations(webhook_name)
+        ON DELETE CASCADE,
+    table_name text NOT NULL,
+    events text[] NOT NULL CHECK (cardinality(events) > 0),
+    queue_name text NOT NULL,
+    trigger_name name NOT NULL UNIQUE,
+    trigger_sql text NOT NULL,
+    installed_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (webhook_name, table_name)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.webhook_events (
+    event_id bigserial PRIMARY KEY,
+    webhook_name text NOT NULL
+        REFERENCES companion_internal.webhook_registrations(webhook_name)
+        ON DELETE CASCADE,
+    queue_name text NOT NULL,
+    table_name text NOT NULL,
+    operation text NOT NULL CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE')),
+    row_data jsonb NOT NULL,
+    queued_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -92,12 +170,12 @@ AS $$
         ('M7', 'pre-flight cohabit-extension check', 'sql-plan'),
         ('PM3', 'plan freeze companion module', 'sql-runtime'),
         ('PM4', 'plan regression detection', 'sql-runtime'),
-        ('IA3', 'companion index advisor', 'sql-plan'),
+        ('IA3', 'companion index advisor', 'sql-runtime'),
         ('Sec5', 'immutable ledger', 'sql-runtime'),
         ('Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'),
-        ('M1', 'pgroll-style expand-contract migrations', 'sql-plan'),
-        ('M11', 'online column-type migration', 'sql-plan'),
-        ('WH2', 'companion webhook helpers', 'sql-plan'),
+        ('M1', 'pgroll-style expand-contract migrations', 'sql-runtime'),
+        ('M11', 'online column-type migration', 'sql-runtime'),
+        ('WH2', 'companion webhook helpers', 'sql-runtime'),
         ('O1', 'query percentile views', 'sql-runtime'),
         ('O2', 'local activity stats view', 'sql-runtime'),
         ('O3', 'replication lag view', 'sql-runtime'),
@@ -130,6 +208,746 @@ AS $$
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
         ('T7', 'pipelined client protocol in pool', 'ops-contract')
+$$;
+
+-- FEATURE: M1
+-- FEATURE: M11
+CREATE VIEW companion_migration_runs AS
+SELECT
+    migration_name,
+    table_name,
+    lock_timeout_ms,
+    backfill_batch_size,
+    status,
+    started_at,
+    completed_at
+FROM companion_internal.migration_runs;
+
+CREATE VIEW companion_migration_operations AS
+SELECT
+    operation_id,
+    migration_name,
+    operation_type,
+    column_name,
+    sql_type,
+    default_expression,
+    new_column_name,
+    from_type,
+    to_type,
+    cast_expression,
+    rendered_sql,
+    recorded_at
+FROM companion_internal.migration_operations;
+
+CREATE FUNCTION companion_internal.current_migration_name()
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    migration_name text;
+BEGIN
+    migration_name := NULLIF(current_setting('ai_blaise.current_migration_name', true), '');
+    IF migration_name IS NULL THEN
+        RAISE EXCEPTION 'no active companion migration; call companion_internal.migrate_start first';
+    END IF;
+    RETURN migration_name;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migrate_start(
+    p_migration_name text,
+    p_table_name text,
+    p_lock_timeout_ms integer,
+    p_backfill_batch_size integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
+        RAISE EXCEPTION 'migration_name must not be empty';
+    END IF;
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_lock_timeout_ms IS NULL OR p_lock_timeout_ms <= 0 THEN
+        RAISE EXCEPTION 'lock_timeout_ms must be greater than zero';
+    END IF;
+    IF p_backfill_batch_size IS NULL OR p_backfill_batch_size <= 0 THEN
+        RAISE EXCEPTION 'backfill_batch_size must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.migration_runs(
+        migration_name,
+        table_name,
+        lock_timeout_ms,
+        backfill_batch_size,
+        status
+    )
+    VALUES (
+        btrim(p_migration_name),
+        table_regclass::text,
+        p_lock_timeout_ms,
+        p_backfill_batch_size,
+        'running'
+    )
+    ON CONFLICT (migration_name) DO UPDATE
+    SET table_name = EXCLUDED.table_name,
+        lock_timeout_ms = EXCLUDED.lock_timeout_ms,
+        backfill_batch_size = EXCLUDED.backfill_batch_size,
+        status = 'running',
+        started_at = now(),
+        completed_at = NULL;
+
+    PERFORM set_config('ai_blaise.current_migration_name', btrim(p_migration_name), true);
+END;
+$$;
+
+CREATE FUNCTION companion_internal.record_migration_operation(
+    p_operation_type text,
+    p_column_name text,
+    p_sql_type text,
+    p_default_expression text,
+    p_new_column_name text,
+    p_from_type text,
+    p_to_type text,
+    p_cast_expression text,
+    p_rendered_sql text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    migration_name text := companion_internal.current_migration_name();
+BEGIN
+    INSERT INTO companion_internal.migration_operations(
+        migration_name,
+        operation_type,
+        column_name,
+        sql_type,
+        default_expression,
+        new_column_name,
+        from_type,
+        to_type,
+        cast_expression,
+        rendered_sql
+    )
+    VALUES (
+        migration_name,
+        p_operation_type,
+        p_column_name,
+        p_sql_type,
+        p_default_expression,
+        p_new_column_name,
+        p_from_type,
+        p_to_type,
+        p_cast_expression,
+        p_rendered_sql
+    );
+
+    RETURN p_rendered_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_add_column(
+    p_column_name text,
+    p_sql_type text,
+    p_default_expression text DEFAULT NULL
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    active_migration_name text := companion_internal.current_migration_name();
+    migration_table text;
+    rendered_sql text;
+BEGIN
+    IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+        RAISE EXCEPTION 'column_name must not be empty';
+    END IF;
+    IF p_sql_type IS NULL OR btrim(p_sql_type) = '' THEN
+        RAISE EXCEPTION 'sql_type must not be empty';
+    END IF;
+    IF p_default_expression IS NOT NULL AND btrim(p_default_expression) = '' THEN
+        RAISE EXCEPTION 'default_expression must be null or non-empty';
+    END IF;
+
+    SELECT table_name INTO migration_table
+    FROM companion_internal.migration_runs
+    WHERE migration_name = active_migration_name
+      AND status = 'running';
+
+    rendered_sql := format(
+        'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I %s%s;',
+        migration_table,
+        btrim(p_column_name),
+        btrim(p_sql_type),
+        CASE
+            WHEN p_default_expression IS NULL THEN ''
+            ELSE ' DEFAULT ' || p_default_expression
+        END
+    );
+
+    RETURN companion_internal.record_migration_operation(
+        'add_column',
+        btrim(p_column_name),
+        btrim(p_sql_type),
+        p_default_expression,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        rendered_sql
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_drop_column(p_column_name text)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    active_migration_name text := companion_internal.current_migration_name();
+    migration_table text;
+    rendered_sql text;
+BEGIN
+    IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+        RAISE EXCEPTION 'column_name must not be empty';
+    END IF;
+
+    SELECT table_name INTO migration_table
+    FROM companion_internal.migration_runs
+    WHERE migration_name = active_migration_name
+      AND status = 'running';
+
+    rendered_sql := format(
+        'ALTER TABLE %s DROP COLUMN IF EXISTS %I;',
+        migration_table,
+        btrim(p_column_name)
+    );
+
+    RETURN companion_internal.record_migration_operation(
+        'drop_column',
+        btrim(p_column_name),
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        rendered_sql
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_rename_column(
+    p_old_column_name text,
+    p_new_column_name text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    active_migration_name text := companion_internal.current_migration_name();
+    migration_table text;
+    rendered_sql text;
+BEGIN
+    IF p_old_column_name IS NULL OR btrim(p_old_column_name) = '' THEN
+        RAISE EXCEPTION 'old_column_name must not be empty';
+    END IF;
+    IF p_new_column_name IS NULL OR btrim(p_new_column_name) = '' THEN
+        RAISE EXCEPTION 'new_column_name must not be empty';
+    END IF;
+
+    SELECT table_name INTO migration_table
+    FROM companion_internal.migration_runs
+    WHERE migration_name = active_migration_name
+      AND status = 'running';
+
+    rendered_sql := format(
+        'ALTER TABLE %s RENAME COLUMN %I TO %I;',
+        migration_table,
+        btrim(p_old_column_name),
+        btrim(p_new_column_name)
+    );
+
+    RETURN companion_internal.record_migration_operation(
+        'rename_column',
+        btrim(p_old_column_name),
+        NULL,
+        NULL,
+        btrim(p_new_column_name),
+        NULL,
+        NULL,
+        NULL,
+        rendered_sql
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_online_type_change(
+    p_column_name text,
+    p_from_type text,
+    p_to_type text,
+    p_cast_expression text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    active_migration_name text := companion_internal.current_migration_name();
+    migration_table text;
+    rendered_sql text;
+BEGIN
+    IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+        RAISE EXCEPTION 'column_name must not be empty';
+    END IF;
+    IF p_from_type IS NULL OR btrim(p_from_type) = '' THEN
+        RAISE EXCEPTION 'from_type must not be empty';
+    END IF;
+    IF p_to_type IS NULL OR btrim(p_to_type) = '' THEN
+        RAISE EXCEPTION 'to_type must not be empty';
+    END IF;
+    IF btrim(p_from_type) = btrim(p_to_type) THEN
+        RAISE EXCEPTION 'from_type and to_type must differ';
+    END IF;
+    IF p_cast_expression IS NULL OR btrim(p_cast_expression) = '' THEN
+        RAISE EXCEPTION 'cast_expression must not be empty';
+    END IF;
+
+    SELECT table_name INTO migration_table
+    FROM companion_internal.migration_runs
+    WHERE migration_name = active_migration_name
+      AND status = 'running';
+
+    rendered_sql := format(
+        'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I__ai_blaise_new %s; UPDATE %s SET %I__ai_blaise_new = %s WHERE %I__ai_blaise_new IS NULL;',
+        migration_table,
+        btrim(p_column_name),
+        btrim(p_to_type),
+        migration_table,
+        btrim(p_column_name),
+        p_cast_expression,
+        btrim(p_column_name)
+    );
+
+    RETURN companion_internal.record_migration_operation(
+        'online_type_change',
+        btrim(p_column_name),
+        NULL,
+        NULL,
+        NULL,
+        btrim(p_from_type),
+        btrim(p_to_type),
+        btrim(p_cast_expression),
+        rendered_sql
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migrate_complete(p_migration_name text)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
+        RAISE EXCEPTION 'migration_name must not be empty';
+    END IF;
+
+    UPDATE companion_internal.migration_runs
+    SET status = 'completed',
+        completed_at = now()
+    WHERE migration_name = btrim(p_migration_name)
+      AND status = 'running';
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not running: %', p_migration_name;
+    END IF;
+
+    PERFORM set_config('ai_blaise.current_migration_name', '', true);
+END;
+$$;
+
+-- FEATURE: IA3
+CREATE VIEW companion_index_advisor_candidates AS
+SELECT
+    candidate_id,
+    workload_window,
+    table_name,
+    index_name,
+    columns,
+    index_method,
+    estimated_cost_before,
+    estimated_cost_after,
+    qual_count,
+    round(
+        ((estimated_cost_before - estimated_cost_after) * 100)
+        / estimated_cost_before,
+        3
+    ) AS improvement_percent,
+    created_at
+FROM companion_internal.index_advisor_candidates;
+
+CREATE FUNCTION companion_internal.index_advisor_record_candidate(
+    p_workload_window text,
+    p_table_name text,
+    p_index_name name,
+    p_columns text[],
+    p_index_method text,
+    p_estimated_cost_before numeric,
+    p_estimated_cost_after numeric,
+    p_qual_count bigint
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+    normalized_method text;
+    candidate_id bigint;
+BEGIN
+    IF p_workload_window IS NULL OR btrim(p_workload_window) = '' THEN
+        RAISE EXCEPTION 'workload_window must not be empty';
+    END IF;
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_index_name IS NULL OR btrim(p_index_name::text) = '' THEN
+        RAISE EXCEPTION 'index_name must not be empty';
+    END IF;
+    IF p_columns IS NULL OR cardinality(p_columns) = 0
+       OR EXISTS (SELECT 1 FROM unnest(p_columns) AS column_name WHERE btrim(column_name) = '') THEN
+        RAISE EXCEPTION 'columns must contain at least one non-empty column';
+    END IF;
+    normalized_method := lower(btrim(p_index_method));
+    IF normalized_method NOT IN ('btree', 'gin', 'gist', 'brin', 'rum', 'hnsw') THEN
+        RAISE EXCEPTION 'unsupported index method: %', p_index_method;
+    END IF;
+    IF p_estimated_cost_before IS NULL OR p_estimated_cost_before <= 0 THEN
+        RAISE EXCEPTION 'estimated_cost_before must be greater than zero';
+    END IF;
+    IF p_estimated_cost_after IS NULL OR p_estimated_cost_after < 0 THEN
+        RAISE EXCEPTION 'estimated_cost_after must be non-negative';
+    END IF;
+    IF p_estimated_cost_after >= p_estimated_cost_before THEN
+        RAISE EXCEPTION 'estimated_cost_after must be lower than estimated_cost_before';
+    END IF;
+    IF p_qual_count IS NULL OR p_qual_count <= 0 THEN
+        RAISE EXCEPTION 'qual_count must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.index_advisor_candidates(
+        workload_window,
+        table_name,
+        index_name,
+        columns,
+        index_method,
+        estimated_cost_before,
+        estimated_cost_after,
+        qual_count
+    )
+    VALUES (
+        btrim(p_workload_window),
+        table_regclass::text,
+        p_index_name,
+        ARRAY(SELECT btrim(column_name) FROM unnest(p_columns) AS column_name),
+        normalized_method,
+        p_estimated_cost_before,
+        p_estimated_cost_after,
+        p_qual_count
+    )
+    RETURNING companion_internal.index_advisor_candidates.candidate_id
+    INTO candidate_id;
+
+    RETURN candidate_id;
+END;
+$$;
+
+CREATE FUNCTION companion_index_advisor_ranked(
+    p_min_improvement_percent numeric DEFAULT 0
+)
+RETURNS TABLE(
+    candidate_id bigint,
+    workload_window text,
+    table_name text,
+    index_name name,
+    columns text[],
+    index_method text,
+    improvement_percent numeric,
+    qual_count bigint,
+    create_index_sql text
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF p_min_improvement_percent IS NULL OR p_min_improvement_percent < 0 THEN
+        RAISE EXCEPTION 'min_improvement_percent must be non-negative';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        candidates.candidate_id,
+        candidates.workload_window,
+        candidates.table_name,
+        candidates.index_name,
+        candidates.columns,
+        candidates.index_method,
+        round(
+            ((candidates.estimated_cost_before - candidates.estimated_cost_after) * 100)
+            / candidates.estimated_cost_before,
+            3
+        ) AS improvement_percent,
+        candidates.qual_count,
+        format(
+            'CREATE INDEX CONCURRENTLY IF NOT EXISTS %I ON %s USING %s (%s);',
+            candidates.index_name,
+            candidates.table_name,
+            candidates.index_method,
+            (
+                SELECT string_agg(quote_ident(column_name), ', ')
+                FROM unnest(candidates.columns) AS column_name
+            )
+        ) AS create_index_sql
+    FROM companion_internal.index_advisor_candidates AS candidates
+    WHERE round(
+        ((candidates.estimated_cost_before - candidates.estimated_cost_after) * 100)
+        / candidates.estimated_cost_before,
+        3
+    ) >= p_min_improvement_percent
+    ORDER BY 7 DESC, candidates.qual_count DESC, candidates.candidate_id;
+END;
+$$;
+
+-- FEATURE: WH2
+CREATE VIEW companion_webhook_registrations AS
+SELECT
+    registrations.webhook_name,
+    registrations.table_name,
+    registrations.url,
+    registrations.headers,
+    registrations.max_retries,
+    triggers.events,
+    triggers.queue_name,
+    triggers.trigger_name,
+    registrations.created_at,
+    triggers.installed_at
+FROM companion_internal.webhook_registrations AS registrations
+LEFT JOIN companion_internal.webhook_triggers AS triggers
+  ON triggers.webhook_name = registrations.webhook_name;
+
+CREATE VIEW companion_webhook_events AS
+SELECT
+    event_id,
+    webhook_name,
+    queue_name,
+    table_name,
+    operation,
+    row_data,
+    queued_at
+FROM companion_internal.webhook_events;
+
+CREATE FUNCTION companion_internal.webhook_register(
+    p_webhook_name text,
+    p_table_name text,
+    p_url text,
+    p_headers jsonb DEFAULT '{}'::jsonb,
+    p_max_retries integer DEFAULT 3
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_webhook_name IS NULL OR btrim(p_webhook_name) = '' THEN
+        RAISE EXCEPTION 'webhook_name must not be empty';
+    END IF;
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_url IS NULL OR btrim(p_url) = '' THEN
+        RAISE EXCEPTION 'url must not be empty';
+    END IF;
+    IF p_url !~* '^https?://' THEN
+        RAISE EXCEPTION 'url must be http or https';
+    END IF;
+    IF p_headers IS NULL OR jsonb_typeof(p_headers) <> 'object' THEN
+        RAISE EXCEPTION 'headers must be a JSON object';
+    END IF;
+    IF p_max_retries IS NULL OR p_max_retries <= 0 THEN
+        RAISE EXCEPTION 'max_retries must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.webhook_registrations(
+        webhook_name,
+        table_name,
+        url,
+        headers,
+        max_retries
+    )
+    VALUES (
+        btrim(p_webhook_name),
+        table_regclass::text,
+        btrim(p_url),
+        p_headers,
+        p_max_retries
+    )
+    ON CONFLICT (webhook_name) DO UPDATE
+    SET table_name = EXCLUDED.table_name,
+        url = EXCLUDED.url,
+        headers = EXCLUDED.headers,
+        max_retries = EXCLUDED.max_retries,
+        created_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.enqueue_webhook_event()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    payload jsonb;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        payload := to_jsonb(OLD);
+    ELSE
+        payload := to_jsonb(NEW);
+    END IF;
+
+    INSERT INTO companion_internal.webhook_events(
+        webhook_name,
+        queue_name,
+        table_name,
+        operation,
+        row_data
+    )
+    VALUES (
+        TG_ARGV[0],
+        TG_ARGV[1],
+        TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME,
+        TG_OP,
+        payload
+    );
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.install_webhook_trigger(
+    p_table_name text,
+    p_events text[],
+    p_queue_name text,
+    p_webhook_name text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+    normalized_events text[];
+    event_clause text;
+    trigger_name name;
+    trigger_sql text;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_events IS NULL OR cardinality(p_events) = 0 THEN
+        RAISE EXCEPTION 'events must contain at least one event';
+    END IF;
+    normalized_events := ARRAY(
+        SELECT DISTINCT upper(btrim(event_name))
+        FROM unnest(p_events) AS event_name
+    );
+    IF EXISTS (
+        SELECT 1
+        FROM unnest(normalized_events) AS event_name
+        WHERE event_name NOT IN ('INSERT', 'UPDATE', 'DELETE')
+           OR event_name = ''
+    ) THEN
+        RAISE EXCEPTION 'events must be INSERT, UPDATE, or DELETE';
+    END IF;
+    IF p_queue_name IS NULL OR btrim(p_queue_name) = '' THEN
+        RAISE EXCEPTION 'queue_name must not be empty';
+    END IF;
+    IF p_webhook_name IS NULL OR btrim(p_webhook_name) = '' THEN
+        RAISE EXCEPTION 'webhook_name must not be empty';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.webhook_registrations
+        WHERE webhook_name = btrim(p_webhook_name)
+          AND table_name = table_regclass::text
+    ) THEN
+        RAISE EXCEPTION 'webhook registration does not exist for table';
+    END IF;
+
+    SELECT string_agg(event_name, ' OR ' ORDER BY event_name)
+    INTO event_clause
+    FROM unnest(normalized_events) AS event_name;
+
+    trigger_name := (
+        'companion_webhook_' || substr(md5(btrim(p_webhook_name)), 1, 16)
+    )::name;
+    trigger_sql := format(
+        'CREATE TRIGGER %I AFTER %s ON %s FOR EACH ROW EXECUTE FUNCTION companion_internal.enqueue_webhook_event(%L, %L)',
+        trigger_name,
+        event_clause,
+        table_regclass,
+        btrim(p_webhook_name),
+        btrim(p_queue_name)
+    );
+
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON %s', trigger_name, table_regclass);
+    EXECUTE trigger_sql;
+
+    INSERT INTO companion_internal.webhook_triggers(
+        webhook_name,
+        table_name,
+        events,
+        queue_name,
+        trigger_name,
+        trigger_sql
+    )
+    VALUES (
+        btrim(p_webhook_name),
+        table_regclass::text,
+        normalized_events,
+        btrim(p_queue_name),
+        trigger_name,
+        trigger_sql
+    )
+    ON CONFLICT (webhook_name, table_name) DO UPDATE
+    SET events = EXCLUDED.events,
+        queue_name = EXCLUDED.queue_name,
+        trigger_name = EXCLUDED.trigger_name,
+        trigger_sql = EXCLUDED.trigger_sql,
+        installed_at = now();
+
+    RETURN trigger_sql;
+END;
 $$;
 
 -- FEATURE: PM3

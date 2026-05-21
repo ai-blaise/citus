@@ -633,6 +633,64 @@ for feature_id, required_phrases in (
 
 for feature_id, required_phrases in (
     (
+        "M1",
+        (
+            "installable SQL migration run registry",
+            "companion_internal.migrate_start",
+            "companion_internal.migration_add_column",
+            "companion_migration_operations",
+            "verifies operations cannot run without an active migration",
+            "actual distributed DDL execution, schema-job workers, online backfill, lock orchestration, rollback execution, and operator CRD reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "M11",
+        (
+            "installable SQL online type-change helper",
+            "companion_internal.migration_online_type_change",
+            "shadow-column DDL",
+            "verifies identical source and target types fail closed",
+            "actual backfill workers, trigger-based dual writes, cutover, validation scans, rollback, and distributed table rewrite orchestration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "IA3",
+        (
+            "installable SQL index-advisor candidate registry",
+            "companion_internal.index_advisor_record_candidate",
+            "companion_index_advisor_ranked",
+            "CREATE INDEX CONCURRENTLY",
+            "verifies non-improving candidates fail closed",
+            "HypoPG and pg_qualstats workload mining, automatic index creation, distributed index rollout, and write-amplification governance remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "WH2",
+        (
+            "installable SQL webhook registration and trigger queue helper",
+            "companion_internal.webhook_register",
+            "companion_internal.install_webhook_trigger",
+            "companion_webhook_events",
+            "verifies INSERT and UPDATE rows are enqueued",
+            "outbound HTTP delivery, retry workers, dead-letter queues, secret resolution, and operator webhook CRDs remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for control-plane SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow control-plane SQL runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1249,6 +1307,22 @@ for phrase in (
     "PM4 regression samples were not recorded",
     "PM3 plan_freeze accepted an empty query hash",
     "PM4 regression guard accepted an unknown frozen plan",
+    "companion_internal.migrate_start",
+    "companion_internal.migration_add_column",
+    "companion_internal.migration_online_type_change",
+    "companion_migration_runs",
+    "M1 migration run was not completed and visible",
+    "M1/M11 migration operations were not recorded",
+    "M11 online type-change accepted identical types",
+    "companion_internal.index_advisor_record_candidate",
+    "companion_index_advisor_ranked",
+    "IA3 ranked advisor did not render CREATE INDEX CONCURRENTLY SQL",
+    "IA3 accepted a non-improving candidate",
+    "companion_internal.webhook_register",
+    "companion_internal.install_webhook_trigger",
+    "companion_webhook_events",
+    "WH2 webhook trigger did not enqueue INSERT and UPDATE rows",
+    "WH2 accepted a non-http webhook URL",
     "companion_internal.bump_placement_generation",
     "companion_placement_generation",
     "companion_local_placement_matches",
@@ -1299,6 +1373,25 @@ for phrase in (
     "CREATE FUNCTION companion_internal.plan_auto_promote",
     "CREATE FUNCTION companion_internal.plan_regression_guard",
     "CREATE FUNCTION companion_plan_regression_violates",
+    "CREATE TABLE IF NOT EXISTS companion_internal.migration_runs",
+    "CREATE TABLE IF NOT EXISTS companion_internal.migration_operations",
+    "CREATE VIEW companion_migration_runs",
+    "CREATE VIEW companion_migration_operations",
+    "CREATE FUNCTION companion_internal.migrate_start",
+    "CREATE FUNCTION companion_internal.migration_add_column",
+    "CREATE FUNCTION companion_internal.migration_online_type_change",
+    "CREATE FUNCTION companion_internal.migrate_complete",
+    "CREATE TABLE IF NOT EXISTS companion_internal.index_advisor_candidates",
+    "CREATE VIEW companion_index_advisor_candidates",
+    "CREATE FUNCTION companion_internal.index_advisor_record_candidate",
+    "CREATE FUNCTION companion_index_advisor_ranked",
+    "CREATE TABLE IF NOT EXISTS companion_internal.webhook_registrations",
+    "CREATE TABLE IF NOT EXISTS companion_internal.webhook_triggers",
+    "CREATE TABLE IF NOT EXISTS companion_internal.webhook_events",
+    "CREATE VIEW companion_webhook_registrations",
+    "CREATE VIEW companion_webhook_events",
+    "CREATE FUNCTION companion_internal.webhook_register",
+    "CREATE FUNCTION companion_internal.install_webhook_trigger",
     "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations",
     "CREATE VIEW companion_shard_placement_generations",
     "CREATE FUNCTION companion_internal.bump_placement_generation",
@@ -1322,6 +1415,10 @@ for phrase in (
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
     "'PM3', 'plan freeze companion module', 'sql-runtime'",
     "'PM4', 'plan regression detection', 'sql-runtime'",
+    "'M1', 'pgroll-style expand-contract migrations', 'sql-runtime'",
+    "'M11', 'online column-type migration', 'sql-runtime'",
+    "'IA3', 'companion index advisor', 'sql-runtime'",
+    "'WH2', 'companion webhook helpers', 'sql-runtime'",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",
