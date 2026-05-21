@@ -423,6 +423,110 @@ YAML
   wait_for_job ai-blaise-pool-admin-smoke
 }
 
+probe_pool_rejected_metrics() {
+  local pods
+  local pod
+  local local_port=18220
+  local total_rejected=0
+
+  pods="$(
+    kubectl -n "${namespace}" get pods \
+      -l "app.kubernetes.io/name=${chart_name},app.kubernetes.io/component=pool" \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+  )"
+
+  if [[ -z "${pods}" ]]; then
+    echo "no pool pods found for CIDR rejection metrics probe" >&2
+    return 1
+  fi
+
+  while IFS= read -r pod; do
+    [[ -n "${pod}" ]] || continue
+
+    local log_file
+    local port_forward_pid
+    local metrics
+    local rejected
+
+    log_file="$(mktemp)"
+    kubectl -n "${namespace}" port-forward \
+      --address 127.0.0.1 \
+      "pod/${pod}" \
+      "${local_port}:8080" >"${log_file}" 2>&1 &
+    port_forward_pid="$!"
+
+    cleanup_pool_rejected_port_forward() {
+      kill "${port_forward_pid}" >/dev/null 2>&1 || true
+      wait "${port_forward_pid}" >/dev/null 2>&1 || true
+      rm -f "${log_file}"
+    }
+
+    if ! wait_for_http "http://127.0.0.1:${local_port}/metrics" "pool ${pod} rejected metrics"; then
+      cat "${log_file}" >&2 || true
+      cleanup_pool_rejected_port_forward
+      return 1
+    fi
+
+    metrics="$(curl -fsS "http://127.0.0.1:${local_port}/metrics")"
+    rejected="$(
+      printf '%s\n' "${metrics}" |
+        awk '/^ai_blaise_citus_pool_rejected_connections_total / { print int($2) }'
+    )"
+    rejected="${rejected:-0}"
+    total_rejected="$((total_rejected + rejected))"
+
+    cleanup_pool_rejected_port_forward
+    local_port="$((local_port + 1))"
+  done <<<"${pods}"
+
+  if [[ "${total_rejected}" -lt 1 ]]; then
+    echo "pool pod metrics did not record the CIDR-denied SQL connection" >&2
+    return 1
+  fi
+}
+
+run_pool_cidr_deny_smoke() {
+  helm upgrade "${release}" deploy/k8s/helm/citus-overlay \
+    --namespace "${namespace}" \
+    --reuse-values \
+    --set-string "pool.networkPolicy.cidrAllowlist[0]=192.0.2.0/24"
+
+  kubectl -n "${namespace}" rollout status "deployment/${chart_name}-pool" --timeout=240s
+
+  kubectl -n "${namespace}" delete job ai-blaise-pool-cidr-deny-smoke >/dev/null 2>&1 || true
+  cat <<'YAML' | kubectl apply -n "${namespace}" -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-blaise-pool-cidr-deny-smoke
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: postgres:17
+          env:
+            - name: PGPASSWORD
+              value: postgres
+            - name: PGCONNECT_TIMEOUT
+              value: "5"
+          command:
+            - sh
+            - -lc
+            - |
+              set -eu
+              if psql -h ai-blaise-citus-pool -p 5432 -U postgres -d postgres -Atqc 'SELECT 1'; then
+                echo "pool CIDR deny smoke unexpectedly allowed SQL traffic" >&2
+                exit 1
+              fi
+YAML
+  wait_for_job ai-blaise-pool-cidr-deny-smoke
+  probe_pool_rejected_metrics
+  echo "ai_blaise_citus pool CIDR deny smoke passed in kind/${cluster}/${namespace}"
+}
+
 run_citusctl_image_smoke() {
   local citusctl_output
 
@@ -541,6 +645,7 @@ for sidecar in "${images[@]}"; do
 done
 
 run_pool_sql_smoke
+run_pool_cidr_deny_smoke
 run_citusctl_image_smoke
 
 kubectl -n "${namespace}" get deployment,pod,svc

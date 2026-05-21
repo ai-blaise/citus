@@ -27,9 +27,9 @@ more production-ready than the artifacts justified.
 8. Operand-image docs described the required extension bundle as installed for
    every operand image even though `FEATURE: Bundle1` is still an alpha
    manifest/init contract without a real full-bundle image build smoke.
-9. Production Helm values enabled alpha runtime/security intent fields for
+9. Production Helm values previously enabled alpha runtime/security intent fields for
    protocol pipelining, PG18 `io_uring`, External Secrets, TLS, release
-   attestations, and pool CIDR allowlists even though the chart does not yet
+   attestations, and pool CIDR allowlists even though the chart did not yet
    render or enforce the corresponding runtime/security objects.
 10. The Kubernetes production smoke installed the exhaustive default profile
     with every app image enabled, but it did not install `values-prod.yaml`.
@@ -149,8 +149,14 @@ more production-ready than the artifacts justified.
 - Production values now keep alpha runtime/security intent controls disabled by
   default. The deploy check and production gap audit reject production values
   that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
-  release attestations, or CIDR allowlists before those controls are rendered,
-  enforced, and verified end to end.
+  or release attestations before those controls are rendered, enforced, and
+  verified end to end.
+- Sec13 pool CIDR access control is now enforced by the live pool data path and
+  rendered by Helm. The pool rejects PostgreSQL clients outside
+  `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST` before connecting upstream, exposes
+  `ai_blaise_citus_pool_rejected_connections_total`, renders a matching
+  NetworkPolicy for clusters with NetworkPolicy-capable CNI enforcement, and is
+  proven by Docker plus kind smokes that verify allowed and denied SQL traffic.
 - Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
   wildcard grant, and it no longer grants Secret access while secret binding
   remains alpha. The deploy check and production gap audit reject wildcard CRD
@@ -289,18 +295,19 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 161
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Six narrow headings are
+The current feature inventory contains 240 source `FEATURE:` markers and 162
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Seven narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence: `D13`
 for the production runtime image matrix, `O4` for the shared sidecar
 health/readiness/metrics runtime, `O1` for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
 streaming standby, and `R4` for the installable idle transaction detection SQL
-surface. `TS18` remains alpha until real Citus+TimescaleDB cohabitation is
-verified without a stubbed distribution entrypoint. The other
+surface, and `Sec13` for pool CIDR access control with live allowed and denied
+SQL traffic proof. `TS18` remains alpha until real Citus+TimescaleDB
+cohabitation is verified without a stubbed distribution entrypoint. The other
 155 feature headings remain
-`Status: alpha`. The remaining 79 source markers are represented as V2
+`Status: alpha`. The remaining 78 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.

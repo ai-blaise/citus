@@ -39,6 +39,7 @@ ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
 HELPER_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/_helpers.tpl"
 OPERATOR_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/operator-deployment.yaml"
 POOL_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/pool-deployment.yaml"
+POOL_NETWORKPOLICY_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/pool-networkpolicy.yaml"
 SIDECAR_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/sidecar-deployments.yaml"
 TOOLS_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/tools-deployment.yaml"
 DASHBOARD_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml"
@@ -273,6 +274,7 @@ argo_app = read(ARGO_APP)
 helper_template = read(HELPER_TEMPLATE)
 operator_deployment_template = read(OPERATOR_DEPLOYMENT_TEMPLATE)
 pool_deployment_template = read(POOL_DEPLOYMENT_TEMPLATE)
+pool_networkpolicy_template = read(POOL_NETWORKPOLICY_TEMPLATE)
 sidecar_deployment_template = read(SIDECAR_DEPLOYMENT_TEMPLATE)
 tools_deployment_template = read(TOOLS_DEPLOYMENT_TEMPLATE)
 dashboard_template = read(DASHBOARD_TEMPLATE)
@@ -609,6 +611,7 @@ if 'docker exec -i "${container}" psql' not in sql_smoke:
     fail("SQL extension smoke must attach stdin to psql")
 for phrase in (
     "shared_preload_libraries=pg_stat_statements",
+    "PostgreSQL init process complete",
     "CREATE EXTENSION pg_stat_statements;",
     "ai_blaise_pg_stat_statements_seed",
     "companion_pg_stat_statements_p95",
@@ -622,6 +625,7 @@ for phrase in (
 for phrase in (
     'docker exec -i "${container}" psql',
     "shared_preload_libraries=pg_stat_statements",
+    "PostgreSQL init process complete",
     "ai_blaise_pg_stat_statements_seed",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
@@ -632,7 +636,11 @@ for phrase in (
 for phrase in (
     'psql -h 127.0.0.1 -p "${pool_port}"',
     "AI_BLAISE_POOL_UPSTREAM_ADDR",
+    "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST",
+    "PostgreSQL init process complete",
     "ai_blaise_citus_pool_requests_total",
+    "ai_blaise_citus_pool_rejected_connections_total",
+    "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic",
 ):
     if phrase not in pool_smoke:
         fail(f"pool-proxy-smoke.sh is missing live SQL proof marker: {phrase}")
@@ -658,6 +666,7 @@ for phrase in (
 for phrase in (
     "wal_level=replica",
     "pg_basebackup",
+    "PostgreSQL init process complete",
     "pg_is_in_recovery()",
     "companion_pg_stat_local_activity",
     "companion_pg_stat_distributed",
@@ -695,6 +704,10 @@ for phrase in (
     "probe_pool_admin_pods",
     "pool admin smoke did not observe ready upstream metrics",
     "ai_blaise_citus_pool_requests_total",
+    "run_pool_cidr_deny_smoke",
+    "ai-blaise-pool-cidr-deny-smoke",
+    "pool CIDR deny smoke passed",
+    "ai_blaise_citus_pool_rejected_connections_total",
     "run_citusctl_image_smoke",
     "ai-blaise-citusctl-image-smoke",
     "citusctl inspect destructive=false requires_plan_id=true steps=3",
@@ -801,6 +814,21 @@ for resource in ("citusclusters", "hypertables", "scheduledrepacks"):
         fail(f"operator RBAC must include explicit resource: {resource}")
 
 for phrase in (
+    "FEATURE: Sec13",
+    "kind: NetworkPolicy",
+    "cidrAllowlist",
+    "ipBlock:",
+):
+    if phrase not in pool_networkpolicy_template:
+        fail(f"pool NetworkPolicy template must preserve Sec13 render marker: {phrase}")
+for phrase in (
+    "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST",
+    "pool.networkPolicy.cidrAllowlist",
+):
+    if phrase not in pool_deployment_template:
+        fail(f"pool deployment must pass Sec13 CIDR allowlist to runtime: {phrase}")
+
+for phrase in (
     "bash ci/ai-blaise/app-image-digest-manifest-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh",
@@ -890,11 +918,6 @@ if enabled_sidecars:
 alpha_intent_findings = []
 if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
     alpha_intent_findings.append("T7 pool.protocolPipeline.enabled")
-if re.search(
-    r"networkPolicy:\n(?:    .*\n)*    cidrAllowlist:\n(?:      - .+\n)+",
-    prod_values,
-):
-    alpha_intent_findings.append("Sec13 pool.networkPolicy.cidrAllowlist")
 if re.search(r"ioMethod:\s+io_uring\b", prod_values):
     alpha_intent_findings.append("T6 postgres.ioMethod")
 if re.search(r"externalSecrets:\n(?:    .*\n)*    enabled:\s+true\b", prod_values):
@@ -936,6 +959,8 @@ for phrase in (
     "allow_mutable_image_tags=1",
     "must not be used as release image-pinning evidence",
     "gitops sync intentionally fails closed",
+    "`feature: sec13` pool cidr access control is production-ready",
+    "ai_blaise_citus_pool_rejected_connections_total",
 ):
     if phrase not in runbook_compact:
         fail(f"production runbook must preserve runtime/security alpha guardrail: {phrase}")
@@ -979,6 +1004,8 @@ for phrase in (
     "`ts18` remains alpha until real citus+timescaledb cohabitation",
     "tools deployment remains dev-only",
     "argo application is a gitops render contract, not live controller evidence",
+    "sec13 pool cidr access control is now enforced by the live pool data path",
+    "ai_blaise_citus_pool_rejected_connections_total",
 ):
     if phrase not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve deploy-wrapper guardrail: {phrase}")

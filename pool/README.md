@@ -15,11 +15,16 @@ proxy with a separate admin health port:
 - `AI_BLAISE_POOL_ADMIN_ADDR`: HTTP admin listener for `/healthz`, `/readyz`,
   and `/metrics`, default `0.0.0.0:8080`
 - `AI_BLAISE_POOL_UPSTREAM_ADDR`: required PostgreSQL upstream target
+- `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST`: optional comma-separated CIDR list
+  for PostgreSQL data-port clients; empty means allow all
 
 The proxy keeps the data plane byte-transparent while the shard-map router and
 plan-cache logic mature behind the same binary. Readiness checks connect to the
 configured upstream, so Kubernetes does not route traffic to a pool pod that
 cannot reach Postgres.
+`FEATURE: Sec13` is enforced in the live proxy: clients outside the configured
+CIDR allowlist are rejected before an upstream connection is opened, and
+`ai_blaise_citus_pool_rejected_connections_total` records those denials.
 
 Current implemented surface:
 
@@ -43,4 +48,5 @@ selection.
 `cargo run -p ai_blaise_citus_pool -- run-canonical` emits the deterministic
 execution summary for the pool runtime and shard-map contracts used by CI.
 `ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL
-through the pool listener, and asserts readiness plus Prometheus counters.
+through the pool listener, proves CIDR-allowed and CIDR-denied data-port
+traffic, and asserts readiness plus Prometheus counters.

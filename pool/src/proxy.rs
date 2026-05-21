@@ -1,11 +1,12 @@
 // FEATURE: O4
+// FEATURE: Sec13
 // FEATURE: T3
 // FEATURE: T7
 
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Read, Write};
-use std::net::{Shutdown, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -20,6 +21,7 @@ pub struct PoolProxyConfig {
     pub listen_addr: String,
     pub admin_addr: String,
     pub upstream_addr: String,
+    pub client_cidr_allowlist: ClientCidrAllowlist,
 }
 
 impl PoolProxyConfig {
@@ -30,11 +32,16 @@ impl PoolProxyConfig {
             .unwrap_or_else(|_| DEFAULT_ADMIN_LISTEN_ADDR.to_string());
         let upstream_addr = std::env::var("AI_BLAISE_POOL_UPSTREAM_ADDR")
             .map_err(|_| PoolProxyError::MissingEnv("AI_BLAISE_POOL_UPSTREAM_ADDR"))?;
+        let client_cidr_allowlist = ClientCidrAllowlist::parse_csv(&env_or_default(
+            "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST",
+            "",
+        ))?;
 
         let config = Self {
             listen_addr,
             admin_addr,
             upstream_addr,
+            client_cidr_allowlist,
         };
         config.validate()?;
         Ok(config)
@@ -54,12 +61,137 @@ impl PoolProxyConfig {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ClientCidrAllowlist {
+    entries: Vec<CidrBlock>,
+}
+
+impl ClientCidrAllowlist {
+    pub fn parse_csv(value: &str) -> Result<Self, PoolProxyError> {
+        let entries = value
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(CidrBlock::parse)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { entries })
+    }
+
+    pub fn allows(&self, ip: IpAddr) -> bool {
+        self.entries.is_empty() || self.entries.iter().any(|entry| entry.contains(ip))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn as_csv(&self) -> String {
+        self.entries
+            .iter()
+            .map(|entry| entry.source.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+}
+
+impl Default for ClientCidrAllowlist {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct CidrBlock {
+    network: IpAddr,
+    prefix: u8,
+    source: String,
+}
+
+impl CidrBlock {
+    fn parse(value: &str) -> Result<Self, PoolProxyError> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(PoolProxyError::InvalidCidr(value.to_string()));
+        }
+
+        let (ip_text, prefix) = if let Some((ip_text, prefix_text)) = trimmed.split_once('/') {
+            let ip = ip_text
+                .parse::<IpAddr>()
+                .map_err(|_| PoolProxyError::InvalidCidr(trimmed.to_string()))?;
+            let prefix = prefix_text
+                .parse::<u8>()
+                .map_err(|_| PoolProxyError::InvalidCidr(trimmed.to_string()))?;
+            (ip, prefix)
+        } else {
+            let ip = trimmed
+                .parse::<IpAddr>()
+                .map_err(|_| PoolProxyError::InvalidCidr(trimmed.to_string()))?;
+            let prefix = match ip {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            };
+            (ip, prefix)
+        };
+
+        let max_prefix = match ip_text {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        if prefix > max_prefix {
+            return Err(PoolProxyError::InvalidCidr(trimmed.to_string()));
+        }
+
+        Ok(Self {
+            network: ip_text,
+            prefix,
+            source: trimmed.to_string(),
+        })
+    }
+
+    fn contains(&self, candidate: IpAddr) -> bool {
+        match (self.network, candidate) {
+            (IpAddr::V4(network), IpAddr::V4(candidate)) => {
+                cidr_contains_v4(network, candidate, self.prefix)
+            }
+            (IpAddr::V6(network), IpAddr::V6(candidate)) => {
+                cidr_contains_v6(network, candidate, self.prefix)
+            }
+            _ => false,
+        }
+    }
+}
+
+fn cidr_contains_v4(network: Ipv4Addr, candidate: Ipv4Addr, prefix: u8) -> bool {
+    let network = u32::from(network);
+    let candidate = u32::from(candidate);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    (network & mask) == (candidate & mask)
+}
+
+fn cidr_contains_v6(network: Ipv6Addr, candidate: Ipv6Addr, prefix: u8) -> bool {
+    let network = u128::from(network);
+    let candidate = u128::from(candidate);
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u128::MAX << (128 - prefix)
+    };
+    (network & mask) == (candidate & mask)
+}
+
 #[derive(Debug)]
 pub struct PoolProxyState {
     started_at: SystemTime,
     active_connections: AtomicU64,
     accepted_connections: AtomicU64,
     completed_connections: AtomicU64,
+    rejected_connections: AtomicU64,
     upstream_connect_errors: AtomicU64,
     io_errors: AtomicU64,
     client_to_upstream_bytes: AtomicU64,
@@ -73,6 +205,7 @@ impl PoolProxyState {
             active_connections: AtomicU64::new(0),
             accepted_connections: AtomicU64::new(0),
             completed_connections: AtomicU64::new(0),
+            rejected_connections: AtomicU64::new(0),
             upstream_connect_errors: AtomicU64::new(0),
             io_errors: AtomicU64::new(0),
             client_to_upstream_bytes: AtomicU64::new(0),
@@ -92,6 +225,10 @@ impl PoolProxyState {
     fn completed(&self) {
         self.active_connections.fetch_sub(1, Ordering::Relaxed);
         self.completed_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn rejected(&self) {
+        self.rejected_connections.fetch_add(1, Ordering::Relaxed);
     }
 
     fn connect_error(&self) {
@@ -191,15 +328,24 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     });
 
     eprintln!(
-        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {}",
-        config.listen_addr, config.upstream_addr
+        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {} with client CIDR allowlist {}",
+        config.listen_addr,
+        config.upstream_addr,
+        if config.client_cidr_allowlist.is_empty() {
+            "<allow-all>".to_string()
+        } else {
+            config.client_cidr_allowlist.as_csv()
+        }
     );
     for client in proxy_listener.incoming() {
         let client = client?;
         let upstream_addr = config.upstream_addr.clone();
+        let client_cidr_allowlist = config.client_cidr_allowlist.clone();
         let state = Arc::clone(&state);
         thread::spawn(move || {
-            if let Err(error) = handle_proxy_connection(client, &upstream_addr, &state) {
+            if let Err(error) =
+                handle_proxy_connection(client, &upstream_addr, &client_cidr_allowlist, &state)
+            {
                 eprintln!("pool connection failed: {error}");
             }
         });
@@ -211,8 +357,18 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
 pub fn handle_proxy_connection(
     client: TcpStream,
     upstream_addr: &str,
+    client_cidr_allowlist: &ClientCidrAllowlist,
     state: &PoolProxyState,
 ) -> Result<(), PoolProxyError> {
+    let client_ip = client.peer_addr()?.ip();
+    if !client_cidr_allowlist.allows(client_ip) {
+        state.rejected();
+        return Err(PoolProxyError::ClientRejected {
+            client_ip: client_ip.to_string(),
+            allowlist: client_cidr_allowlist.as_csv(),
+        });
+    }
+
     state.accepted();
     let result = proxy_connection(client, upstream_addr, state);
     state.completed();
@@ -377,13 +533,14 @@ fn health_json(
     upstream_ready: bool,
 ) -> String {
     format!(
-        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
+        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
         ready,
         upstream_ready,
         escape_json(upstream_addr),
         state.active_connections.load(Ordering::Relaxed),
         state.accepted_connections.load(Ordering::Relaxed),
         state.completed_connections.load(Ordering::Relaxed),
+        state.rejected_connections.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed),
         state.io_errors.load(Ordering::Relaxed),
         state.uptime_seconds(),
@@ -402,6 +559,9 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
          # HELP ai_blaise_citus_pool_requests_total Accepted PostgreSQL client connections.\n\
          # TYPE ai_blaise_citus_pool_requests_total counter\n\
          ai_blaise_citus_pool_requests_total {}\n\
+         # HELP ai_blaise_citus_pool_rejected_connections_total PostgreSQL client connections rejected by CIDR allowlist.\n\
+         # TYPE ai_blaise_citus_pool_rejected_connections_total counter\n\
+         ai_blaise_citus_pool_rejected_connections_total {}\n\
          # HELP ai_blaise_citus_pool_errors_total Upstream connect and proxy I/O errors.\n\
          # TYPE ai_blaise_citus_pool_errors_total counter\n\
          ai_blaise_citus_pool_errors_total {}\n\
@@ -415,6 +575,7 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
         upstream_ready,
         state.active_connections.load(Ordering::Relaxed),
         state.accepted_connections.load(Ordering::Relaxed),
+        state.rejected_connections.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed)
             + state.io_errors.load(Ordering::Relaxed),
         state.client_to_upstream_bytes.load(Ordering::Relaxed),
@@ -452,7 +613,12 @@ pub enum PoolProxyError {
         left: &'static str,
         right: &'static str,
     },
+    ClientRejected {
+        client_ip: String,
+        allowlist: String,
+    },
     InvalidAddress(String),
+    InvalidCidr(String),
     Io(String),
     MalformedHttp,
     MissingAddress(&'static str),
@@ -466,7 +632,17 @@ impl fmt::Display for PoolProxyError {
             Self::AddressCollision { left, right } => {
                 write!(formatter, "{left} must differ from {right}")
             }
+            Self::ClientRejected {
+                client_ip,
+                allowlist,
+            } => {
+                write!(
+                    formatter,
+                    "client {client_ip} is outside pool CIDR allowlist {allowlist}"
+                )
+            }
             Self::InvalidAddress(address) => write!(formatter, "invalid address: {address}"),
+            Self::InvalidCidr(cidr) => write!(formatter, "invalid CIDR allowlist entry: {cidr}"),
             Self::Io(error) => write!(formatter, "{error}"),
             Self::MalformedHttp => write!(formatter, "malformed HTTP request"),
             Self::MissingAddress(field) => write!(formatter, "{field} must not be empty"),
@@ -501,6 +677,7 @@ mod tests {
             listen_addr: "127.0.0.1:15432".to_string(),
             admin_addr: "127.0.0.1:15432".to_string(),
             upstream_addr: "127.0.0.1:25432".to_string(),
+            client_cidr_allowlist: ClientCidrAllowlist::default(),
         };
 
         assert_eq!(
@@ -566,7 +743,32 @@ mod tests {
             .contains("ai_blaise_citus_pool_requests_total 1"));
         assert!(response
             .body
+            .contains("ai_blaise_citus_pool_rejected_connections_total 0"));
+        assert!(response
+            .body
             .contains("ai_blaise_citus_pool_errors_total 1"));
+    }
+
+    #[test]
+    fn cidr_allowlist_accepts_matching_clients_and_rejects_others() {
+        let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8,10.244.0.0/16").unwrap();
+
+        assert!(allowlist.allows("127.0.0.1".parse().unwrap()));
+        assert!(allowlist.allows("10.244.2.15".parse().unwrap()));
+        assert!(!allowlist.allows("192.0.2.10".parse().unwrap()));
+        assert_eq!(allowlist.as_csv(), "127.0.0.0/8,10.244.0.0/16");
+    }
+
+    #[test]
+    fn cidr_allowlist_rejects_invalid_prefixes() {
+        assert_eq!(
+            ClientCidrAllowlist::parse_csv("127.0.0.1/33").unwrap_err(),
+            PoolProxyError::InvalidCidr("127.0.0.1/33".to_string())
+        );
+        assert_eq!(
+            ClientCidrAllowlist::parse_csv("not-a-cidr").unwrap_err(),
+            PoolProxyError::InvalidCidr("not-a-cidr".to_string())
+        );
     }
 
     #[test]
@@ -586,7 +788,8 @@ mod tests {
         let proxy_thread = thread::spawn(move || {
             let (client, _) = proxy_listener.accept().unwrap();
             let state = PoolProxyState::new();
-            handle_proxy_connection(client, &upstream_addr, &state).unwrap();
+            let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
+            handle_proxy_connection(client, &upstream_addr, &allowlist, &state).unwrap();
             assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
             assert_eq!(state.completed_connections.load(Ordering::Relaxed), 1);
         });
@@ -599,6 +802,27 @@ mod tests {
 
         assert_eq!(&response, b"pong");
         upstream_thread.join().unwrap();
+        proxy_thread.join().unwrap();
+    }
+
+    #[test]
+    fn proxy_rejects_clients_outside_cidr_allowlist_before_upstream_connect() {
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_thread = thread::spawn(move || {
+            let (client, _) = proxy_listener.accept().unwrap();
+            let state = PoolProxyState::new();
+            let allowlist = ClientCidrAllowlist::parse_csv("192.0.2.0/24").unwrap();
+            let error =
+                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+
+            assert!(matches!(error, PoolProxyError::ClientRejected { .. }));
+            assert_eq!(state.rejected_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 0);
+            assert_eq!(state.upstream_connect_errors.load(Ordering::Relaxed), 0);
+        });
+
+        let _client = TcpStream::connect(proxy_addr).unwrap();
         proxy_thread.join().unwrap();
     }
 }

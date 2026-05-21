@@ -38,6 +38,8 @@ spec:
               value: "0.0.0.0:{{ .Values.pool.service.port }}"
             - name: AI_BLAISE_POOL_UPSTREAM_ADDR
               value: "{{ .Values.pool.upstream.host }}:{{ .Values.pool.upstream.port }}"
+            - name: AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST
+              value: "{{ join "," .Values.pool.networkPolicy.cidrAllowlist }}"
           ports:
             - name: postgres
               containerPort: {{ .Values.pool.service.port }}

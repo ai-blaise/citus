@@ -30,6 +30,7 @@ required_files=(
   "${chart_dir}/templates/observability-dashboards.yaml"
   "${chart_dir}/templates/observability-prometheusrules.yaml"
   "${chart_dir}/templates/pool-deployment.yaml"
+  "${chart_dir}/templates/pool-networkpolicy.yaml"
   "${chart_dir}/templates/pool-service.yaml"
   "${chart_dir}/templates/sidecar-deployments.yaml"
   "${chart_dir}/templates/tools-deployment.yaml"
@@ -87,6 +88,7 @@ grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_ADMIN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_UPSTREAM_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'pool.image.digest' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'name: admin' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
@@ -94,6 +96,10 @@ grep -q 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/pool-deployment.yaml"
 grep -A4 'readinessProbe:' "${chart_dir}/templates/pool-deployment.yaml" | grep -q 'port: admin'
 grep -A4 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml" | grep -q 'port: admin'
+grep -q 'FEATURE: Sec13' "${chart_dir}/templates/pool-networkpolicy.yaml"
+grep -q 'kind: NetworkPolicy' "${chart_dir}/templates/pool-networkpolicy.yaml"
+grep -q 'cidrAllowlist' "${chart_dir}/templates/pool-networkpolicy.yaml"
+grep -q 'ipBlock:' "${chart_dir}/templates/pool-networkpolicy.yaml"
 grep -q 'targetPort: admin' "${chart_dir}/templates/pool-service.yaml"
 grep -q 'args:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/sidecar-deployments.yaml"
@@ -149,6 +155,9 @@ grep -q 'probe_deployment_http' "${kind_smoke}"
 grep -q 'expected_probe_component' "${kind_smoke}"
 grep -q 'probe_pool_admin_pods' "${kind_smoke}"
 grep -q 'pool admin smoke did not observe ready upstream metrics' "${kind_smoke}"
+grep -q 'run_pool_cidr_deny_smoke' "${kind_smoke}"
+grep -q 'ai-blaise-pool-cidr-deny-smoke' "${kind_smoke}"
+grep -q 'ai_blaise_citus_pool_rejected_connections_total' "${kind_smoke}"
 grep -q 'run_citusctl_image_smoke' "${kind_smoke}"
 grep -q 'ai-blaise-citusctl-image-smoke' "${kind_smoke}"
 grep -q 'citusctl inspect destructive=false requires_plan_id=true steps=3' "${kind_smoke}"
@@ -240,9 +249,6 @@ findings = []
 if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", pool):
     findings.append("T7 pool.protocolPipeline.enabled")
 
-if re.search(r"networkPolicy:\n(?:    .*\n)*    cidrAllowlist:\n(?:      - .+\n)+", pool):
-    findings.append("Sec13 pool.networkPolicy.cidrAllowlist")
-
 if re.search(r"ioMethod:\s+io_uring\b", postgres):
     findings.append("T6 postgres.ioMethod")
 
@@ -302,6 +308,9 @@ if command -v helm >/dev/null 2>&1; then
     >"${render_dir}/prod.yaml"
 
   grep -q 'kind: Deployment' "${render_dir}/default.yaml"
+  grep -q 'kind: NetworkPolicy' "${render_dir}/default.yaml"
+  grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${render_dir}/default.yaml"
+  grep -q '10.0.0.0/8' "${render_dir}/default.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/default.yaml"
   grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"

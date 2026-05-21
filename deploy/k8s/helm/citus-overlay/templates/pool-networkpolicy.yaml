@@ -1,0 +1,29 @@
+{{/* FEATURE: Sec13 */}}
+{{- if .Values.pool.networkPolicy.cidrAllowlist }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "citus-overlay.name" . }}-pool-postgres
+  labels:
+    {{- include "citus-overlay.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pool
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "citus-overlay.name" . }}
+      app.kubernetes.io/component: pool
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.pool.service.adminPort }}
+    - from:
+        {{- range .Values.pool.networkPolicy.cidrAllowlist }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.pool.service.port }}
+{{- end }}

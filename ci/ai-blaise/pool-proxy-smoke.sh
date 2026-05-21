@@ -54,9 +54,24 @@ docker run \
   -p "127.0.0.1:${postgres_port}:5432" \
   -d "${postgres_image}" >/dev/null
 
+postgres_init_complete=0
+for _ in $(seq 1 120); do
+  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    postgres_init_complete=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${postgres_init_complete}" != "1" ]]; then
+  docker logs "${container}" >&2 || true
+  echo "postgres container did not finish init scripts" >&2
+  exit 1
+fi
+
 postgres_ready=0
 for _ in $(seq 1 60); do
-  if docker exec "${container}" pg_isready -U postgres >/dev/null 2>&1; then
+  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
     postgres_ready=1
     break
   fi
@@ -72,6 +87,7 @@ fi
 AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
   AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
   AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
+  AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="127.0.0.0/8" \
   cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
 pool_pid="$!"
 
@@ -125,6 +141,68 @@ if ! printf '%s\n' "${metrics}" | awk '
 '; then
   cat "${pool_log}" >&2
   echo "pool metrics did not show upstream readiness and proxied PostgreSQL traffic" >&2
+  printf '%s\n' "${metrics}" >&2
+  exit 1
+fi
+
+kill "${pool_pid}" >/dev/null 2>&1 || true
+wait "${pool_pid}" >/dev/null 2>&1 || true
+pool_pid=""
+: >"${pool_log}"
+
+AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
+  AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
+  AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
+  AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="192.0.2.0/24" \
+  cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
+pool_pid="$!"
+
+pool_ready=0
+for _ in $(seq 1 120); do
+  if ! kill -0 "${pool_pid}" >/dev/null 2>&1; then
+    cat "${pool_log}" >&2
+    echo "pool proxy exited before CIDR deny readiness" >&2
+    exit 1
+  fi
+  if curl -fsS "http://127.0.0.1:${admin_port}/readyz" 2>/dev/null |
+    grep -Fq '"upstream_ready":true'; then
+    pool_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${pool_ready}" != "1" ]]; then
+  cat "${pool_log}" >&2
+  echo "pool proxy did not report upstream-ready readiness for CIDR deny smoke" >&2
+  exit 1
+fi
+
+denied_stdout="$(mktemp -t ai-blaise-pool-cidr-deny.XXXXXX.out)"
+denied_stderr="$(mktemp -t ai-blaise-pool-cidr-deny.XXXXXX.err)"
+if docker run --rm \
+  --network host \
+  -e PGPASSWORD=postgres \
+  -e PGCONNECT_TIMEOUT=5 \
+  "${postgres_image}" \
+  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqc 'SELECT 1' \
+  >"${denied_stdout}" 2>"${denied_stderr}"; then
+  cat "${pool_log}" >&2
+  cat "${denied_stdout}" >&2
+  cat "${denied_stderr}" >&2
+  echo "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" >&2
+  rm -f "${denied_stdout}" "${denied_stderr}"
+  exit 1
+fi
+rm -f "${denied_stdout}" "${denied_stderr}"
+
+metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
+if ! printf '%s\n' "${metrics}" | awk '
+  /^ai_blaise_citus_pool_rejected_connections_total / && $2 >= 1 { rejected = 1 }
+  END { exit rejected ? 0 : 1 }
+'; then
+  cat "${pool_log}" >&2
+  echo "pool metrics did not show CIDR-denied PostgreSQL traffic" >&2
   printf '%s\n' "${metrics}" >&2
   exit 1
 fi
