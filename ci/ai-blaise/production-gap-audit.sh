@@ -598,6 +598,41 @@ for feature_id, required_phrases in (
 
 for feature_id, required_phrases in (
     (
+        "PM3",
+        (
+            "installable SQL plan-freeze registry",
+            "companion_internal.plan_freeze",
+            "companion_internal.plan_auto_promote",
+            "companion_plan_freezes",
+            "verifies an empty query hash fails closed",
+            "actual planner enforcement, hint injection, pg_hint_plan/sr_plan integration, auto-promotion workers, distributed plan capture, and plan XML validation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "PM4",
+        (
+            "installable SQL latency and cost regression policy evaluation",
+            "companion_internal.plan_regression_guard",
+            "companion_plan_regression_violates",
+            "verifies regression samples are recorded",
+            "verifies a missing frozen plan fails closed",
+            "automatic production-plan replacement, query capture, pg_hint_plan/sr_plan enforcement, workload baselining, and distributed planner integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for plan management SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow SQL plan-management runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1203,6 +1238,17 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
+    "companion_internal.plan_freeze",
+    "companion_internal.plan_auto_promote",
+    "companion_internal.plan_regression_guard",
+    "companion_plan_regression_violates",
+    "companion_plan_freezes",
+    "PM3 plan freeze state was not visible with policy metadata",
+    "PM4 regression guard did not flag latency regression",
+    "PM4 regression guard flagged an allowed candidate",
+    "PM4 regression samples were not recorded",
+    "PM3 plan_freeze accepted an empty query hash",
+    "PM4 regression guard accepted an unknown frozen plan",
     "companion_internal.bump_placement_generation",
     "companion_placement_generation",
     "companion_local_placement_matches",
@@ -1244,6 +1290,15 @@ for phrase in (
     "CREATE FUNCTION companion_set_session_claims",
     "CREATE FUNCTION companion_current_session_claims",
     "CREATE FUNCTION companion_current_tenant_id",
+    "CREATE TABLE IF NOT EXISTS companion_internal.plan_freezes",
+    "CREATE TABLE IF NOT EXISTS companion_internal.plan_promotion_policies",
+    "CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_policies",
+    "CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_samples",
+    "CREATE VIEW companion_plan_freezes",
+    "CREATE FUNCTION companion_internal.plan_freeze",
+    "CREATE FUNCTION companion_internal.plan_auto_promote",
+    "CREATE FUNCTION companion_internal.plan_regression_guard",
+    "CREATE FUNCTION companion_plan_regression_violates",
     "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations",
     "CREATE VIEW companion_shard_placement_generations",
     "CREATE FUNCTION companion_internal.bump_placement_generation",
@@ -1265,6 +1320,8 @@ for phrase in (
     "CREATE FUNCTION companion_ledger_seal",
     "CREATE VIEW companion_ledger_entries",
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
+    "'PM3', 'plan freeze companion module', 'sql-runtime'",
+    "'PM4', 'plan regression detection', 'sql-runtime'",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",

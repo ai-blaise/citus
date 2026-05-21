@@ -20,6 +20,41 @@ CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations (
     updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.plan_freezes (
+    query_hash text PRIMARY KEY,
+    plan_xml text NOT NULL,
+    hint_set_name text NOT NULL,
+    frozen_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.plan_promotion_policies (
+    query_hash text PRIMARY KEY
+        REFERENCES companion_internal.plan_freezes(query_hash) ON DELETE CASCADE,
+    min_executions integer NOT NULL CHECK (min_executions > 0),
+    stable_days integer NOT NULL CHECK (stable_days > 0),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_policies (
+    query_hash text PRIMARY KEY
+        REFERENCES companion_internal.plan_freezes(query_hash) ON DELETE CASCADE,
+    max_latency_regression_percent integer NOT NULL CHECK (max_latency_regression_percent > 0),
+    max_cost_regression_percent integer NOT NULL CHECK (max_cost_regression_percent > 0),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_samples (
+    sample_id bigserial PRIMARY KEY,
+    query_hash text NOT NULL
+        REFERENCES companion_internal.plan_freezes(query_hash) ON DELETE CASCADE,
+    baseline_p95_ms bigint NOT NULL CHECK (baseline_p95_ms > 0),
+    candidate_p95_ms bigint NOT NULL CHECK (candidate_p95_ms >= 0),
+    baseline_cost bigint NOT NULL CHECK (baseline_cost > 0),
+    candidate_cost bigint NOT NULL CHECK (candidate_cost >= 0),
+    violates_policy boolean NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -55,8 +90,8 @@ AS $$
         ('T8', 'toolkit two-step aggregate pushdown', 'sql-plan'),
         ('L9', 'worker partial aggregate pushdown', 'sql-plan'),
         ('M7', 'pre-flight cohabit-extension check', 'sql-plan'),
-        ('PM3', 'plan freeze companion module', 'sql-plan'),
-        ('PM4', 'plan regression detection', 'sql-plan'),
+        ('PM3', 'plan freeze companion module', 'sql-runtime'),
+        ('PM4', 'plan regression detection', 'sql-runtime'),
         ('IA3', 'companion index advisor', 'sql-plan'),
         ('Sec5', 'immutable ledger', 'sql-runtime'),
         ('Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'),
@@ -95,6 +130,204 @@ AS $$
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
         ('T7', 'pipelined client protocol in pool', 'ops-contract')
+$$;
+
+-- FEATURE: PM3
+-- FEATURE: PM4
+CREATE VIEW companion_plan_freezes AS
+SELECT
+    freezes.query_hash,
+    freezes.plan_xml,
+    freezes.hint_set_name,
+    promotions.min_executions,
+    promotions.stable_days,
+    regressions.max_latency_regression_percent,
+    regressions.max_cost_regression_percent,
+    freezes.frozen_at
+FROM companion_internal.plan_freezes AS freezes
+LEFT JOIN companion_internal.plan_promotion_policies AS promotions
+  ON promotions.query_hash = freezes.query_hash
+LEFT JOIN companion_internal.plan_regression_policies AS regressions
+  ON regressions.query_hash = freezes.query_hash;
+
+CREATE FUNCTION companion_internal.plan_freeze(
+    p_query_hash text,
+    p_plan_xml text,
+    p_hint_set_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_query_hash IS NULL OR btrim(p_query_hash) = '' THEN
+        RAISE EXCEPTION 'query_hash must not be empty';
+    END IF;
+    IF p_plan_xml IS NULL OR btrim(p_plan_xml) = '' THEN
+        RAISE EXCEPTION 'plan_xml must not be empty';
+    END IF;
+    IF p_hint_set_name IS NULL OR btrim(p_hint_set_name) = '' THEN
+        RAISE EXCEPTION 'hint_set_name must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.plan_freezes(query_hash, plan_xml, hint_set_name)
+    VALUES (btrim(p_query_hash), p_plan_xml, btrim(p_hint_set_name))
+    ON CONFLICT (query_hash) DO UPDATE
+    SET plan_xml = EXCLUDED.plan_xml,
+        hint_set_name = EXCLUDED.hint_set_name,
+        frozen_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.plan_auto_promote(
+    p_query_hash text,
+    p_min_executions integer,
+    p_stable_days integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_query_hash IS NULL OR btrim(p_query_hash) = '' THEN
+        RAISE EXCEPTION 'query_hash must not be empty';
+    END IF;
+    IF p_min_executions IS NULL OR p_min_executions <= 0 THEN
+        RAISE EXCEPTION 'min_executions must be greater than zero';
+    END IF;
+    IF p_stable_days IS NULL OR p_stable_days <= 0 THEN
+        RAISE EXCEPTION 'stable_days must be greater than zero';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.plan_freezes
+        WHERE query_hash = btrim(p_query_hash)
+    ) THEN
+        RAISE EXCEPTION 'query_hash does not reference a frozen plan';
+    END IF;
+
+    INSERT INTO companion_internal.plan_promotion_policies(
+        query_hash,
+        min_executions,
+        stable_days
+    )
+    VALUES (btrim(p_query_hash), p_min_executions, p_stable_days)
+    ON CONFLICT (query_hash) DO UPDATE
+    SET min_executions = EXCLUDED.min_executions,
+        stable_days = EXCLUDED.stable_days,
+        updated_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.plan_regression_guard(
+    p_query_hash text,
+    p_max_latency_regression_percent integer,
+    p_max_cost_regression_percent integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_query_hash IS NULL OR btrim(p_query_hash) = '' THEN
+        RAISE EXCEPTION 'query_hash must not be empty';
+    END IF;
+    IF p_max_latency_regression_percent IS NULL OR p_max_latency_regression_percent <= 0 THEN
+        RAISE EXCEPTION 'max_latency_regression_percent must be greater than zero';
+    END IF;
+    IF p_max_cost_regression_percent IS NULL OR p_max_cost_regression_percent <= 0 THEN
+        RAISE EXCEPTION 'max_cost_regression_percent must be greater than zero';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.plan_freezes
+        WHERE query_hash = btrim(p_query_hash)
+    ) THEN
+        RAISE EXCEPTION 'query_hash does not reference a frozen plan';
+    END IF;
+
+    INSERT INTO companion_internal.plan_regression_policies(
+        query_hash,
+        max_latency_regression_percent,
+        max_cost_regression_percent
+    )
+    VALUES (
+        btrim(p_query_hash),
+        p_max_latency_regression_percent,
+        p_max_cost_regression_percent
+    )
+    ON CONFLICT (query_hash) DO UPDATE
+    SET max_latency_regression_percent = EXCLUDED.max_latency_regression_percent,
+        max_cost_regression_percent = EXCLUDED.max_cost_regression_percent,
+        updated_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_plan_regression_violates(
+    p_query_hash text,
+    p_baseline_p95_ms bigint,
+    p_candidate_p95_ms bigint,
+    p_baseline_cost bigint,
+    p_candidate_cost bigint
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    policy companion_internal.plan_regression_policies%ROWTYPE;
+    violates boolean;
+BEGIN
+    IF p_query_hash IS NULL OR btrim(p_query_hash) = '' THEN
+        RAISE EXCEPTION 'query_hash must not be empty';
+    END IF;
+    IF p_baseline_p95_ms IS NULL OR p_baseline_p95_ms <= 0 THEN
+        RAISE EXCEPTION 'baseline_p95_ms must be greater than zero';
+    END IF;
+    IF p_candidate_p95_ms IS NULL OR p_candidate_p95_ms < 0 THEN
+        RAISE EXCEPTION 'candidate_p95_ms must be non-negative';
+    END IF;
+    IF p_baseline_cost IS NULL OR p_baseline_cost <= 0 THEN
+        RAISE EXCEPTION 'baseline_cost must be greater than zero';
+    END IF;
+    IF p_candidate_cost IS NULL OR p_candidate_cost < 0 THEN
+        RAISE EXCEPTION 'candidate_cost must be non-negative';
+    END IF;
+
+    SELECT *
+    INTO policy
+    FROM companion_internal.plan_regression_policies
+    WHERE query_hash = btrim(p_query_hash);
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'query_hash does not reference a regression policy';
+    END IF;
+
+    violates :=
+        p_candidate_p95_ms::numeric * 100
+            > p_baseline_p95_ms::numeric * (100 + policy.max_latency_regression_percent)
+        OR p_candidate_cost::numeric * 100
+            > p_baseline_cost::numeric * (100 + policy.max_cost_regression_percent);
+
+    INSERT INTO companion_internal.plan_regression_samples(
+        query_hash,
+        baseline_p95_ms,
+        candidate_p95_ms,
+        baseline_cost,
+        candidate_cost,
+        violates_policy
+    )
+    VALUES (
+        btrim(p_query_hash),
+        p_baseline_p95_ms,
+        p_candidate_p95_ms,
+        p_baseline_cost,
+        p_candidate_cost,
+        violates
+    );
+
+    RETURN violates;
+END;
 $$;
 
 -- FEATURE: S6

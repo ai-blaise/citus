@@ -186,6 +186,7 @@ DECLARE
   hash_index integer;
   hash_index_again integer;
   range_index integer;
+  plan_violation boolean;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -216,11 +217,72 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'PM3', 'PM4', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 11 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, and observability features as sql-runtime';
+  ) <> 13 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, PM3, PM4, and observability features as sql-runtime';
   END IF;
+
+  PERFORM companion_internal.plan_freeze('query-hash-1', '<Plan><Node /></Plan>', 'orders_hint');
+  PERFORM companion_internal.plan_auto_promote('query-hash-1', 100, 7);
+  PERFORM companion_internal.plan_regression_guard('query-hash-1', 10, 20);
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_plan_freezes
+    WHERE query_hash = 'query-hash-1'
+      AND hint_set_name = 'orders_hint'
+      AND min_executions = 100
+      AND stable_days = 7
+      AND max_latency_regression_percent = 10
+      AND max_cost_regression_percent = 20
+  ) THEN
+    RAISE EXCEPTION 'PM3 plan freeze state was not visible with policy metadata';
+  END IF;
+  plan_violation := companion_plan_regression_violates(
+    'query-hash-1',
+    100,
+    112,
+    1000,
+    1000
+  );
+  IF NOT plan_violation THEN
+    RAISE EXCEPTION 'PM4 regression guard did not flag latency regression';
+  END IF;
+  plan_violation := companion_plan_regression_violates(
+    'query-hash-1',
+    100,
+    105,
+    1000,
+    1100
+  );
+  IF plan_violation THEN
+    RAISE EXCEPTION 'PM4 regression guard flagged an allowed candidate';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM companion_internal.plan_regression_samples
+    WHERE query_hash = 'query-hash-1'
+  ) <> 2 THEN
+    RAISE EXCEPTION 'PM4 regression samples were not recorded';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.plan_freeze('', '<Plan />', 'orders_hint');
+    RAISE EXCEPTION 'PM3 plan_freeze accepted an empty query hash';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'query_hash must not be empty' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.plan_regression_guard('missing-query-hash', 10, 20);
+    RAISE EXCEPTION 'PM4 regression guard accepted an unknown frozen plan';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'query_hash does not reference a frozen plan' THEN
+        RAISE;
+      END IF;
+  END;
 
   generation_one := companion_internal.bump_placement_generation(102008, 'worker-a');
   generation_two := companion_internal.bump_placement_generation(102008, 'worker-a');
