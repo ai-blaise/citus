@@ -34,11 +34,12 @@ images=(
   "citus-sidecar-storage|ai_blaise_citus_sidecar_storage|ai_blaise_citus_sidecar_storage"
   "citus-sidecar-txn-status|ai_blaise_citus_sidecar_txn_status|ai_blaise_citus_sidecar_txn_status"
   "citus-sidecar-vectorizer|ai_blaise_citus_sidecar_vectorizer|ai_blaise_citus_sidecar_vectorizer"
-  "citusctl|ai_blaise_citusctl|ai_blaise_citusctl"
+  "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster"
 )
 
 for image in "${images[@]}"; do
-  IFS="|" read -r repository package binary <<< "${image}"
+  IFS="|" read -r repository package binary default_args <<< "${image}"
+  default_args="${default_args:-serve}"
   full_image="${registry}/${repository}:${tag}"
   push_output=""
 
@@ -46,6 +47,7 @@ for image in "${images[@]}"; do
     --file "${dockerfile}" \
     --build-arg "PACKAGE=${package}" \
     --build-arg "BIN=${binary}" \
+    --build-arg "DEFAULT_ARGS=${default_args}" \
     --tag "${full_image}" \
     .
 

@@ -4,6 +4,12 @@ A release is eligible only after `make -f Makefile.ai-blaise gate-close`,
 `make -f Makefile.ai-blaise v2-acceptance-check`, and the GitHub release
 acceptance workflows are green for the exact commit.
 
+`gate-close` is a live release gate, not a best-effort local smoke. Its
+Docker-backed smoke targets must fail closed if Docker is unavailable; direct
+smoke scripts may skip only for exploratory runs outside the release gate.
+Rendered Helm checks must also fail closed under the Makefile release path
+through `REQUIRE_HELM=1`; missing Helm is not valid release evidence.
+
 Those checks are release prerequisites, not a waiver for alpha features. A
 production release must also pass:
 

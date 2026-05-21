@@ -408,12 +408,47 @@ spec:
                 exec 3<&-
                 exec 3>&-
               }
-              http_get /readyz | grep -F '"upstream_ready":true'
-              http_get /metrics |
-                awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
-                     END { exit ready ? 0 : 1 }'
+              for attempt in $(seq 1 30); do
+                if http_get /readyz | grep -F '"upstream_ready":true' &&
+                   http_get /metrics |
+                     awk '/^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { ready = 1 }
+                          END { exit ready ? 0 : 1 }'; then
+                  exit 0
+                fi
+                sleep 1
+              done
+              echo "pool admin smoke did not observe ready upstream metrics" >&2
+              exit 1
 YAML
   wait_for_job ai-blaise-pool-admin-smoke
+}
+
+run_citusctl_image_smoke() {
+  local citusctl_output
+
+  kubectl -n "${namespace}" delete job ai-blaise-citusctl-image-smoke >/dev/null 2>&1 || true
+  cat <<YAML | kubectl apply -n "${namespace}" -f -
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ai-blaise-citusctl-image-smoke
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: citusctl
+          image: ${registry}/citusctl:${tag}
+          imagePullPolicy: IfNotPresent
+YAML
+  wait_for_job ai-blaise-citusctl-image-smoke
+  citusctl_output="$(kubectl -n "${namespace}" logs job/ai-blaise-citusctl-image-smoke)"
+  if [[ "${citusctl_output}" != "citusctl inspect destructive=false requires_plan_id=true steps=3" ]]; then
+    echo "unexpected citusctl image smoke output:" >&2
+    printf '%s\n' "${citusctl_output}" >&2
+    exit 1
+  fi
 }
 
 assert_deployment_replicas() {
@@ -506,6 +541,7 @@ for sidecar in "${images[@]}"; do
 done
 
 run_pool_sql_smoke
+run_citusctl_image_smoke
 
 kubectl -n "${namespace}" get deployment,pod,svc
 echo "ai_blaise_citus exhaustive image-matrix smoke passed in kind/${cluster}/${namespace}"
@@ -525,24 +561,16 @@ fi
 namespace="${prod_values_namespace}"
 install_postgres_fixture "${namespace}"
 
-helm upgrade --install "${prod_values_release}" deploy/k8s/helm/citus-overlay \
-  --namespace "${namespace}" \
-  --create-namespace \
-  -f deploy/k8s/helm/citus-overlay/values-prod.yaml \
-  --set "global.imageRegistry=${registry}" \
-  --set "global.imagePullPolicy=IfNotPresent" \
-  --set "global.requireImageDigest=false" \
-  --set "operator.image.tag=${tag}" \
-  --set "pool.image.tag=${tag}" \
-  --set "sidecarDefaults.tag=${tag}" \
-  --set "operator.resources.requests.cpu=${smoke_request_cpu}" \
-  --set "operator.resources.requests.memory=${smoke_request_memory}" \
-  --set "operator.resources.limits.cpu=${smoke_limit_cpu}" \
-  --set "operator.resources.limits.memory=${smoke_limit_memory}" \
-  --set "pool.resources.requests.cpu=${smoke_request_cpu}" \
-  --set "pool.resources.requests.memory=${smoke_request_memory}" \
-  --set "pool.resources.limits.cpu=${smoke_limit_cpu}" \
-  --set "pool.resources.limits.memory=${smoke_limit_memory}"
+CHART_DIR=deploy/k8s/helm/citus-overlay \
+  RELEASE_NAME="${prod_values_release}" \
+  NAMESPACE="${namespace}" \
+  DEPLOY_PROFILE=prod \
+  MODE=install \
+  IMAGE_REGISTRY="${registry}" \
+  ALLOW_MUTABLE_IMAGE_TAGS=1 \
+  OPERATOR_IMAGE_TAG="${tag}" \
+  POOL_IMAGE_TAG="${tag}" \
+  scripts/citus-scale/deploy.sh
 
 wait_for_deployments
 assert_deployment_replicas "${chart_name}-operator" 2

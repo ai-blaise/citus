@@ -60,14 +60,16 @@ manifest as `OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` for production
 render/install.
 
 Production traffic tests must use these images, not substitute responder
-containers. Production values start the operator and pool with `serve`, while
-alpha sidecars remain disabled by default until their feature status is
-promoted with measured production evidence. The Kubernetes smoke intentionally
-exercises the sidecar image matrix with the chart defaults so image, probe, and
-metrics regressions are still caught before a sidecar can be promoted. The pool
-must have `AI_BLAISE_POOL_UPSTREAM_ADDR` set and must answer a real PostgreSQL
-client query through the `postgres` service port. Probe-only traffic is
-insufficient for production signoff.
+containers. Production values start the operator and pool with `serve`, service
+images default to `serve`, and the `citusctl` tool image defaults to `plan
+inspect cluster`. Alpha sidecars remain disabled by default until their feature
+status is promoted with measured production evidence. The Kubernetes smoke
+intentionally exercises the sidecar image matrix with the chart defaults so
+image, probe, and metrics regressions are still caught before a sidecar can be
+promoted; it also runs the built `citusctl` image as a Job and requires the
+expected plan output. The pool must have `AI_BLAISE_POOL_UPSTREAM_ADDR` set and
+must answer a real PostgreSQL client query through the `postgres` service port.
+Probe-only traffic is insufficient for production signoff.
 Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
@@ -80,6 +82,23 @@ installs the `values-prod.yaml` profile and verifies that production values run
 the operator and pool with alpha sidecars/tools disabled while pool SQL/admin
 traffic still works. The deploy workflow and `gate-close` run this smoke at
 larger integration boundaries.
+
+The Makefile smoke targets set `REQUIRE_DOCKER=1` for the Docker-backed live
+smokes, including pool proxy, SQL extension, real TimescaleDB bridge, and
+primary/standby observability replication. Missing Docker is therefore a release
+gate failure, not skipped evidence. Running the direct scripts without
+`REQUIRE_DOCKER=1` is only for exploratory local checks.
+
+The Makefile release gate also runs the image and deploy contract checks
+directly. Its `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm fails
+the release gate instead of skipping rendered chart checks.
+
+The `values-prod.yaml` phase of the Kubernetes smoke installs through
+`scripts/citus-scale/deploy.sh MODE=install`, so the production-safe deploy
+wrapper install path is live-gated. The optional `tools` Deployment is dev-only
+until separately promoted; production evidence executes the built `citusctl`
+image through the smoke Job. The Argo application manifest is a GitOps render
+contract unless an Argo controller-backed sync is run and recorded.
 
 The `scripts/citus-scale/deploy.sh` deploy wrapper defaults to
 `values-prod.yaml` through `DEPLOY_PROFILE=prod`. Rendering dev or exhaustive
