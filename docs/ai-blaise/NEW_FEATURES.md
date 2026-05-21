@@ -377,8 +377,8 @@ pool starts classifying real SQL.
 
 **Summary**: Proves the pool `serve` data plane preserves pipelined PostgreSQL
 simple-query frames as a byte-transparent TCP proxy, while the broader
-transaction-batching, shard-aware routing, and `FEATURE: T7` source-only
-pipeline contract remain alpha.
+transaction-batching, shard-aware routing, and `FEATURE: T7` pipeline
+contract remain alpha.
 
 **Motivation**: Pool throughput work needs an explicit backpressure contract
 and a measured wire-protocol baseline before transaction-level pipelining
@@ -5965,52 +5965,861 @@ workflow as an overlay contract.
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - In-source: `FEATURE: WF1` in `companion/src/extension_catalog.rs`
 
+## V2 Contract Surface Headings
+
+The former V2 addendum rows below now have standalone alpha feature headings.
+Each heading names the executable contract evidence and keeps the runtime
+boundary explicit. These are catalog-complete contract surfaces, not production
+claims for the full feature behavior.
+
+### A9: Secret Binding Via External Secrets
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the vector-provider secret-reference contract that keeps
+API keys outside literal values and points operators at External Secrets.
+
+**Current boundary**: The executable operations runner validates the expected
+secret-control shape, while live External Secrets reconciliation and provider
+credential rotation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define vector-provider secret
+binding.
+
+**References**:
+
+- In-source: `FEATURE: A9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### A10: Streaming Chat Completion UDF
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the required policy inputs for a tenant-budgeted
+streaming chat completion SQL surface.
+
+**Current boundary**: The advanced-planner runner proves the contract metadata
+is present and valid; no provider call path, streaming SRF, or billing
+enforcement is production-ready yet.
+
+**Citus comparison**: Vanilla Citus does not define streaming LLM SQL
+surfaces.
+
+**References**:
+
+- In-source: `FEATURE: A10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### A11: Semantic Catalog Text-To-SQL
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the catalog and tenant-scope inputs needed before a
+semantic text-to-SQL planner can be wired to real metadata.
+
+**Current boundary**: The contract runner verifies shape and coverage only;
+semantic retrieval, SQL generation, authorization, and query execution remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not include a tenant-scoped semantic
+catalog.
+
+**References**:
+
+- In-source: `FEATURE: A11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### D9: Canary Upgrade Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/upgrade.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks the canary-upgrade rehearsal artifact as a required
+operations contract.
+
+**Current boundary**: The operations runner verifies the runbook contract, but
+an automated canary cluster upgrade with rollback evidence is still alpha.
+
+**Citus comparison**: Vanilla Citus does not include this canary upgrade
+runbook.
+
+**References**:
+
+- In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### D10: Release Hardening Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/production.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the release-readiness review path, security controls, and
+operational handoff checklist as a contract surface.
+
+**Current boundary**: The companion runner validates the runbook reference;
+live release certification, owner signoff, and rollback drills remain alpha.
+
+**Citus comparison**: Vanilla Citus does not include these ai-blaise hardening
+gates.
+
+**References**:
+
+- In-source: `FEATURE: D10` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### D11: MCP Developer Workflow
+
+**Overlay**: `tools/citus-mcp` and `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the MCP workflow contract that exposes Citus-oriented
+developer operations to agent tooling.
+
+**Current boundary**: The MCP binary and operations runner emit deterministic
+canonical summaries; authenticated multi-user MCP deployment and policy
+isolation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
+
+**References**:
+
+- In-source: `FEATURE: D11` in `tools/citus-mcp/src/lib.rs`
+- In-source: `FEATURE: D11` in `tools/citus-mcp/src/main.rs`
+- In-source: `FEATURE: D11` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Edge1: Bounded-Staleness Edge Replicas
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the decision-record gate for edge read replicas with a
+bounded-staleness contract.
+
+**Current boundary**: The advanced-planner runner validates the research guard;
+edge replica provisioning, freshness measurement, and failover behavior remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not model edge POP read replicas.
+
+**References**:
+
+- In-source: `FEATURE: Edge1` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### Edge2: libsql Read-Tier Research Guard
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Keeps the libsql-shaped read-tier concept behind an explicit
+research decision record.
+
+**Current boundary**: The contract runner proves the guard exists; no libsql
+read-tier integration, replication adapter, or workload isolation is
+production-ready.
+
+**Citus comparison**: Vanilla Citus does not include a libsql-shaped research
+gate.
+
+**References**:
+
+- In-source: `FEATURE: Edge2` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### F3: Iceberg Federation To Warehouses
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines catalog and warehouse inputs for an Iceberg federation
+bridge.
+
+**Current boundary**: The advanced-planner contract covers input validation;
+Iceberg catalog connectivity, snapshot planning, and warehouse reads remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not define Iceberg warehouse
+federation.
+
+**References**:
+
+- In-source: `FEATURE: F3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### F4: postgres_fdw Credential Rotation
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgres_fdw`
+
+**Summary**: Records the server and secret-reference inputs needed for a safe
+FDW credential rotation path.
+
+**Current boundary**: Contract validation is executable; actual credential
+rollover, connection draining, and foreign server reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe FDW secret rotation.
+
+**References**:
+
+- In-source: `FEATURE: F4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### L7: Citus Columnar Analytical Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Captures the table and columnar-policy inputs for routing
+analytical work toward columnar storage.
+
+**Current boundary**: The contract runner validates planner intent only; live
+columnar conversion, cost model selection, and workload routing remain alpha.
+
+**Citus comparison**: Vanilla Citus has columnar storage but not this overlay
+tiering contract.
+
+**References**:
+
+- In-source: `FEATURE: L7` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### L10: Cross-Tier Query Planner
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the hot, warm, and cold tier inputs expected by the HTAP
+planner contract.
+
+**Current boundary**: Deterministic contract execution proves the declared
+tiers; physical tier selection and query rewrites remain alpha.
+
+**Citus comparison**: Vanilla Citus does not combine hot, warm, and cold tiers
+through this overlay planner.
+
+**References**:
+
+- In-source: `FEATURE: L10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### M4: Schema Drift Detection
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Models the observed-schema and desired-schema inputs for drift
+reconciliation.
+
+**Current boundary**: The runner verifies the contract surface; live schema
+diffing, remediation planning, and operator apply behavior remain alpha.
+
+**Citus comparison**: Vanilla Citus does not reconcile declarative schema
+drift.
+
+**References**:
+
+- In-source: `FEATURE: M4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR3: Regional Row Placement
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines region-prefix and distribution-key inputs for regional row
+placement policy.
+
+**Current boundary**: Contract validation is executable; row placement
+enforcement, repartitioning, and regional admission control remain alpha.
+
+**Citus comparison**: Vanilla Citus does not encode region in key policy.
+
+**References**:
+
+- In-source: `FEATURE: MR3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR6: Closed-Timestamp Time Travel
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records timestamp and maximum-staleness inputs for a
+closed-timestamp read contract.
+
+**Current boundary**: The planner contract is covered by deterministic tests;
+MVCC timestamp routing, replica freshness, and stale-read execution remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not expose bounded-staleness time
+travel.
+
+**References**:
+
+- In-source: `FEATURE: MR6` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR9: Region Survival Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/disaster-recovery.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the regional failover drill as a required operational
+artifact.
+
+**Current boundary**: The operations runner validates the runbook reference;
+live multi-region failover, PITR restore, and backup artifact restore remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not ship this regional DR runbook.
+
+**References**:
+
+- In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### R3: Columnstore-On-Worker Policy
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines table and age-threshold inputs for worker-local
+columnstore policy.
+
+**Current boundary**: Contract execution proves the policy shape; worker
+storage transitions and read-path verification remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define this worker tiering policy.
+
+**References**:
+
+- In-source: `FEATURE: R3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### R8: Non-Hypertable Cold Columnar Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Captures the table and tier inputs for cold columnar policy on
+non-hypertable relations.
+
+**Current boundary**: The contract runner validates intent; live cold-tier
+movement and query-path proof remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define this cold-tier policy.
+
+**References**:
+
+- In-source: `FEATURE: R8` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### R12: Per-Shard Temperature Ranking
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shard ID and temperature-score inputs for ranking data
+movement candidates.
+
+**Current boundary**: The contract is deterministic; collection of real heat
+signals and automatic tier movement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not maintain shard temperature scores
+for this overlay policy.
+
+**References**:
+
+- In-source: `FEATURE: R12` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### RT5: Phoenix-Channel-Compatible Realtime Client
+
+**Overlay**: `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the supabase-js/Phoenix-channel compatibility target for
+the realtime client surface.
+
+**Current boundary**: Operations evidence validates the compatibility contract;
+a live WebSocket protocol harness and client SDK matrix remain alpha.
+
+**Citus comparison**: Vanilla Citus does not provide realtime client
+compatibility gates.
+
+**References**:
+
+- In-source: `FEATURE: RT5` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### S1: Auto Shard Split
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shard-group and split-threshold inputs for automated
+split intent.
+
+**Current boundary**: The contract runner validates the policy declaration;
+actual shard splitting, data movement, and rollback remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose declarative split intent.
+
+**References**:
+
+- In-source: `FEATURE: S1` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S3: Clone-Node Fast Scale-Out
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Records source-worker and target-worker inputs for a clone-node
+scale-out operation.
+
+**Current boundary**: Contract execution proves required inputs; live clone,
+catch-up, validation, and cutover workflows remain alpha.
+
+**Citus comparison**: Vanilla Citus exposes clone-node primitives but not this
+operator contract.
+
+**References**:
+
+- In-source: `FEATURE: S3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S7: Cross-Region Replication Via pgactive
+
+**Overlay**: `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgactive`
+
+**Summary**: Captures the conflict-policy gate required before pgactive-backed
+cross-region replication can be enabled.
+
+**Current boundary**: Operations contract evidence is executable; live
+pgactive deployment, conflict resolution, and region-failover proof remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle pgactive policy gates.
+
+**References**:
+
+- In-source: `FEATURE: S7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### S8: Locality-Prefixed PKs
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines region and tenant ID inputs for locality-prefixed primary
+key policy.
+
+**Current boundary**: The contract runner validates the planner surface; live
+key migration, foreign-key compatibility, and enforcement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define region-prefixed key
+policy.
+
+**References**:
+
+- In-source: `FEATURE: S8` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S12: Tablespaces By Region
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records region and tablespace inputs for regional placement
+policy.
+
+**Current boundary**: Contract validation is complete; tablespace creation,
+operator reconciliation, and placement enforcement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not reconcile region tablespace
+intent.
+
+**References**:
+
+- In-source: `FEATURE: S12` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### Sec7: External Secrets Integration
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the External Secrets reference-only security control for
+overlay credentials.
+
+**Current boundary**: The operations runner verifies the intended control; live
+External Secrets controller reconciliation and rotation evidence remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
+
+**References**:
+
+- In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sec8: TLS Everywhere
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks TLS expectations for clients, Postgres backends, and
+sidecar-to-sidecar traffic.
+
+**Current boundary**: The security contract is executable; certificate
+issuance, mTLS enforcement, and live rotation tests remain alpha.
+
+**Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
+contract.
+
+**References**:
+
+- In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sec9: SBOM And Cosign Attestation
+
+**Overlay**: `companion/src/ops_contracts.rs` and release gates
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the release-attestation requirement for SBOM and cosign
+metadata.
+
+**Current boundary**: The operations runner validates the control record;
+signed artifact publication, verification policy, and admission enforcement
+remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require ai-blaise release
+attestations.
+
+**References**:
+
+- In-source: `FEATURE: Sec9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sto2: file_attachment Domain Type
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the file attachment storage domain and backing table
+contract.
+
+**Current boundary**: The advanced-planner runner validates the domain record;
+object storage wiring, retention policy, and authorization remain alpha.
+
+**Citus comparison**: Vanilla Citus does not include a storage domain type.
+
+**References**:
+
+- In-source: `FEATURE: Sto2` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T4: Hash-Table Planner Hot Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the minimum-partition lookup contract for a planner
+hash-table path.
+
+**Current boundary**: Contract execution proves the declaration; benchmarked
+planner hot-path replacement and regression budgets remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this overlay performance
+contract.
+
+**References**:
+
+- In-source: `FEATURE: T4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T6: PG18 io_uring Default
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks the Postgres I/O method policy for an eventual PG18
+io_uring default.
+
+**Current boundary**: The operations contract validates the expected toggle;
+PG18 operand image proof and kernel/runtime compatibility tests remain alpha.
+
+**Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy.
+
+**References**:
+
+- In-source: `FEATURE: T6` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### T7: Pipelined Client Protocol In Pool
+
+**Overlay**: `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`,
+and `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Keeps the broader transaction-batching and shard-aware pipeline
+contract visible alongside the measured `T15` simple-query proxy evidence.
+
+**Current boundary**: The pool canonical runner and operations runner validate
+the contract shape; only the byte-transparent simple-query data-plane baseline
+is production-ready under `T15`.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise pool pipeline.
+
+**References**:
+
+- In-source: `FEATURE: T7` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T7` in `pool/src/proxy.rs`
+- In-source: `FEATURE: T7` in `pool/src/main.rs`
+- In-source: `FEATURE: T7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+
+### T10: Bulk Protocol Fetch Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the maximum batch-row contract for bulk protocol fetches.
+
+**Current boundary**: The advanced-planner runner validates the configured
+budget; protocol implementation, backpressure, and cross-worker fetch tests
+remain alpha.
+
+**Citus comparison**: Vanilla Citus has no ai-blaise bulk-fetch contract.
+
+**References**:
+
+- In-source: `FEATURE: T10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T11: DistSQL Physical Pushdown
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the worker-task budget for a DistSQL physical pushdown
+contract.
+
+**Current boundary**: The planner contract is executable; physical plan
+rewrites and worker execution remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this DistSQL contract.
+
+**References**:
+
+- In-source: `FEATURE: T11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T13: Distributed Cursors
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the open-shard budget for distributed cursor state.
+
+**Current boundary**: Contract validation is deterministic; cursor lifecycle,
+worker cleanup, and error recovery remain alpha.
+
+**Citus comparison**: Vanilla Citus does not coordinate multi-shard cursor
+state this way.
+
+**References**:
+
+- In-source: `FEATURE: T13` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T14: Distributed Savepoints
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the open-shard budget for distributed savepoint state.
+
+**Current boundary**: The contract runner validates state shape; savepoint
+propagation, rollback, and worker cleanup remain alpha.
+
+**Citus comparison**: Vanilla Citus does not coordinate savepoints through
+this contract.
+
+**References**:
+
+- In-source: `FEATURE: T14` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### TS10: Hierarchical CAGGs Distributed
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Captures source and target continuous aggregate inputs for
+hierarchical CAGG fanout.
+
+**Current boundary**: The planner contract validates required inputs; real
+hierarchical refresh planning and worker fanout remain alpha.
+
+**Citus comparison**: Vanilla Citus does not fan out hierarchical CAGGs across
+workers.
+
+**References**:
+
+- In-source: `FEATURE: TS10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### TS11: Bloom Filters On segmentby
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Defines table and `segmentby` inputs for a bloom-filter fanout
+contract.
+
+**Current boundary**: Contract execution validates the surface; bloom filter
+construction, refresh integration, and Timescale worker fanout remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define Timescale segmentby bloom
+fanout.
+
+**References**:
+
+- In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
 ## V2 Completion Register Addendum
 
-The entries below close the V2 catalog surfaces that are implemented as
-contracts in the companion, deployment, pool, MCP, image, and runbook overlays.
-Each row records the vanilla Citus comparison, grepable source marker, and
-deterministic executable evidence command. These rows remain alpha contract
-evidence unless promoted to standalone feature headings with production
-evidence.
+No rows remain. The former V2 addendum rows were promoted to alpha feature
+headings with deterministic executable evidence so the feature register has no
+source-only catalog surface left.
 
 | ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference | Evidence |
 |---|---|---|---|---|---|---|
-| A9 | Secret binding via External Secrets | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define vector-provider secret binding. | `FEATURE: A9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| A10 | Streaming chat completion UDF | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define streaming LLM SQL surfaces. | `FEATURE: A10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| A11 | Semantic catalog text-to-SQL | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a tenant-scoped semantic catalog. | `FEATURE: A11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| D10 | Release hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` | `cargo run -p ai_blaise_citus_mcp -- run-canonical` |
-| Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| Edge2 | libsql read-tier research guard | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a libsql-shaped research gate. | `FEATURE: Edge2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| F3 | Iceberg federation to warehouses | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Iceberg warehouse federation. | `FEATURE: F3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| F4 | postgres_fdw credential rotation | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not prescribe FDW secret rotation. | `FEATURE: F4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| L7 | Citus columnar analytical path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has columnar storage but not this tiering contract. | `FEATURE: L7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| L10 | Cross-tier query planner | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not combine hot, warm, and cold tiers. | `FEATURE: L10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| M4 | Schema drift detection | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile declarative schema drift. | `FEATURE: M4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| MR3 | Locality-prefixed primary keys | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not encode region in key policy. | `FEATURE: MR3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| MR6 | Closed-timestamp time travel | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose bounded-staleness time travel. | `FEATURE: MR6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| MR9 | Region survival runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/disaster-recovery.md` | alpha | Vanilla Citus does not ship this regional DR runbook. | `FEATURE: MR9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| R3 | Columnstore-on-worker policy | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this worker tiering policy. | `FEATURE: R3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| R8 | Non-hypertable cold columnar path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this cold-tier policy. | `FEATURE: R8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| R12 | Per-shard temperature ranking | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not maintain shard temperature scores. | `FEATURE: R12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| RT5 | Phoenix-channel-compatible realtime client | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not provide realtime client compatibility gates. | `FEATURE: RT5` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| S1 | Auto shard split | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose declarative split intent. | `FEATURE: S1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| S3 | Clone-node fast scale-out | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus exposes clone-node primitives but not this operator contract. | `FEATURE: S3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| S7 | Cross-region replication via pgactive | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not bundle pgactive policy gates. | `FEATURE: S7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| S8 | Locality-prefixed PKs | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define region-prefixed key policy. | `FEATURE: S8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| S12 | Tablespaces by region | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile region tablespace intent. | `FEATURE: S12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| Sec7 | External Secrets integration | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not prescribe External Secrets refs. | `FEATURE: Sec7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| Sec8 | TLS everywhere | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not enforce this full overlay TLS contract. | `FEATURE: Sec8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| Sec9 | SBOM and cosign attestation | `companion/src/ops_contracts.rs` and release gates | alpha | Vanilla Citus does not require ai-blaise release attestations. | `FEATURE: Sec9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` | `cargo run -p ai_blaise_citus_pool -- run-canonical` |
-| T10 | Bulk protocol fetch path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has no ai-blaise bulk-fetch contract. | `FEATURE: T10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| T11 | DistSQL physical pushdown | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this DistSQL contract. | `FEATURE: T11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| T13 | Distributed cursors | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate multi-shard cursor state this way. | `FEATURE: T13` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| T14 | Distributed savepoints | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate savepoints through this contract. | `FEATURE: T14` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| TS10 | Hierarchical CAGGs distributed | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not fan out hierarchical CAGGs across workers. | `FEATURE: TS10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| TS11 | Bloom filters on segmentby | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Timescale segmentby bloom fanout. | `FEATURE: TS11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
