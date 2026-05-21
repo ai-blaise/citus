@@ -46,7 +46,8 @@ with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
 `pool/src/main.rs` executes a real PostgreSQL TCP proxy in `serve` mode, with
 upstream-aware admin readiness on a separate port; `ci/ai-blaise/pool-proxy-smoke.sh`
-verifies live SQL through that data port, and the binary still emits the
+verifies live SQL, CIDR allow/deny behavior, and pipelined PostgreSQL
+simple-query frames through that data port. The binary still emits the
 deterministic pool runtime and shard-map summary for `FEATURE: Auth3`,
 `FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`, `FEATURE: T1`,
 `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`,
@@ -351,20 +352,30 @@ pool starts classifying real SQL.
 ### T15: Transaction Pipelining In Pool
 
 **Overlay**: `pool/src/runtime.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines pool protocol pipelining limits for in-flight work and
-transaction pipelining, while the current `serve` data plane remains a real
-byte-transparent PostgreSQL TCP proxy until routing policy becomes shard-aware.
+**Summary**: Proves the pool `serve` data plane preserves pipelined PostgreSQL
+simple-query frames as a byte-transparent TCP proxy, while the broader
+transaction-batching, shard-aware routing, and `FEATURE: T7` source-only
+pipeline contract remain alpha.
 
 **Motivation**: Pool throughput work needs an explicit backpressure contract
-before pipelining reaches the data path.
+and a measured wire-protocol baseline before transaction-level pipelining
+reaches shard-aware routing.
 
 **Citus comparison**: Vanilla Citus does not provide an external pool
 pipelining contract.
+
+Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool
+against a `postgres:17` container, opens a raw PostgreSQL client through the
+pool data port, sends two simple-query frames without waiting for the first
+result, verifies ordered `pipeline_one` and `pipeline_two` rows from the real
+backend, and keeps the existing live SQL plus pool admin metrics checks. The
+Makefile `pool-proxy-smoke` target sets `REQUIRE_DOCKER=1`, and `gate-close`
+depends on that target, so missing Docker cannot silently skip this evidence.
 
 **References**:
 
@@ -372,6 +383,9 @@ pipelining contract.
 - In-source: `FEATURE: T15` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T7` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
 
 ## TimescaleDB Integration
 

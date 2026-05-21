@@ -258,9 +258,14 @@ grep -Fq "CREATE VIEW companion_pg_stat_statements_p95" "${image_dir}/extensions
 grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST" "${pool_proxy_smoke}"
+grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_rejected_connections_total" "${pool_proxy_smoke}"
 grep -Fq "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" "${pool_proxy_smoke}"
 grep -Fq "PostgreSQL init process complete" "${pool_proxy_smoke}"
+grep -Fq "raw PostgreSQL pipelined simple-query smoke passed through pool proxy" "${pool_proxy_smoke}"
+grep -Fq "pack_simple_query(\"SELECT 'pipeline_one'::text\")" "${pool_proxy_smoke}"
+grep -Fq "pack_simple_query(\"SELECT 'pipeline_two'::text\")" "${pool_proxy_smoke}"
+grep -Fq 'expected = [["pipeline_one"], ["pipeline_two"]]' "${pool_proxy_smoke}"
 grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PostgreSQL init process complete" ci/ai-blaise/sql-extension-smoke.sh
