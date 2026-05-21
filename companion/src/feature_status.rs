@@ -231,32 +231,32 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "C10",
         feature_name: "online schema job state machine",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M2",
         feature_name: "gh-ost-style online DDL",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S14",
         feature_name: "tenant migration online",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO3",
         feature_name: "tenant migration online",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO4",
         feature_name: "tenant archive",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO5",
         feature_name: "tenant region affinity",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "D4",

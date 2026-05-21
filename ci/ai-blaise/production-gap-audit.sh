@@ -937,6 +937,85 @@ for feature_id, required_phrases in (
 
 for feature_id, required_phrases in (
     (
+        "C10",
+        (
+            "installable SQL schema-job state machine",
+            "companion_internal.schema_job_start",
+            "companion_schema_jobs",
+            "companion_internal.schema_job_advance",
+            "invalid state transitions and zero leases fail closed",
+            "Actual DDL execution workers, dual-write triggers, backfill scheduling, lock orchestration, rollback, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "M2",
+        (
+            "installable SQL online-DDL operation rendering",
+            "companion_internal.schema_job_add_operation",
+            "companion_schema_job_operations",
+            "companion_internal.schema_job_render_plan",
+            "Actual online DDL execution, trigger dual-writes, backfill workers, cutover validation, rollback, and distributed-table orchestration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "S14",
+        (
+            "installable SQL tenant move and quota helper state",
+            "companion_internal.plan_tenant_move",
+            "companion_tenant_moves",
+            "companion_internal.set_tenant_quota",
+            "same-worker moves and zero connection quotas fail closed",
+            "Actual shard movement, pool draining, tenant traffic migration, copy/backfill workers, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TO3",
+        (
+            "installable SQL tenant move planning",
+            "companion_internal.plan_tenant_move",
+            "companion_tenant_moves",
+            "same-worker tenant moves fail closed",
+            "Actual shard rebalancing, tenant traffic draining, data copy, cutover, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TO4",
+        (
+            "installable SQL tenant archive planning",
+            "companion_internal.plan_tenant_archive",
+            "companion_tenant_archives",
+            "zero retention fails closed",
+            "Actual archive export, object-store writes, delete workflows, legal hold, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TO5",
+        (
+            "installable SQL tenant region-affinity metadata helpers",
+            "companion_internal.set_tenant_region_affinity",
+            "companion_tenant_region_affinities",
+            "empty region affinity fails closed",
+            "Actual placement enforcement, shard movement, regional failover policy, scheduler integration, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for schema/tenant SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow schema/tenant SQL runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1685,6 +1764,12 @@ for phrase in (
     "'TS15', 'distributed approximate toolkit aggregates', 'sql-runtime'",
     "'TS16', 'distributed downsampler toolkit aggregates', 'sql-runtime'",
     "'TS17', 'distributed state toolkit aggregates', 'sql-runtime'",
+    "'C10', 'online schema job state machine', 'sql-runtime'",
+    "'M2', 'gh-ost-style online DDL', 'sql-runtime'",
+    "'S14', 'tenant migration online', 'sql-runtime'",
+    "'TO3', 'tenant migration online', 'sql-runtime'",
+    "'TO4', 'tenant archive', 'sql-runtime'",
+    "'TO5', 'tenant region affinity', 'sql-runtime'",
     "CREATE FUNCTION companion_internal.register_search_index",
     "CREATE FUNCTION companion_internal.hybrid_rank",
     "CREATE FUNCTION companion_internal.rerank_search",
@@ -1699,6 +1784,11 @@ for phrase in (
     "CREATE FUNCTION companion_internal.assert_shared_preload_libraries",
     "CREATE FUNCTION companion_internal.get_violations",
     "CREATE FUNCTION companion_internal.register_toolkit_aggregate_plan",
+    "CREATE FUNCTION companion_internal.schema_job_start",
+    "CREATE FUNCTION companion_internal.schema_job_advance",
+    "CREATE FUNCTION companion_internal.plan_tenant_move",
+    "CREATE FUNCTION companion_internal.plan_tenant_archive",
+    "CREATE FUNCTION companion_internal.set_tenant_region_affinity",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",

@@ -509,7 +509,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 51 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 57 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -538,7 +538,9 @@ index-advisor, and webhook trigger queue helpers, plus `Search2`, `Search3`,
 installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
 runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
 and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
-aggregate plan helper runtimes. The other 113
+aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
+`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes. The
+other 107
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every
