@@ -26,14 +26,18 @@ impl SessionClaims {
 pub struct JwtVerificationPlan {
     pub issuer: String,
     pub audience: String,
-    pub jwks_secret_ref: String,
+    pub shared_secret_ref: String,
 }
 
 impl JwtVerificationPlan {
     pub fn validate(&self) -> Result<(), AuthError> {
         validate_required("issuer", &self.issuer)?;
         validate_required("audience", &self.audience)?;
-        validate_required("jwks_secret_ref", &self.jwks_secret_ref)
+        validate_required("shared_secret_ref", &self.shared_secret_ref)
+    }
+
+    pub fn verifier_function(&self) -> &'static str {
+        "companion_verify_jwt_hs256"
     }
 }
 
@@ -123,12 +127,24 @@ mod tests {
         let plan = JwtVerificationPlan {
             issuer: "https://auth.example.com".to_string(),
             audience: "citus".to_string(),
-            jwks_secret_ref: " ".to_string(),
+            shared_secret_ref: " ".to_string(),
         };
 
         assert_eq!(
             plan.validate(),
-            Err(AuthError::MissingRequiredField("jwks_secret_ref"))
+            Err(AuthError::MissingRequiredField("shared_secret_ref"))
         );
+    }
+
+    #[test]
+    fn jwt_verification_uses_hs256_sql_runtime() {
+        let plan = JwtVerificationPlan {
+            issuer: "https://auth.example.com".to_string(),
+            audience: "citus".to_string(),
+            shared_secret_ref: "secret://jwt/hmac".to_string(),
+        };
+
+        assert_eq!(plan.validate(), Ok(()));
+        assert_eq!(plan.verifier_function(), "companion_verify_jwt_hs256");
     }
 }

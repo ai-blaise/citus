@@ -172,6 +172,20 @@ DECLARE
   planned_count integer;
   plan_sql text;
   bridge_features integer;
+  jwt_header_segment text;
+  jwt_payload_segment text;
+  jwt_signing_input text;
+  jwt_token text;
+  expired_payload_segment text;
+  expired_token text;
+  missing_tenant_payload_segment text;
+  missing_tenant_token text;
+  jwt_claims record;
+  generation_one bigint;
+  generation_two bigint;
+  hash_index integer;
+  hash_index_again integer;
+  range_index integer;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -202,11 +216,66 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec5', 'Sec6', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 8 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec5, Sec6, and observability features as sql-runtime';
+  ) <> 11 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, and observability features as sql-runtime';
   END IF;
+
+  generation_one := companion_internal.bump_placement_generation(102008, 'worker-a');
+  generation_two := companion_internal.bump_placement_generation(102008, 'worker-a');
+  IF generation_one <> 1 OR generation_two <> 2 THEN
+    RAISE EXCEPTION 'S6 placement generation did not advance from 1 to 2';
+  END IF;
+  IF companion_placement_generation(102008) <> 2 THEN
+    RAISE EXCEPTION 'S6 companion_placement_generation did not return the latest generation';
+  END IF;
+  IF companion_placement_generation(102009) <> 0 THEN
+    RAISE EXCEPTION 'S6 unknown shard should return generation zero';
+  END IF;
+  IF NOT companion_local_placement_matches(102008, 'worker-a') THEN
+    RAISE EXCEPTION 'S6 local placement helper did not match the recorded worker';
+  END IF;
+  IF companion_local_placement_matches(102008, 'worker-b') THEN
+    RAISE EXCEPTION 'S6 local placement helper matched the wrong worker';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.bump_placement_generation(0, 'worker-a');
+    RAISE EXCEPTION 'S6 placement generation accepted shard zero';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'shard_id must be greater than zero' THEN
+        RAISE;
+      END IF;
+  END;
+
+  hash_index := companion_hash_shard_index('tenant-a', 8);
+  hash_index_again := companion_hash_shard_index('tenant-a', 8);
+  IF hash_index <> hash_index_again OR hash_index < 0 OR hash_index >= 8 THEN
+    RAISE EXCEPTION 'S13 hash routing helper was not deterministic and bounded';
+  END IF;
+  range_index := companion_range_shard_index(25, 0, 100, 4);
+  IF range_index <> 1 THEN
+    RAISE EXCEPTION 'S13 range routing helper returned %, expected 1', range_index;
+  END IF;
+  BEGIN
+    PERFORM companion_hash_shard_index('tenant-a', 0);
+    RAISE EXCEPTION 'S13 hash routing helper accepted zero shards';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'shard_count must be greater than zero' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_range_shard_index(100, 0, 100, 4);
+    RAISE EXCEPTION 'S13 range routing helper accepted an out-of-bounds value';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'range routing value is outside shard bounds' THEN
+        RAISE;
+      END IF;
+  END;
 
   PERFORM companion_set_session_claims(
     'user-123',
@@ -233,6 +302,147 @@ BEGIN
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'uid claim must not be empty' THEN
+        RAISE;
+      END IF;
+  END;
+
+  jwt_header_segment := companion_internal.base64url_encode(
+    convert_to('{"alg":"HS256","typ":"JWT"}', 'UTF8')
+  );
+  jwt_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', jsonb_build_array('ai-blaise-citus', 'analytics'),
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'tenant_id', 'tenant-c',
+        'jti', 'jti-789',
+        'exp', floor(extract(epoch FROM clock_timestamp() + interval '1 hour'))::bigint,
+        'nbf', floor(extract(epoch FROM clock_timestamp() - interval '1 minute'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || jwt_payload_segment;
+  jwt_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+
+  SELECT * INTO jwt_claims
+  FROM companion_verify_jwt_hs256(
+    jwt_token,
+    'jwt-secret',
+    'https://auth.example.test',
+    'ai-blaise-citus'
+  );
+  IF jwt_claims.uid <> 'user-789'
+     OR jwt_claims.role <> 'authenticated'
+     OR jwt_claims.tenant_id <> 'tenant-c'
+     OR jwt_claims.jwt_id <> 'jti-789'
+     OR jwt_claims.audience <> 'ai-blaise-citus' THEN
+    RAISE EXCEPTION 'Sec2 JWT verification did not return expected claims';
+  END IF;
+
+  PERFORM companion_set_session_claims(
+    jwt_claims.uid,
+    jwt_claims.role,
+    jwt_claims.tenant_id,
+    jwt_claims.jwt_id
+  );
+  IF companion_current_tenant_id() <> 'tenant-c' THEN
+    RAISE EXCEPTION 'Sec2 verified JWT claims did not feed Auth2 tenant claims';
+  END IF;
+
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      jwt_signing_input || '.bad-signature',
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a bad signature';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT signature verification failed' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      jwt_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'wrong-audience'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a wrong audience';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT audience mismatch' THEN
+        RAISE;
+      END IF;
+  END;
+
+  expired_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', 'ai-blaise-citus',
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'tenant_id', 'tenant-c',
+        'exp', floor(extract(epoch FROM clock_timestamp() - interval '1 minute'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || expired_payload_segment;
+  expired_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      expired_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted an expired token';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT has expired' THEN
+        RAISE;
+      END IF;
+  END;
+
+  missing_tenant_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', 'ai-blaise-citus',
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'exp', floor(extract(epoch FROM clock_timestamp() + interval '1 hour'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || missing_tenant_payload_segment;
+  missing_tenant_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      missing_tenant_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a missing tenant_id claim';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT tenant_id claim must not be empty' THEN
         RAISE;
       END IF;
   END;

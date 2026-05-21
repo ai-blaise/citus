@@ -259,6 +259,17 @@ grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/
 grep -Fq "CREATE FUNCTION companion_set_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.bump_placement_generation" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_placement_generation" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_local_placement_matches" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_hash_shard_index" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_range_shard_index" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.base64url_encode" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.base64url_decode" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.jwt_audience_matches" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_verify_jwt_hs256" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_require_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -271,7 +282,10 @@ grep -Fq "CREATE VIEW companion_ledger_entries" "${image_dir}/extensions/ai_blai
 grep -Fq "'Sec5', 'immutable ledger', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'S6', 'placement generation helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'S13', 'range routing helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Sec2', 'JWT verification UDF', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
@@ -290,6 +304,23 @@ grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_set_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.bump_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_local_placement_matches" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_hash_shard_index" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_range_shard_index" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "S6 placement generation did not advance from 1 to 2" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "S6 unknown shard should return generation zero" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "S13 hash routing helper was not deterministic and bounded" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "S13 range routing helper returned" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "S13 range routing helper accepted an out-of-bounds value" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_verify_jwt_hs256" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 JWT verification did not return expected claims" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 verified JWT claims did not feed Auth2 tenant claims" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 JWT verification accepted a bad signature" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 JWT verification accepted a wrong audience" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 JWT verification accepted an expired token" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec2 JWT verification accepted a missing tenant_id claim" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_require_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_tenant_id_matches" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY" ci/ai-blaise/sql-extension-smoke.sh

@@ -361,8 +361,9 @@ more production-ready than the artifacts justified.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
-  rejection against a real `postgres:17` container while JWT issuance, RLS
-  enforcement, JWT verification, and token-cache behavior remain alpha.
+  rejection against a real `postgres:17` container while JWT issuance, pool
+  authentication, and token-cache behavior remain alpha. Sec2 JWT verification
+  has a separate SQL runtime boundary.
 - The `citusctl` CLI now has a direct executable smoke for the narrow
   `FEATURE: D2` apply-mode plan-id guard. The smoke requires `citusctl apply`
   without a plan ID to fail closed and verifies valid plan/apply summaries from
@@ -384,8 +385,27 @@ more production-ready than the artifacts justified.
   tenant table, switches to a non-superuser role, verifies tenant-a and
   tenant-b sessions see only their own rows, verifies `WITH CHECK` rejects a
   cross-tenant insert, and verifies missing tenant claims fail closed. This is
-  not evidence for automatic policy generation, JWT verification, pool
-  authentication, or auto-API integration.
+  not evidence for automatic policy generation, pool authentication, or
+  auto-API integration. Sec2 JWT verification is separate evidence.
+- The SQL extension now installs `FEATURE: Sec2` HS256 JWT verification
+  helpers: base64url encode/decode, audience matching, and
+  `companion_verify_jwt_hs256(...)`. The PostgreSQL extension smoke builds a
+  signed token inside the database, verifies issuer, audience, expiration,
+  not-before, subject, role, tenant, and JWT ID claims, feeds the result into
+  Auth2 session claims, and proves bad signatures, wrong audiences, expired
+  tokens, and missing tenant claims fail closed. This is not evidence for
+  JWKS/RSA/ECDSA key discovery, Auth1 token issuance, pool authentication,
+  Auth3 token-cache behavior, external secret resolution, or key rotation.
+- The SQL extension now installs narrow `FEATURE: S6` and `FEATURE: S13`
+  router helper runtimes. S6 persists placement-generation counters and
+  local-placement worker names, verifies generation advancement and shard-zero
+  failure in the PostgreSQL smoke, and does not claim Citus metadata
+  synchronization, pool cache invalidation, rebalance hooks, planner
+  invalidation, or operator placement changes. S13 exposes deterministic hash
+  and bounded numeric range shard-index helpers, verifies out-of-range and
+  zero-shard failures in the PostgreSQL smoke, and does not claim dynamic shard
+  creation, Citus router integration, operator rebalancing, pool data-plane
+  routing, or distributed range metadata propagation.
 - The SQL extension now installs `FEATURE: Sec5` and `FEATURE: Sec6` ledger
   runtime helpers: append-only ledger entry and seal tables,
   `companion_internal.ledger_transfer(...)`,
@@ -442,12 +462,20 @@ Rule 10 completion for this branch requires local and VM verification of:
   pool data port before reading the first result; psql request/response pacing
   alone is not sufficient evidence for `FEATURE: T15`.
 - Auth2 production evidence is limited to installable SQL session-claim
-  helpers. It must not be cited as evidence for Auth1 JWT issuance, Sec2 JWT
-  verification, or Auth3 token-cache behavior.
+  helpers. It must not be cited as evidence for Auth1 JWT issuance or Auth3
+  token-cache behavior; Sec2 JWT verification has a separate SQL-runtime
+  evidence boundary.
 - Sec1 production evidence is limited to installable SQL tenant RLS helper
   predicates under a real PostgreSQL RLS policy. It must not be cited as
-  evidence for automatic policy generation, JWT verification, pool
-  authentication, or auto-API integration.
+  evidence for automatic policy generation, pool authentication, or auto-API
+  integration. Sec2 JWT verification does not expand the Sec1 helper claim.
+- Sec2 production evidence is limited to the local SQL HS256 verifier:
+  pgcrypto HMAC signature verification, issuer/audience/expiration/not-before
+  validation, required Auth2-compatible claim extraction, and fail-closed bad
+  signature, wrong-audience, expired-token, and missing-tenant rejection. It
+  must not be cited as evidence for JWKS/RSA/ECDSA key discovery, Auth1 token
+  issuance, pool authentication, Auth3 token-cache behavior, external secret
+  resolution, or key rotation.
 - Sec5/Sec6 production evidence is limited to the local SQL ledger runtime:
   append-only entries, append-only HMAC seals, hash-chain verification, and
   pgcrypto-backed seal calculation. It must not be cited as evidence for
@@ -471,7 +499,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 22 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 25 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -490,7 +518,9 @@ SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
 for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
 for the file-backed `citus-lsp` diagnostic and quick-fix CLI, plus `Sec1` for
 installable SQL tenant RLS helper predicates, plus `Sec5` and `Sec6` for the
-append-only SQL ledger and pgcrypto HMAC seal runtime. The other 142
+append-only SQL ledger and pgcrypto HMAC seal runtime, plus `Sec2` for the
+installable HS256 SQL JWT verifier, plus `S6` and `S13` for installable SQL
+placement-generation and shard-index routing helpers. The other 139
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

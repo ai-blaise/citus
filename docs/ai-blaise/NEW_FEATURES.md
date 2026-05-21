@@ -1113,13 +1113,13 @@ consensus logic into Postgres backends.
 ### S6: Per-Shard Placement Generation
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines companion-side placement generation and local-placement
-query contracts used by plan-cache invalidation and router fast paths.
+**Summary**: Provides installable SQL placement-generation helpers and
+local-placement checks used by plan-cache invalidation and router fast paths.
 
 **Motivation**: Pool and companion routing need versioned helper APIs before
 placement-generation invalidation can move beyond the pool model.
@@ -1127,11 +1127,26 @@ placement-generation invalidation can move beyond the pool model.
 **Citus comparison**: Vanilla Citus tracks shard placements but does not
 expose these helper contracts as companion APIs.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S6` as `sql-runtime`, calls
+`companion_internal.bump_placement_generation(102008, 'worker-a')` twice,
+verifies generation advancement through `companion_placement_generation(...)`,
+verifies unknown shards return generation zero, checks
+`companion_local_placement_matches(...)` for matching and non-matching workers,
+and verifies shard zero fails closed. This status covers the local SQL
+placement-generation state and local-placement helper surface only; actual
+Citus metadata synchronization, pool cache invalidation, rebalance hooks,
+planner invalidation, and operator-driven placement changes remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S6` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S9: Closed-Timestamp Follower Reads
 
@@ -1204,13 +1219,13 @@ failure domain goal for topology-aware reconciliation.
 ### S13: Range-Based Dynamic Sharding
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Adds hash and range routing plan shapes so companion and pool code
-can reason about non-hash shard assignment through one API.
+**Summary**: Adds installable SQL hash and numeric range routing helpers so
+companion and pool code can reason about target shard indexes through one API.
 
 **Motivation**: Dynamic sharding needs a router contract before planner and
 operator work can safely mix hash and range distribution.
@@ -1218,11 +1233,25 @@ operator work can safely mix hash and range distribution.
 **Citus comparison**: Vanilla Citus primarily exposes hash distribution
 contracts and does not ship this range-routing helper surface.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S13` as `sql-runtime`, verifies
+`companion_hash_shard_index('tenant-a', 8)` is deterministic and bounded,
+verifies `companion_range_shard_index(25, 0, 100, 4)` maps to shard index `1`,
+and verifies zero-shard and out-of-bounds numeric range inputs fail closed.
+This status covers the local SQL hash and numeric range routing helpers only;
+actual dynamic shard creation, Citus router integration, operator rebalancing,
+pool data-plane routing, and distributed range metadata propagation remain
+alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S13` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S14: Tenant Migration Online
 
@@ -3049,8 +3078,9 @@ verifies tenant-a and tenant-b sessions each see only their own rows, verifies
 `WITH CHECK` rejects a cross-tenant insert, and verifies
 `companion_require_tenant_id()` fails closed without a tenant claim. This
 status covers the installable predicate helpers only; automatic policy
-generation, JWT verification, pool authentication, and auto-API integration
-remain alpha until independently proven.
+generation, pool authentication, and auto-API integration remain alpha until
+independently proven. Sec2 JWT verification has its own evidence boundary and
+does not expand the Sec1 RLS-helper claim.
 
 **References**:
 
@@ -3064,24 +3094,39 @@ remain alpha until independently proven.
 ### Sec2: JWT Verification UDF
 
 **Overlay**: `companion/src/auth.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines issuer, audience, and JWKS secret binding for SQL-visible
-JWT verification.
+**Summary**: Provides an installable SQL HS256 JWT verifier that returns
+Auth2-compatible claims after signature and registered-claim validation.
 
 **Motivation**: Auth sidecars and SQL helpers need the same verified claim
 contract to avoid split-brain authorization behavior.
 
 **Citus comparison**: Vanilla Citus does not provide JWT verification helpers.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec2` as `sql-runtime`, constructs a
+signed HS256 JWT inside PostgreSQL, verifies it through
+`companion_verify_jwt_hs256(...)`, checks issuer, array audience, expiration,
+not-before, subject, role, tenant, and JWT ID claims, and feeds the verified
+claims into the Auth2 session helper surface. The same smoke verifies bad
+signatures, wrong audiences, expired tokens, and missing tenant claims fail
+closed. This status covers the local SQL HS256 verifier only; JWKS/RSA/ECDSA
+key discovery, Auth1 token issuance, pool authentication, token-cache
+behavior, key rotation, and external secret resolution remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+- SQL runtime: `FEATURE: Sec2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec5: Immutable Ledger
 
@@ -3245,8 +3290,9 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
 'jti-123')`, verifies `companion_current_session_claims()` and
 `companion_current_tenant_id()` return the same values, and verifies empty
-`uid` claims are rejected. Auth1 JWT issuance, Sec2 JWT verification, and
-Auth3 token caching remain alpha until their own runtime evidence exists.
+`uid` claims are rejected. Auth1 JWT issuance and Auth3 token caching remain
+alpha until their own runtime evidence exists; Sec2 JWT verification has a
+separate SQL-runtime evidence boundary.
 
 **References**:
 

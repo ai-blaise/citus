@@ -159,7 +159,7 @@ fn record_auth_contracts(
     let jwt = JwtVerificationPlan {
         issuer: "https://auth.example.com".to_string(),
         audience: "citus".to_string(),
-        jwks_secret_ref: "secret://jwt/jwks".to_string(),
+        shared_secret_ref: "secret://jwt/hmac".to_string(),
     };
     jwt.validate().map_err(DomainContractError::from_error)?;
     report.add_validation(&["Sec2"]);

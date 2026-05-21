@@ -216,17 +216,17 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Sec2",
         feature_name: "JWT verification UDF",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S6",
         feature_name: "placement generation helpers",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S13",
         feature_name: "range routing helpers",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "C10",
