@@ -96,6 +96,44 @@ CREATE TABLE control_plane_smoke_orders (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
+CREATE TABLE search_smoke_documents (
+  doc_id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  body text NOT NULL,
+  embedding_score numeric NOT NULL DEFAULT 0
+);
+
+CREATE TABLE graph_smoke_vertices (
+  vertex_id text PRIMARY KEY,
+  tenant_id text NOT NULL
+);
+
+CREATE TABLE graph_smoke_edges (
+  edge_id bigserial PRIMARY KEY,
+  from_vertex text NOT NULL,
+  to_vertex text NOT NULL,
+  tenant_id text NOT NULL
+);
+
+CREATE TABLE graph_smoke_edges_unregistered (
+  edge_id bigserial PRIMARY KEY,
+  from_vertex text NOT NULL,
+  to_vertex text NOT NULL,
+  tenant_id text NOT NULL
+);
+
+CREATE TABLE jsonschema_smoke_documents (
+  document_id bigserial PRIMARY KEY,
+  payload jsonb NOT NULL
+);
+
+CREATE TABLE geo_smoke_places (
+  place_id bigserial PRIMARY KEY,
+  geom_text text NOT NULL,
+  latitude numeric NOT NULL,
+  longitude numeric NOT NULL
+);
+
 CREATE FUNCTION create_hypertable(
   table_name regclass,
   time_column text,
@@ -199,6 +237,14 @@ DECLARE
   advisor_sql text;
   webhook_trigger_sql text;
   webhook_event_count integer;
+  search_sql text;
+  search_doc_id bigint;
+  search_rank_count integer;
+  json_trigger_sql text;
+  json_total_rows bigint;
+  json_invalid_rows bigint;
+  geo_sql text;
+  geo_bucket text;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -229,10 +275,16 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13', 'PM3', 'PM4', 'M1', 'M11', 'IA3', 'WH2', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN (
+      'Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'S6', 'S13',
+      'PM3', 'PM4', 'M1', 'M11', 'IA3', 'WH2',
+      'Search2', 'Search3', 'Search9', 'G2', 'G3', 'API4',
+      'JS2', 'M13', 'Geo2', 'Geo3',
+      'O1', 'O2', 'O3', 'R4'
+    )
       AND status = 'sql-runtime'
-  ) <> 17 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, S6, S13, PM3, PM4, M1, M11, IA3, WH2, and observability features as sql-runtime';
+  ) <> 27 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark custom SQL runtime features as sql-runtime';
   END IF;
 
   PERFORM companion_internal.migrate_start(
@@ -382,6 +434,276 @@ BEGIN
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'url must be http or https' THEN
+        RAISE;
+      END IF;
+  END;
+
+  search_sql := companion_internal.register_search_index(
+    'search_smoke_documents',
+    'search_smoke_documents_body_idx',
+    ARRAY['body'],
+    'tenant_id',
+    ARRAY['embedding_score']
+  );
+  IF search_sql NOT LIKE 'CREATE INDEX IF NOT EXISTS search_smoke_documents_body_idx ON search_smoke_documents USING gin%' THEN
+    RAISE EXCEPTION 'Search2 register_search_index did not render worker index DDL: %', search_sql;
+  END IF;
+  search_doc_id := companion_internal.search_document_upsert(
+    'search_smoke_documents',
+    'doc-1',
+    'citus distributed search bridge',
+    0.7
+  );
+  IF search_doc_id IS NULL THEN
+    RAISE EXCEPTION 'Search2 search_document_upsert did not return a document id';
+  END IF;
+  PERFORM companion_internal.search_document_upsert(
+    'search_smoke_documents',
+    'doc-2',
+    'unrelated analytics note',
+    0.2
+  );
+  SELECT count(*)
+  INTO search_rank_count
+  FROM companion_internal.hybrid_rank(
+    'search_smoke_documents',
+    'distributed',
+    'embedding_score',
+    '[0.1]'
+  )
+  WHERE document_key = 'doc-1'
+    AND bm25_score > 0
+    AND vector_score = 0.7;
+  IF search_rank_count <> 1 THEN
+    RAISE EXCEPTION 'Search3 hybrid_rank did not return the expected ranked document';
+  END IF;
+  SELECT rerank_sql
+  INTO search_sql
+  FROM companion_internal.rerank_search(
+    'companion_search_documents',
+    'local',
+    'identity'
+  )
+  LIMIT 1;
+  IF search_sql <> 'SELECT * FROM companion_search_documents' THEN
+    RAISE EXCEPTION 'Search9 rerank_search did not record/render deterministic rerank SQL: %', search_sql;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_search_rerank_requests
+    WHERE input_view = 'companion_search_documents'
+      AND provider = 'local'
+      AND model = 'identity'
+  ) THEN
+    RAISE EXCEPTION 'Search9 rerank_search request was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.register_search_index(
+      'search_smoke_documents',
+      'search_bad_idx',
+      ARRAY['body'],
+      'missing_tenant',
+      ARRAY['embedding_score']
+    );
+    RAISE EXCEPTION 'Search2 accepted a missing distribution column';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'distribution column does not exist on table' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.hybrid_rank(
+      'search_smoke_documents',
+      'distributed',
+      'missing_vector',
+      '[0.1]'
+    );
+    RAISE EXCEPTION 'Search3 accepted a missing vector column';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'vector_column does not exist on table' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.rerank_search(
+      'missing_rerank_view',
+      'local',
+      'identity'
+    );
+    RAISE EXCEPTION 'Search9 accepted a missing rerank input relation';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'input_view must reference an existing relation' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.ensure_graph_colocation(
+    'graph_smoke_vertices',
+    'graph_smoke_edges',
+    'vertex_id',
+    'tenant_id'
+  );
+  PERFORM companion_internal.register_graphql_distributed_graph(
+    'smoke_graph',
+    'graph_smoke_vertices',
+    'graph_smoke_edges'
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_graph_colocations
+    WHERE vertex_table = 'graph_smoke_vertices'
+      AND edge_table = 'graph_smoke_edges'
+      AND vertex_key = 'vertex_id'
+  ) THEN
+    RAISE EXCEPTION 'G2/G3 graph colocation metadata was not visible';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_graphql_distributed_graphs
+    WHERE graph_name = 'smoke_graph'
+      AND vertex_table = 'graph_smoke_vertices'
+      AND edge_table = 'graph_smoke_edges'
+  ) THEN
+    RAISE EXCEPTION 'API4 GraphQL distributed graph metadata was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.ensure_graph_colocation(
+      'graph_smoke_vertices',
+      'graph_smoke_edges',
+      'missing_vertex',
+      'tenant_id'
+    );
+    RAISE EXCEPTION 'G3 accepted a missing vertex key';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'vertex_key column does not exist on vertex table' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_graphql_distributed_graph(
+      'unregistered_graph',
+      'graph_smoke_vertices',
+      'graph_smoke_edges_unregistered'
+    );
+    RAISE EXCEPTION 'API4 accepted GraphQL graph metadata without colocation';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'graph colocation must be registered before GraphQL graph metadata' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.register_json_schema(
+    'payload-kind',
+    '{"type":"object","required":["kind"]}'::jsonb
+  );
+  json_trigger_sql := companion_internal.install_jsonschema_trigger(
+    'jsonschema_smoke_documents',
+    'payload',
+    'payload-kind',
+    'BEFORE INSERT OR UPDATE'
+  );
+  IF json_trigger_sql NOT LIKE 'CREATE TRIGGER companion_jsonschema_% BEFORE INSERT OR UPDATE ON jsonschema_smoke_documents%' THEN
+    RAISE EXCEPTION 'M13 install_jsonschema_trigger did not render/install trigger SQL: %', json_trigger_sql;
+  END IF;
+  INSERT INTO jsonschema_smoke_documents(payload)
+  VALUES ('{"kind":"event","value":1}'::jsonb);
+  BEGIN
+    INSERT INTO jsonschema_smoke_documents(payload)
+    VALUES ('{"value":2}'::jsonb);
+    RAISE EXCEPTION 'M13 JSON schema trigger accepted a document missing a required field';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'json document does not match registered schema' THEN
+        RAISE;
+      END IF;
+  END;
+  SELECT total_rows, invalid_rows
+  INTO json_total_rows, json_invalid_rows
+  FROM companion_internal.validate_jsonschema_shard(
+    'jsonschema_smoke_documents'::regclass,
+    'payload',
+    'payload-kind'
+  );
+  IF json_total_rows <> 1 OR json_invalid_rows <> 0 THEN
+    RAISE EXCEPTION 'JS2 validate_jsonschema_shard returned total %, invalid %',
+      json_total_rows,
+      json_invalid_rows;
+  END IF;
+  BEGIN
+    PERFORM companion_internal.register_json_schema(
+      'bad-json-schema',
+      '[]'::jsonb
+    );
+    RAISE EXCEPTION 'JS2 accepted a non-object JSON schema';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'schema_document must be a JSON object' THEN
+        RAISE;
+      END IF;
+  END;
+
+  geo_sql := companion_internal.add_geohash_column(
+    'geo_smoke_places',
+    'geom_text',
+    'geo_bucket',
+    5
+  );
+  IF geo_sql <> 'ALTER TABLE geo_smoke_places ADD COLUMN IF NOT EXISTS geo_bucket text;' THEN
+    RAISE EXCEPTION 'Geo2 add_geohash_column did not render/install expected column DDL: %', geo_sql;
+  END IF;
+  geo_bucket := companion_geo_bucket(42.3601, -71.0589, 5);
+  IF length(geo_bucket) <> 5 THEN
+    RAISE EXCEPTION 'Geo2 companion_geo_bucket returned unexpected bucket %', geo_bucket;
+  END IF;
+  PERFORM companion_internal.enable_geo_shard_pruning(
+    'geo_smoke_places',
+    'geom_text',
+    5
+  );
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_geo_distributions
+    WHERE table_name = 'geo_smoke_places'
+      AND geometry_column = 'geom_text'
+      AND distribution_column = 'geo_bucket'
+      AND precision = 5
+  ) THEN
+    RAISE EXCEPTION 'Geo2 distribution metadata was not visible';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_geo_pruning_policies
+    WHERE table_name = 'geo_smoke_places'
+      AND geometry_column = 'geom_text'
+      AND precision = 5
+  ) THEN
+    RAISE EXCEPTION 'Geo3 pruning metadata was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_geo_bucket(95, 0, 5);
+    RAISE EXCEPTION 'Geo2 accepted an out-of-range latitude';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'latitude must be between -90 and 90' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.add_geohash_column(
+      'geo_smoke_places',
+      'geom_text',
+      'geo_bad_bucket',
+      0
+    );
+    RAISE EXCEPTION 'Geo3 accepted an out-of-range precision';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'precision must be between 1 and 12' THEN
         RAISE;
       END IF;
   END;

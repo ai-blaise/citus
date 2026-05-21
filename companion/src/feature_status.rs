@@ -81,52 +81,52 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Search2",
         feature_name: "distributed BM25 search index",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search3",
         feature_name: "hybrid BM25 and vector ranking",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search9",
         feature_name: "reranker UDF plan",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "G2",
         feature_name: "distributed graph bridge",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "G3",
         feature_name: "graph colocation policy",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "API4",
         feature_name: "GraphQL distributed graph metadata",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "JS2",
         feature_name: "distributed JSON Schema validation",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M13",
         feature_name: "JSON Schema validation triggers",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Geo2",
         feature_name: "geo-aware distribution",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Geo3",
         feature_name: "geo shard pruning",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "T8",
