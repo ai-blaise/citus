@@ -1038,7 +1038,6 @@ static bool
 CitusHasTrustedHookCoextensions(void)
 {
 	List *cohabitExtensionList = NIL;
-	char *cohabitExtensions = NULL;
 	bool hasTrustedHookCoextensions = false;
 
 	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
@@ -1046,7 +1045,7 @@ CitusHasTrustedHookCoextensions(void)
 		return false;
 	}
 
-	cohabitExtensions = pstrdup(CohabitExtensions);
+	char *cohabitExtensions = pstrdup(CohabitExtensions);
 	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
 	{
 		ListCell *cohabitExtensionCell = NULL;

@@ -21,8 +21,8 @@ coextensions are safe for production only after a real Citus+TimescaleDB
 cohabitation smoke records the exact image digest, command log, and CI or VM run
 in the production-readiness audit.
 ---
- src/backend/distributed/shared_library_init.c | 115 +++++++++++++++++++++----
- 1 file changed, 100 insertions(+), 15 deletions(-)
+ src/backend/distributed/shared_library_init.c | 110 +++++++++++++++++++++----
+ 1 file changed, 95 insertions(+), 15 deletions(-)
 
 diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
 --- a/src/backend/distributed/shared_library_init.c
@@ -73,7 +73,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
  
  	ResizeStackToMaximumDepth();
  
-@@ -973,6 +969,110 @@ CreateRequiredDirectories(void)
+@@ -973,6 +969,109 @@ CreateRequiredDirectories(void)
  	}
  }
  
@@ -143,7 +143,6 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +CitusHasTrustedHookCoextensions(void)
 +{
 +	List *cohabitExtensionList = NIL;
-+	char *cohabitExtensions = NULL;
 +	bool hasTrustedHookCoextensions = false;
 +
 +	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
@@ -151,7 +150,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		return false;
 +	}
 +
-+	cohabitExtensions = pstrdup(CohabitExtensions);
++	char *cohabitExtensions = pstrdup(CohabitExtensions);
 +	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
 +	{
 +		ListCell *cohabitExtensionCell = NULL;
