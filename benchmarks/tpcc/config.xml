@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<!--
+  benchbase TPC-C configuration for the ai-blaise/citus 3-worker cluster.
+
+  The full V2 acceptance threshold (tpmC > 5000) requires this configuration
+  against a real Citus coordinator with the schema distributed via
+  pg_dist_shard-aware DDL in `tpcc/schema/distribute.sql`. Quick-mode CI
+  smoke does not exercise the full config; it falls back to pgbench against a
+  local Postgres so the harness wiring is end-to-end verifiable on a 2-core VM.
+-->
+<parameters>
+  <type>POSTGRES</type>
+  <driver>org.postgresql.Driver</driver>
+  <url>jdbc:postgresql://${BENCH_PGHOST:127.0.0.1}:${BENCH_PGPORT:5432}/${BENCH_PGDATABASE:postgres}?sslmode=disable</url>
+  <username>${BENCH_PGUSER:postgres}</username>
+  <password>${BENCH_PGPASSWORD:}</password>
+  <isolation>TRANSACTION_REPEATABLE_READ</isolation>
+
+  <!-- Citus-aware schema: warehouse-keyed shards. -->
+  <scalefactor>${BENCH_SCALE:1}</scalefactor>
+  <loaderThreads>${BENCH_CLIENTS:2}</loaderThreads>
+  <terminals>${BENCH_CLIENTS:2}</terminals>
+
+  <works>
+    <work>
+      <time>${BENCH_DURATION_SECS:10}</time>
+      <warmup>${BENCH_WARMUP_SECS:2}</warmup>
+      <rate>unlimited</rate>
+      <weights>45,43,4,4,4</weights>
+    </work>
+  </works>
+
+  <transactiontypes>
+    <transactiontype>
+      <name>NewOrder</name>
+    </transactiontype>
+    <transactiontype>
+      <name>Payment</name>
+    </transactiontype>
+    <transactiontype>
+      <name>OrderStatus</name>
+    </transactiontype>
+    <transactiontype>
+      <name>Delivery</name>
+    </transactiontype>
+    <transactiontype>
+      <name>StockLevel</name>
+    </transactiontype>
+  </transactiontypes>
+</parameters>
