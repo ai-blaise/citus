@@ -83,6 +83,102 @@ if grep -R "ai_blaise_citus_sidecar_ready" "${chart_dir}/templates"; then
   echo "observability templates must query emitted ai_blaise_sidecar_ready metric" >&2
   exit 1
 fi
+python3 - "${chart_dir}/templates/observability-dashboards.yaml" "${chart_dir}/templates/observability-prometheusrules.yaml" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+dashboard_template = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+promrule_template = pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+
+
+def fail(message: str) -> None:
+    print(message, file=sys.stderr)
+    sys.exit(1)
+
+
+def dashboard_json_blocks(template: str) -> dict[str, object]:
+    blocks: dict[str, object] = {}
+    pattern = re.compile(r"^  ([A-Za-z0-9_.-]+\.json): \|-\n((?:    .*\n)+)", re.M)
+    for match in pattern.finditer(template):
+        name = match.group(1)
+        raw_json = "\n".join(line[4:] for line in match.group(2).splitlines())
+        try:
+            blocks[name] = json.loads(raw_json)
+        except json.JSONDecodeError as error:
+            fail(f"{name} contains invalid Grafana dashboard JSON: {error}")
+    return blocks
+
+
+dashboards = dashboard_json_blocks(dashboard_template)
+expected_dashboards = {
+    "ai-blaise-citus-overview.json",
+    "ai-blaise-citus-sidecars.json",
+}
+if set(dashboards) != expected_dashboards:
+    fail(
+        "observability dashboard ConfigMap must contain exactly "
+        + ", ".join(sorted(expected_dashboards))
+    )
+
+expected_panel_exprs = {
+    "ai-blaise-citus-overview.json": {
+        "Coordinator query latency p95": "histogram_quantile(0.95, sum(rate(ai_blaise_citus_query_duration_seconds_bucket[5m])) by (le, query_class))",
+        "Distributed replication lag": "max(ai_blaise_citus_replication_lag_seconds) by (region)",
+        "Vectorizer backlog": "sum(ai_blaise_citus_vectorizer_backlog_jobs) by (tenant)",
+    },
+    "ai-blaise-citus-sidecars.json": {
+        "Sidecar readiness": "min(ai_blaise_sidecar_ready) by (component)",
+        "Pool error rate percent": "100 * sum(rate(ai_blaise_citus_pool_errors_total[5m])) / clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)",
+    },
+}
+for dashboard_name, panels in expected_panel_exprs.items():
+    actual_panels = {
+        panel.get("title"): {
+            target.get("expr")
+            for target in panel.get("targets", [])
+            if isinstance(target, dict)
+        }
+        for panel in dashboards[dashboard_name].get("panels", [])
+        if isinstance(panel, dict)
+    }
+    for title, expected_expr in panels.items():
+        if expected_expr not in actual_panels.get(title, set()):
+            fail(f"{dashboard_name} is missing panel {title!r} expression {expected_expr!r}")
+
+pool_dashboard_expr = expected_panel_exprs["ai-blaise-citus-sidecars.json"][
+    "Pool error rate percent"
+]
+if pool_dashboard_expr not in dashboard_template:
+    fail("pool error-rate dashboard expression must use clamp_min denominator guard")
+if "/ sum(rate(ai_blaise_citus_pool_requests_total[5m]))" in dashboard_template:
+    fail("pool error-rate dashboard expression must not divide by a raw request rate")
+
+alert_exprs = {
+    match.group(1): match.group(2).strip()
+    for match in re.finditer(r"^\s*- alert:\s+(\S+)\n(?:.*\n)*?\s+expr:\s+(.+)$", promrule_template, re.M)
+}
+for alert in (
+    "AiBlaiseCitusReplicationLagHigh",
+    "AiBlaiseCitusSidecarNotReady",
+    "AiBlaiseCitusVectorizerBacklogHigh",
+    "AiBlaiseCitusPoolErrorRateHigh",
+):
+    if alert not in alert_exprs:
+        fail(f"PrometheusRule is missing alert {alert}")
+
+pool_alert = alert_exprs["AiBlaiseCitusPoolErrorRateHigh"]
+for marker in (
+    "clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)",
+    "ai_blaise_citus_pool_errors_total",
+    "and sum(rate(ai_blaise_citus_pool_requests_total[5m])) > 0",
+):
+    if marker not in pool_alert:
+        fail(f"pool error-rate alert expression must preserve marker: {marker}")
+if "/ sum(rate(ai_blaise_citus_pool_requests_total[5m]))" in pool_alert:
+    fail("pool error-rate alert must not divide by a raw request rate")
+PY
 grep -q 'args:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'operator.image.digest' "${chart_dir}/templates/operator-deployment.yaml"
@@ -399,6 +495,8 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'kind: PrometheusRule' "${render_dir}/default.yaml"
   grep -q 'ai-blaise-citus-overview.json' "${render_dir}/default.yaml"
   grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/default.yaml"
+  grep -q 'clamp_min(sum(rate(ai_blaise_citus_pool_requests_total\[5m\])), 0.001)' "${render_dir}/default.yaml"
+  grep -q 'and sum(rate(ai_blaise_citus_pool_requests_total\[5m\])) > 0' "${render_dir}/default.yaml"
   if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/default.yaml"; then
     echo "values.yaml default render must not include alpha sidecar deployments" >&2
     exit 1
@@ -413,6 +511,7 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/exhaustive.yaml"
   grep -q 'kind: PrometheusRule' "${render_dir}/exhaustive.yaml"
   grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/exhaustive.yaml"
+  grep -q 'clamp_min(sum(rate(ai_blaise_citus_pool_requests_total\[5m\])), 0.001)' "${render_dir}/exhaustive.yaml"
   grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: tools' "${render_dir}/dev.yaml"
@@ -425,6 +524,8 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'ai-blaise-citus-overview.json' "${render_dir}/prod.yaml"
   grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/prod.yaml"
   grep -q 'ai_blaise_sidecar_ready' "${render_dir}/prod.yaml"
+  grep -q 'clamp_min(sum(rate(ai_blaise_citus_pool_requests_total\[5m\])), 0.001)' "${render_dir}/prod.yaml"
+  grep -q 'and sum(rate(ai_blaise_citus_pool_requests_total\[5m\])) > 0' "${render_dir}/prod.yaml"
   if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/prod.yaml"; then
     echo "values-prod.yaml render must not include alpha sidecar deployments" >&2
     exit 1

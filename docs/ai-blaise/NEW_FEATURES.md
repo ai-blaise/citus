@@ -4203,9 +4203,11 @@ Production evidence: the kind production smoke in
 `values-prod.yaml`, and explicit exhaustive Helm profiles into a real kind
 cluster, then requires the live
 `configmap/ai-blaise-citus-dashboards` resource to contain both dashboard JSON
-payloads plus the emitted `ai_blaise_sidecar_ready` and pool error-rate metric
-queries. `ci/ai-blaise/deploy-check.sh` also renders the production profiles
-with Helm and statically guards the dashboard markers.
+payloads plus the emitted `ai_blaise_sidecar_ready` metric and the guarded pool
+error-rate expression. `ci/ai-blaise/deploy-check.sh` parses the embedded
+Grafana JSON, requires the exact dashboard files, panel titles, and PromQL
+target expressions, renders the production profiles with Helm, and rejects
+unguarded pool request-rate division.
 
 **References**:
 
@@ -4238,8 +4240,11 @@ real kind cluster before Helm install, applies the default `values.yaml`,
 live
 `prometheusrules.monitoring.coreos.com/ai-blaise-citus-alerts` resource to
 contain the replication-lag, sidecar-readiness, vectorizer-backlog, and
-pool-error-rate alerts. `ci/ai-blaise/deploy-check.sh` renders the same
-production profiles with Helm and statically guards the alert names.
+pool-error-rate alerts. The live check also requires the pool error-rate alert
+to use the guarded request-rate denominator and a positive-traffic predicate.
+`ci/ai-blaise/deploy-check.sh` renders the same production profiles with Helm,
+statically guards the alert names, and rejects unguarded pool request-rate
+division.
 
 **References**:
 

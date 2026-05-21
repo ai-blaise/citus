@@ -34,7 +34,7 @@ spec:
           annotations:
             summary: Vectorizer backlog is above the configured budget
         - alert: AiBlaiseCitusPoolErrorRateHigh
-          expr: (sum(rate(ai_blaise_citus_pool_errors_total[5m])) / sum(rate(ai_blaise_citus_pool_requests_total[5m]))) * 100 > {{ .Values.observability.alertRules.thresholds.poolErrorRatePercent }}
+          expr: (100 * sum(rate(ai_blaise_citus_pool_errors_total[5m])) / clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)) > {{ .Values.observability.alertRules.thresholds.poolErrorRatePercent }} and sum(rate(ai_blaise_citus_pool_requests_total[5m])) > 0
           for: 5m
           labels:
             severity: critical

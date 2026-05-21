@@ -6,6 +6,7 @@ cd "${repo_root}"
 
 python3 <<'PY'
 import pathlib
+import json
 import re
 import subprocess
 import sys
@@ -1025,6 +1026,8 @@ for phrase in (
     "ai-blaise-citus-overview.json",
     "ai-blaise-citus-sidecars.json",
     "AiBlaiseCitusSidecarNotReady",
+    "clamp_min",
+    "> 0",
     "DEFAULT_VALUES_NAMESPACE",
     "DEPLOY_PROFILE=prod",
     "MODE=install",
@@ -1144,6 +1147,65 @@ for path, text in (
         fail(f"{path} must query the sidecar metric emitted by runtime.rs")
     if "ai_blaise_citus_sidecar_ready" in text:
         fail(f"{path} contains stale sidecar metric name ai_blaise_citus_sidecar_ready")
+
+def dashboard_json_blocks(template: str):
+    blocks = {}
+    pattern = re.compile(r"^  ([A-Za-z0-9_.-]+\.json): \|-\n((?:    .*\n)+)", re.M)
+    for match in pattern.finditer(template):
+        name = match.group(1)
+        raw_json = "\n".join(line[4:] for line in match.group(2).splitlines())
+        try:
+            blocks[name] = json.loads(raw_json)
+        except json.JSONDecodeError as error:
+            fail(f"{name} contains invalid Grafana dashboard JSON: {error}")
+    return blocks
+
+dashboards = dashboard_json_blocks(dashboard_template)
+expected_dashboards = {
+    "ai-blaise-citus-overview.json",
+    "ai-blaise-citus-sidecars.json",
+}
+if set(dashboards) != expected_dashboards:
+    fail(
+        "observability dashboard template must contain exactly "
+        + ", ".join(sorted(expected_dashboards))
+    )
+
+expected_panel_exprs = {
+    "ai-blaise-citus-overview.json": {
+        "Coordinator query latency p95": "histogram_quantile(0.95, sum(rate(ai_blaise_citus_query_duration_seconds_bucket[5m])) by (le, query_class))",
+        "Distributed replication lag": "max(ai_blaise_citus_replication_lag_seconds) by (region)",
+        "Vectorizer backlog": "sum(ai_blaise_citus_vectorizer_backlog_jobs) by (tenant)",
+    },
+    "ai-blaise-citus-sidecars.json": {
+        "Sidecar readiness": "min(ai_blaise_sidecar_ready) by (component)",
+        "Pool error rate percent": "100 * sum(rate(ai_blaise_citus_pool_errors_total[5m])) / clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)",
+    },
+}
+for dashboard_name, panels in expected_panel_exprs.items():
+    actual_panels = {
+        panel.get("title"): {
+            target.get("expr")
+            for target in panel.get("targets", [])
+            if isinstance(target, dict)
+        }
+        for panel in dashboards[dashboard_name].get("panels", [])
+        if isinstance(panel, dict)
+    }
+    for title, expected_expr in panels.items():
+        if expected_expr not in actual_panels.get(title, set()):
+            fail(f"{dashboard_name} must preserve panel {title!r} expression {expected_expr!r}")
+
+for phrase in (
+    "clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)",
+    "and sum(rate(ai_blaise_citus_pool_requests_total[5m])) > 0",
+):
+    if phrase not in promrule_template:
+        fail(f"PrometheusRule must preserve guarded pool error-rate expression: {phrase}")
+if "/ sum(rate(ai_blaise_citus_pool_requests_total[5m]))" in dashboard_template:
+    fail("Grafana pool error-rate panel must not divide by raw request rate")
+if "/ sum(rate(ai_blaise_citus_pool_requests_total[5m]))" in promrule_template:
+    fail("Prometheus pool error-rate alert must not divide by raw request rate")
 
 if 'resources: ["*"]' in operator_rbac_template:
     fail("operator RBAC must enumerate ai-blaise resources explicitly")
@@ -1337,6 +1399,10 @@ for phrase in (
     "deploy.sh must refuse non-production installs unless ALLOW_ALPHA_INSTALL=1",
     "values-prod.yaml render must require immutable operator/pool image digests",
     "deploy.sh default production render must require immutable operator/pool image digests",
+    "dashboard_json_blocks",
+    "Pool error rate percent",
+    "pool error-rate dashboard expression must use clamp_min denominator guard",
+    "pool error-rate alert expression must preserve marker",
 ):
     if phrase not in deploy_check:
         fail(f"deploy-check.sh must enforce deploy wrapper production-safe default: {phrase}")
@@ -1361,6 +1427,11 @@ for phrase in (
     "argo application is a gitops render contract, not live controller evidence",
     "sec13 pool cidr access control is now enforced by the live pool data path",
     "ai_blaise_citus_pool_rejected_connections_total",
+    "parses the embedded grafana dashboard json",
+    "guarded pool error-rate denominator",
+    "positive request traffic before firing",
+    "parsed grafana json",
+    "exact panel/promql contracts",
 ):
     if phrase not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve deploy-wrapper guardrail: {phrase}")
