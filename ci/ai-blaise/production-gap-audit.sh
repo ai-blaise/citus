@@ -517,7 +517,8 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
-    "Auth1 JWT issuance, Sec2 JWT verification, and Auth3 token caching remain alpha",
+    "Auth1 JWT issuance and Auth3 token caching remain alpha",
+    "Sec2 JWT verification has a separate SQL-runtime evidence boundary",
     "ci/ai-blaise/sql-extension-smoke.sh",
 ):
     if compact(phrase) not in compact(auth2_entry["body"]):
@@ -536,11 +537,29 @@ for phrase in (
     "non-superuser role",
     "WITH CHECK",
     "cross-tenant insert",
-    "automatic policy generation, JWT verification, pool authentication, and auto-API integration remain alpha",
+    "automatic policy generation, pool authentication, and auto-API integration remain alpha",
+    "Sec2 JWT verification has its own evidence boundary",
     "ci/ai-blaise/sql-extension-smoke.sh",
 ):
     if compact(phrase) not in compact(sec1_entry["body"]):
         fail(f"Sec1 production-ready boundary is missing: {phrase}")
+
+sec2_entry = entry_by_id.get("Sec2")
+if sec2_entry is None:
+    fail("Sec2 feature heading is required for SQL JWT verifier evidence")
+if sec2_entry["status"].lower() not in PRODUCTION_STATUSES:
+    fail("Sec2 must remain production-ready only for the narrow SQL HS256 verifier")
+for phrase in (
+    "installable SQL HS256 JWT verifier",
+    "companion_verify_jwt_hs256",
+    "issuer, array audience, expiration, not-before, subject, role, tenant, and JWT ID claims",
+    "feeds the verified claims into the Auth2 session helper surface",
+    "bad signatures, wrong audiences, expired tokens, and missing tenant claims fail closed",
+    "JWKS/RSA/ECDSA key discovery, Auth1 token issuance, pool authentication, token-cache behavior, key rotation, and external secret resolution remain alpha",
+    "ci/ai-blaise/sql-extension-smoke.sh",
+):
+    if compact(phrase) not in compact(sec2_entry["body"]):
+        fail(f"Sec2 production-ready boundary is missing: {phrase}")
 
 for feature_id, required_phrases in (
     (
@@ -1149,6 +1168,13 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
+    "companion_verify_jwt_hs256",
+    "Sec2 JWT verification did not return expected claims",
+    "Sec2 verified JWT claims did not feed Auth2 tenant claims",
+    "Sec2 JWT verification accepted a bad signature",
+    "Sec2 JWT verification accepted a wrong audience",
+    "Sec2 JWT verification accepted an expired token",
+    "Sec2 JWT verification accepted a missing tenant_id claim",
     "companion_require_tenant_id",
     "companion_tenant_id_matches",
     "companion_internal.ledger_transfer",
@@ -1173,6 +1199,10 @@ for phrase in (
     "CREATE FUNCTION companion_set_session_claims",
     "CREATE FUNCTION companion_current_session_claims",
     "CREATE FUNCTION companion_current_tenant_id",
+    "CREATE FUNCTION companion_internal.base64url_encode",
+    "CREATE FUNCTION companion_internal.base64url_decode",
+    "CREATE FUNCTION companion_internal.jwt_audience_matches",
+    "CREATE FUNCTION companion_verify_jwt_hs256",
     "CREATE FUNCTION companion_require_tenant_id",
     "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)",
     "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)",
@@ -1184,6 +1214,7 @@ for phrase in (
     "CREATE VIEW companion_ledger_entries",
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",
+    "'Sec2', 'JWT verification UDF', 'sql-runtime'",
     "'Sec5', 'immutable ledger', 'sql-runtime'",
     "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'",
 ):

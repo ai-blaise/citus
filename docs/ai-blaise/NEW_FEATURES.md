@@ -3049,8 +3049,9 @@ verifies tenant-a and tenant-b sessions each see only their own rows, verifies
 `WITH CHECK` rejects a cross-tenant insert, and verifies
 `companion_require_tenant_id()` fails closed without a tenant claim. This
 status covers the installable predicate helpers only; automatic policy
-generation, JWT verification, pool authentication, and auto-API integration
-remain alpha until independently proven.
+generation, pool authentication, and auto-API integration remain alpha until
+independently proven. Sec2 JWT verification has its own evidence boundary and
+does not expand the Sec1 RLS-helper claim.
 
 **References**:
 
@@ -3064,24 +3065,39 @@ remain alpha until independently proven.
 ### Sec2: JWT Verification UDF
 
 **Overlay**: `companion/src/auth.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines issuer, audience, and JWKS secret binding for SQL-visible
-JWT verification.
+**Summary**: Provides an installable SQL HS256 JWT verifier that returns
+Auth2-compatible claims after signature and registered-claim validation.
 
 **Motivation**: Auth sidecars and SQL helpers need the same verified claim
 contract to avoid split-brain authorization behavior.
 
 **Citus comparison**: Vanilla Citus does not provide JWT verification helpers.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec2` as `sql-runtime`, constructs a
+signed HS256 JWT inside PostgreSQL, verifies it through
+`companion_verify_jwt_hs256(...)`, checks issuer, array audience, expiration,
+not-before, subject, role, tenant, and JWT ID claims, and feeds the verified
+claims into the Auth2 session helper surface. The same smoke verifies bad
+signatures, wrong audiences, expired tokens, and missing tenant claims fail
+closed. This status covers the local SQL HS256 verifier only; JWKS/RSA/ECDSA
+key discovery, Auth1 token issuance, pool authentication, token-cache
+behavior, key rotation, and external secret resolution remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+- SQL runtime: `FEATURE: Sec2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec5: Immutable Ledger
 
@@ -3245,8 +3261,9 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
 'jti-123')`, verifies `companion_current_session_claims()` and
 `companion_current_tenant_id()` return the same values, and verifies empty
-`uid` claims are rejected. Auth1 JWT issuance, Sec2 JWT verification, and
-Auth3 token caching remain alpha until their own runtime evidence exists.
+`uid` claims are rejected. Auth1 JWT issuance and Auth3 token caching remain
+alpha until their own runtime evidence exists; Sec2 JWT verification has a
+separate SQL-runtime evidence boundary.
 
 **References**:
 

@@ -62,7 +62,7 @@ AS $$
         ('R4', 'idle transaction detector', 'sql-runtime'),
         ('Auth2', 'tenant-aware claims', 'sql-runtime'),
         ('Sec1', 'RLS helpers', 'sql-runtime'),
-        ('Sec2', 'JWT verification UDF', 'runtime-contract'),
+        ('Sec2', 'JWT verification UDF', 'sql-runtime'),
         ('S6', 'placement generation helpers', 'runtime-contract'),
         ('S13', 'range routing helpers', 'runtime-contract'),
         ('C10', 'online schema job state machine', 'runtime-contract'),
@@ -147,6 +147,181 @@ STABLE
 PARALLEL SAFE
 AS $$
     SELECT NULLIF(current_setting('ai_blaise.claim.tenant_id', true), '')
+$$;
+
+-- FEATURE: Sec2
+CREATE FUNCTION companion_internal.base64url_encode(input bytea)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT rtrim(
+        translate(regexp_replace(encode(input, 'base64'), '\s', '', 'g'), '+/', '-_'),
+        '='
+    )
+$$;
+
+CREATE FUNCTION companion_internal.base64url_decode(input text)
+RETURNS bytea
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    WITH normalized AS (
+        SELECT translate(input, '-_', '+/') AS value
+    ),
+    padded AS (
+        SELECT value || repeat('=', (4 - length(value) % 4) % 4) AS value
+        FROM normalized
+    )
+    SELECT decode(value, 'base64')
+    FROM padded
+$$;
+
+CREATE FUNCTION companion_internal.jwt_audience_matches(
+    payload jsonb,
+    p_expected_audience text
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT CASE jsonb_typeof(payload->'aud')
+        WHEN 'string' THEN payload->>'aud' = p_expected_audience
+        WHEN 'array' THEN EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(payload->'aud') AS audience(value)
+            WHERE audience.value = p_expected_audience
+        )
+        ELSE false
+    END
+$$;
+
+CREATE FUNCTION companion_verify_jwt_hs256(
+    p_token text,
+    p_shared_secret text,
+    p_expected_issuer text,
+    p_expected_audience text,
+    p_leeway_seconds integer DEFAULT 0
+)
+RETURNS TABLE(
+    uid text,
+    role text,
+    tenant_id text,
+    jwt_id text,
+    issuer text,
+    audience text,
+    expires_at timestamptz
+)
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    parts text[];
+    header_json jsonb;
+    payload_json jsonb;
+    signing_input text;
+    expected_signature text;
+    exp_epoch numeric;
+    nbf_epoch numeric;
+    now_epoch numeric;
+BEGIN
+    PERFORM companion_internal.require_visible_function('hmac', 'pgcrypto');
+
+    IF p_token IS NULL OR btrim(p_token) = '' THEN
+        RAISE EXCEPTION 'JWT token must not be empty';
+    END IF;
+    IF p_shared_secret IS NULL OR btrim(p_shared_secret) = '' THEN
+        RAISE EXCEPTION 'JWT shared secret must not be empty';
+    END IF;
+    IF p_expected_issuer IS NULL OR btrim(p_expected_issuer) = '' THEN
+        RAISE EXCEPTION 'JWT expected issuer must not be empty';
+    END IF;
+    IF p_expected_audience IS NULL OR btrim(p_expected_audience) = '' THEN
+        RAISE EXCEPTION 'JWT expected audience must not be empty';
+    END IF;
+    IF p_leeway_seconds IS NULL OR p_leeway_seconds < 0 THEN
+        RAISE EXCEPTION 'JWT leeway seconds must be non-negative';
+    END IF;
+
+    parts := string_to_array(p_token, '.');
+    IF COALESCE(array_length(parts, 1), 0) <> 3
+       OR parts[1] = ''
+       OR parts[2] = ''
+       OR parts[3] = '' THEN
+        RAISE EXCEPTION 'JWT token must have three non-empty segments';
+    END IF;
+
+    header_json := convert_from(companion_internal.base64url_decode(parts[1]), 'UTF8')::jsonb;
+    payload_json := convert_from(companion_internal.base64url_decode(parts[2]), 'UTF8')::jsonb;
+
+    IF COALESCE(header_json->>'alg', '') <> 'HS256' THEN
+        RAISE EXCEPTION 'unsupported JWT alg: %', COALESCE(header_json->>'alg', '<missing>');
+    END IF;
+    IF header_json ? 'typ' AND upper(header_json->>'typ') <> 'JWT' THEN
+        RAISE EXCEPTION 'unsupported JWT typ: %', header_json->>'typ';
+    END IF;
+
+    signing_input := parts[1] || '.' || parts[2];
+    expected_signature := companion_internal.base64url_encode(
+        hmac(signing_input, p_shared_secret, 'sha256')
+    );
+    IF parts[3] <> expected_signature THEN
+        RAISE EXCEPTION 'JWT signature verification failed';
+    END IF;
+
+    IF payload_json->>'iss' <> p_expected_issuer THEN
+        RAISE EXCEPTION 'JWT issuer mismatch';
+    END IF;
+    IF NOT companion_internal.jwt_audience_matches(payload_json, p_expected_audience) THEN
+        RAISE EXCEPTION 'JWT audience mismatch';
+    END IF;
+    IF NOT payload_json ? 'exp' THEN
+        RAISE EXCEPTION 'JWT exp claim must be present';
+    END IF;
+
+    exp_epoch := (payload_json->>'exp')::numeric;
+    now_epoch := extract(epoch FROM clock_timestamp());
+    IF exp_epoch + p_leeway_seconds < now_epoch THEN
+        RAISE EXCEPTION 'JWT has expired';
+    END IF;
+
+    IF payload_json ? 'nbf' THEN
+        nbf_epoch := (payload_json->>'nbf')::numeric;
+        IF nbf_epoch - p_leeway_seconds > now_epoch THEN
+            RAISE EXCEPTION 'JWT is not yet valid';
+        END IF;
+    END IF;
+
+    IF payload_json->>'sub' IS NULL OR btrim(payload_json->>'sub') = '' THEN
+        RAISE EXCEPTION 'JWT sub claim must not be empty';
+    END IF;
+    IF payload_json->>'role' IS NULL OR btrim(payload_json->>'role') = '' THEN
+        RAISE EXCEPTION 'JWT role claim must not be empty';
+    END IF;
+    IF payload_json->>'tenant_id' IS NULL OR btrim(payload_json->>'tenant_id') = '' THEN
+        RAISE EXCEPTION 'JWT tenant_id claim must not be empty';
+    END IF;
+    IF payload_json ? 'jti' AND btrim(payload_json->>'jti') = '' THEN
+        RAISE EXCEPTION 'JWT jti claim must be absent or non-empty';
+    END IF;
+
+    RETURN QUERY SELECT
+        btrim(payload_json->>'sub'),
+        btrim(payload_json->>'role'),
+        btrim(payload_json->>'tenant_id'),
+        NULLIF(btrim(COALESCE(payload_json->>'jti', '')), ''),
+        payload_json->>'iss',
+        CASE
+            WHEN jsonb_typeof(payload_json->'aud') = 'string' THEN payload_json->>'aud'
+            ELSE p_expected_audience
+        END,
+        to_timestamp(exp_epoch::double precision);
+END;
 $$;
 
 -- FEATURE: Sec1

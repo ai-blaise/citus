@@ -216,7 +216,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Sec2",
         feature_name: "JWT verification UDF",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S6",

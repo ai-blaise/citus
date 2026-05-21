@@ -172,6 +172,15 @@ DECLARE
   planned_count integer;
   plan_sql text;
   bridge_features integer;
+  jwt_header_segment text;
+  jwt_payload_segment text;
+  jwt_signing_input text;
+  jwt_token text;
+  expired_payload_segment text;
+  expired_token text;
+  missing_tenant_payload_segment text;
+  missing_tenant_token text;
+  jwt_claims record;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -202,10 +211,10 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec5', 'Sec6', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec2', 'Sec5', 'Sec6', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 8 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec5, Sec6, and observability features as sql-runtime';
+  ) <> 9 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec2, Sec5, Sec6, and observability features as sql-runtime';
   END IF;
 
   PERFORM companion_set_session_claims(
@@ -233,6 +242,147 @@ BEGIN
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'uid claim must not be empty' THEN
+        RAISE;
+      END IF;
+  END;
+
+  jwt_header_segment := companion_internal.base64url_encode(
+    convert_to('{"alg":"HS256","typ":"JWT"}', 'UTF8')
+  );
+  jwt_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', jsonb_build_array('ai-blaise-citus', 'analytics'),
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'tenant_id', 'tenant-c',
+        'jti', 'jti-789',
+        'exp', floor(extract(epoch FROM clock_timestamp() + interval '1 hour'))::bigint,
+        'nbf', floor(extract(epoch FROM clock_timestamp() - interval '1 minute'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || jwt_payload_segment;
+  jwt_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+
+  SELECT * INTO jwt_claims
+  FROM companion_verify_jwt_hs256(
+    jwt_token,
+    'jwt-secret',
+    'https://auth.example.test',
+    'ai-blaise-citus'
+  );
+  IF jwt_claims.uid <> 'user-789'
+     OR jwt_claims.role <> 'authenticated'
+     OR jwt_claims.tenant_id <> 'tenant-c'
+     OR jwt_claims.jwt_id <> 'jti-789'
+     OR jwt_claims.audience <> 'ai-blaise-citus' THEN
+    RAISE EXCEPTION 'Sec2 JWT verification did not return expected claims';
+  END IF;
+
+  PERFORM companion_set_session_claims(
+    jwt_claims.uid,
+    jwt_claims.role,
+    jwt_claims.tenant_id,
+    jwt_claims.jwt_id
+  );
+  IF companion_current_tenant_id() <> 'tenant-c' THEN
+    RAISE EXCEPTION 'Sec2 verified JWT claims did not feed Auth2 tenant claims';
+  END IF;
+
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      jwt_signing_input || '.bad-signature',
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a bad signature';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT signature verification failed' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      jwt_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'wrong-audience'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a wrong audience';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT audience mismatch' THEN
+        RAISE;
+      END IF;
+  END;
+
+  expired_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', 'ai-blaise-citus',
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'tenant_id', 'tenant-c',
+        'exp', floor(extract(epoch FROM clock_timestamp() - interval '1 minute'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || expired_payload_segment;
+  expired_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      expired_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted an expired token';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT has expired' THEN
+        RAISE;
+      END IF;
+  END;
+
+  missing_tenant_payload_segment := companion_internal.base64url_encode(
+    convert_to(
+      jsonb_build_object(
+        'iss', 'https://auth.example.test',
+        'aud', 'ai-blaise-citus',
+        'sub', 'user-789',
+        'role', 'authenticated',
+        'exp', floor(extract(epoch FROM clock_timestamp() + interval '1 hour'))::bigint
+      )::text,
+      'UTF8'
+    )
+  );
+  jwt_signing_input := jwt_header_segment || '.' || missing_tenant_payload_segment;
+  missing_tenant_token := jwt_signing_input || '.' || companion_internal.base64url_encode(
+    hmac(jwt_signing_input, 'jwt-secret', 'sha256')
+  );
+  BEGIN
+    PERFORM companion_verify_jwt_hs256(
+      missing_tenant_token,
+      'jwt-secret',
+      'https://auth.example.test',
+      'ai-blaise-citus'
+    );
+    RAISE EXCEPTION 'Sec2 JWT verification accepted a missing tenant_id claim';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'JWT tenant_id claim must not be empty' THEN
         RAISE;
       END IF;
   END;
