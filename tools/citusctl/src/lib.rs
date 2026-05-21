@@ -116,6 +116,10 @@ pub enum CitusCtlCommand {
     TimeTravel {
         target_time: String,
     },
+    WalReplay {
+        source_uri: String,
+        target_time: String,
+    },
     NewFeature {
         feature_id: String,
     },
@@ -149,6 +153,13 @@ impl CitusCtlCommand {
                 validate_timestamp(target_time)
             }
             Self::TimeTravel { target_time } => validate_timestamp(target_time),
+            Self::WalReplay {
+                source_uri,
+                target_time,
+            } => {
+                validate_required("source_uri", source_uri)?;
+                validate_timestamp(target_time)
+            }
             Self::NewFeature { feature_id } => validate_feature_id(feature_id),
         }
     }
@@ -173,6 +184,7 @@ impl CitusCtlCommand {
             Self::Search { .. } => "search",
             Self::Backup { .. } => "backup",
             Self::TimeTravel { .. } => "time-travel",
+            Self::WalReplay { .. } => "wal-replay",
             Self::NewFeature { .. } => "new-feature",
         }
     }
@@ -185,6 +197,7 @@ impl CitusCtlCommand {
                 | Self::Migrate { .. }
                 | Self::Restore { .. }
                 | Self::RestorePitr { .. }
+                | Self::WalReplay { .. }
                 | Self::Tenant {
                     action: NamedAction {
                         verb: ActionVerb::Delete | ActionVerb::Archive | ActionVerb::Move,
@@ -317,6 +330,7 @@ pub fn v2_command_catalog() -> &'static [&'static str] {
         "search",
         "backup",
         "time-travel",
+        "wal-replay",
         "new-feature",
     ]
 }
@@ -409,6 +423,10 @@ fn parse_command(args: &[String]) -> Result<CitusCtlCommand, CitusCtlError> {
         }),
         "time-travel" => Ok(CitusCtlCommand::TimeTravel {
             target_time: value(1, "target_time")?,
+        }),
+        "wal-replay" => Ok(CitusCtlCommand::WalReplay {
+            source_uri: value(1, "source_uri")?,
+            target_time: value(2, "target_time")?,
         }),
         "new-feature" => Ok(CitusCtlCommand::NewFeature {
             feature_id: value(1, "feature_id")?,
@@ -504,13 +522,67 @@ fn validate_feature_id(value: &str) -> Result<(), CitusCtlError> {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CitusCtlCanonicalReport {
+    pub plans: Vec<CitusCtlPlan>,
+    pub catalog_count: usize,
+}
+
+impl CitusCtlCanonicalReport {
+    pub fn destructive_count(&self) -> usize {
+        self.plans.iter().filter(|plan| plan.destructive).count()
+    }
+
+    pub fn preflight_count(&self) -> usize {
+        self.plans
+            .iter()
+            .filter(|plan| plan.steps.contains(&CitusCtlStep::RunPreflight))
+            .count()
+    }
+
+    pub fn execute_count(&self) -> usize {
+        self.plans
+            .iter()
+            .filter(|plan| plan.steps.contains(&CitusCtlStep::Execute))
+            .count()
+    }
+
+    pub fn total_steps(&self) -> usize {
+        self.plans.iter().map(|plan| plan.steps.len()).sum()
+    }
+}
+
+pub fn canonical_citusctl_report() -> Result<CitusCtlCanonicalReport, CitusCtlError> {
+    let examples = [
+        &["plan", "dev", "up"][..],
+        &["apply", "plan-123", "apply", "deploy/k8s/values-prod.yaml"][..],
+        &["plan", "inspect", "cluster"][..],
+        &["plan", "time-travel", "2026-05-21T10:00:00Z"][..],
+        &[
+            "plan",
+            "wal-replay",
+            "s3://citus-wal/prod",
+            "2026-05-21T10:00:00Z",
+        ][..],
+    ];
+    let plans = examples
+        .iter()
+        .map(|example| parse_request(&args(example)).and_then(|request| request.plan()))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(CitusCtlCanonicalReport {
+        plans,
+        catalog_count: v2_command_catalog().len(),
+    })
+}
+
+fn args(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| value.to_string()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn args(values: &[&str]) -> Vec<String> {
-        values.iter().map(|value| value.to_string()).collect()
-    }
 
     #[test]
     fn dev_up_plan_is_non_destructive_and_preflighted() {
@@ -586,9 +658,35 @@ mod tests {
             "search",
             "backup",
             "time-travel",
+            "wal-replay",
             "new-feature",
         ] {
             assert!(catalog.contains(&command), "missing {command}");
         }
+    }
+
+    #[test]
+    fn wal_replay_requires_utc_target_time() {
+        let request = parse_request(&args(&[
+            "plan",
+            "wal-replay",
+            "s3://citus-wal/prod",
+            "2026-05-19 12:00:00",
+        ]))
+        .expect("parse wal replay");
+
+        assert_eq!(request.plan(), Err(CitusCtlError::InvalidTimestamp));
+    }
+
+    #[test]
+    fn canonical_report_covers_cli_contract_examples() {
+        let report = canonical_citusctl_report().expect("canonical report");
+
+        assert_eq!(report.catalog_count, 21);
+        assert_eq!(report.plans.len(), 5);
+        assert_eq!(report.destructive_count(), 2);
+        assert_eq!(report.preflight_count(), 5);
+        assert_eq!(report.execute_count(), 1);
+        assert_eq!(report.total_steps(), 17);
     }
 }

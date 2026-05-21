@@ -177,6 +177,11 @@ assert_row \
   cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
 
 assert_row \
+  companion-domain-contracts \
+  $'37\tA1,API4,Auth2,G2,G3,Geo2,Geo3,IA3,JS2,L9,M1,M11,M13,M2,M7,PM3,PM4,S13,S14,S6,Search2,Search3,Search9,Sec1,Sec2,Sec5,Sec6,T8,TO3,TO4,TS13,TS14,TS15,TS16,TS17,TS9,WH2\t22\t10\t44' \
+  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical
+
+assert_row \
   companion-operations \
   $'15\t1\t2\t3\t2\t6\t1' \
   cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
@@ -190,6 +195,11 @@ assert_row \
   tools-mcp \
   $'3\t2\t3\t1' \
   cargo run -q -p ai_blaise_citus_mcp -- run-canonical
+
+assert_row \
+  tools-citusctl \
+  $'5\t21\t2\t5\t1\t17' \
+  cargo run -q -p ai_blaise_citusctl -- run-canonical
 
 assert_row \
   tools-admin \

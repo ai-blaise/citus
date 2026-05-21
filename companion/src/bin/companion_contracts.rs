@@ -42,8 +42,8 @@
 // FEATURE: TS11
 
 use ai_blaise_citus_companion::{
-    canonical_advanced_planner_execution_report, canonical_extension_catalog_execution_report,
-    canonical_operations_readiness_report,
+    canonical_advanced_planner_execution_report, canonical_domain_contracts_report,
+    canonical_extension_catalog_execution_report, canonical_operations_readiness_report,
 };
 use std::env;
 use std::process;
@@ -62,6 +62,9 @@ fn main() {
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();
+        }
+        [command] if command == "run-domain-contracts-canonical" => {
+            run_domain_contracts_canonical();
         }
         [command] if command == "run-operations-canonical" => {
             run_operations_canonical();
@@ -96,6 +99,23 @@ fn run_advanced_planner_canonical() {
         report.policy_required_inputs,
         report.storage_domains,
         report.research_guards,
+    );
+}
+
+fn run_domain_contracts_canonical() {
+    let report = canonical_domain_contracts_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: domain contracts report failed: {error}");
+        process::exit(1);
+    });
+
+    println!("features\tfeature_ids\tsql_plans\tvalidations\tcommands");
+    println!(
+        "{}\t{}\t{}\t{}\t{}",
+        report.feature_ids.len(),
+        report.feature_ids.join(","),
+        report.sql_plan_count,
+        report.validation_count,
+        report.command_count,
     );
 }
 
@@ -143,7 +163,7 @@ fn run_operations_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-operations-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-domain-contracts-canonical|run-operations-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }

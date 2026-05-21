@@ -589,6 +589,75 @@ for feature_id in sorted(operator_canonical_ids):
         fail(f"{feature_id} feature heading is required for operator canonical evidence")
     if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in entry["body"]:
         fail(f"{feature_id} must cite the operator canonical runner as alpha contract evidence")
+evidence_runner_requirements = {
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical": {
+        "A1",
+        "API4",
+        "G2",
+        "G3",
+        "Geo2",
+        "Geo3",
+        "IA3",
+        "JS2",
+        "L9",
+        "M1",
+        "M11",
+        "M13",
+        "M2",
+        "M7",
+        "PM3",
+        "PM4",
+        "S13",
+        "S14",
+        "S6",
+        "Search3",
+        "Search9",
+        "Sec1",
+        "Sec2",
+        "Sec5",
+        "Sec6",
+        "T8",
+        "TO3",
+        "TO4",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS9",
+        "WH2",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical": {
+        "A3",
+        "A4",
+        "A6",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical": {
+        "API2",
+        "API5",
+        "API6",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical": {
+        "Auth2",
+        "Auth4",
+        "Auth5",
+    },
+    "cargo run -p ai_blaise_citusctl -- run-canonical": {
+        "B5",
+        "D1",
+        "D2",
+        "M8",
+        "WF2",
+    },
+}
+for command, feature_ids in sorted(evidence_runner_requirements.items()):
+    line = f"Executable: `{command}`"
+    for feature_id in sorted(feature_ids):
+        entry = entry_by_id.get(feature_id)
+        if entry is None:
+            fail(f"{feature_id} feature heading is required for executable alpha evidence")
+        if line not in entry["body"]:
+            fail(f"{feature_id} must cite {command} as alpha contract evidence")
 for phrase in (
     "the current implementation does not emit or export opentelemetry traces",
     "trace propagation remains unimplemented until real runtime code",

@@ -349,10 +349,11 @@ feature headings remain
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.
-The audit guard also reports 49 feature headings without an explicit
-Executable, CI, Acceptance, SQL runtime, or SQL extension reference line; those
-entries may still have source markers, but they are not independently
-evidenced enough for production signoff.
+Every feature heading now has an explicit Executable, CI, Acceptance, SQL
+runtime, or SQL extension reference line. Those references are alpha contract
+evidence unless the entry is also marked `Status: production-ready`; they keep
+the catalog auditable, but they are not independently sufficient for production
+signoff.
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

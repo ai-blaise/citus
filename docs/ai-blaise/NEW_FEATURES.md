@@ -303,6 +303,7 @@ does not ship a Toolkit-specific two-step aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T8` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### T9: Mirroring For Canary Traffic
 
@@ -662,6 +663,7 @@ Timescale-aware cohabitation doctor rules.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS9` in `companion/src/db_doctor.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TS12: Distributed Reorder Policy
 
@@ -754,6 +756,7 @@ gapfill bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS13` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TS14: Distributed Metric Toolkit Aggregates
 
@@ -776,6 +779,7 @@ aggregate orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS14` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TS15: Distributed Approximate Toolkit Aggregates
 
@@ -798,6 +802,7 @@ Toolkit-specific approximate aggregate catalog.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS15` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TS16: Distributed Toolkit Downsamplers
 
@@ -820,6 +825,7 @@ downsampling orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS16` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TS17: Distributed Toolkit State Aggregates
 
@@ -842,6 +848,7 @@ surface.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS17` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## AI / Vector
 
@@ -866,6 +873,7 @@ archived Python worker is not a good runtime floor for this fork.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A1` in `companion/src/vector.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### A2: Vectorizer Worker
 
@@ -909,6 +917,7 @@ tenant budget or dispatching requests.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A3` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A4: Per-Tenant Token Budgets
 
@@ -930,6 +939,7 @@ are wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A5: Vectorizer Usage Accounting
 
@@ -975,6 +985,7 @@ workers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A6` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A8: Vector Dimension Via CRD
 
@@ -1093,6 +1104,7 @@ expose these helper contracts as companion APIs.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### S9: Closed-Timestamp Follower Reads
 
@@ -1183,6 +1195,7 @@ contracts and does not ship this range-routing helper surface.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S13` in `companion/src/router_assist.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### S14: Tenant Migration Online
 
@@ -1205,6 +1218,7 @@ tenant-level online migration plan.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S14` in `companion/src/tenants.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Resource Efficiency
 
@@ -1688,6 +1702,7 @@ ship a pgroll-style expand/contract migration layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M1` in `companion/src/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### M2: gh-ost-Style Online DDL
 
@@ -1711,6 +1726,7 @@ gh-ost-style online DDL state machinery.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M2` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: M2` in `sidecar/schema_job/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### M3: Migration CRD
 
@@ -1781,6 +1797,7 @@ does not provide this controlled cohabitation preflight.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: M7` in `companion/src/db_doctor.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### M8: citusctl Plan / Apply
 
@@ -1803,6 +1820,7 @@ two-step plan/apply semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### M9: Schema Visualization Output
 
@@ -1848,6 +1866,7 @@ ship an online column-type migration contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M11` in `companion/src/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Multi-Region
 
@@ -2079,6 +2098,7 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B5` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### B6: Encrypted Backups
 
@@ -2171,6 +2191,7 @@ tenant-level online move contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO3` in `companion/src/tenants.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TO4: Tenant Archive
 
@@ -2193,6 +2214,7 @@ automation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO4` in `companion/src/tenants.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### TO5: Tenant Region Affinity
 
@@ -2263,6 +2285,7 @@ while BM25 and vector indexes remain worker-local.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search3` in `companion/src/search_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Search7: Search Index CRD
 
@@ -2332,6 +2355,7 @@ calls are wired into the search path.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search9` in `companion/src/search_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## HTAP
 
@@ -2523,6 +2547,7 @@ not this explicit Toolkit/HTAP aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L9` in `companion/src/toolkit_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### L12: DuckDB Extension Catalog
 
@@ -2612,6 +2637,7 @@ so requests route through Citus-aware helper views.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ### API3: GraphQL Sidecar
 
@@ -2657,6 +2683,7 @@ for distributed tables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API4` in `sidecar/graphql/src/lib.rs`
 - In-source: `FEATURE: API4` in `companion/src/graph_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### API5: RLS-Aware Auto API
 
@@ -2680,6 +2707,7 @@ policy.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
 - In-source: `FEATURE: API5` in `sidecar/graphql/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ### API6: Auto OpenAPI Document
 
@@ -2701,6 +2729,7 @@ OpenAPI endpoint.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ## Realtime
 
@@ -2978,6 +3007,7 @@ tenant-aware helper UDFs.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec1` in `companion/src/auth.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Sec2: JWT Verification UDF
 
@@ -2999,6 +3029,7 @@ contract to avoid split-brain authorization behavior.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Sec5: Immutable Ledger
 
@@ -3020,6 +3051,7 @@ before automated migrations, tenant moves, and privileged actions execute.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec5` in `companion/src/ledger.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Sec6: HMAC Tamper-Evidence On Ledger
 
@@ -3042,6 +3074,7 @@ entries.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec6` in `companion/src/ledger.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Sec12: Per-Tenant Resource Quotas
 
@@ -3131,6 +3164,7 @@ names before RLS enforcement is wired through.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth2` in `companion/src/auth.rs`
 - In-source: `FEATURE: Auth2` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ### Auth4: OAuth2 / OIDC Provider Contracts
 
@@ -3152,6 +3186,7 @@ Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth4` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ### Auth5: MFA Policy Contracts
 
@@ -3173,6 +3208,7 @@ issuance can enforce step-up authentication.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth5` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ## Plan Management
 
@@ -3198,6 +3234,7 @@ module or auto-promotion policy.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### PM4: Plan Regression Detection
 
@@ -3220,6 +3257,7 @@ ship this persistent regression detector.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Index Advisor
 
@@ -3245,6 +3283,7 @@ index advisor.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: IA3` in `companion/src/index_advisor.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Webhooks
 
@@ -3292,6 +3331,7 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH2` in `companion/src/webhooks.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### WH3: Reliable Delivery
 
@@ -3508,6 +3548,7 @@ ai-blaise single-command local cluster contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D1` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### D2: citusctl apply
 
@@ -3529,6 +3570,7 @@ workflow.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### D3: citus-tui Interactive Shell
 
@@ -3809,6 +3851,7 @@ replay and restore commands can share preflight and audit behavior.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WF2` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ## Federation
 
@@ -3858,6 +3901,7 @@ distributed-graph bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G2` in `companion/src/graph_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### G3: Graph Colocation Policy
 
@@ -3880,6 +3924,7 @@ policy layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G3` in `companion/src/graph_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## JSON Schema
 
@@ -3904,6 +3949,7 @@ pg_jsonschema trigger fanout.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: JS2` in `companion/src/jsonschema_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### M13: JSON Schema Validation On Insert
 
@@ -3926,6 +3972,7 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M13` in `companion/src/jsonschema_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Geo
 
@@ -3950,6 +3997,7 @@ not create geo-aware distribution keys.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo2` in `companion/src/geo_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ### Geo3: Geo Shard Pruning Planner Input
 
@@ -3972,6 +4020,7 @@ metadata.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo3` in `companion/src/geo_distributed.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 
 ## Observability
 

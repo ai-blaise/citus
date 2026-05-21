@@ -4,6 +4,7 @@ pub mod advanced_planner;
 pub mod auth;
 pub mod citus_timescale;
 pub mod db_doctor;
+pub mod domain_contracts;
 pub mod extension_catalog;
 pub mod feature_status;
 pub mod geo_distributed;
@@ -38,6 +39,9 @@ pub use citus_timescale::{
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
     DoctorSeverity, DoctorViolation,
+};
+pub use domain_contracts::{
+    canonical_domain_contracts_report, DomainContractError, DomainContractExecutionReport,
 };
 pub use extension_catalog::{
     canonical_extension_catalog_execution_report, v2_extension_contracts,
