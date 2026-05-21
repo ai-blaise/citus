@@ -486,6 +486,22 @@ for entry in production_entries:
     if any(word in evidence for word in MODEL_ONLY_WORDS):
         fail(f"{entry['id']} production evidence relies on model-only wording")
 
+t15_entry = entry_by_id.get("T15")
+if t15_entry is None:
+    fail("T15 feature heading is required for pool pipeline evidence")
+if t15_entry["status"].lower() not in PRODUCTION_STATUSES:
+    fail("T15 must remain production-ready only for the measured pool simple-query pipeline")
+for phrase in (
+    "pipelined PostgreSQL simple-query frames",
+    "without waiting for the first result",
+    "pipeline_one",
+    "pipeline_two",
+    "broader transaction-batching, shard-aware routing, and `FEATURE: T7` source-only pipeline contract remain alpha",
+    "ci/ai-blaise/pool-proxy-smoke.sh",
+):
+    if compact(phrase) not in compact(t15_entry["body"]):
+        fail(f"T15 production-ready boundary is missing: {phrase}")
+
 non_production_with_prod_evidence = sorted(
     entry["id"] for entry in alpha_entries if "Production evidence:" in entry["body"]
 )
@@ -997,9 +1013,16 @@ for phrase in (
     "ai_blaise_citus_pool_requests_total",
     "ai_blaise_citus_pool_rejected_connections_total",
     "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic",
+    "raw PostgreSQL pipelined simple-query smoke passed through pool proxy",
+    "pack_simple_query(\"SELECT 'pipeline_one'::text\")",
+    "pack_simple_query(\"SELECT 'pipeline_two'::text\")",
+    'expected = [["pipeline_one"], ["pipeline_two"]]',
 ):
     if phrase not in pool_smoke:
         fail(f"pool-proxy-smoke.sh is missing live SQL proof marker: {phrase}")
+    escaped_phrase = phrase.replace('"', '\\"')
+    if phrase not in image_check and escaped_phrase not in image_check:
+        fail(f"image-check.sh must statically guard pool smoke marker: {phrase}")
 
 for phrase in (
     "timescale/timescaledb:latest-pg17",

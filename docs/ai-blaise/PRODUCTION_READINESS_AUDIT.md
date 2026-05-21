@@ -133,6 +133,11 @@ more production-ready than the artifacts justified.
     identity but not the commit and command path in its evidence file. The
     wording and evidence schema needed to agree so a production audit cannot
     point at evidence the script does not actually produce.
+34. `FEATURE: T15` had a real byte-transparent pool proxy and a deterministic
+    pipeline policy contract, but no smoke proved that pipelined PostgreSQL
+    client frames could traverse the pool data port before the client waited
+    for the first response. That left the narrow pool pipelining claim short of
+    wire-protocol production evidence.
 
 ## Corrections
 
@@ -334,6 +339,10 @@ more production-ready than the artifacts justified.
   stable Docker image identity, base image reference, command path, preload
   libraries, and cohabitation allowlist. The TS6 reference patch and docs now
   use that same evidence contract.
+- The pool proxy smoke now opens a raw PostgreSQL protocol client through the
+  real pool `serve` data port, sends two simple-query frames without waiting
+  for the first result, verifies ordered rows from a `postgres:17` backend, and
+  keeps the broader shard-aware and `FEATURE: T7` pipeline contract alpha.
 
 ## Verification Standard
 
@@ -373,6 +382,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   measured production evidence supports a status promotion.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
+- Pool pipelining production evidence must include a raw PostgreSQL
+  wire-protocol smoke that sends multiple simple-query frames through the real
+  pool data port before reading the first result; psql request/response pacing
+  alone is not sufficient evidence for `FEATURE: T15`.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -382,7 +395,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 13 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 14 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -394,8 +407,9 @@ streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
 installable idle transaction detection SQL surface, `TS6` for the integrated
 trusted hook-coextension source path under real Timescale/Citus cohabitation,
 `TS18` for the installable bridge-state SQL surface under real Timescale/Citus
-cohabitation, plus `Sec13` for pool CIDR access control with live allowed and
-denied SQL traffic proof. The other 151
+cohabitation, `Sec13` for pool CIDR access control with live allowed and
+denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
+pipelining through the real pool proxy data port. The other 150
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every
