@@ -161,11 +161,14 @@ more production-ready than the artifacts justified.
   wildcard grant, and it no longer grants Secret access while secret binding
   remains alpha. The deploy check and production gap audit reject wildcard CRD
   resources or Secret permissions in the operator role.
-- The Kubernetes production smoke now runs two live Helm profiles in kind. The
-  exhaustive image-matrix profile still proves every Rust app image can serve
-  probes and pool SQL traffic, and a separate `values-prod.yaml` profile proves
-  that production values install with operator/pool replicas, no alpha sidecar
-  or tools deployments, monitoring CRDs present, and live SQL through the pool.
+- The Kubernetes production smoke now runs three live Helm profiles in kind.
+  The explicit `values-exhaustive.yaml` image-matrix profile still proves every
+  Rust app image can serve probes and pool SQL traffic, the default
+  `values.yaml` profile proves direct Helm installs fail closed to the
+  production-safe operator/pool surface, and a separate `values-prod.yaml`
+  profile proves that production values install with operator/pool replicas, no
+  alpha sidecar or tools deployments, monitoring CRDs present, and live SQL
+  through the pool.
 - The Argo application now uses `values-prod.yaml` so GitOps deployment matches
   the production profile, targets the `main` release branch, and the deploy
   workflow plus `gate-close` now invoke the live kind production smoke instead
@@ -210,10 +213,11 @@ more production-ready than the artifacts justified.
   Citus+TimescaleDB cohabitation run records the operand image digest, command
   log, and CI or VM evidence in the audit. The production gap audit
   machine-checks that boundary.
-- The Helm image helper now supports digest-pinned images, and
-  `values-prod.yaml` sets `global.requireImageDigest: true` so production
-  rendering fails unless the operator and pool images are supplied by immutable
-  `sha256:` digests. `scripts/citus-scale/deploy.sh` accepts
+- The Helm image helper now supports digest-pinned images, and the default
+  `values.yaml` profile and `values-prod.yaml` both set
+  `global.requireImageDigest: true` so production rendering fails unless the
+  operator and pool images are supplied by immutable `sha256:` digests.
+  `scripts/citus-scale/deploy.sh` accepts
   `OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` for production
   render/install, while `ALLOW_MUTABLE_IMAGE_TAGS=1` is an explicit local/dev
   escape hatch. The kind production smoke sets that escape hatch through Helm
@@ -250,6 +254,12 @@ more production-ready than the artifacts justified.
   The optional tools Deployment remains dev-only; production evidence executes
   the built `citusctl` image through a smoke Job. The Argo application is a
   GitOps render contract, not live controller evidence.
+- The D7 direct Helm install path now fails closed by default. `values.yaml`
+  requires immutable operator and pool image digests, disables alpha sidecars,
+  disables the optional tools Deployment, and disables alpha runtime/security
+  intent. The old exhaustive alpha profile moved to the explicit
+  `values-exhaustive.yaml` file, and the kind smoke installs both that explicit
+  image-matrix profile and the default production-safe chart profile.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
@@ -269,9 +279,9 @@ Rule 10 completion for this branch requires local and VM verification of:
   through Kubernetes port-forwarding.
 - Live PostgreSQL traffic through the pool service data port, plus `/readyz`
   and `/metrics` verification on the pool admin port and per-pod pool metrics.
-- Live `values-prod.yaml` Helm rollout that keeps alpha workloads disabled
-  while the production operator and pool deployments become available and serve
-  SQL/admin traffic.
+- Live default `values.yaml` and explicit `values-prod.yaml` Helm rollouts that
+  keep alpha workloads disabled while the production operator and pool
+  deployments become available and serve SQL/admin traffic.
 - Production Helm render/install must use immutable operator and pool image
   digests; local kind smokes that disable the digest requirement are runtime
   smoke evidence only, not release image-pinning evidence.
@@ -295,12 +305,12 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 163
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Eight narrow headings are
-`Status: production-ready` because they have live VM/GitHub evidence: `D8`
-for the production-safe deploy wrapper, `D13` for the production runtime image
-matrix, `O4` for the shared sidecar health/readiness/metrics runtime, `O1`
-for the installable
+The current feature inventory contains 240 source `FEATURE:` markers and 164
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Nine narrow headings are
+`Status: production-ready` because they have live VM/GitHub evidence: `D7`
+for the production-safe default Helm install, `D8` for the production-safe
+deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
+shared sidecar health/readiness/metrics runtime, `O1` for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
 streaming standby, and `R4` for the installable idle transaction detection SQL
@@ -308,7 +318,7 @@ surface, plus `Sec13` for pool CIDR access control with live allowed and denied
 SQL traffic proof. `TS18` remains alpha until real Citus+TimescaleDB
 cohabitation is verified without a stubbed distribution entrypoint. The other
 155 feature headings remain
-`Status: alpha`. The remaining 77 source markers are represented as V2
+`Status: alpha`. The remaining 76 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.

@@ -35,6 +35,7 @@ DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 DEPLOY_SCRIPT = ROOT / "scripts/citus-scale/deploy.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
 DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
+EXHAUSTIVE_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-exhaustive.yaml"
 ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
 HELPER_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/_helpers.tpl"
 OPERATOR_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/operator-deployment.yaml"
@@ -270,6 +271,7 @@ deploy_check = read(DEPLOY_CHECK)
 deploy_script = read(DEPLOY_SCRIPT)
 prod_values = read(PROD_VALUES)
 default_values = read(DEFAULT_VALUES)
+exhaustive_values = read(EXHAUSTIVE_VALUES)
 argo_app = read(ARGO_APP)
 helper_template = read(HELPER_TEMPLATE)
 operator_deployment_template = read(OPERATOR_DEPLOYMENT_TEMPLATE)
@@ -685,8 +687,10 @@ for phrase in (
     "kind create cluster",
     "scripts/citus-scale/build-app-images.sh",
     "helm upgrade --install",
+    "values-exhaustive.yaml",
     "global.requireImageDigest=false",
     "apply_monitoring_crds",
+    "DEFAULT_VALUES_NAMESPACE",
     "DEPLOY_PROFILE=prod",
     "MODE=install",
     "ALLOW_MUTABLE_IMAGE_TAGS=1",
@@ -695,6 +699,7 @@ for phrase in (
     "exhaustive image-matrix smoke passed",
     'helm uninstall "${release}"',
     "ClusterRole cleanup",
+    "values.yaml default production-safe profile smoke passed",
     "values-prod.yaml production profile smoke passed",
     "port-forward",
     "/healthz",
@@ -852,6 +857,14 @@ if "values-prod.yaml must not enable alpha runtime/security intent controls by d
     fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in production values")
 if "values-prod.yaml render must require immutable operator/pool image digests" not in deploy_check:
     fail("deploy-check.sh must reject production values renders without immutable image digests")
+if "values.yaml default render must require immutable operator/pool image digests" not in deploy_check:
+    fail("deploy-check.sh must reject default Helm renders without immutable image digests")
+if "values.yaml default render must not include alpha sidecar deployments" not in deploy_check:
+    fail("deploy-check.sh must reject alpha sidecars in the default Helm render")
+if "values.yaml must not enable alpha sidecars by default" not in deploy_check:
+    fail("deploy-check.sh must reject alpha sidecars enabled in default values")
+if "values.yaml must not enable alpha runtime/security intent controls by default" not in deploy_check:
+    fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in default values")
 if "deploy.sh default production render must require immutable operator/pool image digests" not in deploy_check:
     fail("deploy-check.sh must reject deploy wrapper production renders without immutable image digests")
 if "requires an immutable digest" not in deploy_check:
@@ -877,6 +890,10 @@ for phrase in (
         fail(f"values.yaml must preserve image digest field: {phrase}")
 if "requireImageDigest: true" not in prod_values:
     fail("values-prod.yaml must require immutable image digests")
+if "requireImageDigest: true" not in default_values:
+    fail("values.yaml default profile must require immutable image digests")
+if "requireImageDigest: false" not in exhaustive_values:
+    fail("values-exhaustive.yaml must remain the explicit non-production image-matrix profile")
 
 for phrase in (
     "global.requireImageDigest",
@@ -943,8 +960,8 @@ for phrase in (
     "releaseAttestation:",
     "cidrAllowlist:",
 ):
-    if phrase not in default_values:
-        fail(f"values.yaml must preserve alpha security intent field: {phrase}")
+    if phrase not in exhaustive_values:
+        fail(f"values-exhaustive.yaml must preserve alpha security intent field: {phrase}")
 
 for phrase in (
     "runtime and security controls are alpha intent",
@@ -990,7 +1007,7 @@ for phrase in (
 for phrase in (
     "deploy wrapper defaults to `values-prod.yaml`",
     "allow_alpha_install=1",
-    "values-prod.yaml` sets `global.requireimagedigest: true`",
+    "default `values.yaml` profile and `values-prod.yaml` both set `global.requireimagedigest: true`",
     "runtime behavior, not release image pinning",
     "gitops sync fails closed",
     "ai-blaise-image-digests.tsv",

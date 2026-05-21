@@ -74,14 +74,15 @@ Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
 For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
-it builds the app images, installs the exhaustive chart profile, creates a
-real PostgreSQL upstream, verifies live SQL through the pool Kubernetes
-service, and port-forwards into the live operator plus every sidecar deployment
-to assert `/healthz`, `/readyz`, and `/metrics` from the actual pods. It also
-installs the `values-prod.yaml` profile and verifies that production values run
-the operator and pool with alpha sidecars/tools disabled while pool SQL/admin
-traffic still works. The deploy workflow and `gate-close` run this smoke at
-larger integration boundaries.
+it builds the app images, installs the explicit `values-exhaustive.yaml`
+image-matrix profile, creates a real PostgreSQL upstream, verifies live SQL
+through the pool Kubernetes service, and port-forwards into the live operator
+plus every sidecar deployment to assert `/healthz`, `/readyz`, and `/metrics`
+from the actual pods. It also installs the default `values.yaml` profile with
+direct Helm and the `values-prod.yaml` profile through the deploy wrapper,
+verifying that production-safe values run the operator and pool with alpha
+sidecars/tools disabled while pool SQL/admin traffic still works. The deploy
+workflow and `gate-close` run this smoke at larger integration boundaries.
 
 The Makefile smoke targets set `REQUIRE_DOCKER=1` for the Docker-backed live
 smokes, including pool proxy, SQL extension, real TimescaleDB bridge, and
@@ -107,7 +108,8 @@ non-production or custom values file is blocked unless `ALLOW_ALPHA_INSTALL=1`
 is set explicitly for that run.
 
 Production renders and installs require immutable operator and pool image
-digests. `values-prod.yaml` sets `global.requireImageDigest: true`; pass
+digests. The default `values.yaml` profile and `values-prod.yaml` both set
+`global.requireImageDigest: true`; pass
 `OPERATOR_IMAGE_DIGEST=sha256:...` and `POOL_IMAGE_DIGEST=sha256:...` (or the
 equivalent Helm values) for release candidates. `ALLOW_MUTABLE_IMAGE_TAGS=1`
 is only for local/dev smoke work with locally loaded images and must not be
@@ -152,7 +154,8 @@ SQL traffic plus `ai_blaise_citus_pool_rejected_connections_total`.
 ## Exit Criteria
 
 - All release-scope gates are green for the exact commit and image digest.
-- `values-prod.yaml` renders with immutable operator and pool image digests.
+- `values.yaml` and `values-prod.yaml` render with immutable operator and pool
+  image digests.
 - No release-scope feature remains alpha, contract-only, or model-only without
   explicit measured production evidence.
 - Runbook evidence links CI runs, Helm render output, image attestations, and

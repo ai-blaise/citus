@@ -3604,6 +3604,45 @@ queries.
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### D7: Helm One-Line Install
+
+**Overlay**: `deploy/k8s/helm/citus-overlay`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides a production-safe direct Helm install surface for the
+ai-blaise overlay. The chart defaults in `values.yaml` require immutable
+operator/pool image digests and keep alpha sidecars, tools, and alpha
+runtime/security intent disabled. Non-production image-matrix coverage moved to
+the explicit `values-exhaustive.yaml` profile, while `values-dev.yaml` remains
+the small developer profile.
+
+**Motivation**: A direct `helm upgrade --install` command should fail closed
+unless production image identity is supplied, and it must not install the
+exhaustive alpha profile by accident.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise overlay chart
+or its production default profile.
+
+Production evidence: `ci/ai-blaise/deploy-check.sh` renders the default chart
+and rejects missing immutable digests, alpha sidecar deployments, alpha tools,
+and alpha runtime/security intent in the default profile. The same check keeps
+`values-exhaustive.yaml` as the only direct Helm profile with all alpha
+sidecars enabled. `ci/ai-blaise/kind-production-smoke.sh` now installs the
+default chart profile with direct Helm against a live kind cluster, verifies
+operator/pool replicas, rejects alpha workload deployments, and runs live SQL
+plus operator admin traffic through the installed release.
+
+**References**:
+
+- In-source: `FEATURE: D7` in `companion/src/ops_contracts.rs`
+- Helm chart: `deploy/k8s/helm/citus-overlay`
+- CI: `ci/ai-blaise/deploy-check.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
 ### D8: Infrastructure Deploy Wrapper
 
 **Overlay**: `scripts/citus-scale/deploy.sh`
@@ -4136,7 +4175,6 @@ run-operations-canonical`, depending on whether the row is backed by
 | C11 | DDL replication via pgl_ddl_deploy | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle cross-region DDL replication policy. | `FEATURE: C11` |
 | C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` |
 | C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` |
-| D7 | Helm one-line install | `companion/src/ops_contracts.rs` and `deploy/k8s/helm/citus-overlay` | alpha | Vanilla Citus does not ship this overlay chart. | `FEATURE: D7` |
 | D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` |
 | D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` |
 | D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |

@@ -1,3 +1,6 @@
+global:
+  requireImageDigest: false
+
 operator:
   replicas: 1
 

@@ -1,10 +1,10 @@
 global:
   imageRegistry: ghcr.io/ai-blaise
   imagePullPolicy: IfNotPresent
-  requireImageDigest: true
+  requireImageDigest: false
 
 operator:
-  replicas: 2
+  replicas: 1
   image:
     repository: citus-operator
     tag: "0.1.0"
@@ -17,10 +17,10 @@ operator:
       cpu: 500m
       memory: 512Mi
   serviceMonitor:
-    enabled: true
+    enabled: false
 
 pool:
-  replicas: 3
+  replicas: 2
   image:
     repository: citus-pool
     tag: "0.1.0"
@@ -39,13 +39,14 @@ pool:
       cpu: "1"
       memory: 1Gi
   protocolPipeline:
-    enabled: false
-    maxInFlight: 64
+    enabled: true
+    maxInFlight: 32
   networkPolicy:
-    cidrAllowlist: []
+    cidrAllowlist:
+      - 10.0.0.0/8
 
 postgres:
-  ioMethod: ""
+  ioMethod: io_uring
 
 sidecarDefaults:
   tag: "0.1.0"
@@ -61,63 +62,63 @@ sidecarDefaults:
 
 sidecars:
   - name: analytical
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: auth
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: backup
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: cdc
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: coldtier
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: edge-functions
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: graphql
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: hlc
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: mcp
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: postgrest
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: raft
-    enabled: false
-    replicas: 3
+    enabled: true
+    replicas: 1
   - name: realtime
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: repack
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: schema-job
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: storage
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: txn-status
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
   - name: vectorizer
-    enabled: false
-    replicas: 2
+    enabled: true
+    replicas: 1
 
 observability:
   grafanaDashboards:
     enabled: true
     folder: ai-blaise-citus
   alertRules:
-    enabled: true
+    enabled: false
     interval: 30s
     thresholds:
       replicationLagSeconds: 60
@@ -126,15 +127,15 @@ observability:
 
 security:
   externalSecrets:
-    enabled: false
-    secretStoreRef: ""
+    enabled: true
+    secretStoreRef: ai-blaise-cluster-secrets
   tls:
-    clients: false
-    postgres: false
-    sidecars: false
+    clients: true
+    postgres: true
+    sidecars: true
   releaseAttestation:
-    sbom: false
-    cosign: false
+    sbom: true
+    cosign: true
 
 tools:
   enabled: false
