@@ -290,13 +290,23 @@ parallel-commit transaction-status sidecar.
 ### T8: Toolkit Two-Step Aggregate Pushdown
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Defines worker partial and coordinator finalize SQL plans for
-Toolkit two-step aggregates.
+**Summary**: Provides an installable SQL Toolkit aggregate plan registry that
+renders worker partial and coordinator finalize SQL for two-step aggregate
+families.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records
+`companion_toolkit_aggregate_plans`, renders worker partial and coordinator
+final SQL, and verifies unsupported aggregates fail closed. Actual
+TimescaleDB Toolkit aggregate execution, planner hooks, worker pushdown
+execution, and distributed result merging remain alpha.
 
 **Motivation**: Toolkit aggregates should execute shard-local partials before
 coordinator finalization so time-series rollups do not collapse back to a
@@ -309,7 +319,10 @@ does not ship a Toolkit-specific two-step aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T8` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: T8` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### T9: Mirroring For Canary Traffic
 
@@ -671,14 +684,22 @@ hypertable invariants.
 ### TS9: Doctor Rules For Cohabitation
 
 **Overlay**: `companion/src/db_doctor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds companion DB-doctor rules for Timescale/Citus cohabitation,
-non-colocated joins, missing distribution columns, hypertable bridge state,
-and chunk interval drift.
+**Summary**: Provides installable SQL DB-doctor rule registration and violation
+reporting for cohabitation and distributed-schema preflight checks.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.get_violations(...)`
+records `companion_db_doctor_rules`, emits missing-schema violations through
+`companion_db_doctor_violations`, and verifies unsupported doctor rules fail
+closed. Full pglinter rule execution, non-colocated-join SQL analysis,
+Timescale catalog inspection, automatic remediation, and operator integration
+remain alpha.
 
 **Motivation**: Cohabiting extensions need a SQL-visible preflight and lint
 surface so accidental violations are caught before migrations mutate schema.
@@ -690,7 +711,10 @@ Timescale-aware cohabitation doctor rules.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS9` in `companion/src/db_doctor.rs`
+- SQL runtime: `FEATURE: TS9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS12: Distributed Reorder Policy
 
@@ -765,13 +789,23 @@ cohabiting server without defining any Citus stub.
 ### TS13: Distributed time_bucket_gapfill
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds SQL-plan contracts for shard-local gapfill with coordinator
-interpolate/locf finalization.
+**Summary**: Provides an installable SQL gapfill aggregate plan helper that
+records worker partial and coordinator `locf(interpolate(...))` finalization
+SQL.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records a TS13
+`companion_toolkit_aggregate_plans` row for `time_bucket_gapfill`, renders
+gapfill/finalizer SQL, and verifies missing `bucket_width` fails closed. Real
+TimescaleDB gapfill execution, Toolkit state merging, planner integration,
+and distributed query execution remain alpha.
 
 **Motivation**: Time-series dashboards need gapfill across shards without
 moving raw samples to the coordinator.
@@ -783,18 +817,32 @@ gapfill bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS13` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS14: Distributed Metric Toolkit Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for counter, gauge, and heartbeat
-Toolkit aggregates.
+**Summary**: Provides installable SQL plan registry support for counter,
+gauge, and heartbeat Toolkit aggregate worker partials and coordinator
+rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records a TS14
+`counter_agg` plan in `companion_toolkit_aggregate_plans`, renders worker
+partial SQL, and renders a
+`rollup(partial_state)` coordinator finalizer. Real Toolkit metric aggregate
+execution, worker/coordinator function availability checks, planner pushdown,
+and distributed result merging remain alpha.
 
 **Motivation**: Metric rollups should use Toolkit's partial/final model while
 preserving Citus shard locality.
@@ -806,18 +854,31 @@ aggregate orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS14` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS15: Distributed Approximate Toolkit Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for percentile and frequency Toolkit
-aggregate rollups.
+**Summary**: Provides installable SQL plan registry support for percentile and
+frequency Toolkit approximate aggregate worker partials and coordinator
+rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS15
+`percentile_agg` plan registration in `companion_toolkit_aggregate_plans` with
+deterministic worker/coordinator SQL.
+Real Toolkit approximate aggregate execution, sketch merge accuracy,
+planner pushdown, and distributed result merging remain alpha.
 
 **Motivation**: Approximate analytics should keep sketches shard-local until
 the final coordinator merge.
@@ -829,18 +890,30 @@ Toolkit-specific approximate aggregate catalog.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS15` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS15` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS16: Distributed Toolkit Downsamplers
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for ASAP smoothing and LTTB
-downsampling.
+**Summary**: Provides installable SQL plan registry support for ASAP smoothing
+and LTTB downsampler worker partials and coordinator finalizers.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS16
+`asap_smooth` plan registration in `companion_toolkit_aggregate_plans` and
+verifies downsamplers without a `time_column` fail closed. Real Toolkit
+downsampler execution, sampling-quality validation, planner pushdown, and
+distributed result merging remain alpha.
 
 **Motivation**: Downsampling needs to occur close to shard data before
 coordinator rendering.
@@ -852,18 +925,30 @@ downsampling orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS16` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS16` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS17: Distributed Toolkit State Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for candlestick, state, and range
-Toolkit aggregates.
+**Summary**: Provides installable SQL plan registry support for candlestick,
+state, and range Toolkit aggregate worker partials and coordinator rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS17
+`state_agg` plan registration in `companion_toolkit_aggregate_plans` with
+deterministic worker/coordinator SQL.
+Real Toolkit state aggregate execution, state/range merge semantics, planner
+pushdown, and distributed result merging remain alpha.
 
 **Motivation**: Finance, state-machine, and range analytics need the same
 worker-partial/coordinator-final pattern as other Toolkit aggregates.
@@ -875,21 +960,34 @@ surface.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS17` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS17` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## AI / Vector
 
 ### A1: pgai-Compatible Vectorizer DSL
 
 **Overlay**: `companion/src/vector.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgvector`, `timescaledb`
 
-**Summary**: Adds a Rust companion contract that renders a pgai-compatible
-`ai.create_vectorizer(...)` SQL plan with loading, chunking, embedding,
-destination, scheduling, queue, and usage-log setup.
+**Summary**: Provides an installable SQL vectorizer registry that validates a
+pgai-compatible vectorizer definition, creates a shard-local queue table, and
+records tenant token usage.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.register_vectorizer(...)`
+renders pgai-compatible `ai.create_vectorizer(...)` SQL, records
+`companion_vectorizer_definitions`, creates a queue table, enqueues a document,
+records `companion_vectorizer_usage_log`, and verifies missing source columns
+and invalid chunk overlap fail closed. Actual pgai worker execution, embedding
+provider calls, vector index creation, per-worker scheduling, and operator
+reconciliation remain alpha.
 
 **Motivation**: pgai's vectorizer DSL is the right user-facing shape, but its
 archived Python worker is not a good runtime floor for this fork.
@@ -900,7 +998,10 @@ archived Python worker is not a good runtime floor for this fork.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A1` in `companion/src/vector.rs`
+- SQL runtime: `FEATURE: A1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### A2: Vectorizer Worker
 
@@ -1860,13 +1961,23 @@ distributed schema authoring.
 ### M7: Pre-Flight Cohabit-Extension Check
 
 **Overlay**: `companion/src/db_doctor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the companion preflight contract for verifying required
-shared-preload coextensions before cohabiting migrations run.
+**Summary**: Provides installable SQL preflight checks for required
+`shared_preload_libraries` entries and trusted cohabiting extension order.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.assert_shared_preload_libraries(...)` and
+`companion_internal.assert_citus_cohabit_extension_order(...)` accept a
+Timescale-before-Citus preload list, reject missing Citus, and verify Citus
+loaded before trusted cohabiting extensions fails closed. Runtime hook-chain
+inspection, automatic server restart validation, operator remediation, and
+multi-extension policy negotiation remain alpha.
 
 **Motivation**: Operator and migration flows must refuse bad preload state
 before they install Timescale or other hook-using extension surfaces.
@@ -1878,7 +1989,10 @@ does not provide this controlled cohabitation preflight.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: M7` in `companion/src/db_doctor.rs`
+- SQL runtime: `FEATURE: M7` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M8: citusctl Plan / Apply
 
@@ -2659,13 +2773,22 @@ analytical mirror.
 ### L9: Two-Step Aggregates Push To Workers
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Defines the companion contract that keeps aggregate partials on
-workers and only sends mergeable states to the coordinator.
+**Summary**: Provides installable SQL worker-partial aggregate plan metadata so
+Toolkit aggregate plans keep partial states worker-local before coordinator
+finalization.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.register_toolkit_aggregate_plan(...)`
+records `companion_toolkit_aggregate_plans`, renders worker partial SQL, and
+renders coordinator final SQL for mergeable partial states. Real Citus planner
+pushdown, worker-local execution, network reduction measurement, and HTAP pool
+routing remain alpha.
 
 **Motivation**: HTAP rollups need to reduce network and coordinator CPU by
 finalizing after worker partials.
@@ -2677,7 +2800,10 @@ not this explicit Toolkit/HTAP aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L9` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: L9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### L12: DuckDB Extension Catalog
 

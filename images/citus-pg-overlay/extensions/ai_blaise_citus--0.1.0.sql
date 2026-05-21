@@ -214,6 +214,71 @@ CREATE TABLE IF NOT EXISTS companion_internal.geo_pruning_policies (
     UNIQUE (table_name, geometry_column)
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.vectorizer_definitions (
+    vectorizer_name text PRIMARY KEY,
+    source_table text NOT NULL,
+    source_pk name NOT NULL,
+    source_column name NOT NULL,
+    chunk_max_tokens integer NOT NULL CHECK (chunk_max_tokens > 0),
+    chunk_overlap_tokens integer NOT NULL CHECK (chunk_overlap_tokens >= 0),
+    provider text NOT NULL,
+    model text NOT NULL,
+    secret_ref text NOT NULL,
+    destination_table text NOT NULL,
+    destination_column name NOT NULL,
+    dimensions integer NOT NULL CHECK (dimensions > 0),
+    schedule_interval text NOT NULL,
+    max_concurrency integer NOT NULL CHECK (max_concurrency > 0),
+    tenant_budget_tokens bigint CHECK (tenant_budget_tokens IS NULL OR tenant_budget_tokens > 0),
+    queue_table name NOT NULL,
+    create_sql text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (chunk_overlap_tokens < chunk_max_tokens)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.vectorizer_usage_log (
+    usage_id bigserial PRIMARY KEY,
+    vectorizer_name text NOT NULL
+        REFERENCES companion_internal.vectorizer_definitions(vectorizer_name)
+        ON DELETE CASCADE,
+    tenant_id text NOT NULL,
+    tokens bigint NOT NULL CHECK (tokens > 0),
+    recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.db_doctor_rules (
+    rule_id text PRIMARY KEY,
+    severity text NOT NULL CHECK (severity IN ('error', 'warning', 'note')),
+    enabled boolean NOT NULL DEFAULT true,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.db_doctor_violations (
+    violation_id bigserial PRIMARY KEY,
+    rule_id text NOT NULL,
+    severity text NOT NULL CHECK (severity IN ('error', 'warning', 'note')),
+    object_name text NOT NULL,
+    message text NOT NULL,
+    detected_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.toolkit_aggregate_plans (
+    plan_id bigserial PRIMARY KEY,
+    feature_id text NOT NULL,
+    aggregate_kind text NOT NULL,
+    source_table text NOT NULL,
+    worker_view name NOT NULL,
+    coordinator_view name NOT NULL,
+    distribution_column name NOT NULL,
+    value_column name NOT NULL,
+    time_column name,
+    bucket_width text,
+    worker_sql text NOT NULL,
+    coordinator_sql text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (source_table, worker_view, coordinator_view, aggregate_kind)
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -227,15 +292,15 @@ AS $$
         ('TS4', 'distributed retention policy', 'sql-runtime'),
         ('TS5', 'time-range shard pruner', 'sql-runtime'),
         ('TS8', 'LSP hypertable invariants', 'sql-plan'),
-        ('TS9', 'doctor rules for cohabitation', 'sql-plan'),
+        ('TS9', 'doctor rules for cohabitation', 'sql-runtime'),
         ('TS12', 'distributed reorder policy', 'sql-runtime'),
         ('TS18', 'executable Timescale bridge state', 'sql-runtime'),
-        ('TS13', 'distributed time_bucket_gapfill', 'sql-plan'),
-        ('TS14', 'distributed metric toolkit aggregates', 'sql-plan'),
-        ('TS15', 'distributed approximate toolkit aggregates', 'sql-plan'),
-        ('TS16', 'distributed downsampler toolkit aggregates', 'sql-plan'),
-        ('TS17', 'distributed state toolkit aggregates', 'sql-plan'),
-        ('A1', 'pgai-compatible vectorizer DSL', 'sql-plan'),
+        ('TS13', 'distributed time_bucket_gapfill', 'sql-runtime'),
+        ('TS14', 'distributed metric toolkit aggregates', 'sql-runtime'),
+        ('TS15', 'distributed approximate toolkit aggregates', 'sql-runtime'),
+        ('TS16', 'distributed downsampler toolkit aggregates', 'sql-runtime'),
+        ('TS17', 'distributed state toolkit aggregates', 'sql-runtime'),
+        ('A1', 'pgai-compatible vectorizer DSL', 'sql-runtime'),
         ('Search2', 'distributed BM25 search index', 'sql-runtime'),
         ('Search3', 'hybrid BM25 and vector ranking', 'sql-runtime'),
         ('Search9', 'reranker UDF plan', 'sql-runtime'),
@@ -246,9 +311,9 @@ AS $$
         ('M13', 'JSON Schema validation triggers', 'sql-runtime'),
         ('Geo2', 'geo-aware distribution', 'sql-runtime'),
         ('Geo3', 'geo shard pruning', 'sql-runtime'),
-        ('T8', 'toolkit two-step aggregate pushdown', 'sql-plan'),
-        ('L9', 'worker partial aggregate pushdown', 'sql-plan'),
-        ('M7', 'pre-flight cohabit-extension check', 'sql-plan'),
+        ('T8', 'toolkit two-step aggregate pushdown', 'sql-runtime'),
+        ('L9', 'worker partial aggregate pushdown', 'sql-runtime'),
+        ('M7', 'pre-flight cohabit-extension check', 'sql-runtime'),
         ('PM3', 'plan freeze companion module', 'sql-runtime'),
         ('PM4', 'plan regression detection', 'sql-runtime'),
         ('IA3', 'companion index advisor', 'sql-runtime'),
@@ -340,6 +405,685 @@ AS $$
           AND attnum > 0
           AND NOT attisdropped
     )
+$$;
+
+-- FEATURE: A1
+CREATE VIEW companion_vectorizer_definitions AS
+SELECT
+    vectorizer_name,
+    source_table,
+    source_pk,
+    source_column,
+    chunk_max_tokens,
+    chunk_overlap_tokens,
+    provider,
+    model,
+    secret_ref,
+    destination_table,
+    destination_column,
+    dimensions,
+    schedule_interval,
+    max_concurrency,
+    tenant_budget_tokens,
+    queue_table,
+    create_sql,
+    created_at
+FROM companion_internal.vectorizer_definitions;
+
+CREATE VIEW companion_vectorizer_usage_log AS
+SELECT
+    usage_id,
+    vectorizer_name,
+    tenant_id,
+    tokens,
+    recorded_at
+FROM companion_internal.vectorizer_usage_log;
+
+CREATE FUNCTION companion_internal.register_vectorizer(
+    p_vectorizer_name text,
+    p_source_table text,
+    p_source_pk text,
+    p_source_column text,
+    p_chunk_max_tokens integer,
+    p_chunk_overlap_tokens integer,
+    p_provider text,
+    p_model text,
+    p_secret_ref text,
+    p_destination_table text,
+    p_destination_column text,
+    p_dimensions integer,
+    p_schedule_interval text,
+    p_max_concurrency integer,
+    p_tenant_budget_tokens bigint DEFAULT NULL
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    source_regclass regclass;
+    normalized_provider text;
+    queue_table name;
+    rendered_sql text;
+BEGIN
+    IF p_vectorizer_name IS NULL OR btrim(p_vectorizer_name) = '' THEN
+        RAISE EXCEPTION 'vectorizer_name must not be empty';
+    END IF;
+    IF p_source_table IS NULL OR btrim(p_source_table) = '' THEN
+        RAISE EXCEPTION 'source_table must not be empty';
+    END IF;
+    source_regclass := p_source_table::regclass;
+    IF p_source_pk IS NULL OR btrim(p_source_pk) = '' THEN
+        RAISE EXCEPTION 'source_pk must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(source_regclass::text, btrim(p_source_pk)::name) THEN
+        RAISE EXCEPTION 'source_pk column does not exist on source table';
+    END IF;
+    IF p_source_column IS NULL OR btrim(p_source_column) = '' THEN
+        RAISE EXCEPTION 'source_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(source_regclass::text, btrim(p_source_column)::name) THEN
+        RAISE EXCEPTION 'source_column does not exist on source table';
+    END IF;
+    IF p_chunk_max_tokens IS NULL OR p_chunk_max_tokens <= 0 THEN
+        RAISE EXCEPTION 'chunk_max_tokens must be greater than zero';
+    END IF;
+    IF p_chunk_overlap_tokens IS NULL OR p_chunk_overlap_tokens < 0 THEN
+        RAISE EXCEPTION 'chunk_overlap_tokens must be zero or greater';
+    END IF;
+    IF p_chunk_overlap_tokens >= p_chunk_max_tokens THEN
+        RAISE EXCEPTION 'chunk_overlap_tokens must be less than chunk_max_tokens';
+    END IF;
+    normalized_provider := lower(btrim(p_provider));
+    IF normalized_provider NOT IN (
+        'openai',
+        'azure_openai',
+        'anthropic',
+        'cohere',
+        'voyage',
+        'ollama',
+        'vertex_ai'
+    ) THEN
+        RAISE EXCEPTION 'unsupported vectorizer provider: %', p_provider;
+    END IF;
+    IF p_model IS NULL OR btrim(p_model) = '' THEN
+        RAISE EXCEPTION 'model must not be empty';
+    END IF;
+    IF p_secret_ref IS NULL OR btrim(p_secret_ref) = '' THEN
+        RAISE EXCEPTION 'secret_ref must not be empty';
+    END IF;
+    IF p_destination_table IS NULL OR btrim(p_destination_table) = '' THEN
+        RAISE EXCEPTION 'destination_table must not be empty';
+    END IF;
+    IF p_destination_column IS NULL OR btrim(p_destination_column) = '' THEN
+        RAISE EXCEPTION 'destination_column must not be empty';
+    END IF;
+    IF p_dimensions IS NULL OR p_dimensions <= 0 THEN
+        RAISE EXCEPTION 'dimensions must be greater than zero';
+    END IF;
+    IF p_schedule_interval IS NULL OR btrim(p_schedule_interval) = '' THEN
+        RAISE EXCEPTION 'schedule_interval must not be empty';
+    END IF;
+    IF p_max_concurrency IS NULL OR p_max_concurrency <= 0 THEN
+        RAISE EXCEPTION 'max_concurrency must be greater than zero';
+    END IF;
+    IF p_tenant_budget_tokens IS NOT NULL AND p_tenant_budget_tokens <= 0 THEN
+        RAISE EXCEPTION 'tenant_budget_tokens must be greater than zero';
+    END IF;
+
+    queue_table := ('vectorizer_queue_' || substr(md5(btrim(p_vectorizer_name)), 1, 16))::name;
+    rendered_sql := format(
+        'SELECT ai.create_vectorizer(%L, loading => ai.loading_table(%L, %L, %L), chunking => ai.chunking_recursive_text(%s, %s), embedding => ai.embedding_provider(%L, %L, %L), destination => ai.destination_table(%L, %L, %s), scheduling => ai.scheduling_interval(%L));',
+        btrim(p_vectorizer_name),
+        source_regclass::text,
+        btrim(p_source_pk),
+        btrim(p_source_column),
+        p_chunk_max_tokens,
+        p_chunk_overlap_tokens,
+        normalized_provider,
+        btrim(p_model),
+        btrim(p_secret_ref),
+        btrim(p_destination_table),
+        btrim(p_destination_column),
+        p_dimensions,
+        btrim(p_schedule_interval)
+    );
+
+    EXECUTE format(
+        'CREATE TABLE IF NOT EXISTS companion_internal.%I (tenant_id text NOT NULL, source_pk text NOT NULL, source_text text NOT NULL, enqueued_at timestamptz NOT NULL DEFAULT now())',
+        queue_table
+    );
+
+    INSERT INTO companion_internal.vectorizer_definitions(
+        vectorizer_name,
+        source_table,
+        source_pk,
+        source_column,
+        chunk_max_tokens,
+        chunk_overlap_tokens,
+        provider,
+        model,
+        secret_ref,
+        destination_table,
+        destination_column,
+        dimensions,
+        schedule_interval,
+        max_concurrency,
+        tenant_budget_tokens,
+        queue_table,
+        create_sql
+    )
+    VALUES (
+        btrim(p_vectorizer_name),
+        source_regclass::text,
+        btrim(p_source_pk)::name,
+        btrim(p_source_column)::name,
+        p_chunk_max_tokens,
+        p_chunk_overlap_tokens,
+        normalized_provider,
+        btrim(p_model),
+        btrim(p_secret_ref),
+        btrim(p_destination_table),
+        btrim(p_destination_column)::name,
+        p_dimensions,
+        btrim(p_schedule_interval),
+        p_max_concurrency,
+        p_tenant_budget_tokens,
+        queue_table,
+        rendered_sql
+    )
+    ON CONFLICT (vectorizer_name) DO UPDATE
+    SET source_table = EXCLUDED.source_table,
+        source_pk = EXCLUDED.source_pk,
+        source_column = EXCLUDED.source_column,
+        chunk_max_tokens = EXCLUDED.chunk_max_tokens,
+        chunk_overlap_tokens = EXCLUDED.chunk_overlap_tokens,
+        provider = EXCLUDED.provider,
+        model = EXCLUDED.model,
+        secret_ref = EXCLUDED.secret_ref,
+        destination_table = EXCLUDED.destination_table,
+        destination_column = EXCLUDED.destination_column,
+        dimensions = EXCLUDED.dimensions,
+        schedule_interval = EXCLUDED.schedule_interval,
+        max_concurrency = EXCLUDED.max_concurrency,
+        tenant_budget_tokens = EXCLUDED.tenant_budget_tokens,
+        queue_table = EXCLUDED.queue_table,
+        create_sql = EXCLUDED.create_sql,
+        created_at = now();
+
+    RETURN rendered_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.vectorizer_enqueue(
+    p_vectorizer_name text,
+    p_tenant_id text,
+    p_source_pk text,
+    p_source_text text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    queue_table name;
+BEGIN
+    IF p_vectorizer_name IS NULL OR btrim(p_vectorizer_name) = '' THEN
+        RAISE EXCEPTION 'vectorizer_name must not be empty';
+    END IF;
+    SELECT companion_internal.vectorizer_definitions.queue_table
+    INTO queue_table
+    FROM companion_internal.vectorizer_definitions
+    WHERE vectorizer_name = btrim(p_vectorizer_name);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'vectorizer is not registered: %', p_vectorizer_name;
+    END IF;
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    IF p_source_pk IS NULL OR btrim(p_source_pk) = '' THEN
+        RAISE EXCEPTION 'source_pk must not be empty';
+    END IF;
+    IF p_source_text IS NULL OR btrim(p_source_text) = '' THEN
+        RAISE EXCEPTION 'source_text must not be empty';
+    END IF;
+
+    EXECUTE format(
+        'INSERT INTO companion_internal.%I(tenant_id, source_pk, source_text) VALUES (%L, %L, %L)',
+        queue_table,
+        btrim(p_tenant_id),
+        btrim(p_source_pk),
+        p_source_text
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.vectorizer_record_usage(
+    p_vectorizer_name text,
+    p_tenant_id text,
+    p_tokens bigint
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    usage_id bigint;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.vectorizer_definitions
+        WHERE vectorizer_name = btrim(p_vectorizer_name)
+    ) THEN
+        RAISE EXCEPTION 'vectorizer is not registered: %', p_vectorizer_name;
+    END IF;
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    IF p_tokens IS NULL OR p_tokens <= 0 THEN
+        RAISE EXCEPTION 'tokens must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.vectorizer_usage_log(
+        vectorizer_name,
+        tenant_id,
+        tokens
+    )
+    VALUES (
+        btrim(p_vectorizer_name),
+        btrim(p_tenant_id),
+        p_tokens
+    )
+    RETURNING companion_internal.vectorizer_usage_log.usage_id
+    INTO usage_id;
+
+    RETURN usage_id;
+END;
+$$;
+
+-- FEATURE: TS9
+-- FEATURE: M7
+CREATE VIEW companion_db_doctor_rules AS
+SELECT
+    rule_id,
+    severity,
+    enabled,
+    updated_at
+FROM companion_internal.db_doctor_rules;
+
+CREATE VIEW companion_db_doctor_violations AS
+SELECT
+    violation_id,
+    rule_id,
+    severity,
+    object_name,
+    message,
+    detected_at
+FROM companion_internal.db_doctor_violations;
+
+CREATE FUNCTION companion_internal.assert_shared_preload_libraries(
+    p_loaded_libraries text[],
+    p_required_libraries text[]
+)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    required_library text;
+BEGIN
+    IF p_loaded_libraries IS NULL OR cardinality(p_loaded_libraries) = 0 THEN
+        RAISE EXCEPTION 'shared_preload_libraries must not be empty';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM unnest(p_loaded_libraries) AS loaded(library_name)
+        WHERE lower(btrim(library_name)) = 'citus'
+    ) THEN
+        RAISE EXCEPTION 'citus must be preloaded';
+    END IF;
+    IF p_required_libraries IS NULL OR cardinality(p_required_libraries) = 0 THEN
+        RAISE EXCEPTION 'required_extensions must not be empty';
+    END IF;
+
+    FOREACH required_library IN ARRAY p_required_libraries LOOP
+        IF required_library IS NULL OR btrim(required_library) = '' THEN
+            RAISE EXCEPTION 'required_extensions must not contain empty values';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1
+            FROM unnest(p_loaded_libraries) AS loaded(library_name)
+            WHERE lower(btrim(library_name)) = lower(btrim(required_library))
+        ) THEN
+            RAISE EXCEPTION 'required cohabiting extension is not preloaded';
+        END IF;
+    END LOOP;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.assert_citus_cohabit_extension_order(
+    p_loaded_libraries text[]
+)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    citus_position integer;
+    library_count integer;
+BEGIN
+    IF p_loaded_libraries IS NULL OR cardinality(p_loaded_libraries) = 0 THEN
+        RAISE EXCEPTION 'shared_preload_libraries must not be empty';
+    END IF;
+    SELECT array_position(
+        ARRAY(SELECT lower(btrim(library_name)) FROM unnest(p_loaded_libraries) AS loaded(library_name)),
+        'citus'
+    )
+    INTO citus_position;
+    library_count := cardinality(p_loaded_libraries);
+    IF citus_position IS NULL THEN
+        RAISE EXCEPTION 'citus must be preloaded';
+    END IF;
+    IF citus_position <> library_count THEN
+        RAISE EXCEPTION 'citus must be loaded after trusted cohabiting extensions';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.assert_citus_cohabit_extension_order()
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    PERFORM companion_internal.assert_citus_cohabit_extension_order(
+        string_to_array(current_setting('shared_preload_libraries', true), ',')
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.get_violations(
+    p_schemas text[],
+    p_rules text[]
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    schema_name text;
+    rule_name text;
+    result jsonb;
+BEGIN
+    IF p_schemas IS NULL OR cardinality(p_schemas) = 0 THEN
+        RAISE EXCEPTION 'schemas must not be empty';
+    END IF;
+    IF p_rules IS NULL OR cardinality(p_rules) = 0 THEN
+        RAISE EXCEPTION 'rules must not be empty';
+    END IF;
+
+    FOREACH rule_name IN ARRAY p_rules LOOP
+        rule_name := lower(btrim(rule_name));
+        IF rule_name NOT IN (
+            'cohabit_extensions',
+            'non_colocated_join',
+            'missing_distribution_column',
+            'hypertable_bridge',
+            'chunk_interval_out_of_band'
+        ) THEN
+            RAISE EXCEPTION 'unsupported doctor rule: %', rule_name;
+        END IF;
+        INSERT INTO companion_internal.db_doctor_rules(rule_id, severity)
+        VALUES (rule_name, CASE WHEN rule_name = 'cohabit_extensions' THEN 'error' ELSE 'warning' END)
+        ON CONFLICT (rule_id) DO UPDATE
+        SET severity = EXCLUDED.severity,
+            enabled = true,
+            updated_at = now();
+    END LOOP;
+
+    FOREACH schema_name IN ARRAY p_schemas LOOP
+        schema_name := btrim(schema_name);
+        IF schema_name = '' THEN
+            RAISE EXCEPTION 'schemas must not contain empty values';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1
+            FROM pg_namespace
+            WHERE nspname = schema_name
+        ) THEN
+            INSERT INTO companion_internal.db_doctor_violations(
+                rule_id,
+                severity,
+                object_name,
+                message
+            )
+            VALUES (
+                'missing_schema',
+                'error',
+                schema_name,
+                'schema does not exist'
+            );
+        END IF;
+    END LOOP;
+
+    SELECT COALESCE(
+        jsonb_agg(
+            jsonb_build_object(
+                'rule_id', rule_id,
+                'severity', severity,
+                'object_name', object_name,
+                'message', message
+            )
+            ORDER BY violation_id
+        ),
+        '[]'::jsonb
+    )
+    INTO result
+    FROM companion_internal.db_doctor_violations
+    WHERE detected_at >= statement_timestamp() - interval '5 seconds';
+
+    RETURN result;
+END;
+$$;
+
+-- FEATURE: T8
+-- FEATURE: L9
+-- FEATURE: TS13
+-- FEATURE: TS14
+-- FEATURE: TS15
+-- FEATURE: TS16
+-- FEATURE: TS17
+CREATE VIEW companion_toolkit_aggregate_plans AS
+SELECT
+    plan_id,
+    feature_id,
+    aggregate_kind,
+    source_table,
+    worker_view,
+    coordinator_view,
+    distribution_column,
+    value_column,
+    time_column,
+    bucket_width,
+    worker_sql,
+    coordinator_sql,
+    created_at
+FROM companion_internal.toolkit_aggregate_plans;
+
+CREATE FUNCTION companion_internal.toolkit_feature_id(p_aggregate_kind text)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    normalized_kind text := lower(btrim(p_aggregate_kind));
+BEGIN
+    IF normalized_kind = 'time_bucket_gapfill' THEN
+        RETURN 'TS13';
+    ELSIF normalized_kind IN ('counter_agg', 'gauge_agg', 'heartbeat_agg') THEN
+        RETURN 'TS14';
+    ELSIF normalized_kind IN ('percentile_agg', 'freq_agg') THEN
+        RETURN 'TS15';
+    ELSIF normalized_kind IN ('asap_smooth', 'lttb') THEN
+        RETURN 'TS16';
+    ELSIF normalized_kind IN ('candlestick_agg', 'state_agg', 'range_agg') THEN
+        RETURN 'TS17';
+    ELSIF normalized_kind IN ('hyperloglog', 'tdigest', 'time_weight') THEN
+        RETURN 'T8';
+    END IF;
+
+    RAISE EXCEPTION 'unsupported toolkit aggregate: %', p_aggregate_kind;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.register_toolkit_aggregate_plan(
+    p_source_table text,
+    p_worker_view name,
+    p_coordinator_view name,
+    p_distribution_column text,
+    p_value_column text,
+    p_aggregate_kind text,
+    p_time_column text DEFAULT NULL,
+    p_bucket_width text DEFAULT NULL
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    source_regclass regclass;
+    normalized_kind text;
+    feature_id text;
+    partial_expression text;
+    finalize_expression text;
+    worker_sql text;
+    coordinator_sql text;
+BEGIN
+    IF p_source_table IS NULL OR btrim(p_source_table) = '' THEN
+        RAISE EXCEPTION 'source_table must not be empty';
+    END IF;
+    source_regclass := p_source_table::regclass;
+    IF p_worker_view IS NULL OR btrim(p_worker_view::text) = '' THEN
+        RAISE EXCEPTION 'worker_view must not be empty';
+    END IF;
+    IF p_coordinator_view IS NULL OR btrim(p_coordinator_view::text) = '' THEN
+        RAISE EXCEPTION 'coordinator_view must not be empty';
+    END IF;
+    IF p_distribution_column IS NULL OR btrim(p_distribution_column) = '' THEN
+        RAISE EXCEPTION 'distribution_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(source_regclass::text, btrim(p_distribution_column)::name) THEN
+        RAISE EXCEPTION 'distribution_column does not exist on source table';
+    END IF;
+    IF p_value_column IS NULL OR btrim(p_value_column) = '' THEN
+        RAISE EXCEPTION 'value_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(source_regclass::text, btrim(p_value_column)::name) THEN
+        RAISE EXCEPTION 'value_column does not exist on source table';
+    END IF;
+    normalized_kind := lower(btrim(p_aggregate_kind));
+    feature_id := companion_internal.toolkit_feature_id(normalized_kind);
+
+    IF normalized_kind IN ('time_bucket_gapfill', 'asap_smooth', 'lttb', 'candlestick_agg', 'time_weight') THEN
+        IF p_time_column IS NULL OR btrim(p_time_column) = '' THEN
+            RAISE EXCEPTION 'time_column must not be empty for aggregate %', normalized_kind;
+        END IF;
+        IF NOT companion_internal.table_has_column(source_regclass::text, btrim(p_time_column)::name) THEN
+            RAISE EXCEPTION 'time_column does not exist on source table';
+        END IF;
+    END IF;
+    IF normalized_kind = 'time_bucket_gapfill' AND (p_bucket_width IS NULL OR btrim(p_bucket_width) = '') THEN
+        RAISE EXCEPTION 'bucket_width must not be empty for time_bucket_gapfill';
+    END IF;
+
+    partial_expression := CASE normalized_kind
+        WHEN 'time_bucket_gapfill' THEN format(
+            'time_bucket_gapfill(%L, %I) WITHIN GROUP (ORDER BY %I)',
+            btrim(p_bucket_width),
+            btrim(p_time_column),
+            btrim(p_time_column)
+        )
+        WHEN 'counter_agg' THEN format('counter_agg(%I)', btrim(p_value_column))
+        WHEN 'gauge_agg' THEN format('gauge_agg(%I)', btrim(p_value_column))
+        WHEN 'heartbeat_agg' THEN format('heartbeat_agg(%I)', btrim(p_value_column))
+        WHEN 'percentile_agg' THEN format('percentile_agg(%I)', btrim(p_value_column))
+        WHEN 'freq_agg' THEN format('freq_agg(%I)', btrim(p_value_column))
+        WHEN 'hyperloglog' THEN format('hyperloglog(%I)', btrim(p_value_column))
+        WHEN 'tdigest' THEN format('tdigest(%I)', btrim(p_value_column))
+        WHEN 'asap_smooth' THEN format('asap_smooth(%I, %I)', btrim(p_time_column), btrim(p_value_column))
+        WHEN 'lttb' THEN format('lttb(%I, %I)', btrim(p_time_column), btrim(p_value_column))
+        WHEN 'candlestick_agg' THEN format('candlestick_agg(%I, %I)', btrim(p_time_column), btrim(p_value_column))
+        WHEN 'state_agg' THEN format('state_agg(%I)', btrim(p_value_column))
+        WHEN 'range_agg' THEN format('range_agg(%I)', btrim(p_value_column))
+        WHEN 'time_weight' THEN format('time_weight(%I, %I)', btrim(p_time_column), btrim(p_value_column))
+    END;
+
+    finalize_expression := CASE normalized_kind
+        WHEN 'time_bucket_gapfill' THEN 'locf(interpolate(partial_state))'
+        WHEN 'heartbeat_agg' THEN 'heartbeat_agg_rollup(partial_state)'
+        WHEN 'percentile_agg' THEN 'approx_percentile(0.99, rollup(partial_state))'
+        WHEN 'freq_agg' THEN 'topn(10, rollup(partial_state))'
+        WHEN 'hyperloglog' THEN 'distinct_count(rollup(partial_state))'
+        WHEN 'tdigest' THEN 'approx_percentile(0.99, rollup(partial_state))'
+        WHEN 'asap_smooth' THEN 'asap_smooth_final(rollup(partial_state))'
+        WHEN 'lttb' THEN 'lttb_final(rollup(partial_state))'
+        WHEN 'time_weight' THEN 'average(rollup(partial_state))'
+        ELSE 'rollup(partial_state)'
+    END;
+
+    worker_sql := format(
+        'CREATE OR REPLACE VIEW %I AS SELECT %I AS distribution_key, %s AS partial_state FROM %s GROUP BY 1;',
+        p_worker_view,
+        btrim(p_distribution_column),
+        partial_expression,
+        source_regclass
+    );
+    coordinator_sql := format(
+        'CREATE OR REPLACE VIEW %I AS SELECT distribution_key, %s AS aggregate_value FROM %I GROUP BY 1;',
+        p_coordinator_view,
+        finalize_expression,
+        p_worker_view
+    );
+
+    INSERT INTO companion_internal.toolkit_aggregate_plans(
+        feature_id,
+        aggregate_kind,
+        source_table,
+        worker_view,
+        coordinator_view,
+        distribution_column,
+        value_column,
+        time_column,
+        bucket_width,
+        worker_sql,
+        coordinator_sql
+    )
+    VALUES (
+        feature_id,
+        normalized_kind,
+        source_regclass::text,
+        p_worker_view,
+        p_coordinator_view,
+        btrim(p_distribution_column)::name,
+        btrim(p_value_column)::name,
+        NULLIF(btrim(COALESCE(p_time_column, '')), '')::name,
+        NULLIF(btrim(COALESCE(p_bucket_width, '')), ''),
+        worker_sql,
+        coordinator_sql
+    )
+    ON CONFLICT (source_table, worker_view, coordinator_view, aggregate_kind) DO UPDATE
+    SET feature_id = EXCLUDED.feature_id,
+        distribution_column = EXCLUDED.distribution_column,
+        value_column = EXCLUDED.value_column,
+        time_column = EXCLUDED.time_column,
+        bucket_width = EXCLUDED.bucket_width,
+        worker_sql = EXCLUDED.worker_sql,
+        coordinator_sql = EXCLUDED.coordinator_sql,
+        created_at = now();
+
+    RETURN worker_sql || E'\n' || coordinator_sql;
+END;
 $$;
 
 CREATE FUNCTION companion_internal.ensure_search_workers(

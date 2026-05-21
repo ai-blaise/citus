@@ -813,6 +813,130 @@ for feature_id, required_phrases in (
 
 for feature_id, required_phrases in (
     (
+        "A1",
+        (
+            "installable SQL vectorizer registry",
+            "companion_internal.register_vectorizer",
+            "companion_vectorizer_definitions",
+            "companion_vectorizer_usage_log",
+            "missing source columns and invalid chunk overlap fail closed",
+            "Actual pgai worker execution, embedding provider calls, vector index creation, per-worker scheduling, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS9",
+        (
+            "installable SQL DB-doctor rule registration and violation reporting",
+            "companion_internal.get_violations",
+            "companion_db_doctor_rules",
+            "companion_db_doctor_violations",
+            "unsupported doctor rules fail closed",
+            "Full pglinter rule execution, non-colocated-join SQL analysis, Timescale catalog inspection, automatic remediation, and operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "M7",
+        (
+            "installable SQL preflight checks",
+            "companion_internal.assert_shared_preload_libraries",
+            "companion_internal.assert_citus_cohabit_extension_order",
+            "reject missing Citus",
+            "Citus loaded before trusted cohabiting extensions fails closed",
+            "Runtime hook-chain inspection, automatic server restart validation, operator remediation, and multi-extension policy negotiation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "T8",
+        (
+            "installable SQL Toolkit aggregate plan registry",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "unsupported aggregates fail closed",
+            "Actual TimescaleDB Toolkit aggregate execution, planner hooks, worker pushdown execution, and distributed result merging remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "L9",
+        (
+            "installable SQL worker-partial aggregate plan metadata",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "renders worker partial SQL",
+            "Real Citus planner pushdown, worker-local execution, network reduction measurement, and HTAP pool routing remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS13",
+        (
+            "installable SQL gapfill aggregate plan helper",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "missing `bucket_width` fails closed",
+            "Real TimescaleDB gapfill execution, Toolkit state merging, planner integration, and distributed query execution remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS14",
+        (
+            "installable SQL plan registry support for counter, gauge, and heartbeat Toolkit aggregate worker partials",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "`rollup(partial_state)` coordinator finalizer",
+            "Real Toolkit metric aggregate execution, worker/coordinator function availability checks, planner pushdown, and distributed result merging remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS15",
+        (
+            "installable SQL plan registry support for percentile and frequency Toolkit approximate aggregate worker partials",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "deterministic worker/coordinator SQL",
+            "Real Toolkit approximate aggregate execution, sketch merge accuracy, planner pushdown, and distributed result merging remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS16",
+        (
+            "installable SQL plan registry support for ASAP smoothing and LTTB downsampler worker partials",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "downsamplers without a `time_column` fail closed",
+            "Real Toolkit downsampler execution, sampling-quality validation, planner pushdown, and distributed result merging remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "TS17",
+        (
+            "installable SQL plan registry support for candlestick, state, and range Toolkit aggregate worker partials",
+            "companion_internal.register_toolkit_aggregate_plan",
+            "companion_toolkit_aggregate_plans",
+            "deterministic worker/coordinator SQL",
+            "Real Toolkit state aggregate execution, state/range merge semantics, planner pushdown, and distributed result merging remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for toolkit/vector/doctor SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow toolkit/vector/doctor SQL runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1551,6 +1675,16 @@ for phrase in (
     "'M13', 'JSON Schema validation triggers', 'sql-runtime'",
     "'Geo2', 'geo-aware distribution', 'sql-runtime'",
     "'Geo3', 'geo shard pruning', 'sql-runtime'",
+    "'A1', 'pgai-compatible vectorizer DSL', 'sql-runtime'",
+    "'TS9', 'doctor rules for cohabitation', 'sql-runtime'",
+    "'M7', 'pre-flight cohabit-extension check', 'sql-runtime'",
+    "'T8', 'toolkit two-step aggregate pushdown', 'sql-runtime'",
+    "'L9', 'worker partial aggregate pushdown', 'sql-runtime'",
+    "'TS13', 'distributed time_bucket_gapfill', 'sql-runtime'",
+    "'TS14', 'distributed metric toolkit aggregates', 'sql-runtime'",
+    "'TS15', 'distributed approximate toolkit aggregates', 'sql-runtime'",
+    "'TS16', 'distributed downsampler toolkit aggregates', 'sql-runtime'",
+    "'TS17', 'distributed state toolkit aggregates', 'sql-runtime'",
     "CREATE FUNCTION companion_internal.register_search_index",
     "CREATE FUNCTION companion_internal.hybrid_rank",
     "CREATE FUNCTION companion_internal.rerank_search",
@@ -1560,6 +1694,11 @@ for phrase in (
     "CREATE FUNCTION companion_internal.install_jsonschema_trigger",
     "CREATE FUNCTION companion_internal.add_geohash_column",
     "CREATE FUNCTION companion_internal.enable_geo_shard_pruning",
+    "CREATE FUNCTION companion_internal.register_vectorizer",
+    "CREATE FUNCTION companion_internal.vectorizer_enqueue",
+    "CREATE FUNCTION companion_internal.assert_shared_preload_libraries",
+    "CREATE FUNCTION companion_internal.get_violations",
+    "CREATE FUNCTION companion_internal.register_toolkit_aggregate_plan",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",

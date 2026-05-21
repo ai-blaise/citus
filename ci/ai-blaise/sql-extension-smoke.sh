@@ -134,6 +134,21 @@ CREATE TABLE geo_smoke_places (
   longitude numeric NOT NULL
 );
 
+CREATE TABLE vectorizer_smoke_documents (
+  doc_id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  body text NOT NULL
+);
+
+CREATE TABLE toolkit_smoke_metrics (
+  tenant_id text NOT NULL,
+  metric_time timestamptz NOT NULL,
+  value double precision NOT NULL,
+  state text NOT NULL DEFAULT 'ok'
+);
+
+CREATE SCHEMA doctor_smoke;
+
 CREATE FUNCTION create_hypertable(
   table_name regclass,
   time_column text,
@@ -245,6 +260,12 @@ DECLARE
   json_invalid_rows bigint;
   geo_sql text;
   geo_bucket text;
+  vectorizer_sql text;
+  vectorizer_queue_table text;
+  vectorizer_usage_id bigint;
+  doctor_violations jsonb;
+  toolkit_sql text;
+  toolkit_feature_count integer;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -280,12 +301,289 @@ BEGIN
       'PM3', 'PM4', 'M1', 'M11', 'IA3', 'WH2',
       'Search2', 'Search3', 'Search9', 'G2', 'G3', 'API4',
       'JS2', 'M13', 'Geo2', 'Geo3',
+      'A1', 'TS9', 'M7', 'T8', 'L9', 'TS13', 'TS14', 'TS15', 'TS16', 'TS17',
       'O1', 'O2', 'O3', 'R4'
     )
       AND status = 'sql-runtime'
-  ) <> 27 THEN
+  ) <> 37 THEN
     RAISE EXCEPTION 'companion_feature_status must mark custom SQL runtime features as sql-runtime';
   END IF;
+
+  vectorizer_sql := companion_internal.register_vectorizer(
+    'documents_body',
+    'vectorizer_smoke_documents',
+    'doc_id',
+    'body',
+    512,
+    64,
+    'openai',
+    'text-embedding-3-small',
+    'secret://vectorizer/openai',
+    'vectorizer_smoke_embeddings',
+    'embedding',
+    1536,
+    '5 minutes',
+    2,
+    100000
+  );
+  IF vectorizer_sql NOT LIKE 'SELECT ai.create_vectorizer(%ai.loading_table%' THEN
+    RAISE EXCEPTION 'A1 register_vectorizer did not render pgai-compatible SQL: %', vectorizer_sql;
+  END IF;
+  SELECT queue_table::text
+  INTO vectorizer_queue_table
+  FROM companion_vectorizer_definitions
+  WHERE vectorizer_name = 'documents_body'
+    AND source_table = 'vectorizer_smoke_documents'
+    AND provider = 'openai'
+    AND dimensions = 1536;
+  IF vectorizer_queue_table IS NULL THEN
+    RAISE EXCEPTION 'A1 vectorizer definition was not visible';
+  END IF;
+  PERFORM companion_internal.vectorizer_enqueue(
+    'documents_body',
+    'tenant-a',
+    'doc-1',
+    'hello vectorizer'
+  );
+  vectorizer_usage_id := companion_internal.vectorizer_record_usage(
+    'documents_body',
+    'tenant-a',
+    32
+  );
+  IF vectorizer_usage_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM companion_vectorizer_usage_log
+    WHERE vectorizer_name = 'documents_body'
+      AND tenant_id = 'tenant-a'
+      AND tokens = 32
+  ) THEN
+    RAISE EXCEPTION 'A1 vectorizer usage was not recorded';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.register_vectorizer(
+      'bad_vectorizer',
+      'vectorizer_smoke_documents',
+      'doc_id',
+      'missing_body',
+      512,
+      64,
+      'openai',
+      'text-embedding-3-small',
+      'secret://vectorizer/openai',
+      'vectorizer_smoke_embeddings',
+      'embedding',
+      1536,
+      '5 minutes',
+      2
+    );
+    RAISE EXCEPTION 'A1 accepted a missing source column';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'source_column does not exist on source table' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_vectorizer(
+      'bad_overlap',
+      'vectorizer_smoke_documents',
+      'doc_id',
+      'body',
+      64,
+      64,
+      'openai',
+      'text-embedding-3-small',
+      'secret://vectorizer/openai',
+      'vectorizer_smoke_embeddings',
+      'embedding',
+      1536,
+      '5 minutes',
+      2
+    );
+    RAISE EXCEPTION 'A1 accepted invalid chunk overlap';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'chunk_overlap_tokens must be less than chunk_max_tokens' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.assert_shared_preload_libraries(
+    ARRAY['timescaledb', 'citus'],
+    ARRAY['timescaledb']
+  );
+  PERFORM companion_internal.assert_citus_cohabit_extension_order(
+    ARRAY['timescaledb', 'citus']
+  );
+  doctor_violations := companion_internal.get_violations(
+    ARRAY['doctor_smoke'],
+    ARRAY['cohabit_extensions', 'missing_distribution_column']
+  );
+  IF doctor_violations <> '[]'::jsonb THEN
+    RAISE EXCEPTION 'TS9 doctor reported violations for existing schema: %', doctor_violations;
+  END IF;
+  doctor_violations := companion_internal.get_violations(
+    ARRAY['doctor_missing_schema'],
+    ARRAY['cohabit_extensions']
+  );
+  IF jsonb_array_length(doctor_violations) <> 1 THEN
+    RAISE EXCEPTION 'TS9 doctor did not report missing schema violation: %', doctor_violations;
+  END IF;
+  BEGIN
+    PERFORM companion_internal.assert_shared_preload_libraries(
+      ARRAY['timescaledb'],
+      ARRAY['timescaledb']
+    );
+    RAISE EXCEPTION 'M7 accepted shared_preload_libraries without citus';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'citus must be preloaded' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.assert_citus_cohabit_extension_order(
+      ARRAY['citus', 'timescaledb']
+    );
+    RAISE EXCEPTION 'M7 accepted citus before trusted cohabiting extensions';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'citus must be loaded after trusted cohabiting extensions' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.get_violations(
+      ARRAY['doctor_smoke'],
+      ARRAY['unknown_rule']
+    );
+    RAISE EXCEPTION 'TS9 accepted an unsupported doctor rule';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'unsupported doctor rule: unknown_rule' THEN
+        RAISE;
+      END IF;
+  END;
+
+  toolkit_sql := companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_gapfill_worker',
+    'toolkit_gapfill_coordinator',
+    'tenant_id',
+    'value',
+    'time_bucket_gapfill',
+    'metric_time',
+    '1 hour'
+  );
+  IF toolkit_sql NOT LIKE '%time_bucket_gapfill%' OR toolkit_sql NOT LIKE '%locf(interpolate(partial_state))%' THEN
+    RAISE EXCEPTION 'TS13 toolkit gapfill plan did not render partial/final SQL: %', toolkit_sql;
+  END IF;
+  PERFORM companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_counter_worker',
+    'toolkit_counter_coordinator',
+    'tenant_id',
+    'value',
+    'counter_agg'
+  );
+  PERFORM companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_percentile_worker',
+    'toolkit_percentile_coordinator',
+    'tenant_id',
+    'value',
+    'percentile_agg'
+  );
+  PERFORM companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_asap_worker',
+    'toolkit_asap_coordinator',
+    'tenant_id',
+    'value',
+    'asap_smooth',
+    'metric_time'
+  );
+  PERFORM companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_state_worker',
+    'toolkit_state_coordinator',
+    'tenant_id',
+    'state',
+    'state_agg'
+  );
+  PERFORM companion_internal.register_toolkit_aggregate_plan(
+    'toolkit_smoke_metrics',
+    'toolkit_hll_worker',
+    'toolkit_hll_coordinator',
+    'tenant_id',
+    'tenant_id',
+    'hyperloglog'
+  );
+  SELECT count(DISTINCT feature_id)
+  INTO toolkit_feature_count
+  FROM companion_toolkit_aggregate_plans
+  WHERE feature_id IN ('TS13', 'TS14', 'TS15', 'TS16', 'TS17', 'T8');
+  IF toolkit_feature_count <> 6 THEN
+    RAISE EXCEPTION 'expected six toolkit feature ids, got %', toolkit_feature_count;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_toolkit_aggregate_plans
+    WHERE aggregate_kind = 'counter_agg'
+      AND worker_sql LIKE '%counter_agg%'
+      AND coordinator_sql LIKE '%rollup(partial_state)%'
+  ) THEN
+    RAISE EXCEPTION 'L9/TS14 toolkit worker partial plan was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.register_toolkit_aggregate_plan(
+      'toolkit_smoke_metrics',
+      'toolkit_bad_worker',
+      'toolkit_bad_coordinator',
+      'tenant_id',
+      'value',
+      'time_bucket_gapfill',
+      'metric_time'
+    );
+    RAISE EXCEPTION 'TS13 accepted gapfill without bucket_width';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'bucket_width must not be empty for time_bucket_gapfill' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_toolkit_aggregate_plan(
+      'toolkit_smoke_metrics',
+      'toolkit_bad_worker',
+      'toolkit_bad_coordinator',
+      'tenant_id',
+      'value',
+      'lttb'
+    );
+    RAISE EXCEPTION 'TS16 accepted downsampler without time_column';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'time_column must not be empty for aggregate lttb' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_toolkit_aggregate_plan(
+      'toolkit_smoke_metrics',
+      'toolkit_bad_worker',
+      'toolkit_bad_coordinator',
+      'tenant_id',
+      'value',
+      'unknown_agg'
+    );
+    RAISE EXCEPTION 'T8 accepted an unsupported aggregate';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'unsupported toolkit aggregate: unknown_agg' THEN
+        RAISE;
+      END IF;
+  END;
 
   PERFORM companion_internal.migrate_start(
     'orders-expand-contract',
