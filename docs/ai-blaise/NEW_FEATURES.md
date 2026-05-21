@@ -223,7 +223,9 @@ pooler.
 
 ### T2: Plan Cache Placement-Generation Invalidation
 
-**Overlay**: `pool/src/shard_map.rs`
+**Overlay**: `pool/src/shard_map.rs`, `companion/src/router_assist.rs`,
+`patches/0003-guc-report-citus-userset.patch`,
+`patches/0005-placement-generation-counter.patch`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -231,19 +233,46 @@ pooler.
 
 **Summary**: Tracks shard placement generations and cached query fingerprints
 so cached plans can be invalidated only when the placements they depend on
-change.
+change. The Citus quilt patches add the in-process placement-generation
+counter (`pg_catalog.citus_placement_generation()`) and tag every
+USERSET `citus.*` GUC with `GUC_REPORT` so a transaction pooler sees
+planner-affecting `SET` commands through ParameterStatus packets.
 
 **Motivation**: Rebalance should not wipe the entire plan cache when only a
-small subset of shard placements moved.
+small subset of shard placements moved, and transaction pooling must not
+silently inherit stale router/execution GUC state across multiplexed client
+sessions.
 
 **Citus comparison**: Vanilla Citus has plan invalidation behavior around shard
 movement but does not ship the ai-blaise pool's generation-aware cache model.
+Vanilla Citus also does not flag its USERSET GUCs with `GUC_REPORT`, which
+makes correct transaction pooling impossible without these patches.
+
+Executable evidence: `cargo test -p ai_blaise_citus_companion --lib
+router_assist` runs the placement-generation subscriber contract end to end
+(initial/unchanged/advanced/reset transitions, catalog SELECT shape,
+sample validation). `cargo test -p ai_blaise_citus_pool --lib shard_map`
+runs the pool-side plan-cache generation contract. The C-level counter is
+upstream-PR candidate; full Citus-build evidence lands once the
+`kind-smoke` overlay rebuilds the operand image with the quilt patches
+applied.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+- In-source: `FEATURE: T2` in `companion/src/router_assist.rs`
+- In-source: `FEATURE: T2` in
+  `src/backend/distributed/metadata/metadata_cache.c` (via
+  `patches/0005-placement-generation-counter.patch`)
+- In-source: `FEATURE: T2` in
+  `src/backend/distributed/shared_library_init.c` (via
+  `patches/0003-guc-report-citus-userset.patch`)
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo test -p ai_blaise_citus_companion --lib router_assist`
+- Executable: `cargo test -p ai_blaise_citus_pool --lib shard_map`
+- Patches: `patches/0003-guc-report-citus-userset.patch`,
+  `patches/0005-placement-generation-counter.patch`
 
 ### T3: Fast-Path Single-Shard Router
 

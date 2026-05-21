@@ -3000,6 +3000,22 @@ OverridePostgresConfigProperties(void)
 		{
 			var->flags |= GUC_REPORT;
 		}
+
+		/*
+		 * FEATURE: T2
+		 *
+		 * Mark every citus.* USERSET GUC with GUC_REPORT so a session pooler
+		 * in front of Citus can observe SET commands via the PostgreSQL
+		 * ParameterStatus (S) protocol packet. Without this, transaction-
+		 * pooling routers cannot preserve planner-affecting GUC state across
+		 * multiplexed client sessions and may execute a follow-up client's
+		 * query under stale router or execution settings.
+		 */
+		if (var->context == PGC_USERSET &&
+			strncmp(var->name, "citus.", strlen("citus.")) == 0)
+		{
+			var->flags |= GUC_REPORT;
+		}
 	}
 }
 
