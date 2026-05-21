@@ -3,10 +3,14 @@
 // FEATURE: TS8
 
 use ai_blaise_citus_lsp::{
-    canonical_analysis_request, canonical_lsp_plan, DiagnosticSeverity, LspDiagnostic,
-    LspDiagnosticCode, LspQuickFixAction,
+    all_lsp_rules, canonical_analysis_request, canonical_lsp_plan, parse_metadata_tsv,
+    parse_sql_document, CitusLspPlan, DiagnosticSeverity, LspDiagnostic, LspDiagnosticCode,
+    LspQuickFixAction,
 };
 use std::env;
+use std::fs;
+use std::io::{self, Read};
+use std::path::Path;
 use std::process;
 
 fn main() {
@@ -16,19 +20,86 @@ fn main() {
         return;
     }
 
-    if !args.is_empty() && args != ["analyze-canonical"] {
-        eprintln!("citus-lsp: unknown command");
-        print_usage();
-        process::exit(2);
+    match args.first().map(String::as_str) {
+        None | Some("analyze-canonical") => run_canonical(),
+        Some("analyze") => run_file_analysis(&args[1..]),
+        Some(_) => {
+            eprintln!("citus-lsp: unknown command");
+            print_usage();
+            process::exit(2);
+        }
     }
+}
 
+fn run_canonical() {
     let plan = canonical_lsp_plan().unwrap_or_else(|error| {
         eprintln!("citus-lsp: failed to build canonical diagnostic plan: {error}");
         process::exit(1);
     });
     let request = canonical_analysis_request();
-    let analysis = plan.analyze(&request).unwrap_or_else(|error| {
-        eprintln!("citus-lsp: failed to analyze canonical request: {error}");
+    emit_analysis(&plan, &request);
+}
+
+fn run_file_analysis(args: &[String]) {
+    let mut metadata_path = None;
+    let mut sql_path = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--metadata" => {
+                index += 1;
+                metadata_path = args.get(index).map(String::as_str);
+            }
+            "--sql" => {
+                index += 1;
+                sql_path = args.get(index).map(String::as_str);
+            }
+            unknown => {
+                eprintln!("citus-lsp: unknown analyze option {unknown}");
+                print_usage();
+                process::exit(2);
+            }
+        }
+        index += 1;
+    }
+
+    let Some(metadata_path) = metadata_path else {
+        eprintln!("citus-lsp: analyze requires --metadata <path>");
+        process::exit(2);
+    };
+    let Some(sql_path) = sql_path else {
+        eprintln!("citus-lsp: analyze requires --sql <path|->");
+        process::exit(2);
+    };
+
+    let metadata = read_input(metadata_path).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to read metadata {metadata_path}: {error}");
+        process::exit(1);
+    });
+    let sql = read_input(sql_path).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to read SQL {sql_path}: {error}");
+        process::exit(1);
+    });
+
+    let metadata = parse_metadata_tsv(&metadata).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to parse metadata {metadata_path}: {error}");
+        process::exit(1);
+    });
+    let request = parse_sql_document(input_uri(sql_path), &sql).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to parse SQL {sql_path}: {error}");
+        process::exit(1);
+    });
+    let plan = CitusLspPlan::new(metadata, all_lsp_rules()).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to build diagnostic plan: {error}");
+        process::exit(1);
+    });
+
+    emit_analysis(&plan, &request);
+}
+
+fn emit_analysis(plan: &CitusLspPlan, request: &ai_blaise_citus_lsp::SqlAnalysisRequest) {
+    let analysis = plan.analyze(request).unwrap_or_else(|error| {
+        eprintln!("citus-lsp: failed to analyze request: {error}");
         process::exit(1);
     });
 
@@ -46,8 +117,33 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: citus-lsp [analyze-canonical]");
-    println!("emits tab-separated diagnostics for the canonical Citus/Timescale SQL scenario");
+    println!("usage: citus-lsp analyze-canonical");
+    println!("       citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql|->");
+    println!(
+        "emits tab-separated diagnostics for supported Citus/Timescale SQL migration statements"
+    );
+}
+
+fn read_input(path: &str) -> io::Result<String> {
+    if path == "-" {
+        let mut input = String::new();
+        io::stdin().read_to_string(&mut input)?;
+        Ok(input)
+    } else {
+        fs::read_to_string(path)
+    }
+}
+
+fn input_uri(path: &str) -> String {
+    if path == "-" {
+        return "stdin://migration.sql".to_string();
+    }
+
+    let path = Path::new(path);
+    match fs::canonicalize(path) {
+        Ok(path) => format!("file://{}", path.display()),
+        Err(_) => format!("file://{}", path.display()),
+    }
 }
 
 fn diagnostic_code(code: LspDiagnosticCode) -> &'static str {
