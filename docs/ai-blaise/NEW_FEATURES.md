@@ -4839,6 +4839,1132 @@ operations TUI.
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+## Extension Catalog SQL Runtime
+
+### A7: pgvector Cohabitation Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgvector`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pgvector cohabitation contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not pin a bundled vector-extension
+catalog contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: A7` in `companion/src/extension_catalog.rs`
+
+### A12: vchord Alternate Vector Index Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `vchord`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the vchord alternate vector-index contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not track optional vector-index
+alternatives in a catalog runtime.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: A12` in `companion/src/extension_catalog.rs`
+
+### C11: pgl_ddl_deploy Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgl_ddl_deploy`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the DDL replication extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle cross-region DDL
+replication policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C11` in `companion/src/extension_catalog.rs`
+
+### C12: Replication-Slot Failover Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_failover_slots`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the logical replication slot failover contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require logical slot failover
+packaging.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C12` in `companion/src/extension_catalog.rs`
+
+### C13: Subscription Failover Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_subscription_pg_failover`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the logical subscription failover contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package subscription failover
+contracts.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C13` in `companion/src/extension_catalog.rs`
+
+### EF6: UDF Substrate Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `plrust`, `plv8`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the JavaScript and Rust in-database UDF substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle plv8/plrust as a platform
+contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: EF6` in `companion/src/extension_catalog.rs`
+
+### F2: Foreign Data Wrapper Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `oracle_fdw`, `mysql_fdw`, `mongo_fdw`, `tds_fdw`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the foreign data wrapper bundle contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle the overlay FDW catalog
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: F2` in `companion/src/extension_catalog.rs`
+
+### F5: Outbound HTTP Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsql-http`, `pg_net`, `omnigres`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+outbound HTTP extension and integration-target policy.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgsql-http or pg_net
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: F5` in `companion/src/extension_catalog.rs`
+
+### G1: Apache AGE Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `age`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the Apache AGE graph substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require Apache AGE in every
+operand image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: G1` in `companion/src/extension_catalog.rs`
+
+### Geo1: PostGIS Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgis`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the PostGIS geospatial substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require PostGIS in every operand
+image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Geo1` in `companion/src/extension_catalog.rs`
+
+### IA1: HypoPG Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `hypopg`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the hypothetical-index advisor input contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle hypothetical-index advisor
+inputs.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: IA1` in `companion/src/extension_catalog.rs`
+
+### IA2: pg_qualstats Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_qualstats`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the predicate-statistics advisor input contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle predicate-stat advisor
+inputs.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: IA2` in `companion/src/extension_catalog.rs`
+
+### JS1: pg_jsonschema Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_jsonschema`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the JSON Schema substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require JSON Schema validation
+support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: JS1` in `companion/src/extension_catalog.rs`
+
+### L11: pg_parquet Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_parquet`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the Parquet helper extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package Parquet helpers as part of
+its image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: L11` in `companion/src/extension_catalog.rs`
+
+### M6: DDL Replication Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgl_ddl_deploy`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the DDL replication contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle pgl_ddl_deploy policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M6` in `companion/src/extension_catalog.rs`
+
+### M10: Track Settings Drift Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_track_settings`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the settings drift tracking extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_track_settings.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M10` in `companion/src/extension_catalog.rs`
+
+### M12: UUIDv7 Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_uuidv7`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the monotonic UUID helper contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle monotonic UUID helpers.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M12` in `companion/src/extension_catalog.rs`
+
+### MR7: pgactive Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgactive`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the cross-region active-active reference extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgactive conflict-policy
+gates.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: MR7` in `companion/src/extension_catalog.rs`
+
+### O7: Wait-Event Sampling Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_wait_sampling`, `pgsentinel`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+wait-event sampling extension contracts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_wait_sampling or
+pgsentinel.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O7` in `companion/src/extension_catalog.rs`
+
+### O8: OS Metrics Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgnodemx`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the SQL-visible OS metrics extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pgnodemx.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O8` in `companion/src/extension_catalog.rs`
+
+### O9: Kernel Stats Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_stat_kcache`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the kernel statistics extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_stat_kcache.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O9` in `companion/src/extension_catalog.rs`
+
+### O11: pg_stat_monitor Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_stat_monitor`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pg_stat_monitor alternative statement histogram contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pg_stat_monitor.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O11` in `companion/src/extension_catalog.rs`
+
+### O12: pg_show_plans Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_show_plans`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the plan-inspection extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require plan-inspection
+packaging.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O12` in `companion/src/extension_catalog.rs`
+
+### PM1: pg_hint_plan Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_hint_plan`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the hint-plan backend contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package hint-plan policy as an
+overlay contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: PM1` in `companion/src/extension_catalog.rs`
+
+### PM2: sr_plan Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `sr_plan`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the saved-plan backend contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle saved-plan backends.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: PM2` in `companion/src/extension_catalog.rs`
+
+### R6: Queue Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgmq`, `pgque`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the bloat-free queue substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgque/pgmq as queue
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: R6` in `companion/src/extension_catalog.rs`
+
+### R11: pg_warm Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_warm`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the replica cold-start cache warming contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_warm in operand images.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: R11` in `companion/src/extension_catalog.rs`
+
+### Search1: pg_search Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the BM25 search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require BM25 search support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search1` in `companion/src/extension_catalog.rs`
+
+### Search4: RUM Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `rum`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the RUM search index substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require RUM search indexes.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search4` in `companion/src/extension_catalog.rs`
+
+### Search5: pg_trgm Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_trgm`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the trigram search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require trigram search support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search5` in `companion/src/extension_catalog.rs`
+
+### Search6: citext Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `citext`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the case-insensitive text search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require citext search semantics.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search6` in `companion/src/extension_catalog.rs`
+
+### Sec3: Audit Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgaudit`, `pgauditlogtofile`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the SQL and file audit extension contracts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require this audit bundle.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec3` in `companion/src/extension_catalog.rs`
+
+### Sec4: pgsodium Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsodium`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the libsodium crypto extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle libsodium crypto policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec4` in `companion/src/extension_catalog.rs`
+
+### Sec10: pg_safeupdate Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_safeupdate`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the safe-update guard extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pg_safeupdate policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec10` in `companion/src/extension_catalog.rs`
+
+### Sec11: Anonymization Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `anon`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the CDC anonymization extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle anonymization policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec11` in `companion/src/extension_catalog.rs`
+
+### Sec14: pgcrypto Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgcrypto`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the core crypto primitive extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not document pgcrypto as overlay
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec14` in `companion/src/extension_catalog.rs`
+
+### Sec15: CMK Encryption Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsodium`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pgsodium-backed CMK encryption-at-rest extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe pgsodium-backed CMK
+controls.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec15` in `companion/src/extension_catalog.rs`
+
+### WF1: pg_walinspect Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_walinspect`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the WAL inspection forensic workflow extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this WAL inspection
+workflow as an overlay contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: WF1` in `companion/src/extension_catalog.rs`
+
 ## V2 Completion Register Addendum
 
 The entries below close the V2 catalog surfaces that are implemented as
@@ -4850,51 +5976,24 @@ evidence.
 
 | ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference | Evidence |
 |---|---|---|---|---|---|---|
-| A7 | pgvector cohabitation | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not pin a bundled vector-extension contract. | `FEATURE: A7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | A9 | Secret binding via External Secrets | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define vector-provider secret binding. | `FEATURE: A9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | A10 | Streaming chat completion UDF | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define streaming LLM SQL surfaces. | `FEATURE: A10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | A11 | Semantic catalog text-to-SQL | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a tenant-scoped semantic catalog. | `FEATURE: A11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| A12 | vchord alternate vector index | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not track optional vector-index alternatives. | `FEATURE: A12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| C11 | DDL replication via pgl_ddl_deploy | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle cross-region DDL replication policy. | `FEATURE: C11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | D10 | Release hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` | `cargo run -p ai_blaise_citus_mcp -- run-canonical` |
-| EF6 | In-database JavaScript and Rust UDF substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle plv8/plrust as a platform contract. | `FEATURE: EF6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | Edge2 | libsql read-tier research guard | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a libsql-shaped research gate. | `FEATURE: Edge2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| F2 | Foreign data wrapper bundle | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle the overlay FDW catalog policy. | `FEATURE: F2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | F3 | Iceberg federation to warehouses | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Iceberg warehouse federation. | `FEATURE: F3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | F4 | postgres_fdw credential rotation | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not prescribe FDW secret rotation. | `FEATURE: F4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| F5 | Outbound HTTP extensions | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgsql-http or pg_net policy. | `FEATURE: F5` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| G1 | Apache AGE bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require Apache AGE in every operand image. | `FEATURE: G1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Geo1 | PostGIS bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require PostGIS in every operand image. | `FEATURE: Geo1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| IA1 | HypoPG bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle hypothetical-index advisor inputs. | `FEATURE: IA1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| IA2 | pg_qualstats bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle predicate-stat advisor inputs. | `FEATURE: IA2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| JS1 | pg_jsonschema bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require JSON Schema validation support. | `FEATURE: JS1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | L7 | Citus columnar analytical path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has columnar storage but not this tiering contract. | `FEATURE: L7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | L10 | Cross-tier query planner | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not combine hot, warm, and cold tiers. | `FEATURE: L10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| L11 | pg_parquet bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package Parquet helpers as part of its image. | `FEATURE: L11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | M4 | Schema drift detection | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile declarative schema drift. | `FEATURE: M4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| M6 | DDL replication | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle pgl_ddl_deploy policy. | `FEATURE: M6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| M10 | Track settings drift | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_track_settings. | `FEATURE: M10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| M12 | UUIDv7 primary keys | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle monotonic UUID helpers. | `FEATURE: M12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | MR3 | Locality-prefixed primary keys | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not encode region in key policy. | `FEATURE: MR3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | MR6 | Closed-timestamp time travel | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose bounded-staleness time travel. | `FEATURE: MR6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| MR7 | Cross-region active-active references | `companion/src/extension_catalog.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not package pgactive conflict-policy gates. | `FEATURE: MR7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | MR9 | Region survival runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/disaster-recovery.md` | alpha | Vanilla Citus does not ship this regional DR runbook. | `FEATURE: MR9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| O7 | Wait-event sampling | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_wait_sampling/pgsentinel. | `FEATURE: O7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| O8 | OS metrics via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pgnodemx. | `FEATURE: O8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| O9 | Kernel stats via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_stat_kcache. | `FEATURE: O9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| O11 | pg_stat_monitor alternative | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_stat_monitor. | `FEATURE: O11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| O12 | pg_show_plans plan-inspection contract | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require plan-inspection packaging. | `FEATURE: O12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| PM1 | pg_hint_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package hint-plan policy as an overlay contract. | `FEATURE: PM1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| PM2 | sr_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle saved-plan backends. | `FEATURE: PM2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | R3 | Columnstore-on-worker policy | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this worker tiering policy. | `FEATURE: R3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| R6 | Bloat-free queue substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgque/pgmq as queue policy. | `FEATURE: R6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | R8 | Non-hypertable cold columnar path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this cold-tier policy. | `FEATURE: R8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| R11 | pg_warm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_warm in operand images. | `FEATURE: R11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | R12 | Per-shard temperature ranking | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not maintain shard temperature scores. | `FEATURE: R12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | RT5 | Phoenix-channel-compatible realtime client | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not provide realtime client compatibility gates. | `FEATURE: RT5` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | S1 | Auto shard split | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose declarative split intent. | `FEATURE: S1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
@@ -4902,19 +6001,9 @@ evidence.
 | S7 | Cross-region replication via pgactive | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not bundle pgactive policy gates. | `FEATURE: S7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | S8 | Locality-prefixed PKs | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define region-prefixed key policy. | `FEATURE: S8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | S12 | Tablespaces by region | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile region tablespace intent. | `FEATURE: S12` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| Search1 | pg_search bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require BM25 search support. | `FEATURE: Search1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Search4 | RUM index bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require RUM search indexes. | `FEATURE: Search4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Search5 | pg_trgm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require trigram search support. | `FEATURE: Search5` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Search6 | citext bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require citext search semantics. | `FEATURE: Search6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Sec3 | pgaudit and file audit | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require this audit bundle. | `FEATURE: Sec3` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Sec4 | pgsodium crypto | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle libsodium crypto policy. | `FEATURE: Sec4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | Sec7 | External Secrets integration | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not prescribe External Secrets refs. | `FEATURE: Sec7` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | Sec8 | TLS everywhere | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not enforce this full overlay TLS contract. | `FEATURE: Sec8` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
 | Sec9 | SBOM and cosign attestation | `companion/src/ops_contracts.rs` and release gates | alpha | Vanilla Citus does not require ai-blaise release attestations. | `FEATURE: Sec9` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
-| Sec10 | pg_safeupdate guard | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_safeupdate policy. | `FEATURE: Sec10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Sec11 | CDC anonymization extension | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle anonymization policy. | `FEATURE: Sec11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Sec14 | pgcrypto bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not document pgcrypto as overlay policy. | `FEATURE: Sec14` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
-| Sec15 | Encryption-at-rest with CMK | `companion/src/extension_catalog.rs` and Helm values | alpha | Vanilla Citus does not prescribe pgsodium-backed CMK controls. | `FEATURE: Sec15` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |
 | Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical` |
@@ -4925,4 +6014,3 @@ evidence.
 | T14 | Distributed savepoints | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate savepoints through this contract. | `FEATURE: T14` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | TS10 | Hierarchical CAGGs distributed | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not fan out hierarchical CAGGs across workers. | `FEATURE: TS10` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
 | TS11 | Bloom filters on segmentby | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Timescale segmentby bloom fanout. | `FEATURE: TS11` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical` |
-| WF1 | pg_walinspect bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package WAL inspection as an overlay policy. | `FEATURE: WF1` | `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical` |

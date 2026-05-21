@@ -508,8 +508,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 57 narrow headings
+The current feature inventory contains 240 source `FEATURE:` markers and 202
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 95 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -539,10 +539,17 @@ installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
 runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
 and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
 aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
-`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes. The
+`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes, plus
+`A7`, `A12`, `C11`, `C12`, `C13`, `EF6`, `F2`, `F5`, `G1`, `Geo1`, `IA1`,
+`IA2`, `JS1`, `L11`, `M6`, `M10`, `M12`, `MR7`, `O7`, `O8`, `O9`, `O11`,
+`O12`, `PM1`, `PM2`, `R6`, `R11`, `Search1`, `Search4`, `Search5`,
+`Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
+for the installable SQL extension catalog runtime that records required,
+optional, integration-target, preload, feature-coverage, and hard-block
+extension contracts. The
 other 107
 feature headings remain
-`Status: alpha`. The remaining 76 source markers are represented as V2
+`Status: alpha`. The remaining 38 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every
 addendum row has a deterministic executable evidence command and remains
 alpha. This is acceptable for catalog integrity, but it is not a production

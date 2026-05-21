@@ -372,46 +372,6 @@ if set(addendum_by_id) != source_only_ids:
     )
 
 source_only_evidence_requirements = {
-    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical": {
-        "A7",
-        "A12",
-        "C11",
-        "C12",
-        "C13",
-        "EF6",
-        "F2",
-        "F5",
-        "G1",
-        "Geo1",
-        "IA1",
-        "IA2",
-        "JS1",
-        "L11",
-        "M6",
-        "M10",
-        "M12",
-        "MR7",
-        "O7",
-        "O8",
-        "O9",
-        "O11",
-        "O12",
-        "PM1",
-        "PM2",
-        "R6",
-        "R11",
-        "Search1",
-        "Search4",
-        "Search5",
-        "Search6",
-        "Sec3",
-        "Sec4",
-        "Sec10",
-        "Sec11",
-        "Sec14",
-        "Sec15",
-        "WF1",
-    },
     "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical": {
         "A10",
         "A11",
@@ -1014,6 +974,66 @@ for feature_id, required_phrases in (
         if compact(phrase) not in compact(entry["body"]):
             fail(f"{feature_id} production-ready boundary is missing: {phrase}")
 
+extension_catalog_runtime_ids = {
+    "A7",
+    "A12",
+    "C11",
+    "C12",
+    "C13",
+    "EF6",
+    "F2",
+    "F5",
+    "G1",
+    "Geo1",
+    "IA1",
+    "IA2",
+    "JS1",
+    "L11",
+    "M6",
+    "M10",
+    "M12",
+    "MR7",
+    "O7",
+    "O8",
+    "O9",
+    "O11",
+    "O12",
+    "PM1",
+    "PM2",
+    "R6",
+    "R11",
+    "Search1",
+    "Search4",
+    "Search5",
+    "Search6",
+    "Sec3",
+    "Sec4",
+    "Sec10",
+    "Sec11",
+    "Sec14",
+    "Sec15",
+    "WF1",
+}
+for feature_id in sorted(extension_catalog_runtime_ids):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for extension-catalog SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow extension-catalog SQL runtime")
+    for phrase in (
+        "installable SQL extension catalog runtime",
+        "companion_internal.seed_extension_catalog",
+        "companion_extension_catalog",
+        "companion_extension_feature_coverage",
+        "companion_extension_required",
+        "companion_required_preload_libraries",
+        "hard-blocked extensions fail closed",
+        "Actual binary extension installation, full operand image build, initdb extension creation, and operator package reconciliation remain alpha",
+        "ci/ai-blaise/sql-extension-smoke.sh",
+    ):
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} extension-catalog production-ready boundary is missing: {phrase}")
+
 for feature_id, required_phrases in (
     (
         "Sec5",
@@ -1125,8 +1145,6 @@ for feature_id, phrase in stale_alpha_production_phrases:
 
 stale_alpha_addendum_phrases = [
     ("D10", "Production hardening runbook"),
-    ("O12", "pg_show_plans live plans"),
-    ("O12", "live plan inspection"),
 ]
 for feature_id, phrase in stale_alpha_addendum_phrases:
     row = addendum_by_id.get(feature_id)
@@ -1679,6 +1697,12 @@ for phrase in (
     "Sec6 ledger seals must reject deletion",
     "Sec6 ledger seal accepted an unsupported algorithm",
     "uid claim must not be empty",
+    "companion_internal.seed_extension_catalog",
+    "companion_extension_feature_coverage",
+    "companion_extension_required('A7')",
+    "companion_required_preload_libraries",
+    "extension catalog hard-block conflict check did not flag orioledb",
+    "extension catalog accepted empty feature ids",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
 ):
@@ -1789,6 +1813,18 @@ for phrase in (
     "CREATE FUNCTION companion_internal.plan_tenant_move",
     "CREATE FUNCTION companion_internal.plan_tenant_archive",
     "CREATE FUNCTION companion_internal.set_tenant_region_affinity",
+    "CREATE TABLE IF NOT EXISTS companion_internal.extension_catalog_contracts",
+    "CREATE VIEW companion_extension_catalog",
+    "CREATE VIEW companion_extension_feature_coverage",
+    "CREATE FUNCTION companion_internal.register_extension_contract",
+    "CREATE FUNCTION companion_internal.seed_extension_catalog",
+    "CREATE FUNCTION companion_extension_required",
+    "CREATE FUNCTION companion_required_preload_libraries",
+    "CREATE FUNCTION companion_extension_conflicts",
+    "CREATE FUNCTION companion_internal.assert_extension_allowed",
+    "'A7', 'pgvector cohabitation', 'extension-catalog-runtime'",
+    "'Search1', 'pg_search bundled', 'extension-catalog-runtime'",
+    "'Sec15', 'encryption-at-rest with CMK', 'extension-catalog-runtime'",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",

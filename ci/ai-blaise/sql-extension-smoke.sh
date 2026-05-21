@@ -275,6 +275,8 @@ DECLARE
   schema_plan text;
   tenant_move_id bigint;
   tenant_archive_id bigint;
+  extension_seed_count integer;
+  extension_preload_libraries text[];
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -318,6 +320,89 @@ BEGIN
   ) <> 43 THEN
     RAISE EXCEPTION 'companion_feature_status must mark custom SQL runtime features as sql-runtime';
   END IF;
+  IF (
+    SELECT count(*)
+    FROM companion_feature_status()
+    WHERE feature_id IN (
+      'A7', 'A12', 'C11', 'C12', 'C13', 'EF6', 'F2', 'F5',
+      'G1', 'Geo1', 'IA1', 'IA2', 'JS1', 'L11', 'M6', 'M10',
+      'M12', 'MR7', 'O7', 'O8', 'O9', 'O11', 'O12', 'PM1',
+      'PM2', 'R6', 'R11', 'Search1', 'Search4', 'Search5',
+      'Search6', 'Sec3', 'Sec4', 'Sec10', 'Sec11', 'Sec14',
+      'Sec15', 'WF1'
+    )
+      AND status = 'extension-catalog-runtime'
+  ) <> 38 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark extension catalog features as extension-catalog-runtime';
+  END IF;
+
+  extension_seed_count := companion_internal.seed_extension_catalog();
+  IF extension_seed_count <> 45 THEN
+    RAISE EXCEPTION 'extension catalog seed inserted % rows, expected 45', extension_seed_count;
+  END IF;
+  IF (
+    SELECT count(DISTINCT feature_id)
+    FROM companion_extension_feature_coverage
+  ) <> 38 THEN
+    RAISE EXCEPTION 'extension catalog feature coverage did not include 38 features';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_extension_required('A7')
+    WHERE extension_name = 'pgvector'
+      AND tier = 'required'
+  ) THEN
+    RAISE EXCEPTION 'A7 extension catalog did not expose required pgvector';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_extension_required('F2')
+    WHERE extension_name IN ('oracle_fdw', 'mysql_fdw', 'mongo_fdw', 'tds_fdw')
+    HAVING count(*) = 4
+  ) THEN
+    RAISE EXCEPTION 'F2 extension catalog did not expose all FDW options';
+  END IF;
+  extension_preload_libraries := companion_required_preload_libraries();
+  IF array_position(extension_preload_libraries, 'age') IS NULL
+     OR array_position(extension_preload_libraries, 'pg_search') IS NULL
+     OR array_position(extension_preload_libraries, 'pg_hint_plan') IS NULL THEN
+    RAISE EXCEPTION 'extension catalog preload list omitted required preload contracts: %', extension_preload_libraries;
+  END IF;
+  PERFORM companion_internal.assert_extension_allowed('pgvector');
+  PERFORM companion_internal.register_extension_contract(
+    'orioledb',
+    'hard-block',
+    ARRAY['Bundle1'],
+    false,
+    'Heap access method conflicts with this stack'
+  );
+  IF NOT companion_extension_conflicts('orioledb') THEN
+    RAISE EXCEPTION 'extension catalog hard-block conflict check did not flag orioledb';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.assert_extension_allowed('orioledb');
+    RAISE EXCEPTION 'extension catalog allowed a hard-blocked extension';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'extension is hard-blocked: orioledb' THEN
+      RAISE;
+    END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_extension_contract('bad_ext', 'required', ARRAY[]::text[]);
+    RAISE EXCEPTION 'extension catalog accepted empty feature ids';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'feature_ids must not be empty' THEN
+      RAISE;
+    END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.register_extension_contract('bad_tier', 'experimental', ARRAY['A7']);
+    RAISE EXCEPTION 'extension catalog accepted an unsupported tier';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'unsupported extension tier: experimental' THEN
+      RAISE;
+    END IF;
+  END;
 
   vectorizer_sql := companion_internal.register_vectorizer(
     'documents_body',
