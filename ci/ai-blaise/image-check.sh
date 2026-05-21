@@ -262,6 +262,14 @@ grep -Fq "CREATE FUNCTION companion_current_tenant_id" "${image_dir}/extensions/
 grep -Fq "CREATE FUNCTION companion_require_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.ledger_entries" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.ledger_seals" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.ledger_transfer" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_ledger_chain_valid" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_ledger_seal" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_ledger_entries" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Sec5', 'immutable ledger', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -277,6 +285,7 @@ grep -Fq 'expected = [["pipeline_one"], ["pipeline_two"]]' "${pool_proxy_smoke}"
 grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PostgreSQL init process complete" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "CREATE EXTENSION pgcrypto" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_set_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_session_claims" ci/ai-blaise/sql-extension-smoke.sh
@@ -287,6 +296,13 @@ grep -Fq "ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY" ci/ai-blaise/s
 grep -Fq "CREATE POLICY rls_smoke_tenant_isolation" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "SET ROLE ai_blaise_rls_smoke" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "Sec1 RLS WITH CHECK allowed a cross-tenant insert" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.ledger_transfer" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_ledger_chain_valid" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_ledger_seal" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec5 ledger transfer did not return a sha256 entry hash" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec5 ledger entries must reject mutation" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec6 ledger seals must reject deletion" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec6 ledger seal accepted an unsupported algorithm" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh

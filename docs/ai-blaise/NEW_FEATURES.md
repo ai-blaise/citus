@@ -3086,35 +3086,49 @@ contract to avoid split-brain authorization behavior.
 ### Sec5: Immutable Ledger
 
 **Overlay**: `companion/src/ledger.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: `pgledger`
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines append-only transfer planning and hash-chain validation
-for the companion ledger surface.
+**Summary**: Provides an installable append-only ledger table and transfer
+function with SHA-256 hash-chain validation.
 
 **Motivation**: Audit-heavy tenant operations need a tamper-evident record
 before automated migrations, tenant moves, and privileged actions execute.
 
 **Citus comparison**: Vanilla Citus does not ship an immutable ledger surface.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec5` as `sql-runtime`, appends two
+ledger transfers with `companion_internal.ledger_transfer(...)`, verifies the
+second transfer advances the hash chain, verifies `companion_ledger_chain_valid()`,
+rejects a transfer with a missing previous hash, and verifies direct
+`UPDATE` against `companion_internal.ledger_entries` fails with the
+append-only trigger. This status covers the local SQL ledger runtime only;
+multi-party accounting workflows, external ledger backends, tenant workflow
+authorization, and migration/operator integration remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec5` in `companion/src/ledger.rs`
+- SQL runtime: `FEATURE: Sec5` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec6: HMAC Tamper-Evidence On Ledger
 
 **Overlay**: `companion/src/ledger.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: `pgledger`, `pgcrypto`
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines the `companion_ledger_seal` plan contract that seals a
-ledger transfer with an external secret reference and HMAC algorithm.
+**Summary**: Provides an installable `companion_ledger_seal` function that
+records append-only HMAC seals for ledger transfer hashes.
 
 **Motivation**: Ledger rows need a separable integrity seal so compromised
 database writes are detectable against an out-of-band secret.
@@ -3122,11 +3136,25 @@ database writes are detectable against an out-of-band secret.
 **Citus comparison**: Vanilla Citus does not provide HMAC-sealed ledger
 entries.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec6` as `sql-runtime`, seals a ledger
+entry through `companion_ledger_seal('tr_001', 'ledger-secret',
+'hmac-sha256')`, verifies the seal is visible through `companion_ledger_entries`,
+verifies direct `DELETE` against `companion_internal.ledger_seals` fails with
+the append-only trigger, and verifies unsupported HMAC algorithms fail closed.
+This status covers the local SQL HMAC sealing runtime only; external secret
+resolution, key rotation, hardware-backed signing, and privileged workflow
+integration remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec6` in `companion/src/ledger.rs`
+- SQL runtime: `FEATURE: Sec6` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec12: Per-Tenant Resource Quotas
 
