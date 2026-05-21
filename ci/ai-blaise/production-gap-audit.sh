@@ -16,6 +16,7 @@ AUDIT = ROOT / "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
 UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
+DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
@@ -46,6 +47,51 @@ SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
 CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
+CUSTOM_CONTRACT_READMES = [
+    ROOT / path
+    for path in (
+        "companion/README.md",
+        "benchmarks/README.md",
+        "operator/README.md",
+        "operator/CRDS.md",
+        "pool/README.md",
+        "sidecar/README.md",
+        "e2e/README.md",
+        "tests/e2e/README.md",
+        "tools/README.md",
+        "deploy/k8s/README.md",
+        "images/README.ai-blaise.md",
+        "images/citus-pg-overlay/README.md",
+        "images/operator/README.md",
+        "images/pool/README.md",
+        "images/tools/README.md",
+        "sidecar/analytical/README.md",
+        "sidecar/auth/README.md",
+        "sidecar/backup/README.md",
+        "sidecar/cdc/README.md",
+        "sidecar/coldtier/README.md",
+        "sidecar/edge_functions/README.md",
+        "sidecar/graphql/README.md",
+        "sidecar/hlc/README.md",
+        "sidecar/mcp/README.md",
+        "sidecar/postgrest/README.md",
+        "sidecar/raft/README.md",
+        "sidecar/realtime/README.md",
+        "sidecar/repack/README.md",
+        "sidecar/schema_job/README.md",
+        "sidecar/shared/README.md",
+        "sidecar/storage/README.md",
+        "sidecar/txn_status/README.md",
+        "sidecar/vectorizer/README.md",
+        "tools/citus-admin/README.md",
+        "tools/citus-lsp/README.md",
+        "tools/citus-mcp/README.md",
+        "tools/citus-schema-designer/README.md",
+        "tools/citus-tui/README.md",
+        "tools/citus-watch/README.md",
+        "tools/citusctl/README.md",
+    )
+]
 
 SOURCE_ROOTS = [
     "companion",
@@ -195,6 +241,7 @@ audit = read(AUDIT)
 releasing = read(RELEASING)
 runbook = read(RUNBOOK)
 upgrade_runbook = read(UPGRADE_RUNBOOK)
+dr_runbook = read(DR_RUNBOOK)
 e2e_doc = read(E2E_DOC)
 architecture_doc = read(ARCHITECTURE_DOC)
 bundled_extensions_doc = read(BUNDLED_EXTENSIONS_DOC)
@@ -284,6 +331,7 @@ docs_compact = compact(docs)
 releasing_compact = compact(releasing)
 runbook_compact = compact(runbook)
 upgrade_runbook_compact = compact(upgrade_runbook)
+dr_runbook_compact = compact(dr_runbook)
 e2e_compact = compact(e2e_doc)
 architecture_compact = compact(architecture_doc)
 bundled_extensions_compact = compact(bundled_extensions_doc)
@@ -355,6 +403,23 @@ for phrase in (
     if phrase not in releasing_compact:
         fail(f"RELEASING.md must preserve guardrail phrase: {phrase}")
 
+for path in CUSTOM_CONTRACT_READMES:
+    readme_compact = compact(read(path))
+    for phrase in (
+        "production boundary",
+        "status: production-ready",
+        "surfaces listed here are alpha",
+        "deterministic canonical reports and local runtime models are ci",
+        "artifacts, not production evidence",
+        "production_readiness_audit.md",
+        "production-gap-audit.sh",
+    ):
+        if phrase not in readme_compact:
+            fail(f"{path} must preserve component production-boundary phrase: {phrase}")
+
+if "benchmark targets, not production evidence" not in compact(read(ROOT / "docs/ai-blaise/BENCHMARKS.md")):
+    fail("BENCHMARKS.md must preserve benchmark-target not-production-evidence guardrail")
+
 for phrase in (
     "not a blanket production certification",
     "v2 acceptance model",
@@ -412,6 +477,19 @@ for phrase in (
 ):
     if phrase not in upgrade_runbook_compact:
         fail(f"upgrade runbook must preserve operand-image alpha guardrail: {phrase}")
+
+for phrase in (
+    "release prerequisite and operational checklist, not production evidence by itself",
+    "feature: mr9` remains alpha",
+    "live multi-region failover drill",
+    "pitr restore",
+    "backup artifact restore",
+    "sidecar readiness check",
+    "conflict-policy report",
+    "completing the document checklist alone does not promote",
+):
+    if phrase not in dr_runbook_compact:
+        fail(f"disaster recovery runbook must preserve MR9 alpha guardrail: {phrase}")
 
 for path, text in (
     (IMAGES_OVERVIEW, images_overview_compact),
@@ -724,6 +802,7 @@ for path in (
     RELEASING,
     RUNBOOK,
     UPGRADE_RUNBOOK,
+    DR_RUNBOOK,
     E2E_DOC,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
