@@ -607,7 +607,8 @@ assert_observability_resources() {
     "ai-blaise-citus-overview.json" \
     "ai-blaise-citus-sidecars.json" \
     "ai_blaise_sidecar_ready" \
-    "ai_blaise_citus_pool_errors_total"; do
+    "ai_blaise_citus_pool_errors_total" \
+    "clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)"; do
     if ! printf '%s\n' "${dashboard_yaml}" | grep -Fq "${marker}"; then
       echo "${dashboards} is missing Grafana dashboard marker: ${marker}" >&2
       dump_k8s_diagnostics
@@ -620,7 +621,11 @@ assert_observability_resources() {
     "AiBlaiseCitusSidecarNotReady" \
     "AiBlaiseCitusVectorizerBacklogHigh" \
     "AiBlaiseCitusPoolErrorRateHigh" \
-    "ai_blaise_sidecar_ready"; do
+    "ai_blaise_sidecar_ready" \
+    "clamp_min" \
+    "ai_blaise_citus_pool_errors_total" \
+    "ai_blaise_citus_pool_requests_total" \
+    "> 0"; do
     if ! printf '%s\n' "${alert_yaml}" | grep -Fq "${marker}"; then
       echo "${alerts} is missing PrometheusRule marker: ${marker}" >&2
       dump_k8s_diagnostics

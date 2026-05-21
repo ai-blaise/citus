@@ -109,6 +109,11 @@ more production-ready than the artifacts justified.
     runtime has no trace emission, collector wiring, OTEL dependency,
     configuration loader, or PostgreSQL helper module. That made an alpha
     deployment-contract entry read like broader runtime implementation existed.
+29. `FEATURE: O6` and `FEATURE: O10` were promoted as chart observability
+    surfaces, but the deploy guard mostly grepped marker strings. Invalid
+    embedded Grafana JSON, missing panel expressions, or an unguarded pool
+    error-rate denominator could slip through without a parsed dashboard or
+    alert-expression contract.
 
 ## Corrections
 
@@ -286,6 +291,11 @@ more production-ready than the artifacts justified.
   the live kind production smoke requires the installed dashboard ConfigMap and
   PrometheusRule resources to contain the production dashboard JSON payloads
   and alert names in every Helm profile installed by the smoke.
+- The observability deploy check now parses the embedded Grafana dashboard JSON
+  from the Helm template, requires the exact dashboard files, panel titles, and
+  PromQL target expressions, and rejects unguarded pool request-rate division.
+  The dashboard and alert rule both use a guarded pool error-rate denominator,
+  and the alert rule also requires positive request traffic before firing.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
   O2 is local-node activity stats with a compatibility alias, and R4 is
   idle-transaction detection only, not cancellation or termination.
@@ -319,6 +329,9 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Production-ready Timescale/Citus claims require a real cohabitation run; the
   stubbed Timescale bridge smoke remains useful contract evidence, but promoted
   TS6/TS18 evidence must come from the non-stubbed cohabitation smoke.
+- Production-ready observability chart claims require parsed Grafana JSON,
+  exact panel/PromQL contracts, live installed ConfigMap/PrometheusRule
+  resources, and guarded pool error-rate expressions.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
 

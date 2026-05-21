@@ -64,11 +64,11 @@ data:
           ]
         },
         {
-          "title": "Pool error rate",
+          "title": "Pool error rate percent",
           "type": "timeseries",
           "targets": [
             {
-              "expr": "sum(rate(ai_blaise_citus_pool_errors_total[5m])) / sum(rate(ai_blaise_citus_pool_requests_total[5m]))"
+              "expr": "100 * sum(rate(ai_blaise_citus_pool_errors_total[5m])) / clamp_min(sum(rate(ai_blaise_citus_pool_requests_total[5m])), 0.001)"
             }
           ]
         }
