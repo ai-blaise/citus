@@ -1680,8 +1680,8 @@ classification contract.
 **Summary**: Adds a per-XLogCtl Lamport clock and an XLogReserveInsertHook so
 commit timestamps are monotonically increasing in commit-LSN order, with a
 per-backend remoteTransactionStopTimestamp that lets logical replication apply
-workers bump the local clock forward when a remote transaction appears to have
-happened in the future.
+workers bump the local clock forward when a remote transaction carries a
+timestamp ahead of the local clock.
 
 **Motivation**: Multi-master and parallel-commit deployments cannot resolve
 conflicts deterministically when commit timestamps can move backwards inside a
