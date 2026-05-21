@@ -22,6 +22,7 @@ impl McpToolRequest {
         self.tool.validate()?;
         if let Some(scope) = &self.tenant_scope {
             scope.validate()?;
+            self.tool.validate_tenant_scope(scope)?;
         }
         if self.safe_mode == SafeMode::Required && self.tool.is_destructive() {
             return Err(McpToolError::UnsafeToolDenied);
@@ -61,6 +62,13 @@ impl McpTool {
             _ => {}
         }
 
+        match self {
+            Self::RunExplain { sql } | Self::QueryWithTimeout { sql, .. } => {
+                validate_read_only_sql(sql)?;
+            }
+            _ => {}
+        }
+
         if let Self::QueryWithTimeout { timeout_ms, .. } = self {
             if *timeout_ms == 0 {
                 return Err(McpToolError::InvalidTimeout);
@@ -72,6 +80,16 @@ impl McpTool {
 
     fn is_destructive(&self) -> bool {
         matches!(self, Self::TenantArchive { .. })
+    }
+
+    fn validate_tenant_scope(&self, scope: &TenantScope) -> Result<(), McpToolError> {
+        match self {
+            Self::RunExplain { sql } | Self::QueryWithTimeout { sql, .. } => {
+                validate_sql_schema_references(sql, scope)
+            }
+            Self::SuggestIndex { table } => validate_qualified_table(table, scope),
+            _ => Ok(()),
+        }
     }
 }
 
@@ -88,7 +106,7 @@ impl TenantScope {
             || self
                 .allowed_schemas
                 .iter()
-                .any(|schema| schema.trim().is_empty())
+                .any(|schema| !is_unquoted_identifier(schema))
         {
             return Err(McpToolError::MissingRequiredField("allowed_schemas"));
         }
@@ -104,18 +122,28 @@ pub enum SafeMode {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum McpToolError {
+    ForbiddenSchema(String),
+    InvalidIdentifier(&'static str),
     InvalidTimeout,
     MissingRequiredField(&'static str),
+    UnsafeSql(String),
     UnsafeToolDenied,
 }
 
 impl fmt::Display for McpToolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::ForbiddenSchema(schema) => {
+                write!(formatter, "schema {schema} is outside allowed_schemas")
+            }
+            Self::InvalidIdentifier(field) => {
+                write!(formatter, "{field} must be an unquoted SQL identifier")
+            }
             Self::InvalidTimeout => write!(formatter, "timeout_ms must be greater than zero"),
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
             }
+            Self::UnsafeSql(reason) => write!(formatter, "{reason}"),
             Self::UnsafeToolDenied => write!(formatter, "safe mode denied a destructive tool"),
         }
     }
@@ -128,6 +156,173 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), McpToolErro
         return Err(McpToolError::MissingRequiredField(field));
     }
     Ok(())
+}
+
+fn validate_read_only_sql(sql: &str) -> Result<(), McpToolError> {
+    let trimmed = sql.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let first_token = lower
+        .split(|character: char| character.is_whitespace() || character == '(')
+        .find(|token| !token.is_empty())
+        .unwrap_or("");
+
+    if !matches!(first_token, "select" | "with" | "explain") {
+        return Err(McpToolError::UnsafeSql(
+            "safe-mode MCP SQL must start with SELECT, WITH, or EXPLAIN".to_string(),
+        ));
+    }
+
+    let without_trailing_semicolon = trimmed.trim_end_matches(';').trim_end();
+    if without_trailing_semicolon.contains(';') {
+        return Err(McpToolError::UnsafeSql(
+            "safe-mode MCP SQL must contain exactly one read-only statement".to_string(),
+        ));
+    }
+
+    for forbidden in [
+        "alter", "begin", "call", "commit", "copy", "create", "delete", "do", "drop", "execute",
+        "grant", "insert", "lock", "merge", "reset", "revoke", "rollback", "set", "truncate",
+        "update", "vacuum",
+    ] {
+        if contains_keyword(&lower, forbidden) {
+            return Err(McpToolError::UnsafeSql(format!(
+                "safe-mode MCP SQL rejects {forbidden} statements"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_sql_schema_references(sql: &str, scope: &TenantScope) -> Result<(), McpToolError> {
+    for schema in schema_references(sql) {
+        if !scope
+            .allowed_schemas
+            .iter()
+            .any(|allowed| allowed == &schema)
+        {
+            return Err(McpToolError::ForbiddenSchema(schema));
+        }
+    }
+    Ok(())
+}
+
+fn validate_qualified_table(table: &str, scope: &TenantScope) -> Result<(), McpToolError> {
+    let Some((schema, relation)) = table.split_once('.') else {
+        return Err(McpToolError::InvalidIdentifier("table"));
+    };
+    if relation.contains('.')
+        || !is_unquoted_identifier(schema)
+        || !is_unquoted_identifier(relation)
+    {
+        return Err(McpToolError::InvalidIdentifier("table"));
+    }
+    if !scope
+        .allowed_schemas
+        .iter()
+        .any(|allowed| allowed == schema)
+    {
+        return Err(McpToolError::ForbiddenSchema(schema.to_string()));
+    }
+    Ok(())
+}
+
+fn contains_keyword(sql: &str, keyword: &str) -> bool {
+    sql.match_indices(keyword).any(|(index, _)| {
+        let before = sql[..index].chars().next_back();
+        let after = sql[index + keyword.len()..].chars().next();
+        !before.is_some_and(is_identifier_character) && !after.is_some_and(is_identifier_character)
+    })
+}
+
+fn schema_references(sql: &str) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut schemas = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'\'' {
+            index += 1;
+            while index < bytes.len() {
+                if bytes[index] == b'\'' {
+                    index += 1;
+                    if index < bytes.len() && bytes[index] == b'\'' {
+                        index += 1;
+                        continue;
+                    }
+                    break;
+                }
+                index += 1;
+            }
+            continue;
+        }
+
+        if index + 1 < bytes.len() && bytes[index] == b'-' && bytes[index + 1] == b'-' {
+            index += 2;
+            while index < bytes.len() && bytes[index] != b'\n' {
+                index += 1;
+            }
+            continue;
+        }
+
+        if index + 1 < bytes.len() && bytes[index] == b'/' && bytes[index + 1] == b'*' {
+            index += 2;
+            while index + 1 < bytes.len() && !(bytes[index] == b'*' && bytes[index + 1] == b'/') {
+                index += 1;
+            }
+            index = (index + 2).min(bytes.len());
+            continue;
+        }
+
+        if !is_identifier_start(bytes[index] as char) {
+            index += 1;
+            continue;
+        }
+
+        let start = index;
+        index += 1;
+        while index < bytes.len() && is_identifier_character(bytes[index] as char) {
+            index += 1;
+        }
+        let identifier = &sql[start..index];
+
+        let mut lookahead = index;
+        while lookahead < bytes.len() && (bytes[lookahead] as char).is_ascii_whitespace() {
+            lookahead += 1;
+        }
+        if lookahead < bytes.len() && bytes[lookahead] == b'.' {
+            let mut relation_start = lookahead + 1;
+            while relation_start < bytes.len()
+                && (bytes[relation_start] as char).is_ascii_whitespace()
+            {
+                relation_start += 1;
+            }
+            if relation_start < bytes.len()
+                && is_identifier_start(bytes[relation_start] as char)
+                && !schemas.iter().any(|schema| schema == identifier)
+            {
+                schemas.push(identifier.to_string());
+            }
+        }
+    }
+
+    schemas
+}
+
+fn is_unquoted_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    is_identifier_start(first) && chars.all(is_identifier_character)
+}
+
+fn is_identifier_start(character: char) -> bool {
+    character == '_' || character.is_ascii_alphabetic()
+}
+
+fn is_identifier_character(character: char) -> bool {
+    character == '_' || character.is_ascii_alphanumeric()
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -261,7 +456,7 @@ fn handle_tools_call(id: Value, params: Option<&Value>) -> Value {
                 "content": [{
                     "type": "text",
                     "text": format!(
-                        "accepted {} safe_mode={} tenant_scope={}",
+                        "validated {} safe_mode={} tenant_scope={}",
                         name,
                         safe_mode_label(request.safe_mode),
                         request.tenant_scope.as_ref().map(|scope| scope.tenant_id.as_str()).unwrap_or("none"),
@@ -384,31 +579,34 @@ fn requires_tenant_scope(tool: &McpTool) -> bool {
 
 fn mcp_tool_descriptors() -> Vec<Value> {
     [
-        ("list_shards", "List tenant-visible shard metadata"),
+        (
+            "list_shards",
+            "Validate a tenant-scoped shard metadata request",
+        ),
         (
             "list_hypertables",
-            "List tenant-visible distributed hypertables",
+            "Validate a tenant-scoped distributed hypertable request",
         ),
         (
             "run_explain",
-            "Dry-run EXPLAIN for a tenant-scoped SQL statement",
+            "Validate a read-only EXPLAIN request for tenant-scoped SQL",
         ),
         (
             "rebalance_dry_run",
-            "Plan a non-mutating rebalance operation",
+            "Validate a non-mutating rebalance dry-run request",
         ),
         (
             "suggest_index",
-            "Suggest an index for a tenant-scoped table",
+            "Validate an index suggestion request for a tenant-scoped table",
         ),
         (
             "query_with_timeout",
-            "Run a bounded tenant-scoped read query",
+            "Validate a bounded tenant-scoped read-query request",
         ),
-        ("current_lag", "Report replication lag"),
+        ("current_lag", "Validate a replication-lag report request"),
         (
             "current_replication_status",
-            "Report replication health and timeline status",
+            "Validate a replication health and timeline status request",
         ),
         (
             "tenant_archive",
@@ -560,7 +758,7 @@ mod tests {
         assert!(value["result"]["content"][0]["text"]
             .as_str()
             .expect("text")
-            .contains("accepted query_with_timeout"));
+            .contains("validated query_with_timeout"));
     }
 
     #[test]
@@ -588,6 +786,62 @@ mod tests {
         assert_eq!(
             value["result"]["content"][0]["text"],
             "tenant_scope is required for tenant-scoped MCP tools"
+        );
+    }
+
+    #[test]
+    fn tenant_scope_rejects_cross_schema_sql() {
+        let request = McpToolRequest {
+            tool: McpTool::QueryWithTimeout {
+                sql: "SELECT count(*) FROM tenant_b.orders".to_string(),
+                timeout_ms: 1_000,
+            },
+            tenant_scope: Some(TenantScope {
+                tenant_id: "tenant-a".to_string(),
+                allowed_schemas: vec!["tenant_a".to_string()],
+            }),
+            safe_mode: SafeMode::Required,
+        };
+
+        assert_eq!(
+            request.validate(),
+            Err(McpToolError::ForbiddenSchema("tenant_b".to_string()))
+        );
+    }
+
+    #[test]
+    fn safe_mode_rejects_mutating_sql() {
+        let request = McpToolRequest {
+            tool: McpTool::QueryWithTimeout {
+                sql: "UPDATE tenant_a.orders SET total = 0".to_string(),
+                timeout_ms: 1_000,
+            },
+            tenant_scope: Some(TenantScope {
+                tenant_id: "tenant-a".to_string(),
+                allowed_schemas: vec!["tenant_a".to_string()],
+            }),
+            safe_mode: SafeMode::Required,
+        };
+
+        assert_eq!(
+            request.validate(),
+            Err(McpToolError::UnsafeSql(
+                "safe-mode MCP SQL must start with SELECT, WITH, or EXPLAIN".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn stdio_tools_call_denies_cross_schema_query() {
+        let response = handle_mcp_stdio_request(
+            r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT count(*) FROM tenant_b.orders","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
+        );
+        let value: Value = serde_json::from_str(&response).expect("json response");
+
+        assert_eq!(value["result"]["isError"], true);
+        assert_eq!(
+            value["result"]["content"][0]["text"],
+            "schema tenant_b is outside allowed_schemas"
         );
     }
 }

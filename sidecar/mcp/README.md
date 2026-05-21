@@ -16,14 +16,22 @@ Current implemented surface:
 - `McpSessionPolicy`
 - `canonical_mcp_execution_plan()`
 - `handle_mcp_sidecar_stdio_request()`
+- `handle_mcp_sidecar_http_bytes()`
 - `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_mcp -- serve`
 - `cargo run -p ai_blaise_citus_sidecar_mcp -- serve-stdio`
 - `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
+- `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
 
 The `serve-stdio` mode validates the canonical sidecar MCP policy before
 serving the same safe-mode and tenant-scope JSON-RPC tool contract exposed by
-`tools/citus-mcp`. It identifies itself as `ai-blaise-citus-mcp-sidecar` and
-is guarded in CI by real stdin/stdout JSON-RPC requests.
+`tools/citus-mcp`. The `serve` mode keeps the standard sidecar `/healthz`,
+`/readyz`, and `/metrics` endpoints and adds `POST /mcp` for HTTP JSON-RPC.
+Both modes identify as `ai-blaise-citus-mcp-sidecar` and are guarded in CI by
+real process traffic; the Kubernetes production smoke additionally sends
+`POST /mcp` through a port-forward to the deployed exhaustive-profile sidecar
+pod. Authentication integration, live database/Kubernetes tool execution, and
+production deployment of this sidecar remain alpha.
 
 These surfaces cover `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
 `FEATURE: D11`.

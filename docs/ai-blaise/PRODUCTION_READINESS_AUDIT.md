@@ -509,7 +509,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 240
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 95 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -546,10 +546,13 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts, plus `MCP1`, `MCP2`, `MCP3`, and `D11` for the real
-`tools/citus-mcp` and `sidecar/mcp` stdio JSON-RPC servers, safe-mode denial,
-tenant-scope validation, and developer workflow smokes. The
-other 141
+extension contracts. The MCP entries `MCP1`, `MCP2`, `MCP3`, and `D11` now
+remain alpha: they have real stdio and HTTP JSON-RPC process smokes, obvious
+cross-schema request denial, and exhaustive-profile Kubernetes sidecar traffic
+proof, but they are still validation-only and production values keep the MCP
+sidecar disabled until authentication and real database/Kubernetes tool
+execution are implemented and live-gated. The
+other 145
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

@@ -57,7 +57,7 @@ try:
     }:
         assert expected in tool_names, f"tools/list missing {expected}: {sorted(tool_names)}"
 
-    accepted = request(
+    validated = request(
         {
             "jsonrpc": "2.0",
             "id": 3,
@@ -73,9 +73,9 @@ try:
             },
         }
     )
-    assert accepted["result"]["isError"] is False
-    assert "accepted query_with_timeout" in accepted["result"]["content"][0]["text"]
-    assert "tenant-a" in accepted["result"]["content"][0]["text"]
+    assert validated["result"]["isError"] is False
+    assert "validated query_with_timeout" in validated["result"]["content"][0]["text"]
+    assert "tenant-a" in validated["result"]["content"][0]["text"]
 
     denied = request(
         {
@@ -111,6 +111,25 @@ try:
     )
     assert missing_scope["result"]["isError"] is True
     assert "tenant_scope is required" in missing_scope["result"]["content"][0]["text"]
+
+    cross_schema = request(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "query_with_timeout",
+                "arguments": {
+                    "sql": "SELECT count(*) FROM tenant_b.orders",
+                    "timeout_ms": 1000,
+                    "tenant_id": "tenant-a",
+                    "allowed_schemas": ["tenant_a"],
+                },
+            },
+        }
+    )
+    assert cross_schema["result"]["isError"] is True
+    assert "schema tenant_b is outside allowed_schemas" in cross_schema["result"]["content"][0]["text"]
 finally:
     if proc.stdin is not None:
         proc.stdin.close()

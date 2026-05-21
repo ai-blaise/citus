@@ -4,8 +4,9 @@
 // FEATURE: D11
 
 use ai_blaise_citus_mcp::{McpTool, SafeMode};
-use ai_blaise_citus_sidecar_mcp::{canonical_mcp_execution_plan, handle_mcp_sidecar_stdio_request};
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_sidecar_mcp::{
+    canonical_mcp_execution_plan, handle_mcp_sidecar_stdio_request, serve_mcp_sidecar_http_forever,
+};
 use std::env;
 use std::io::{self, BufRead, Write};
 use std::process;
@@ -18,7 +19,7 @@ fn main() {
     }
 
     if args == ["serve"] {
-        run_server("mcp-sidecar", "0.0.0.0:8080");
+        run_http_server("0.0.0.0:8080");
         return;
     }
 
@@ -62,9 +63,9 @@ fn print_usage() {
     println!("runs probes, a line-delimited MCP stdio policy server, or the canonical TSV plan");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_http_server(default_addr: &str) {
+    if let Err(error) = serve_mcp_sidecar_http_forever(default_addr) {
+        eprintln!("mcp-sidecar: HTTP server failed: {error}");
         process::exit(1);
     }
 }
