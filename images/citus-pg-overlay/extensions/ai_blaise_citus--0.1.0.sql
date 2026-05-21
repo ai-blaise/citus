@@ -61,7 +61,7 @@ AS $$
         ('O3', 'replication lag view', 'sql-runtime'),
         ('R4', 'idle transaction detector', 'sql-runtime'),
         ('Auth2', 'tenant-aware claims', 'sql-runtime'),
-        ('Sec1', 'RLS helpers', 'runtime-contract'),
+        ('Sec1', 'RLS helpers', 'sql-runtime'),
         ('Sec2', 'JWT verification UDF', 'runtime-contract'),
         ('S6', 'placement generation helpers', 'runtime-contract'),
         ('S13', 'range routing helpers', 'runtime-contract'),
@@ -147,6 +147,44 @@ STABLE
 PARALLEL SAFE
 AS $$
     SELECT NULLIF(current_setting('ai_blaise.claim.tenant_id', true), '')
+$$;
+
+-- FEATURE: Sec1
+CREATE FUNCTION companion_require_tenant_id()
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    current_tenant_id text;
+BEGIN
+    current_tenant_id := companion_current_tenant_id();
+    IF current_tenant_id IS NULL OR btrim(current_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id claim must be set for RLS';
+    END IF;
+    RETURN current_tenant_id;
+END;
+$$;
+
+CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT row_tenant_id IS NOT NULL
+       AND companion_current_tenant_id() IS NOT NULL
+       AND row_tenant_id = companion_current_tenant_id()
+$$;
+
+CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT companion_tenant_id_matches(row_tenant_id::text)
 $$;
 
 CREATE FUNCTION companion_internal.identifier_list(input text)

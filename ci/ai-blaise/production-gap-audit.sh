@@ -517,11 +517,30 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
-    "Auth1 JWT issuance, Sec1 RLS enforcement, Sec2 JWT verification, and Auth3 token caching remain alpha",
+    "Auth1 JWT issuance, Sec2 JWT verification, and Auth3 token caching remain alpha",
     "ci/ai-blaise/sql-extension-smoke.sh",
 ):
     if compact(phrase) not in compact(auth2_entry["body"]):
         fail(f"Auth2 production-ready boundary is missing: {phrase}")
+
+sec1_entry = entry_by_id.get("Sec1")
+if sec1_entry is None:
+    fail("Sec1 feature heading is required for SQL RLS helper evidence")
+if sec1_entry["status"].lower() not in PRODUCTION_STATUSES:
+    fail("Sec1 must remain production-ready only for installable SQL RLS predicate helpers")
+for phrase in (
+    "installable SQL tenant RLS helper predicates",
+    "companion_tenant_id_matches",
+    "companion_require_tenant_id",
+    "real PostgreSQL row-level security policy",
+    "non-superuser role",
+    "WITH CHECK",
+    "cross-tenant insert",
+    "automatic policy generation, JWT verification, pool authentication, and auto-API integration remain alpha",
+    "ci/ai-blaise/sql-extension-smoke.sh",
+):
+    if compact(phrase) not in compact(sec1_entry["body"]):
+        fail(f"Sec1 production-ready boundary is missing: {phrase}")
 
 d2_entry = entry_by_id.get("D2")
 if d2_entry is None:
@@ -1095,6 +1114,12 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
+    "companion_require_tenant_id",
+    "companion_tenant_id_matches",
+    "ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY",
+    "CREATE POLICY rls_smoke_tenant_isolation",
+    "SET ROLE ai_blaise_rls_smoke",
+    "Sec1 RLS WITH CHECK allowed a cross-tenant insert",
     "uid claim must not be empty",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
@@ -1106,12 +1131,16 @@ for phrase in (
     "CREATE FUNCTION companion_set_session_claims",
     "CREATE FUNCTION companion_current_session_claims",
     "CREATE FUNCTION companion_current_tenant_id",
+    "CREATE FUNCTION companion_require_tenant_id",
+    "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)",
+    "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)",
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
+    "'Sec1', 'RLS helpers', 'sql-runtime'",
 ):
     if phrase not in sources:
-        fail(f"ai_blaise_citus SQL extension is missing Auth2 runtime marker: {phrase}")
+        fail(f"ai_blaise_citus SQL extension is missing Auth2/Sec1 runtime marker: {phrase}")
     if phrase not in image_check:
-        fail(f"image-check.sh must statically guard Auth2 SQL extension marker: {phrase}")
+        fail(f"image-check.sh must statically guard Auth2/Sec1 SQL extension marker: {phrase}")
 
 for phrase in (
     'psql -h 127.0.0.1 -p "${pool_port}"',

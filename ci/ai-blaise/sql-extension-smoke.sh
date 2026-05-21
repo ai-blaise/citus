@@ -201,10 +201,10 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 5 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2 and observability features as sql-runtime';
+  ) <> 6 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, and observability features as sql-runtime';
   END IF;
 
   PERFORM companion_set_session_claims(
@@ -390,6 +390,90 @@ BEGIN
 
   PERFORM * FROM companion_pg_dist_replication_lag LIMIT 1;
 END $$;
+
+CREATE ROLE ai_blaise_rls_smoke;
+CREATE TABLE rls_smoke_orders (
+  order_id integer NOT NULL,
+  tenant_id text NOT NULL,
+  amount integer NOT NULL
+);
+INSERT INTO rls_smoke_orders(order_id, tenant_id, amount)
+VALUES
+  (1, 'tenant-a', 100),
+  (2, 'tenant-b', 200);
+ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rls_smoke_orders FORCE ROW LEVEL SECURITY;
+CREATE POLICY rls_smoke_tenant_isolation ON rls_smoke_orders
+USING (companion_tenant_id_matches(tenant_id))
+WITH CHECK (companion_tenant_id_matches(tenant_id));
+GRANT SELECT, INSERT ON rls_smoke_orders TO ai_blaise_rls_smoke;
+
+SELECT companion_set_session_claims('user-123', 'authenticated', 'tenant-a', 'jti-123');
+SET ROLE ai_blaise_rls_smoke;
+DO $$
+DECLARE
+  visible_count integer;
+BEGIN
+  SELECT count(*) INTO visible_count FROM rls_smoke_orders;
+  IF visible_count <> 1 THEN
+    RAISE EXCEPTION 'Sec1 RLS tenant-a should see exactly one row, got %',
+      visible_count;
+  END IF;
+  IF NOT companion_tenant_id_matches('tenant-a') THEN
+    RAISE EXCEPTION 'companion_tenant_id_matches must accept the active tenant';
+  END IF;
+  IF companion_tenant_id_matches('tenant-b') THEN
+    RAISE EXCEPTION 'companion_tenant_id_matches must reject another tenant';
+  END IF;
+  INSERT INTO rls_smoke_orders(order_id, tenant_id, amount)
+  VALUES (3, 'tenant-a', 300);
+  BEGIN
+    INSERT INTO rls_smoke_orders(order_id, tenant_id, amount)
+    VALUES (4, 'tenant-b', 400);
+    RAISE EXCEPTION 'Sec1 RLS WITH CHECK allowed a cross-tenant insert';
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      NULL;
+  END;
+END $$;
+RESET ROLE;
+
+SELECT companion_set_session_claims('user-456', 'authenticated', 'tenant-b', 'jti-456');
+SET ROLE ai_blaise_rls_smoke;
+DO $$
+DECLARE
+  visible_count integer;
+BEGIN
+  SELECT count(*) INTO visible_count FROM rls_smoke_orders;
+  IF visible_count <> 1 THEN
+    RAISE EXCEPTION 'Sec1 RLS tenant-b should see exactly one row, got %',
+      visible_count;
+  END IF;
+END $$;
+RESET ROLE;
+
+SELECT set_config('ai_blaise.claim.tenant_id', '', false);
+SET ROLE ai_blaise_rls_smoke;
+DO $$
+DECLARE
+  visible_count integer;
+BEGIN
+  SELECT count(*) INTO visible_count FROM rls_smoke_orders;
+  IF visible_count <> 0 THEN
+    RAISE EXCEPTION 'Sec1 RLS without tenant claim should see zero rows, got %',
+      visible_count;
+  END IF;
+  BEGIN
+    PERFORM companion_require_tenant_id();
+    RAISE EXCEPTION 'companion_require_tenant_id must fail without tenant claim';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'tenant_id claim must be set for RLS' THEN
+        RAISE;
+      END IF;
+  END;
+END $$;
+RESET ROLE;
 SQL
 
 docker exec -d "${container}" sh -c \
