@@ -35,8 +35,11 @@ matching NetworkPolicy for clusters with NetworkPolicy-capable CNI support.
 Release image builds set `PUSH=true` and write
 `artifacts/ai-blaise-image-digests.tsv`; production Helm values consume the
 operator and pool `sha256:` digests from that manifest.
-The operator RBAC enumerates the ai-blaise CRDs it watches and avoids Secret
-access while External Secrets integration remains alpha.
+The production/default operator runtime needs only its ServiceAccount for pod
+identity and probes. Controller-grade ClusterRole/Binding output is behind the
+explicit alpha `operator.controllerRbac.enabled` flag; the exhaustive profile
+renders that RBAC for contract coverage, still enumerating ai-blaise resources
+and avoiding Secret access while External Secrets integration remains alpha.
 
 `values.yaml`, `values-dev.yaml`, `values-exhaustive.yaml`, and
 `values-prod.yaml` deliberately list the same sidecar names so environment

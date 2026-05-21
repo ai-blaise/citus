@@ -3,6 +3,8 @@ global:
 
 operator:
   replicas: 2
+  controllerRbac:
+    enabled: false
   serviceMonitor:
     enabled: true
 

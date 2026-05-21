@@ -217,6 +217,11 @@ if grep -q '"secrets"' "${chart_dir}/templates/operator-rbac.yaml"; then
   echo "operator RBAC must not grant Secret access while secret binding is alpha" >&2
   exit 1
 fi
+grep -q '{{- if .Values.operator.controllerRbac.enabled }}' "${chart_dir}/templates/operator-rbac.yaml"
+grep -q 'controllerRbac:' "${chart_dir}/values.yaml"
+grep -q 'controllerRbac:' "${chart_dir}/values-prod.yaml"
+grep -q 'controllerRbac:' "${chart_dir}/values-dev.yaml"
+grep -q 'controllerRbac:' "${chart_dir}/values-exhaustive.yaml"
 grep -q 'citusclusters' "${chart_dir}/templates/operator-rbac.yaml"
 grep -q 'scheduledrepacks' "${chart_dir}/templates/operator-rbac.yaml"
 
@@ -505,7 +510,13 @@ if command -v helm >/dev/null 2>&1; then
     echo "values.yaml default render must not include alpha tools deployment" >&2
     exit 1
   fi
+  if grep -q 'kind: ClusterRole' "${render_dir}/default.yaml"; then
+    echo "values.yaml default render must not include operator controller RBAC" >&2
+    exit 1
+  fi
   grep -q 'kind: NetworkPolicy' "${render_dir}/exhaustive.yaml"
+  grep -q 'kind: ClusterRole' "${render_dir}/exhaustive.yaml"
+  grep -q 'name: ai-blaise-citus-operator' "${render_dir}/exhaustive.yaml"
   grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${render_dir}/exhaustive.yaml"
   grep -q '10.0.0.0/8' "${render_dir}/exhaustive.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/exhaustive.yaml"
@@ -515,6 +526,10 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: tools' "${render_dir}/dev.yaml"
+  if grep -q 'kind: ClusterRole' "${render_dir}/dev.yaml"; then
+    echo "values-dev.yaml render must not include operator controller RBAC" >&2
+    exit 1
+  fi
 
   grep -q 'name: ai-blaise-citus-operator' "${render_dir}/prod.yaml"
   grep -q 'name: ai-blaise-citus-pool' "${render_dir}/prod.yaml"
@@ -534,6 +549,10 @@ if command -v helm >/dev/null 2>&1; then
     echo "values-prod.yaml render must not include alpha tools deployment" >&2
     exit 1
   fi
+  if grep -q 'kind: ClusterRole' "${render_dir}/prod.yaml"; then
+    echo "values-prod.yaml render must not include operator controller RBAC" >&2
+    exit 1
+  fi
 
   if MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-missing-digest.yaml" 2>"${render_dir}/deploy-wrapper-missing-digest.err"; then
     echo "deploy.sh default production render must require immutable operator/pool image digests" >&2
@@ -549,6 +568,10 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'name: ai-blaise-citus-pool' "${render_dir}/deploy-wrapper-default.yaml"
   if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/deploy-wrapper-default.yaml"; then
     echo "deploy.sh default render must use production values without alpha sidecars" >&2
+    exit 1
+  fi
+  if grep -q 'kind: ClusterRole' "${render_dir}/deploy-wrapper-default.yaml"; then
+    echo "deploy.sh default render must use production values without operator controller RBAC" >&2
     exit 1
   fi
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/deploy-wrapper-dev.yaml"

@@ -5,6 +5,8 @@ global:
 
 operator:
   replicas: 2
+  controllerRbac:
+    enabled: false
   image:
     repository: citus-operator
     tag: "0.1.0"
