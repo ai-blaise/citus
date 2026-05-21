@@ -84,7 +84,8 @@ pub use plan_freeze::{
     PlanRegressionSample,
 };
 pub use router_assist::{
-    LocalPlacementCheck, PlacementGenerationQuery, RouterAssistError, ShardForValuePlan,
+    InvalidationHint, LocalPlacementCheck, PlacementGenerationQuery, PlacementGenerationSample,
+    PlacementGenerationSubscriber, RouterAssistError, RouterAssistSqlPlan, ShardForValuePlan,
     ShardRoutingStrategy,
 };
 pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
