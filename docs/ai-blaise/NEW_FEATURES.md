@@ -3026,13 +3026,13 @@ paths without repeatedly hitting the auth sidecar.
 ### Sec1: RLS Helpers
 
 **Overlay**: `companion/src/auth.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the tenant RLS policy plan used by auth SQL surfaces and
-sidecar policy checks.
+**Summary**: Provides installable SQL tenant RLS helper predicates that map
+the active `Auth2` session tenant claim onto table tenant columns.
 
 **Motivation**: Tenant-safe auto-API and pool integration need one validated
 mapping from session claims to tenant columns.
@@ -3040,11 +3040,26 @@ mapping from session claims to tenant columns.
 **Citus comparison**: Vanilla Citus supports PostgreSQL RLS but does not ship
 tenant-aware helper UDFs.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec1` as `sql-runtime`, creates a real
+PostgreSQL row-level security policy over `rls_smoke_orders` using
+`companion_tenant_id_matches(tenant_id)`, switches into a non-superuser role,
+verifies tenant-a and tenant-b sessions each see only their own rows, verifies
+`WITH CHECK` rejects a cross-tenant insert, and verifies
+`companion_require_tenant_id()` fails closed without a tenant claim. This
+status covers the installable predicate helpers only; automatic policy
+generation, JWT verification, pool authentication, and auto-API integration
+remain alpha until independently proven.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec1` in `companion/src/auth.rs`
+- SQL runtime: `FEATURE: Sec1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec2: JWT Verification UDF
 
@@ -3192,8 +3207,7 @@ contract also renders `pool-networkpolicy.yaml` for the same allowlist.
 `uid`, `role`, `tenant_id`, and optional JWT ID through ai-blaise custom GUCs.
 
 **Motivation**: Pool, sidecar, and SQL helper code need one live claim surface
-before JWT verification, RLS enforcement, and token-cache behavior can build on
-the same names.
+before JWT verification and token-cache behavior can build on the same names.
 
 **Citus comparison**: Vanilla Citus does not model application tenant claims.
 
@@ -3203,9 +3217,8 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
 'jti-123')`, verifies `companion_current_session_claims()` and
 `companion_current_tenant_id()` return the same values, and verifies empty
-`uid` claims are rejected. Auth1 JWT issuance, Sec1 RLS enforcement, Sec2 JWT
-verification, and Auth3 token caching remain alpha until their own runtime
-evidence exists.
+`uid` claims are rejected. Auth1 JWT issuance, Sec2 JWT verification, and
+Auth3 token caching remain alpha until their own runtime evidence exists.
 
 **References**:
 

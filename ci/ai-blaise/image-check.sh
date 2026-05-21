@@ -259,7 +259,11 @@ grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/
 grep -Fq "CREATE FUNCTION companion_set_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_require_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
@@ -277,6 +281,12 @@ grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_set_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_require_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_tenant_id_matches" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "CREATE POLICY rls_smoke_tenant_isolation" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "SET ROLE ai_blaise_rls_smoke" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "Sec1 RLS WITH CHECK allowed a cross-tenant insert" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh
