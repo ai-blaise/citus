@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: citusctl
-          image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.tools.image.repository "tag" .Values.tools.image.tag) }}
+          image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.tools.image.repository "tag" .Values.tools.image.tag "digest" .Values.tools.image.digest) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           command: ["/bin/sleep", "infinity"]
           securityContext:

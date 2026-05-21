@@ -1,3 +1,6 @@
+global:
+  requireImageDigest: true
+
 operator:
   replicas: 2
   serviceMonitor:

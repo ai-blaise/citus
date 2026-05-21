@@ -3588,7 +3588,12 @@ passed local and VM verification of the kind production smoke using the real
 Rust image matrix, live operator and sidecar `/healthz`, `/readyz`, and
 `/metrics` probes, real PostgreSQL traffic through the pool service, per-pod
 pool request metric aggregation, and a separate `values-prod.yaml` profile
-with alpha workloads disabled. The deploy workflow and `gate-close` run
+with alpha workloads disabled. Production values now require immutable
+operator and pool image digests for release rendering; kind disables that
+requirement only for locally loaded smoke images, so the smoke proves runtime
+behavior but not release image-pinning evidence. Release image builds write
+`artifacts/ai-blaise-image-digests.tsv` and fail if pushed images do not report
+immutable repo digests. The deploy workflow and `gate-close` run
 `ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
 `deploy/k8s/argo/app.yaml` targets the `main` release branch and
 `values-prod.yaml` for GitOps deployment with namespace creation and pruning

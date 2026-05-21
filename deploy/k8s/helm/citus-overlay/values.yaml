@@ -1,12 +1,14 @@
 global:
   imageRegistry: ghcr.io/ai-blaise
   imagePullPolicy: IfNotPresent
+  requireImageDigest: false
 
 operator:
   replicas: 1
   image:
     repository: citus-operator
     tag: "0.1.0"
+    digest: ""
   resources:
     requests:
       cpu: 100m
@@ -22,6 +24,7 @@ pool:
   image:
     repository: citus-pool
     tag: "0.1.0"
+    digest: ""
   service:
     port: 5432
     adminPort: 8080
@@ -47,6 +50,7 @@ postgres:
 
 sidecarDefaults:
   tag: "0.1.0"
+  digest: ""
   port: 8080
   resources:
     requests:
@@ -138,6 +142,7 @@ tools:
   image:
     repository: citusctl
     tag: "0.1.0"
+    digest: ""
   resources:
     requests:
       cpu: 50m

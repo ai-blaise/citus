@@ -75,6 +75,14 @@ more production-ready than the artifacts justified.
     smoke shape are not production evidence. A reader could therefore treat
     the `citus.cohabit_extensions` trust contract as proof that a real
     Citus+TimescaleDB hook chain was production-verified.
+21. `values-prod.yaml` still inherited mutable `:0.1.0` operator and pool
+    image tags from the base chart. GitOps could therefore render a production
+    profile without immutable release digests even though the runbooks require
+    exact image digests for promotion.
+22. `scripts/citus-scale/build-app-images.sh` could push image tags but did
+    not write a durable digest manifest or fail when a pushed image lacked a
+    repo digest. Production values could require digests while the release path
+    still left operators to discover them manually.
 
 ## Corrections
 
@@ -175,6 +183,22 @@ more production-ready than the artifacts justified.
   Citus+TimescaleDB cohabitation run records the operand image digest, command
   log, and CI or VM evidence in the audit. The production gap audit
   machine-checks that boundary.
+- The Helm image helper now supports digest-pinned images, and
+  `values-prod.yaml` sets `global.requireImageDigest: true` so production
+  rendering fails unless the operator and pool images are supplied by immutable
+  `sha256:` digests. `scripts/citus-scale/deploy.sh` accepts
+  `OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` for production
+  render/install, while `ALLOW_MUTABLE_IMAGE_TAGS=1` is an explicit local/dev
+  escape hatch. The kind production smoke sets that escape hatch through Helm
+  only for locally loaded test images; that proves runtime behavior, not
+  release image pinning. GitOps sync fails closed until the release branch or
+  deployment overlay supplies those digests.
+- The Rust app image build script now writes
+  `artifacts/ai-blaise-image-digests.tsv` with repository, image, tag, digest,
+  package, binary, and push status. Release pushes fail if Docker does not
+  report an immutable repo digest for a pushed image, giving production
+  render/install a concrete source for `OPERATOR_IMAGE_DIGEST` and
+  `POOL_IMAGE_DIGEST`.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
@@ -197,6 +221,9 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Live `values-prod.yaml` Helm rollout that keeps alpha workloads disabled
   while the production operator and pool deployments become available and serve
   SQL/admin traffic.
+- Production Helm render/install must use immutable operator and pool image
+  digests; local kind smokes that disable the digest requirement are runtime
+  smoke evidence only, not release image-pinning evidence.
 - Every production-promoted SQL runtime smoke must be part of the GitHub image
   workflow, `gate-close`, and static production gap audit guards.
 - Every custom boundary doc must keep the shared production boundary for

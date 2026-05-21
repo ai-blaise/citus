@@ -28,6 +28,9 @@ start with `serve`. The operator and sidecars expose shared `/healthz`,
 its `postgres` port and admin probes on its separate `admin` port; its
 readiness probe checks that `pool.upstream.host:pool.upstream.port` accepts TCP
 connections.
+Release image builds set `PUSH=true` and write
+`artifacts/ai-blaise-image-digests.tsv`; production Helm values consume the
+operator and pool `sha256:` digests from that manifest.
 The operator RBAC enumerates the ai-blaise CRDs it watches and avoids Secret
 access while External Secrets integration remains alpha.
 
@@ -53,3 +56,10 @@ The human deploy wrapper is production-safe by default as well:
 for rendering non-production profiles, and set `ALLOW_ALPHA_INSTALL=1` only
 when intentionally installing dev, exhaustive, or custom values that may enable
 alpha sidecars or alpha runtime/security intent.
+
+Production values require immutable operator and pool image digests. Set
+`OPERATOR_IMAGE_DIGEST=sha256:...` and `POOL_IMAGE_DIGEST=sha256:...` when
+using the deploy wrapper, or set `operator.image.digest` and `pool.image.digest`
+directly with Helm. `ALLOW_MUTABLE_IMAGE_TAGS=1` is only for local/dev smoke
+work with locally loaded images. The Argo production app fails closed until the
+release branch or deployment overlay supplies those digests.
