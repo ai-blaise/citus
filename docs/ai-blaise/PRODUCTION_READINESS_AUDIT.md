@@ -547,8 +547,8 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
 extension contracts, plus `MCP1`, `MCP2`, `MCP3`, and `D11` for the real
-`tools/citus-mcp` stdio JSON-RPC server, safe-mode denial, tenant-scope
-validation, and developer workflow smoke. The
+`tools/citus-mcp` and `sidecar/mcp` stdio JSON-RPC servers, safe-mode denial,
+tenant-scope validation, and developer workflow smokes. The
 other 141
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the

@@ -15,6 +15,15 @@ Current implemented surface:
 - `McpAuthPlan`
 - `McpSessionPolicy`
 - `canonical_mcp_execution_plan()`
+- `handle_mcp_sidecar_stdio_request()`
 - `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_mcp -- serve-stdio`
+- `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 
-These contracts cover `FEATURE: MCP1`, `FEATURE: MCP2`, and `FEATURE: MCP3`.
+The `serve-stdio` mode validates the canonical sidecar MCP policy before
+serving the same safe-mode and tenant-scope JSON-RPC tool contract exposed by
+`tools/citus-mcp`. It identifies itself as `ai-blaise-citus-mcp-sidecar` and
+is guarded in CI by real stdin/stdout JSON-RPC requests.
+
+These surfaces cover `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
+`FEATURE: D11`.

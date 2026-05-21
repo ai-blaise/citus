@@ -194,8 +194,12 @@ pub fn canonical_mcp_execution_report() -> Result<McpExecutionReport, McpToolErr
 }
 
 pub fn handle_mcp_stdio_request(line: &str) -> String {
+    handle_mcp_stdio_request_with_server_info(line, "ai-blaise-citus-mcp")
+}
+
+pub fn handle_mcp_stdio_request_with_server_info(line: &str, server_name: &str) -> String {
     let response = match serde_json::from_str::<Value>(line) {
-        Ok(request) => handle_jsonrpc_request(&request),
+        Ok(request) => handle_jsonrpc_request(&request, server_name),
         Err(error) => jsonrpc_error(Value::Null, -32700, format!("parse error: {error}")),
     };
 
@@ -209,7 +213,7 @@ fn canonical_tenant_scope() -> TenantScope {
     }
 }
 
-fn handle_jsonrpc_request(request: &Value) -> Value {
+fn handle_jsonrpc_request(request: &Value, server_name: &str) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let Some(method) = request.get("method").and_then(Value::as_str) else {
         return jsonrpc_error(id, -32600, "method must be a string");
@@ -221,7 +225,7 @@ fn handle_jsonrpc_request(request: &Value) -> Value {
             json!({
                 "protocolVersion": "2024-11-05",
                 "serverInfo": {
-                    "name": "ai-blaise-citus-mcp",
+                    "name": server_name,
                     "version": env!("CARGO_PKG_VERSION"),
                 },
                 "capabilities": {

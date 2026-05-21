@@ -1,11 +1,13 @@
 // FEATURE: MCP1
 // FEATURE: MCP2
 // FEATURE: MCP3
+// FEATURE: D11
 
 use ai_blaise_citus_mcp::{McpTool, SafeMode};
-use ai_blaise_citus_sidecar_mcp::canonical_mcp_execution_plan;
+use ai_blaise_citus_sidecar_mcp::{canonical_mcp_execution_plan, handle_mcp_sidecar_stdio_request};
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
+use std::io::{self, BufRead, Write};
 use std::process;
 
 fn main() {
@@ -17,6 +19,11 @@ fn main() {
 
     if args == ["serve"] {
         run_server("mcp-sidecar", "0.0.0.0:8080");
+        return;
+    }
+
+    if args == ["serve-stdio"] {
+        run_stdio_server();
         return;
     }
 
@@ -51,14 +58,48 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: mcp-sidecar [serve|run-canonical]");
-    println!("runs the deterministic canonical MCP sidecar plan and emits TSV");
+    println!("usage: mcp-sidecar [serve|serve-stdio|run-canonical]");
+    println!("runs probes, a line-delimited MCP stdio policy server, or the canonical TSV plan");
 }
 
 fn run_server(component: &str, default_addr: &str) {
     if let Err(error) = run_probe_server(component, default_addr) {
         eprintln!("{component}: probe server failed: {error}");
         process::exit(1);
+    }
+}
+
+fn run_stdio_server() {
+    if let Err(error) = canonical_mcp_execution_plan() {
+        eprintln!("mcp-sidecar: canonical plan failed: {error}");
+        process::exit(1);
+    }
+
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(error) => {
+                eprintln!("mcp-sidecar: failed reading stdin: {error}");
+                process::exit(1);
+            }
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let response = handle_mcp_sidecar_stdio_request(&line).unwrap_or_else(|error| {
+            eprintln!("mcp-sidecar: MCP stdio policy failed: {error}");
+            process::exit(1);
+        });
+        if let Err(error) = writeln!(stdout, "{response}") {
+            eprintln!("mcp-sidecar: failed writing stdout: {error}");
+            process::exit(1);
+        }
+        if let Err(error) = stdout.flush() {
+            eprintln!("mcp-sidecar: failed flushing stdout: {error}");
+            process::exit(1);
+        }
     }
 }
 

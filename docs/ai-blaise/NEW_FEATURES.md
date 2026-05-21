@@ -119,6 +119,8 @@ runner for `FEATURE: S9`.
 `sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
 tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
 `FEATURE: MCP3`.
+`sidecar/mcp/src/main.rs` runs the sidecar MCP stdio policy bridge for
+`FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and `FEATURE: D11`.
 `sidecar/postgrest/src/lib.rs` validates auto-REST route, distributed view,
 RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
 `FEATURE: API5`, and `FEATURE: API6`.
@@ -3927,18 +3929,20 @@ policy.
 **Bundled extension dep**: none
 
 **Summary**: Provides the `tools/citus-mcp` line-delimited JSON-RPC stdio
-server for `initialize`, `tools/list`, and guarded `tools/call` requests,
-while the sidecar deployment remains alpha.
+server and the `sidecar/mcp` `serve-stdio` policy bridge for `initialize`,
+`tools/list`, and guarded `tools/call` requests.
 
 Production evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh`, which launches
-`cargo run -q -p ai_blaise_citus_mcp -- serve-stdio`, sends real JSON-RPC
-stdin requests, verifies MCP initialize capabilities, verifies the tool list
-contains shard/query/rebalance/archive tools, accepts a tenant-scoped
-`query_with_timeout` request, rejects a destructive `tenant_archive` call while
-safe mode is required, and rejects a tenant-scoped query missing tenant scope.
-The `sidecar/mcp` service, authentication integration, Kubernetes deployment,
-and real database/Kubernetes tool execution remain alpha.
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which launch
+`cargo run -q -p ai_blaise_citus_mcp -- serve-stdio` and
+`cargo run -q -p ai_blaise_citus_sidecar_mcp -- serve-stdio`, send real
+JSON-RPC stdin requests, verify MCP initialize capabilities, verify the tool
+list contains shard/query/rebalance/archive tools, accept a tenant-scoped
+`query_with_timeout` request, reject a destructive `tenant_archive` call while
+safe mode is required, and reject a tenant-scoped query missing tenant scope.
+Authentication integration, Kubernetes deployment, and real
+database/Kubernetes tool execution remain alpha.
 
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
@@ -3953,6 +3957,7 @@ direct database or Kubernetes access.
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 - CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 
 ### MCP2: Safe-Mode Tools
 
@@ -3966,11 +3971,13 @@ direct database or Kubernetes access.
 default.
 
 Production evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh`, which calls the real stdio server through
-JSON-RPC using `serve-stdio` and verifies a destructive `tenant_archive` tool call returns
-`isError: true` with the safe-mode denial message while non-destructive
-tenant-scoped calls are accepted. Disabling safe mode for mutating production
-operations remains alpha.
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which call the real tool and
+sidecar stdio servers through JSON-RPC using `serve-stdio` and verify a
+destructive `tenant_archive` tool call returns `isError: true` with the
+safe-mode denial message while non-destructive tenant-scoped calls are
+accepted. Disabling safe mode for mutating production operations remains
+alpha.
 
 **Motivation**: Agent operations should be inspect-first and dry-run-biased
 unless explicitly allowed.
@@ -3985,6 +3992,7 @@ unless explicitly allowed.
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 - CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 
 ### MCP3: Tenant-Scoped Tools
 
@@ -3998,11 +4006,13 @@ unless explicitly allowed.
 requests.
 
 Production evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh`, which sends real JSON-RPC stdio
-`tools/call` requests through `serve-stdio` with `tenant_id` and
-`allowed_schemas`, verifies accepted responses include the tenant scope, and
-verifies a tenant-scoped query without tenant scope is rejected. Real database
-authorization, per-user auth, and sidecar session isolation remain alpha.
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which send real JSON-RPC stdio
+`tools/call` requests through the tool and sidecar `serve-stdio` processes
+with `tenant_id` and `allowed_schemas`, verify accepted responses include the
+tenant scope, and verify a tenant-scoped query without tenant scope is
+rejected. Real database authorization, per-user auth, and sidecar session
+isolation remain alpha.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
 multi-tenant operator usage.
@@ -4017,6 +4027,7 @@ multi-tenant operator usage.
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 - CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 
 ## Operations / DX
 
@@ -6116,7 +6127,7 @@ gates.
 
 ### D11: MCP Developer Workflow
 
-**Overlay**: `tools/citus-mcp` and `companion/src/ops_contracts.rs`
+**Overlay**: `tools/citus-mcp`, `sidecar/mcp`, and `companion/src/ops_contracts.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -6126,12 +6137,14 @@ gates.
 developer operations to agent tooling.
 
 Production evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh`, which drives the real
-`tools/citus-mcp` `serve-stdio` process with JSON-RPC initialize, tool-list, safe
-tenant query, destructive-denial, and missing-tenant-scope requests. The
-operations runner still records the broader workflow contract. Authenticated
-multi-user MCP deployment, policy isolation beyond stdio request validation,
-and live database/Kubernetes mutations remain alpha.
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which drive the real
+`tools/citus-mcp` and `sidecar/mcp` `serve-stdio` processes with JSON-RPC
+initialize, tool-list, safe tenant query, destructive-denial, and
+missing-tenant-scope requests. The operations runner still records the broader
+workflow contract. Authenticated multi-user MCP deployment, policy isolation
+beyond stdio request validation, and live database/Kubernetes mutations remain
+alpha.
 
 **Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
 
@@ -6139,10 +6152,14 @@ and live database/Kubernetes mutations remain alpha.
 
 - In-source: `FEATURE: D11` in `tools/citus-mcp/src/lib.rs`
 - In-source: `FEATURE: D11` in `tools/citus-mcp/src/main.rs`
+- In-source: `FEATURE: D11` in `sidecar/mcp/src/lib.rs`
+- In-source: `FEATURE: D11` in `sidecar/mcp/src/main.rs`
 - In-source: `FEATURE: D11` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 
 ### Edge1: Bounded-Staleness Edge Replicas
 

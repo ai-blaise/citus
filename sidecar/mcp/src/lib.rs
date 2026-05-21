@@ -3,8 +3,12 @@
 // FEATURE: MCP1
 // FEATURE: MCP2
 // FEATURE: MCP3
+// FEATURE: D11
 
-use ai_blaise_citus_mcp::{McpTool, McpToolError, McpToolRequest, SafeMode, TenantScope};
+use ai_blaise_citus_mcp::{
+    handle_mcp_stdio_request_with_server_info, McpTool, McpToolError, McpToolRequest, SafeMode,
+    TenantScope,
+};
 use std::error::Error;
 use std::fmt;
 
@@ -147,6 +151,14 @@ pub fn canonical_mcp_execution_plan() -> Result<McpSidecarPlan, McpSidecarError>
     Ok(plan)
 }
 
+pub fn handle_mcp_sidecar_stdio_request(line: &str) -> Result<String, McpSidecarError> {
+    canonical_mcp_execution_plan()?;
+    Ok(handle_mcp_stdio_request_with_server_info(
+        line,
+        "ai-blaise-citus-mcp-sidecar",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +202,49 @@ mod tests {
                 "safe mode denied a destructive tool".to_string()
             ))
         );
+    }
+
+    #[test]
+    fn sidecar_stdio_initialize_identifies_sidecar_server() {
+        let response =
+            handle_mcp_sidecar_stdio_request(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+                .expect("sidecar stdio response");
+
+        assert!(response.contains(r#""name":"ai-blaise-citus-mcp-sidecar""#));
+        assert!(response.contains(r#""tools":{"listChanged":false}"#));
+    }
+
+    #[test]
+    fn sidecar_stdio_accepts_safe_tenant_query() {
+        let response = handle_mcp_sidecar_stdio_request(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT count(*) FROM tenant_a.orders","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
+        )
+        .expect("sidecar stdio response");
+
+        assert!(response.contains(r#""isError":false"#));
+        assert!(response.contains("accepted query_with_timeout"));
+        assert!(response.contains("tenant-a"));
+    }
+
+    #[test]
+    fn sidecar_stdio_denies_destructive_tool() {
+        let response = handle_mcp_sidecar_stdio_request(
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tenant_archive","arguments":{"tenant_name":"tenant-a","tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
+        )
+        .expect("sidecar stdio response");
+
+        assert!(response.contains(r#""isError":true"#));
+        assert!(response.contains("safe mode denied a destructive tool"));
+    }
+
+    #[test]
+    fn sidecar_stdio_requires_tenant_scope() {
+        let response = handle_mcp_sidecar_stdio_request(
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT 1","timeout_ms":1000}}}"#,
+        )
+        .expect("sidecar stdio response");
+
+        assert!(response.contains(r#""isError":true"#));
+        assert!(response.contains("tenant_scope is required"));
     }
 }
