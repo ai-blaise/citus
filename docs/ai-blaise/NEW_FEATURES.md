@@ -59,6 +59,9 @@ integration-target, and hard-blocked extension contracts for
 `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`; the
 companion catalog also emits a deterministic TSV summary through
 `companion/src/bin/companion_contracts.rs`.
+`images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` installs the
+`FEATURE: Auth2` SQL session-claim helper surface and `ci/ai-blaise/sql-extension-smoke.sh`
+proves those helpers against a real `postgres:17` container.
 `images/rust-runtime/Dockerfile` and
 `scripts/citus-scale/build-app-images.sh` build the deployable Rust operator,
 pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
@@ -3159,25 +3162,39 @@ contract also renders `pool-networkpolicy.yaml` for the same allowlist.
 ### Auth2: Tenant-Aware Claims
 
 **Overlay**: `companion/src/auth.rs`, `sidecar/auth`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the session-claim shape carrying `uid`, `role`,
-`tenant_id`, and optional JWT ID.
+**Summary**: Provides installable SQL session-claim helpers that set and read
+`uid`, `role`, `tenant_id`, and optional JWT ID through ai-blaise custom GUCs.
 
-**Motivation**: Pool, sidecar, and SQL helper code must agree on tenant claim
-names before RLS enforcement is wired through.
+**Motivation**: Pool, sidecar, and SQL helper code need one live claim surface
+before JWT verification, RLS enforcement, and token-cache behavior can build on
+the same names.
 
 **Citus comparison**: Vanilla Citus does not model application tenant claims.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Auth2` as `sql-runtime`, calls
+`companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
+'jti-123')`, verifies `companion_current_session_claims()` and
+`companion_current_tenant_id()` return the same values, and verifies empty
+`uid` claims are rejected. Auth1 JWT issuance, Sec1 RLS enforcement, Sec2 JWT
+verification, and Auth3 token caching remain alpha until their own runtime
+evidence exists.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth2` in `companion/src/auth.rs`
 - In-source: `FEATURE: Auth2` in `sidecar/auth/src/lib.rs`
+- SQL runtime: `FEATURE: Auth2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Auth4: OAuth2 / OIDC Provider Contracts
 

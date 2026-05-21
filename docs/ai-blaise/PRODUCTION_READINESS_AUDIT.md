@@ -138,6 +138,9 @@ more production-ready than the artifacts justified.
     client frames could traverse the pool data port before the client waited
     for the first response. That left the narrow pool pipelining claim short of
     wire-protocol production evidence.
+35. `FEATURE: Auth2` had Rust/sidecar claim-shape contracts, but no installable
+    SQL runtime for setting or reading session claims. That meant tenant-aware
+    SQL surfaces could not be promoted without a real Postgres extension smoke.
 
 ## Corrections
 
@@ -343,6 +346,11 @@ more production-ready than the artifacts justified.
   real pool `serve` data port, sends two simple-query frames without waiting
   for the first result, verifies ordered rows from a `postgres:17` backend, and
   keeps the broader shard-aware and `FEATURE: T7` pipeline contract alpha.
+- The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
+  set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
+  GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
+  rejection against a real `postgres:17` container while JWT issuance, RLS
+  enforcement, JWT verification, and token-cache behavior remain alpha.
 
 ## Verification Standard
 
@@ -386,6 +394,9 @@ Rule 10 completion for this branch requires local and VM verification of:
   wire-protocol smoke that sends multiple simple-query frames through the real
   pool data port before reading the first result; psql request/response pacing
   alone is not sufficient evidence for `FEATURE: T15`.
+- Auth2 production evidence is limited to installable SQL session-claim
+  helpers. It must not be cited as evidence for Auth1 JWT issuance, Sec1 RLS
+  policy enforcement, Sec2 JWT verification, or Auth3 token-cache behavior.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -395,7 +406,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 14 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 15 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -409,7 +420,8 @@ trusted hook-coextension source path under real Timescale/Citus cohabitation,
 `TS18` for the installable bridge-state SQL surface under real Timescale/Citus
 cohabitation, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
-pipelining through the real pool proxy data port. The other 150
+pipelining through the real pool proxy data port, plus `Auth2` for installable
+SQL session-claim helpers under a real PostgreSQL extension smoke. The other 149
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

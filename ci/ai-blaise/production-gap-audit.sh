@@ -502,6 +502,23 @@ for phrase in (
     if compact(phrase) not in compact(t15_entry["body"]):
         fail(f"T15 production-ready boundary is missing: {phrase}")
 
+auth2_entry = entry_by_id.get("Auth2")
+if auth2_entry is None:
+    fail("Auth2 feature heading is required for SQL session-claim evidence")
+if auth2_entry["status"].lower() not in PRODUCTION_STATUSES:
+    fail("Auth2 must remain production-ready only for installable SQL session-claim helpers")
+for phrase in (
+    "installable SQL session-claim helpers",
+    "custom GUCs",
+    "companion_set_session_claims",
+    "companion_current_session_claims",
+    "companion_current_tenant_id",
+    "Auth1 JWT issuance, Sec1 RLS enforcement, Sec2 JWT verification, and Auth3 token caching remain alpha",
+    "ci/ai-blaise/sql-extension-smoke.sh",
+):
+    if compact(phrase) not in compact(auth2_entry["body"]):
+        fail(f"Auth2 production-ready boundary is missing: {phrase}")
+
 non_production_with_prod_evidence = sorted(
     entry["id"] for entry in alpha_entries if "Production evidence:" in entry["body"]
 )
@@ -999,11 +1016,26 @@ for phrase in (
     "shared_preload_libraries=pg_stat_statements",
     "PostgreSQL init process complete",
     "ai_blaise_pg_stat_statements_seed",
+    "companion_set_session_claims",
+    "companion_current_session_claims",
+    "companion_current_tenant_id",
+    "uid claim must not be empty",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
 ):
     if phrase not in image_check:
         fail(f"image-check.sh must statically guard SQL smoke marker: {phrase}")
+
+for phrase in (
+    "CREATE FUNCTION companion_set_session_claims",
+    "CREATE FUNCTION companion_current_session_claims",
+    "CREATE FUNCTION companion_current_tenant_id",
+    "'Auth2', 'tenant-aware claims', 'sql-runtime'",
+):
+    if phrase not in sources:
+        fail(f"ai_blaise_citus SQL extension is missing Auth2 runtime marker: {phrase}")
+    if phrase not in image_check:
+        fail(f"image-check.sh must statically guard Auth2 SQL extension marker: {phrase}")
 
 for phrase in (
     'psql -h 127.0.0.1 -p "${pool_port}"',
