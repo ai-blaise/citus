@@ -13,6 +13,13 @@ CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state (
 CREATE INDEX IF NOT EXISTS timescale_bridge_state_feature_object_idx
 ON companion_internal.timescale_bridge_state(feature_id, object_name);
 
+CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations (
+    shard_id bigint PRIMARY KEY CHECK (shard_id > 0),
+    generation bigint NOT NULL CHECK (generation > 0),
+    worker_name text,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -63,8 +70,8 @@ AS $$
         ('Auth2', 'tenant-aware claims', 'sql-runtime'),
         ('Sec1', 'RLS helpers', 'sql-runtime'),
         ('Sec2', 'JWT verification UDF', 'sql-runtime'),
-        ('S6', 'placement generation helpers', 'runtime-contract'),
-        ('S13', 'range routing helpers', 'runtime-contract'),
+        ('S6', 'placement generation helpers', 'sql-runtime'),
+        ('S13', 'range routing helpers', 'sql-runtime'),
         ('C10', 'online schema job state machine', 'runtime-contract'),
         ('M2', 'gh-ost-style online DDL', 'runtime-contract'),
         ('S14', 'tenant migration online', 'runtime-contract'),
@@ -88,6 +95,179 @@ AS $$
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
         ('T7', 'pipelined client protocol in pool', 'ops-contract')
+$$;
+
+-- FEATURE: S6
+CREATE VIEW companion_shard_placement_generations AS
+SELECT
+    shard_id,
+    generation,
+    worker_name,
+    updated_at
+FROM companion_internal.shard_placement_generations;
+
+CREATE FUNCTION companion_internal.bump_placement_generation(
+    p_shard_id bigint,
+    p_worker_name text DEFAULT NULL
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    next_generation bigint;
+BEGIN
+    IF p_shard_id IS NULL OR p_shard_id <= 0 THEN
+        RAISE EXCEPTION 'shard_id must be greater than zero';
+    END IF;
+    IF p_worker_name IS NOT NULL AND btrim(p_worker_name) = '' THEN
+        RAISE EXCEPTION 'worker_name must be null or non-empty';
+    END IF;
+
+    INSERT INTO companion_internal.shard_placement_generations(
+        shard_id,
+        generation,
+        worker_name
+    )
+    VALUES (
+        p_shard_id,
+        1,
+        NULLIF(btrim(COALESCE(p_worker_name, '')), '')
+    )
+    ON CONFLICT (shard_id) DO UPDATE
+    SET generation = companion_internal.shard_placement_generations.generation + 1,
+        worker_name = COALESCE(
+            NULLIF(btrim(COALESCE(EXCLUDED.worker_name, '')), ''),
+            companion_internal.shard_placement_generations.worker_name
+        ),
+        updated_at = now()
+    RETURNING generation INTO next_generation;
+
+    RETURN next_generation;
+END;
+$$;
+
+CREATE FUNCTION companion_placement_generation(p_shard_id bigint)
+RETURNS bigint
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    current_generation bigint;
+BEGIN
+    IF p_shard_id IS NULL OR p_shard_id <= 0 THEN
+        RAISE EXCEPTION 'shard_id must be greater than zero';
+    END IF;
+
+    SELECT generation
+    INTO current_generation
+    FROM companion_internal.shard_placement_generations
+    WHERE shard_id = p_shard_id;
+
+    RETURN COALESCE(current_generation, 0);
+END;
+$$;
+
+CREATE FUNCTION companion_local_placement_matches(
+    p_shard_id bigint,
+    p_worker_name text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    recorded_worker text;
+BEGIN
+    IF p_shard_id IS NULL OR p_shard_id <= 0 THEN
+        RAISE EXCEPTION 'shard_id must be greater than zero';
+    END IF;
+    IF p_worker_name IS NULL OR btrim(p_worker_name) = '' THEN
+        RAISE EXCEPTION 'worker_name must not be empty';
+    END IF;
+
+    SELECT worker_name
+    INTO recorded_worker
+    FROM companion_internal.shard_placement_generations
+    WHERE shard_id = p_shard_id;
+
+    RETURN recorded_worker = btrim(p_worker_name);
+END;
+$$;
+
+-- FEATURE: S13
+CREATE FUNCTION companion_hash_shard_index(
+    p_value text,
+    p_shard_count integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    digest_bytes bytea;
+    hash_value bigint;
+BEGIN
+    IF p_value IS NULL THEN
+        RAISE EXCEPTION 'routing value must not be null';
+    END IF;
+    IF p_shard_count IS NULL OR p_shard_count <= 0 THEN
+        RAISE EXCEPTION 'shard_count must be greater than zero';
+    END IF;
+
+    digest_bytes := decode(substr(md5(p_value), 1, 8), 'hex');
+    hash_value :=
+        get_byte(digest_bytes, 0)::bigint * 16777216
+      + get_byte(digest_bytes, 1)::bigint * 65536
+      + get_byte(digest_bytes, 2)::bigint * 256
+      + get_byte(digest_bytes, 3)::bigint;
+
+    RETURN (hash_value % p_shard_count)::integer;
+END;
+$$;
+
+CREATE FUNCTION companion_range_shard_index(
+    p_value numeric,
+    p_lower_bound numeric,
+    p_upper_bound numeric,
+    p_shard_count integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+DECLARE
+    value_span numeric;
+    shard_index integer;
+BEGIN
+    IF p_value IS NULL THEN
+        RAISE EXCEPTION 'routing value must not be null';
+    END IF;
+    IF p_lower_bound IS NULL OR p_upper_bound IS NULL THEN
+        RAISE EXCEPTION 'range bounds must not be null';
+    END IF;
+    IF p_upper_bound <= p_lower_bound THEN
+        RAISE EXCEPTION 'upper_bound must be greater than lower_bound';
+    END IF;
+    IF p_shard_count IS NULL OR p_shard_count <= 0 THEN
+        RAISE EXCEPTION 'shard_count must be greater than zero';
+    END IF;
+    IF p_value < p_lower_bound OR p_value >= p_upper_bound THEN
+        RAISE EXCEPTION 'range routing value is outside shard bounds';
+    END IF;
+
+    value_span := p_upper_bound - p_lower_bound;
+    shard_index := floor(((p_value - p_lower_bound) * p_shard_count) / value_span)::integer;
+
+    IF shard_index >= p_shard_count THEN
+        RETURN p_shard_count - 1;
+    END IF;
+    RETURN shard_index;
+END;
 $$;
 
 -- FEATURE: Auth2

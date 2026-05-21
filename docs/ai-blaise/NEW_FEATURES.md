@@ -1113,13 +1113,13 @@ consensus logic into Postgres backends.
 ### S6: Per-Shard Placement Generation
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines companion-side placement generation and local-placement
-query contracts used by plan-cache invalidation and router fast paths.
+**Summary**: Provides installable SQL placement-generation helpers and
+local-placement checks used by plan-cache invalidation and router fast paths.
 
 **Motivation**: Pool and companion routing need versioned helper APIs before
 placement-generation invalidation can move beyond the pool model.
@@ -1127,11 +1127,26 @@ placement-generation invalidation can move beyond the pool model.
 **Citus comparison**: Vanilla Citus tracks shard placements but does not
 expose these helper contracts as companion APIs.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S6` as `sql-runtime`, calls
+`companion_internal.bump_placement_generation(102008, 'worker-a')` twice,
+verifies generation advancement through `companion_placement_generation(...)`,
+verifies unknown shards return generation zero, checks
+`companion_local_placement_matches(...)` for matching and non-matching workers,
+and verifies shard zero fails closed. This status covers the local SQL
+placement-generation state and local-placement helper surface only; actual
+Citus metadata synchronization, pool cache invalidation, rebalance hooks,
+planner invalidation, and operator-driven placement changes remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S6` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S9: Closed-Timestamp Follower Reads
 
@@ -1204,13 +1219,13 @@ failure domain goal for topology-aware reconciliation.
 ### S13: Range-Based Dynamic Sharding
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Adds hash and range routing plan shapes so companion and pool code
-can reason about non-hash shard assignment through one API.
+**Summary**: Adds installable SQL hash and numeric range routing helpers so
+companion and pool code can reason about target shard indexes through one API.
 
 **Motivation**: Dynamic sharding needs a router contract before planner and
 operator work can safely mix hash and range distribution.
@@ -1218,11 +1233,25 @@ operator work can safely mix hash and range distribution.
 **Citus comparison**: Vanilla Citus primarily exposes hash distribution
 contracts and does not ship this range-routing helper surface.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S13` as `sql-runtime`, verifies
+`companion_hash_shard_index('tenant-a', 8)` is deterministic and bounded,
+verifies `companion_range_shard_index(25, 0, 100, 4)` maps to shard index `1`,
+and verifies zero-shard and out-of-bounds numeric range inputs fail closed.
+This status covers the local SQL hash and numeric range routing helpers only;
+actual dynamic shard creation, Citus router integration, operator rebalancing,
+pool data-plane routing, and distributed range metadata propagation remain
+alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S13` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S14: Tenant Migration Online
 

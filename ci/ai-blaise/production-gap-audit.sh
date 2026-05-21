@@ -563,6 +563,41 @@ for phrase in (
 
 for feature_id, required_phrases in (
     (
+        "S6",
+        (
+            "installable SQL placement-generation helpers",
+            "companion_internal.bump_placement_generation",
+            "companion_placement_generation",
+            "companion_local_placement_matches",
+            "verifies unknown shards return generation zero",
+            "actual Citus metadata synchronization, pool cache invalidation, rebalance hooks, planner invalidation, and operator-driven placement changes remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "S13",
+        (
+            "installable SQL hash and numeric range routing helpers",
+            "companion_hash_shard_index",
+            "companion_range_shard_index",
+            "deterministic and bounded",
+            "out-of-bounds numeric range inputs fail closed",
+            "actual dynamic shard creation, Citus router integration, operator rebalancing, pool data-plane routing, and distributed range metadata propagation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for router helper SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow SQL router helper runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1168,6 +1203,16 @@ for phrase in (
     "companion_set_session_claims",
     "companion_current_session_claims",
     "companion_current_tenant_id",
+    "companion_internal.bump_placement_generation",
+    "companion_placement_generation",
+    "companion_local_placement_matches",
+    "companion_hash_shard_index",
+    "companion_range_shard_index",
+    "S6 placement generation did not advance from 1 to 2",
+    "S6 unknown shard should return generation zero",
+    "S13 hash routing helper was not deterministic and bounded",
+    "S13 range routing helper returned",
+    "S13 range routing helper accepted an out-of-bounds value",
     "companion_verify_jwt_hs256",
     "Sec2 JWT verification did not return expected claims",
     "Sec2 verified JWT claims did not feed Auth2 tenant claims",
@@ -1199,6 +1244,13 @@ for phrase in (
     "CREATE FUNCTION companion_set_session_claims",
     "CREATE FUNCTION companion_current_session_claims",
     "CREATE FUNCTION companion_current_tenant_id",
+    "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations",
+    "CREATE VIEW companion_shard_placement_generations",
+    "CREATE FUNCTION companion_internal.bump_placement_generation",
+    "CREATE FUNCTION companion_placement_generation",
+    "CREATE FUNCTION companion_local_placement_matches",
+    "CREATE FUNCTION companion_hash_shard_index",
+    "CREATE FUNCTION companion_range_shard_index",
     "CREATE FUNCTION companion_internal.base64url_encode",
     "CREATE FUNCTION companion_internal.base64url_decode",
     "CREATE FUNCTION companion_internal.jwt_audience_matches",
@@ -1213,6 +1265,8 @@ for phrase in (
     "CREATE FUNCTION companion_ledger_seal",
     "CREATE VIEW companion_ledger_entries",
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
+    "'S6', 'placement generation helpers', 'sql-runtime'",
+    "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",
     "'Sec2', 'JWT verification UDF', 'sql-runtime'",
     "'Sec5', 'immutable ledger', 'sql-runtime'",
