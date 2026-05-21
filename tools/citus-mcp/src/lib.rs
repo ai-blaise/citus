@@ -251,6 +251,11 @@ fn validate_read_only_sql(sql: &str) -> Result<(), McpToolError> {
             "safe-mode MCP SQL must start with SELECT, WITH, or EXPLAIN".to_string(),
         ));
     }
+    if first_token == "explain" && contains_keyword(&lower, "analyze") {
+        return Err(McpToolError::UnsafeSql(
+            "safe-mode MCP EXPLAIN must not use ANALYZE".to_string(),
+        ));
+    }
 
     let without_trailing_semicolon = trimmed.trim_end_matches(';').trim_end();
     if without_trailing_semicolon.contains(';') {
@@ -1256,6 +1261,27 @@ mod tests {
             request.validate(),
             Err(McpToolError::UnsafeSql(
                 "safe-mode MCP SQL must start with SELECT, WITH, or EXPLAIN".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn safe_mode_rejects_explain_analyze() {
+        let request = McpToolRequest {
+            tool: McpTool::RunExplain {
+                sql: "EXPLAIN ANALYZE SELECT count(*) FROM tenant_a.orders".to_string(),
+            },
+            tenant_scope: Some(TenantScope {
+                tenant_id: "tenant-a".to_string(),
+                allowed_schemas: vec!["tenant_a".to_string()],
+            }),
+            safe_mode: SafeMode::Required,
+        };
+
+        assert_eq!(
+            request.validate(),
+            Err(McpToolError::UnsafeSql(
+                "safe-mode MCP EXPLAIN must not use ANALYZE".to_string()
             ))
         );
     }

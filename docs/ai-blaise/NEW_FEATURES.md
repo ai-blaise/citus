@@ -4090,8 +4090,9 @@ destructive tool`. The implementation uses the maintained PostgreSQL Rust
 client with native TLS support rather than a toy protocol parser, wraps each
 execution in `BEGIN READ ONLY`, applies `SET LOCAL statement_timeout`, limits
 materialized rows with `AI_BLAISE_MCP_MAX_ROWS` capped at 1000 rows, caps
-caller-supplied query timeouts at 300000 ms, and returns JSON rows through the
-MCP text response.
+caller-supplied query timeouts at 300000 ms, rejects `EXPLAIN ANALYZE` so
+`run_explain` cannot execute the explained statement, and returns JSON rows
+through the MCP text response.
 
 **Current boundary**: This production-ready claim is intentionally narrow:
 read-only query, explain, catalog, replication-status, and index-inventory

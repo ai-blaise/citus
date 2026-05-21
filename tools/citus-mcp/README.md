@@ -20,7 +20,8 @@ Current implemented surface:
 - `FEATURE: MCP4` read-only database execution when
   `AI_BLAISE_MCP_DATABASE_URL` is set, using the maintained PostgreSQL client
   with native TLS support, `BEGIN READ ONLY`, `SET LOCAL statement_timeout`,
-  row and timeout ceilings, tenant schema denial, and destructive-tool denial
+  row and timeout ceilings, `EXPLAIN ANALYZE` rejection, tenant schema denial,
+  and destructive-tool denial
 
 These contracts cover `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`,
 `FEATURE: MCP4`, and the `FEATURE: D11` MCP developer workflow.
