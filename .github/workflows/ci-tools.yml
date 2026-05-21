@@ -21,6 +21,8 @@ jobs:
         run: cargo test -p ai_blaise_citus_mcp
       - name: Run canonical MCP tool report
         run: cargo run -q -p ai_blaise_citus_mcp -- run-canonical
+      - name: Run MCP stdio smoke
+        run: bash ci/ai-blaise/mcp-stdio-smoke.sh
 
   citusctl:
     runs-on: ubuntu-latest

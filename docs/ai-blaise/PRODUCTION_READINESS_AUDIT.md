@@ -509,7 +509,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 240
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 95 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -546,8 +546,10 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts. The
-other 145
+extension contracts, plus `MCP1`, `MCP2`, `MCP3`, and `D11` for the real
+`tools/citus-mcp` stdio JSON-RPC server, safe-mode denial, tenant-scope
+validation, and developer workflow smoke. The
+other 141
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

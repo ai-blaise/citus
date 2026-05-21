@@ -30,6 +30,7 @@ SQL_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 LSP_SMOKE = ROOT / "ci/ai-blaise/citus-lsp-smoke.sh"
+MCP_SMOKE = ROOT / "ci/ai-blaise/mcp-stdio-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
@@ -298,6 +299,7 @@ slop_workflow = read(SLOP_WORKFLOW)
 tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
 lsp_smoke = read(LSP_SMOKE)
+mcp_smoke = read(MCP_SMOKE)
 ts6_patch = read(TS6_PATCH)
 shared_library_init = read(SHARED_LIBRARY_INIT)
 sources = source_text()
@@ -1520,6 +1522,35 @@ if "bash ci/ai-blaise/citusctl-smoke.sh" not in tools_workflow:
     fail("tools workflow must run the citusctl plan-id smoke for D2")
 if "citusctl-smoke" not in makefile:
     fail("Makefile gate-close must include the citusctl plan-id smoke for D2")
+
+for feature_id in ("MCP1", "MCP2", "MCP3", "D11"):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for MCP stdio production evidence")
+    for phrase in (
+        "ci/ai-blaise/mcp-stdio-smoke.sh",
+        "serve-stdio",
+        "JSON-RPC",
+    ):
+        if phrase not in entry["body"]:
+            fail(f"{feature_id} must cite MCP stdio production evidence marker: {phrase}")
+for phrase in (
+    "FEATURE: MCP1 MCP2 MCP3 D11",
+    "serve-stdio",
+    "\"method\": \"initialize\"",
+    "\"method\": \"tools/list\"",
+    "\"name\": \"query_with_timeout\"",
+    "\"name\": \"tenant_archive\"",
+    "safe mode denied a destructive tool",
+    "tenant_scope is required",
+    "ai_blaise_citus_mcp stdio smoke passed",
+):
+    if phrase not in mcp_smoke:
+        fail(f"mcp-stdio-smoke.sh is missing real stdio proof marker: {phrase}")
+if "bash ci/ai-blaise/mcp-stdio-smoke.sh" not in tools_workflow:
+    fail("tools workflow must run the MCP stdio smoke")
+if "mcp-stdio-smoke" not in makefile:
+    fail("Makefile gate-close must include the MCP stdio smoke")
 
 for phrase in (
     "citus-lsp file-backed smoke passed",
