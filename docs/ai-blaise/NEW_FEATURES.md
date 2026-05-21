@@ -2337,13 +2337,23 @@ inside one-off placement annotations.
 ### Search2: Distributed BM25 Index
 
 **Overlay**: `operator/src/crds/search_index.rs`, `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`
 
-**Summary**: Defines distributed search-index intent with text/vector column
-roles and BM25 or hybrid scoring.
+**Summary**: Provides an installable SQL search index registry that validates
+table, distribution-column, text-column, and optional vector-column metadata
+and renders worker-local full-text index DDL.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_search_index(...)` records
+`companion_search_worker_indexes`, renders deterministic GIN DDL, and verifies
+a missing distribution column fails closed. Actual pg_search BM25 index
+execution, worker index rollout, distributed DDL application, operator
+reconciliation, and shard-aware query fanout remain alpha.
 
 **Motivation**: Search indexes must be declared once and fanned out across
 workers without losing table ownership or scorer semantics.
@@ -2356,18 +2366,30 @@ index CRD.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search2` in `operator/src/crds/search_index.rs`
 - In-source: `FEATURE: Search2` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Search3: Hybrid BM25 + Vector Ranking
 
 **Overlay**: `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`, `pgvector`
 
-**Summary**: Defines the companion SQL-plan contract that combines BM25 and
-vector scores into one hybrid rank over distributed tables.
+**Summary**: Provides an installable SQL hybrid ranking helper over the
+companion search-document registry, combining PostgreSQL text rank with a
+stored vector-score signal.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.hybrid_rank(...)`
+returns ranked rows from `companion_search_documents` and verifies a missing
+vector column fails closed. Actual pgvector distance operators, ANN index
+selection, model embeddings, and distributed query planning remain alpha.
 
 **Motivation**: Hybrid search needs one coordinator-visible ranking contract
 while BM25 and vector indexes remain worker-local.
@@ -2378,7 +2400,10 @@ while BM25 and vector indexes remain worker-local.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search3` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Search7: Search Index CRD
 
@@ -2431,13 +2456,22 @@ mirrors.
 ### Search9: Search Reranker UDF Plan
 
 **Overlay**: `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines provider/model/limit planning for reranking top hybrid
-search results.
+**Summary**: Provides an installable SQL rerank request registry that records
+provider/model intent for a relation of candidate search rows and emits the
+deterministic input query for later sidecar execution.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.rerank_search(...)`
+records `companion_search_rerank_requests`, renders deterministic rerank SQL,
+and verifies a missing rerank input relation fails closed. LLM/provider calls,
+model serving, sidecar rerank execution, and distributed result hydration
+remain alpha.
 
 **Motivation**: Reranking should be explicit and auditable before LLM-provider
 calls are wired into the search path.
@@ -2448,7 +2482,10 @@ calls are wired into the search path.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search9` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## HTAP
 
@@ -2757,13 +2794,22 @@ contract before exposing pg_graphql to tenants.
 ### API4: Distributed GraphQL Tables
 
 **Overlay**: `sidecar/graphql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
 
-**Summary**: Binds GraphQL types to distributed tables, distribution columns,
-and companion routing functions.
+**Summary**: Provides installable SQL GraphQL distributed graph metadata that
+binds a named graph to already-colocated vertex and edge tables.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_graphql_distributed_graph(...)` records
+`companion_graphql_distributed_graphs` only after graph colocation metadata is
+present, and verifies GraphQL graph registration requires graph colocation.
+GraphQL server integration, auth policies, GraphQL query planning, and
+operator integration remain alpha.
 
 **Motivation**: GraphQL queries over distributed tables need explicit routing
 metadata instead of relying on generic single-node table assumptions.
@@ -2776,7 +2822,10 @@ for distributed tables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API4` in `sidecar/graphql/src/lib.rs`
 - In-source: `FEATURE: API4` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: API4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### API5: RLS-Aware Auto API
 
@@ -4128,13 +4177,21 @@ not ship a federation CRD.
 ### G2: Distributed Graph Bridge
 
 **Overlay**: `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `age`
 
-**Summary**: Defines Apache AGE graph distribution plans over colocated Citus
-vertex and edge tables.
+**Summary**: Provides installable SQL graph colocation metadata that records
+validated vertex-table, edge-table, vertex-key, and colocation-group bindings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.ensure_graph_colocation(...)` records
+`companion_graph_colocations` and verifies missing vertex keys fail closed.
+Apache AGE graph execution, distributed graph traversal, and shard fanout
+remain alpha.
 
 **Motivation**: Graph queries need shard-local subgraphs before Cypher traffic
 can safely run over distributed datasets.
@@ -4146,18 +4203,29 @@ distributed-graph bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G2` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: G2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### G3: Graph Colocation Policy
 
 **Overlay**: `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `age`
 
-**Summary**: Captures the required vertex/edge colocation policy for
-distributed graph tables.
+**Summary**: Provides an installable SQL graph colocation policy registry for
+the vertex/edge placement metadata that graph and GraphQL bridge helpers share.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.ensure_graph_colocation(...)` records
+`companion_graph_colocations` and verifies missing vertex keys fail closed.
+Distributed graph placement enforcement, AGE catalog integration, traversal
+routing, and operator reconciliation remain alpha.
 
 **Motivation**: Traversals are only efficient when vertices and edges share
 placement by tenant or graph key.
@@ -4169,20 +4237,32 @@ policy layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G3` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: G3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## JSON Schema
 
 ### JS2: Distributed JSON Schema Validation
 
 **Overlay**: `companion/src/jsonschema_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_jsonschema`
 
-**Summary**: Defines schema registration and shard-trigger fanout for JSON
-Schema validation on distributed tables.
+**Summary**: Provides an installable SQL JSON schema registry and shard
+validator with object-type and required-field checks.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_json_schema(...)` plus
+`companion_internal.validate_jsonschema_shard(...)` report valid shard state,
+and verifies non-object schemas fail closed. Full pg_jsonschema compatibility,
+JSON Schema draft coverage, distributed validation workers, and operator
+integration remain alpha.
 
 **Motivation**: JSON validation must run on every shard, not only where a
 coordinator migration happened to install a trigger.
@@ -4194,18 +4274,30 @@ pg_jsonschema trigger fanout.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: JS2` in `companion/src/jsonschema_bridge.rs`
+- SQL runtime: `FEATURE: JS2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M13: JSON Schema Validation On Insert
 
 **Overlay**: `companion/src/jsonschema_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_jsonschema`
 
-**Summary**: Defines insert/update trigger timing for JSON Schema validation
-on distributed tables.
+**Summary**: Provides an installable SQL JSON schema trigger helper that
+installs table-level insert/update validation against registered schemas.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.install_jsonschema_trigger(...)` records
+`companion_jsonschema_triggers`, accepts valid JSON documents, and verifies
+documents missing required fields fail closed. Online migration orchestration,
+backfill validation, trigger rollout orchestration, and operator integration
+remain alpha.
 
 **Motivation**: Migration and schema contracts need fail-fast JSON validation
 before malformed tenant data is accepted.
@@ -4217,20 +4309,32 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M13` in `companion/src/jsonschema_bridge.rs`
+- SQL runtime: `FEATURE: M13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Geo
 
 ### Geo2: Geo-Aware Citus Distribution
 
 **Overlay**: `companion/src/geo_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgis`
 
-**Summary**: Defines geohash-derived distribution planning for PostGIS-backed
-tables.
+**Summary**: Provides an installable SQL geo bucket and distribution metadata
+helper that adds a deterministic bucket column and records geo distribution
+settings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_geo_bucket(...)`,
+`companion_internal.add_geohash_column(...)`, and
+`companion_geo_distributions` work together, and verifies out-of-range latitude
+fails closed. PostGIS geometry parsing, true geohash/S2/H3 indexes, distance
+operators, and distributed spatial query planning remain alpha.
 
 **Motivation**: Location-heavy workloads need spatially meaningful shard keys
 so nearby data can be routed and rebalanced coherently.
@@ -4242,18 +4346,30 @@ not create geo-aware distribution keys.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo2` in `companion/src/geo_distributed.rs`
+- SQL runtime: `FEATURE: Geo2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Geo3: Geo Shard Pruning Planner Input
 
 **Overlay**: `companion/src/geo_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgis`
 
-**Summary**: Defines bbox/grid planner input used to prune shards for spatial
-queries.
+**Summary**: Provides an installable SQL geo pruning metadata helper that
+records table, geometry-column, and precision policy for later spatial-pruning
+execution.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.enable_geo_shard_pruning(...)` records
+`companion_geo_pruning_policies` and verifies out-of-range precision fails
+closed. PostGIS planner hooks, shard exclusion, spatial selectivity
+statistics, and operator integration remain alpha.
 
 **Motivation**: Spatial queries should avoid scanning shards whose geohash
 grid cells cannot intersect the requested bounding box.
@@ -4265,7 +4381,10 @@ metadata.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo3` in `companion/src/geo_distributed.rs`
+- SQL runtime: `FEATURE: Geo3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Observability
 

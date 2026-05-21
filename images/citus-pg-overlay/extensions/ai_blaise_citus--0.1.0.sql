@@ -133,6 +133,87 @@ CREATE TABLE IF NOT EXISTS companion_internal.webhook_events (
     queued_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.search_worker_indexes (
+    index_name name PRIMARY KEY,
+    table_name text NOT NULL,
+    distribution_column name NOT NULL,
+    text_columns text[] NOT NULL CHECK (cardinality(text_columns) > 0),
+    vector_columns text[] NOT NULL DEFAULT ARRAY[]::text[],
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.search_documents (
+    document_id bigserial PRIMARY KEY,
+    table_name text NOT NULL,
+    document_key text NOT NULL,
+    text_body text NOT NULL,
+    vector_score numeric NOT NULL DEFAULT 0,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (table_name, document_key)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.search_rerank_requests (
+    request_id bigserial PRIMARY KEY,
+    input_view text NOT NULL,
+    provider text NOT NULL,
+    model text NOT NULL,
+    requested_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.graph_colocations (
+    colocation_id bigserial PRIMARY KEY,
+    vertex_table text NOT NULL,
+    edge_table text NOT NULL,
+    vertex_key name NOT NULL,
+    colocation_group text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (vertex_table, edge_table, vertex_key, colocation_group)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.graphql_distributed_graphs (
+    graph_name text PRIMARY KEY,
+    vertex_table text NOT NULL,
+    edge_table text NOT NULL,
+    registered_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.json_schemas (
+    schema_name text PRIMARY KEY,
+    schema_document jsonb NOT NULL,
+    registered_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.jsonschema_triggers (
+    trigger_id bigserial PRIMARY KEY,
+    table_name text NOT NULL,
+    json_column name NOT NULL,
+    schema_name text NOT NULL
+        REFERENCES companion_internal.json_schemas(schema_name)
+        ON DELETE CASCADE,
+    timing text NOT NULL,
+    trigger_name name NOT NULL UNIQUE,
+    trigger_sql text NOT NULL,
+    installed_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (table_name, json_column, schema_name)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.geo_distributions (
+    table_name text PRIMARY KEY,
+    geometry_column name NOT NULL,
+    distribution_column name NOT NULL,
+    precision integer NOT NULL CHECK (precision BETWEEN 1 AND 12),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.geo_pruning_policies (
+    policy_id bigserial PRIMARY KEY,
+    table_name text NOT NULL,
+    geometry_column name NOT NULL,
+    precision integer NOT NULL CHECK (precision BETWEEN 1 AND 12),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (table_name, geometry_column)
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -155,16 +236,16 @@ AS $$
         ('TS16', 'distributed downsampler toolkit aggregates', 'sql-plan'),
         ('TS17', 'distributed state toolkit aggregates', 'sql-plan'),
         ('A1', 'pgai-compatible vectorizer DSL', 'sql-plan'),
-        ('Search2', 'distributed BM25 search index', 'sql-plan'),
-        ('Search3', 'hybrid BM25 and vector ranking', 'sql-plan'),
-        ('Search9', 'reranker UDF plan', 'sql-plan'),
-        ('G2', 'distributed graph bridge', 'sql-plan'),
-        ('G3', 'graph colocation policy', 'sql-plan'),
-        ('API4', 'GraphQL distributed graph metadata', 'sql-plan'),
-        ('JS2', 'distributed JSON Schema validation', 'sql-plan'),
-        ('M13', 'JSON Schema validation triggers', 'sql-plan'),
-        ('Geo2', 'geo-aware distribution', 'sql-plan'),
-        ('Geo3', 'geo shard pruning', 'sql-plan'),
+        ('Search2', 'distributed BM25 search index', 'sql-runtime'),
+        ('Search3', 'hybrid BM25 and vector ranking', 'sql-runtime'),
+        ('Search9', 'reranker UDF plan', 'sql-runtime'),
+        ('G2', 'distributed graph bridge', 'sql-runtime'),
+        ('G3', 'graph colocation policy', 'sql-runtime'),
+        ('API4', 'GraphQL distributed graph metadata', 'sql-runtime'),
+        ('JS2', 'distributed JSON Schema validation', 'sql-runtime'),
+        ('M13', 'JSON Schema validation triggers', 'sql-runtime'),
+        ('Geo2', 'geo-aware distribution', 'sql-runtime'),
+        ('Geo3', 'geo shard pruning', 'sql-runtime'),
         ('T8', 'toolkit two-step aggregate pushdown', 'sql-plan'),
         ('L9', 'worker partial aggregate pushdown', 'sql-plan'),
         ('M7', 'pre-flight cohabit-extension check', 'sql-plan'),
@@ -208,6 +289,792 @@ AS $$
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
         ('T7', 'pipelined client protocol in pool', 'ops-contract')
+$$;
+
+-- FEATURE: Search2
+-- FEATURE: Search3
+-- FEATURE: Search9
+CREATE VIEW companion_search_worker_indexes AS
+SELECT
+    index_name,
+    table_name,
+    distribution_column,
+    text_columns,
+    vector_columns,
+    created_at
+FROM companion_internal.search_worker_indexes;
+
+CREATE VIEW companion_search_documents AS
+SELECT
+    document_id,
+    table_name,
+    document_key,
+    text_body,
+    vector_score,
+    updated_at
+FROM companion_internal.search_documents;
+
+CREATE VIEW companion_search_rerank_requests AS
+SELECT
+    request_id,
+    input_view,
+    provider,
+    model,
+    requested_at
+FROM companion_internal.search_rerank_requests;
+
+CREATE FUNCTION companion_internal.table_has_column(
+    p_table_name text,
+    p_column_name name
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM pg_attribute
+        WHERE attrelid = p_table_name::regclass
+          AND attname = p_column_name
+          AND attnum > 0
+          AND NOT attisdropped
+    )
+$$;
+
+CREATE FUNCTION companion_internal.ensure_search_workers(
+    p_table_name text,
+    p_distribution_column text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_distribution_column IS NULL OR btrim(p_distribution_column) = '' THEN
+        RAISE EXCEPTION 'distribution_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(table_regclass::text, btrim(p_distribution_column)::name) THEN
+        RAISE EXCEPTION 'distribution column does not exist on table';
+    END IF;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.register_search_index(
+    p_table_name text,
+    p_index_name name,
+    p_text_columns text[],
+    p_distribution_column text,
+    p_vector_columns text[] DEFAULT ARRAY[]::text[]
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+    normalized_text_columns text[];
+    normalized_vector_columns text[];
+    rendered_sql text;
+BEGIN
+    PERFORM companion_internal.ensure_search_workers(p_table_name, p_distribution_column);
+    table_regclass := p_table_name::regclass;
+    IF p_index_name IS NULL OR btrim(p_index_name::text) = '' THEN
+        RAISE EXCEPTION 'index_name must not be empty';
+    END IF;
+    IF p_text_columns IS NULL OR cardinality(p_text_columns) = 0 THEN
+        RAISE EXCEPTION 'text_columns must contain at least one column';
+    END IF;
+    normalized_text_columns := ARRAY(
+        SELECT btrim(column_name)
+        FROM unnest(p_text_columns) AS column_name
+    );
+    IF EXISTS (
+        SELECT 1
+        FROM unnest(normalized_text_columns) AS column_name
+        WHERE column_name = ''
+           OR NOT companion_internal.table_has_column(table_regclass::text, column_name::name)
+    ) THEN
+        RAISE EXCEPTION 'all text_columns must exist on table';
+    END IF;
+    normalized_vector_columns := COALESCE(
+        ARRAY(
+            SELECT btrim(column_name)
+            FROM unnest(COALESCE(p_vector_columns, ARRAY[]::text[])) AS column_name
+            WHERE btrim(column_name) <> ''
+        ),
+        ARRAY[]::text[]
+    );
+
+    rendered_sql := format(
+        'CREATE INDEX IF NOT EXISTS %I ON %s USING gin (to_tsvector(''simple'', %s));',
+        p_index_name,
+        table_regclass,
+        (
+            SELECT string_agg(format('coalesce(%I::text, '''')', column_name), ' || '' '' || ')
+            FROM unnest(normalized_text_columns) AS column_name
+        )
+    );
+
+    INSERT INTO companion_internal.search_worker_indexes(
+        index_name,
+        table_name,
+        distribution_column,
+        text_columns,
+        vector_columns
+    )
+    VALUES (
+        p_index_name,
+        table_regclass::text,
+        btrim(p_distribution_column)::name,
+        normalized_text_columns,
+        normalized_vector_columns
+    )
+    ON CONFLICT (index_name) DO UPDATE
+    SET table_name = EXCLUDED.table_name,
+        distribution_column = EXCLUDED.distribution_column,
+        text_columns = EXCLUDED.text_columns,
+        vector_columns = EXCLUDED.vector_columns,
+        created_at = now();
+
+    RETURN rendered_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.search_document_upsert(
+    p_table_name text,
+    p_document_key text,
+    p_text_body text,
+    p_vector_score numeric DEFAULT 0
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    document_id bigint;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    IF p_document_key IS NULL OR btrim(p_document_key) = '' THEN
+        RAISE EXCEPTION 'document_key must not be empty';
+    END IF;
+    IF p_text_body IS NULL OR btrim(p_text_body) = '' THEN
+        RAISE EXCEPTION 'text_body must not be empty';
+    END IF;
+    IF p_vector_score IS NULL THEN
+        RAISE EXCEPTION 'vector_score must not be null';
+    END IF;
+
+    INSERT INTO companion_internal.search_documents(
+        table_name,
+        document_key,
+        text_body,
+        vector_score
+    )
+    VALUES (
+        btrim(p_table_name::regclass::text),
+        btrim(p_document_key),
+        p_text_body,
+        p_vector_score
+    )
+    ON CONFLICT (table_name, document_key) DO UPDATE
+    SET text_body = EXCLUDED.text_body,
+        vector_score = EXCLUDED.vector_score,
+        updated_at = now()
+    RETURNING companion_internal.search_documents.document_id
+    INTO document_id;
+
+    RETURN document_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.hybrid_rank(
+    p_table_name text,
+    p_text_query text,
+    p_vector_column text,
+    p_vector_parameter text
+)
+RETURNS TABLE(
+    document_key text,
+    bm25_score numeric,
+    vector_score numeric
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_text_query IS NULL OR btrim(p_text_query) = '' THEN
+        RAISE EXCEPTION 'text_query must not be empty';
+    END IF;
+    IF p_vector_column IS NULL OR btrim(p_vector_column) = '' THEN
+        RAISE EXCEPTION 'vector_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(table_regclass::text, btrim(p_vector_column)::name) THEN
+        RAISE EXCEPTION 'vector_column does not exist on table';
+    END IF;
+    IF p_vector_parameter IS NULL OR btrim(p_vector_parameter) = '' THEN
+        RAISE EXCEPTION 'vector_parameter must not be empty';
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        documents.document_key,
+        ts_rank(
+            to_tsvector('simple', documents.text_body),
+            plainto_tsquery('simple', p_text_query)
+        )::numeric AS bm25_score,
+        documents.vector_score
+    FROM companion_internal.search_documents AS documents
+    WHERE documents.table_name = table_regclass::text
+      AND to_tsvector('simple', documents.text_body)
+          @@ plainto_tsquery('simple', p_text_query)
+    ORDER BY bm25_score DESC, documents.vector_score DESC, documents.document_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.rerank_search(
+    p_input_view text,
+    p_provider text,
+    p_model text
+)
+RETURNS TABLE(
+    input_view text,
+    provider text,
+    model text,
+    rerank_sql text
+)
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_input_view IS NULL OR btrim(p_input_view) = '' THEN
+        RAISE EXCEPTION 'input_view must not be empty';
+    END IF;
+    IF to_regclass(p_input_view) IS NULL THEN
+        RAISE EXCEPTION 'input_view must reference an existing relation';
+    END IF;
+    IF p_provider IS NULL OR btrim(p_provider) = '' THEN
+        RAISE EXCEPTION 'provider must not be empty';
+    END IF;
+    IF p_model IS NULL OR btrim(p_model) = '' THEN
+        RAISE EXCEPTION 'model must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.search_rerank_requests(
+        input_view,
+        provider,
+        model
+    )
+    VALUES (
+        btrim(p_input_view::regclass::text),
+        btrim(p_provider),
+        btrim(p_model)
+    );
+
+    RETURN QUERY SELECT
+        btrim(p_input_view::regclass::text),
+        btrim(p_provider),
+        btrim(p_model),
+        format('SELECT * FROM %s', btrim(p_input_view::regclass::text));
+END;
+$$;
+
+-- FEATURE: G2
+-- FEATURE: G3
+-- FEATURE: API4
+CREATE VIEW companion_graph_colocations AS
+SELECT
+    colocation_id,
+    vertex_table,
+    edge_table,
+    vertex_key,
+    colocation_group,
+    created_at
+FROM companion_internal.graph_colocations;
+
+CREATE VIEW companion_graphql_distributed_graphs AS
+SELECT
+    graph_name,
+    vertex_table,
+    edge_table,
+    registered_at
+FROM companion_internal.graphql_distributed_graphs;
+
+CREATE FUNCTION companion_internal.ensure_graph_colocation(
+    p_vertex_table text,
+    p_edge_table text,
+    p_vertex_key text,
+    p_colocation_group text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    vertex_regclass regclass;
+    edge_regclass regclass;
+BEGIN
+    IF p_vertex_table IS NULL OR btrim(p_vertex_table) = '' THEN
+        RAISE EXCEPTION 'vertex_table must not be empty';
+    END IF;
+    IF p_edge_table IS NULL OR btrim(p_edge_table) = '' THEN
+        RAISE EXCEPTION 'edge_table must not be empty';
+    END IF;
+    vertex_regclass := p_vertex_table::regclass;
+    edge_regclass := p_edge_table::regclass;
+    IF p_vertex_key IS NULL OR btrim(p_vertex_key) = '' THEN
+        RAISE EXCEPTION 'vertex_key must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(vertex_regclass::text, btrim(p_vertex_key)::name) THEN
+        RAISE EXCEPTION 'vertex_key column does not exist on vertex table';
+    END IF;
+    IF p_colocation_group IS NULL OR btrim(p_colocation_group) = '' THEN
+        RAISE EXCEPTION 'colocation_group must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.graph_colocations(
+        vertex_table,
+        edge_table,
+        vertex_key,
+        colocation_group
+    )
+    VALUES (
+        vertex_regclass::text,
+        edge_regclass::text,
+        btrim(p_vertex_key)::name,
+        btrim(p_colocation_group)
+    )
+    ON CONFLICT (vertex_table, edge_table, vertex_key, colocation_group) DO NOTHING;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.register_graphql_distributed_graph(
+    p_graph_name text,
+    p_vertex_table text,
+    p_edge_table text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    vertex_regclass regclass;
+    edge_regclass regclass;
+BEGIN
+    IF p_graph_name IS NULL OR btrim(p_graph_name) = '' THEN
+        RAISE EXCEPTION 'graph_name must not be empty';
+    END IF;
+    vertex_regclass := p_vertex_table::regclass;
+    edge_regclass := p_edge_table::regclass;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.graph_colocations
+        WHERE vertex_table = vertex_regclass::text
+          AND edge_table = edge_regclass::text
+    ) THEN
+        RAISE EXCEPTION 'graph colocation must be registered before GraphQL graph metadata';
+    END IF;
+
+    INSERT INTO companion_internal.graphql_distributed_graphs(
+        graph_name,
+        vertex_table,
+        edge_table
+    )
+    VALUES (
+        btrim(p_graph_name),
+        vertex_regclass::text,
+        edge_regclass::text
+    )
+    ON CONFLICT (graph_name) DO UPDATE
+    SET vertex_table = EXCLUDED.vertex_table,
+        edge_table = EXCLUDED.edge_table,
+        registered_at = now();
+END;
+$$;
+
+-- FEATURE: JS2
+-- FEATURE: M13
+CREATE VIEW companion_json_schemas AS
+SELECT
+    schema_name,
+    schema_document,
+    registered_at
+FROM companion_internal.json_schemas;
+
+CREATE VIEW companion_jsonschema_triggers AS
+SELECT
+    trigger_id,
+    table_name,
+    json_column,
+    schema_name,
+    timing,
+    trigger_name,
+    trigger_sql,
+    installed_at
+FROM companion_internal.jsonschema_triggers;
+
+CREATE FUNCTION companion_internal.register_json_schema(
+    p_schema_name text,
+    p_schema_document jsonb
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_schema_name IS NULL OR btrim(p_schema_name) = '' THEN
+        RAISE EXCEPTION 'schema_name must not be empty';
+    END IF;
+    IF p_schema_document IS NULL OR jsonb_typeof(p_schema_document) <> 'object' THEN
+        RAISE EXCEPTION 'schema_document must be a JSON object';
+    END IF;
+
+    INSERT INTO companion_internal.json_schemas(schema_name, schema_document)
+    VALUES (btrim(p_schema_name), p_schema_document)
+    ON CONFLICT (schema_name) DO UPDATE
+    SET schema_document = EXCLUDED.schema_document,
+        registered_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.json_schema_matches(
+    p_schema_name text,
+    p_document jsonb
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    schema_doc jsonb;
+    required_field text;
+BEGIN
+    SELECT schema_document
+    INTO schema_doc
+    FROM companion_internal.json_schemas
+    WHERE schema_name = btrim(p_schema_name);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'json schema is not registered: %', p_schema_name;
+    END IF;
+    IF p_document IS NULL THEN
+        RETURN false;
+    END IF;
+
+    IF schema_doc ? 'type' THEN
+        IF schema_doc->>'type' <> jsonb_typeof(p_document) THEN
+            RETURN false;
+        END IF;
+    END IF;
+
+    IF schema_doc ? 'required' THEN
+        FOR required_field IN
+            SELECT value
+            FROM jsonb_array_elements_text(schema_doc->'required') AS required(value)
+        LOOP
+            IF NOT p_document ? required_field THEN
+                RETURN false;
+            END IF;
+        END LOOP;
+    END IF;
+
+    RETURN true;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.enforce_jsonschema_trigger()
+RETURNS trigger
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    json_column name := TG_ARGV[0]::name;
+    schema_name text := TG_ARGV[1];
+    row_json jsonb := to_jsonb(NEW);
+    document jsonb;
+BEGIN
+    document := row_json->json_column::text;
+    IF NOT companion_internal.json_schema_matches(schema_name, document) THEN
+        RAISE EXCEPTION 'json document does not match registered schema';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.install_jsonschema_trigger(
+    p_table_name text,
+    p_json_column text,
+    p_schema_name text,
+    p_timing text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+    normalized_timing text;
+    trigger_name name;
+    trigger_sql text;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_json_column IS NULL OR btrim(p_json_column) = '' THEN
+        RAISE EXCEPTION 'json_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(table_regclass::text, btrim(p_json_column)::name) THEN
+        RAISE EXCEPTION 'json_column does not exist on table';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.json_schemas
+        WHERE schema_name = btrim(p_schema_name)
+    ) THEN
+        RAISE EXCEPTION 'schema_name is not registered';
+    END IF;
+    normalized_timing := upper(btrim(p_timing));
+    IF normalized_timing NOT IN ('BEFORE INSERT OR UPDATE', 'AFTER INSERT OR UPDATE') THEN
+        RAISE EXCEPTION 'timing must be BEFORE INSERT OR UPDATE or AFTER INSERT OR UPDATE';
+    END IF;
+
+    trigger_name := (
+        'companion_jsonschema_' || substr(md5(table_regclass::text || ':' || p_json_column || ':' || p_schema_name), 1, 16)
+    )::name;
+    trigger_sql := format(
+        'CREATE TRIGGER %I %s ON %s FOR EACH ROW EXECUTE FUNCTION companion_internal.enforce_jsonschema_trigger(%L, %L)',
+        trigger_name,
+        normalized_timing,
+        table_regclass,
+        btrim(p_json_column),
+        btrim(p_schema_name)
+    );
+
+    EXECUTE format('DROP TRIGGER IF EXISTS %I ON %s', trigger_name, table_regclass);
+    EXECUTE trigger_sql;
+
+    INSERT INTO companion_internal.jsonschema_triggers(
+        table_name,
+        json_column,
+        schema_name,
+        timing,
+        trigger_name,
+        trigger_sql
+    )
+    VALUES (
+        table_regclass::text,
+        btrim(p_json_column)::name,
+        btrim(p_schema_name),
+        normalized_timing,
+        trigger_name,
+        trigger_sql
+    )
+    ON CONFLICT (table_name, json_column, schema_name) DO UPDATE
+    SET timing = EXCLUDED.timing,
+        trigger_name = EXCLUDED.trigger_name,
+        trigger_sql = EXCLUDED.trigger_sql,
+        installed_at = now();
+
+    RETURN trigger_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.validate_jsonschema_shard(
+    p_table_name regclass,
+    p_json_column text,
+    p_schema_name text
+)
+RETURNS TABLE(total_rows bigint, invalid_rows bigint)
+LANGUAGE plpgsql
+STABLE
+AS $$
+BEGIN
+    IF p_table_name IS NULL THEN
+        RAISE EXCEPTION 'table_name must not be null';
+    END IF;
+    IF p_json_column IS NULL OR btrim(p_json_column) = '' THEN
+        RAISE EXCEPTION 'json_column must not be empty';
+    END IF;
+    IF p_schema_name IS NULL OR btrim(p_schema_name) = '' THEN
+        RAISE EXCEPTION 'schema_name must not be empty';
+    END IF;
+
+    RETURN QUERY EXECUTE format(
+        'SELECT count(*)::bigint, count(*) FILTER (WHERE NOT companion_internal.json_schema_matches(%L, %I))::bigint FROM %s',
+        btrim(p_schema_name),
+        btrim(p_json_column),
+        p_table_name
+    );
+END;
+$$;
+
+-- FEATURE: Geo2
+-- FEATURE: Geo3
+CREATE VIEW companion_geo_distributions AS
+SELECT
+    table_name,
+    geometry_column,
+    distribution_column,
+    precision,
+    updated_at
+FROM companion_internal.geo_distributions;
+
+CREATE VIEW companion_geo_pruning_policies AS
+SELECT
+    policy_id,
+    table_name,
+    geometry_column,
+    precision,
+    updated_at
+FROM companion_internal.geo_pruning_policies;
+
+CREATE FUNCTION companion_geo_bucket(
+    p_latitude numeric,
+    p_longitude numeric,
+    p_precision integer
+)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+BEGIN
+    IF p_latitude IS NULL OR p_latitude < -90 OR p_latitude > 90 THEN
+        RAISE EXCEPTION 'latitude must be between -90 and 90';
+    END IF;
+    IF p_longitude IS NULL OR p_longitude < -180 OR p_longitude > 180 THEN
+        RAISE EXCEPTION 'longitude must be between -180 and 180';
+    END IF;
+    IF p_precision IS NULL OR p_precision < 1 OR p_precision > 12 THEN
+        RAISE EXCEPTION 'precision must be between 1 and 12';
+    END IF;
+
+    RETURN substr(
+        md5(
+            round(p_latitude::numeric, p_precision)::text
+            || ':'
+            || round(p_longitude::numeric, p_precision)::text
+        ),
+        1,
+        p_precision
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_internal.add_geohash_column(
+    p_table_name text,
+    p_geometry_column text,
+    p_distribution_column text,
+    p_precision integer
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+    rendered_sql text;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_geometry_column IS NULL OR btrim(p_geometry_column) = '' THEN
+        RAISE EXCEPTION 'geometry_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(table_regclass::text, btrim(p_geometry_column)::name) THEN
+        RAISE EXCEPTION 'geometry_column does not exist on table';
+    END IF;
+    IF p_distribution_column IS NULL OR btrim(p_distribution_column) = '' THEN
+        RAISE EXCEPTION 'distribution_column must not be empty';
+    END IF;
+    IF p_precision IS NULL OR p_precision < 1 OR p_precision > 12 THEN
+        RAISE EXCEPTION 'precision must be between 1 and 12';
+    END IF;
+
+    rendered_sql := format(
+        'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I text;',
+        table_regclass,
+        btrim(p_distribution_column)
+    );
+    EXECUTE rendered_sql;
+
+    INSERT INTO companion_internal.geo_distributions(
+        table_name,
+        geometry_column,
+        distribution_column,
+        precision
+    )
+    VALUES (
+        table_regclass::text,
+        btrim(p_geometry_column)::name,
+        btrim(p_distribution_column)::name,
+        p_precision
+    )
+    ON CONFLICT (table_name) DO UPDATE
+    SET geometry_column = EXCLUDED.geometry_column,
+        distribution_column = EXCLUDED.distribution_column,
+        precision = EXCLUDED.precision,
+        updated_at = now();
+
+    RETURN rendered_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.enable_geo_shard_pruning(
+    p_table_name text,
+    p_geometry_column text,
+    p_precision integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_geometry_column IS NULL OR btrim(p_geometry_column) = '' THEN
+        RAISE EXCEPTION 'geometry_column must not be empty';
+    END IF;
+    IF NOT companion_internal.table_has_column(table_regclass::text, btrim(p_geometry_column)::name) THEN
+        RAISE EXCEPTION 'geometry_column does not exist on table';
+    END IF;
+    IF p_precision IS NULL OR p_precision < 1 OR p_precision > 12 THEN
+        RAISE EXCEPTION 'precision must be between 1 and 12';
+    END IF;
+
+    INSERT INTO companion_internal.geo_pruning_policies(
+        table_name,
+        geometry_column,
+        precision
+    )
+    VALUES (
+        table_regclass::text,
+        btrim(p_geometry_column)::name,
+        p_precision
+    )
+    ON CONFLICT (table_name, geometry_column) DO UPDATE
+    SET precision = EXCLUDED.precision,
+        updated_at = now();
+END;
 $$;
 
 -- FEATURE: M1

@@ -691,6 +691,128 @@ for feature_id, required_phrases in (
 
 for feature_id, required_phrases in (
     (
+        "Search2",
+        (
+            "installable SQL search index registry",
+            "companion_internal.register_search_index",
+            "companion_search_worker_indexes",
+            "verifies a missing distribution column fails closed",
+            "actual pg_search BM25 index execution, worker index rollout, distributed DDL application, operator reconciliation, and shard-aware query fanout remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "Search3",
+        (
+            "installable SQL hybrid ranking helper",
+            "companion_internal.hybrid_rank",
+            "companion_search_documents",
+            "verifies a missing vector column fails closed",
+            "actual pgvector distance operators, ANN index selection, model embeddings, and distributed query planning remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "Search9",
+        (
+            "installable SQL rerank request registry",
+            "companion_internal.rerank_search",
+            "companion_search_rerank_requests",
+            "verifies a missing rerank input relation fails closed",
+            "LLM/provider calls, model serving, sidecar rerank execution, and distributed result hydration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "G2",
+        (
+            "installable SQL graph colocation metadata",
+            "companion_internal.ensure_graph_colocation",
+            "companion_graph_colocations",
+            "verifies missing vertex keys fail closed",
+            "Apache AGE graph execution, distributed graph traversal, and shard fanout remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "G3",
+        (
+            "installable SQL graph colocation policy registry",
+            "companion_internal.ensure_graph_colocation",
+            "companion_graph_colocations",
+            "verifies missing vertex keys fail closed",
+            "distributed graph placement enforcement, AGE catalog integration, traversal routing, and operator reconciliation remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "API4",
+        (
+            "installable SQL GraphQL distributed graph metadata",
+            "companion_internal.register_graphql_distributed_graph",
+            "companion_graphql_distributed_graphs",
+            "verifies GraphQL graph registration requires graph colocation",
+            "GraphQL server integration, auth policies, GraphQL query planning, and operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "JS2",
+        (
+            "installable SQL JSON schema registry and shard validator",
+            "companion_internal.register_json_schema",
+            "companion_internal.validate_jsonschema_shard",
+            "verifies non-object schemas fail closed",
+            "full pg_jsonschema compatibility, JSON Schema draft coverage, distributed validation workers, and operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "M13",
+        (
+            "installable SQL JSON schema trigger helper",
+            "companion_internal.install_jsonschema_trigger",
+            "companion_jsonschema_triggers",
+            "verifies documents missing required fields fail closed",
+            "online migration orchestration, backfill validation, trigger rollout orchestration, and operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "Geo2",
+        (
+            "installable SQL geo bucket and distribution metadata helper",
+            "companion_geo_bucket",
+            "companion_internal.add_geohash_column",
+            "companion_geo_distributions",
+            "verifies out-of-range latitude fails closed",
+            "PostGIS geometry parsing, true geohash/S2/H3 indexes, distance operators, and distributed spatial query planning remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "Geo3",
+        (
+            "installable SQL geo pruning metadata helper",
+            "companion_internal.enable_geo_shard_pruning",
+            "companion_geo_pruning_policies",
+            "verifies out-of-range precision fails closed",
+            "PostGIS planner hooks, shard exclusion, spatial selectivity statistics, and operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for search/graph/json/geo SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow search/graph/json/geo SQL runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
+for feature_id, required_phrases in (
+    (
         "Sec5",
         (
             "installable append-only ledger table",
@@ -1419,6 +1541,25 @@ for phrase in (
     "'M11', 'online column-type migration', 'sql-runtime'",
     "'IA3', 'companion index advisor', 'sql-runtime'",
     "'WH2', 'companion webhook helpers', 'sql-runtime'",
+    "'Search2', 'distributed BM25 search index', 'sql-runtime'",
+    "'Search3', 'hybrid BM25 and vector ranking', 'sql-runtime'",
+    "'Search9', 'reranker UDF plan', 'sql-runtime'",
+    "'G2', 'distributed graph bridge', 'sql-runtime'",
+    "'G3', 'graph colocation policy', 'sql-runtime'",
+    "'API4', 'GraphQL distributed graph metadata', 'sql-runtime'",
+    "'JS2', 'distributed JSON Schema validation', 'sql-runtime'",
+    "'M13', 'JSON Schema validation triggers', 'sql-runtime'",
+    "'Geo2', 'geo-aware distribution', 'sql-runtime'",
+    "'Geo3', 'geo shard pruning', 'sql-runtime'",
+    "CREATE FUNCTION companion_internal.register_search_index",
+    "CREATE FUNCTION companion_internal.hybrid_rank",
+    "CREATE FUNCTION companion_internal.rerank_search",
+    "CREATE FUNCTION companion_internal.ensure_graph_colocation",
+    "CREATE FUNCTION companion_internal.register_graphql_distributed_graph",
+    "CREATE FUNCTION companion_internal.register_json_schema",
+    "CREATE FUNCTION companion_internal.install_jsonschema_trigger",
+    "CREATE FUNCTION companion_internal.add_geohash_column",
+    "CREATE FUNCTION companion_internal.enable_geo_shard_pruning",
     "'S6', 'placement generation helpers', 'sql-runtime'",
     "'S13', 'range routing helpers', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",
