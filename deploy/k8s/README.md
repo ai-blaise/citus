@@ -23,11 +23,12 @@ the matching controllers.
 
 Rust workloads run the real image matrix built by
 `scripts/citus-scale/build-app-images.sh`. The operator, pool, and sidecars
-start with `serve`. The operator and sidecars expose shared `/healthz`,
-`/readyz`, and `/metrics` endpoints. The pool exposes PostgreSQL traffic on
-its `postgres` port and admin probes on its separate `admin` port; its
-readiness probe checks that `pool.upstream.host:pool.upstream.port` accepts TCP
-connections.
+start with `serve`; the `citusctl` tool image defaults to `plan inspect
+cluster` and is executed by the kind production smoke as a Kubernetes Job. The
+operator and sidecars expose shared `/healthz`, `/readyz`, and `/metrics`
+endpoints. The pool exposes PostgreSQL traffic on its `postgres` port and admin
+probes on its separate `admin` port; its readiness probe checks that
+`pool.upstream.host:pool.upstream.port` accepts TCP connections.
 Release image builds set `PUSH=true` and write
 `artifacts/ai-blaise-image-digests.tsv`; production Helm values consume the
 operator and pool `sha256:` digests from that manifest.
@@ -42,8 +43,9 @@ real PostgreSQL query through `serve`, while CI requires Docker for that live
 traffic gate.
 `ci/ai-blaise/kind-production-smoke.sh` builds the real Rust image matrix,
 loads it into kind, installs the Helm chart with a real PostgreSQL upstream,
-and verifies SQL plus admin metrics through the pool service. It now installs
-both the exhaustive image-matrix chart profile and the production
+verifies SQL plus admin metrics through the pool service, and executes the
+built `citusctl` image. It now installs both the exhaustive image-matrix chart
+profile and the production
 `values-prod.yaml` profile, where alpha sidecars and tools remain disabled.
 The Argo application targets the `main` release branch, uses
 `values-prod.yaml`, creates the target namespace, and prunes stale rendered
@@ -63,3 +65,14 @@ using the deploy wrapper, or set `operator.image.digest` and `pool.image.digest`
 directly with Helm. `ALLOW_MUTABLE_IMAGE_TAGS=1` is only for local/dev smoke
 work with locally loaded images. The Argo production app fails closed until the
 release branch or deployment overlay supplies those digests.
+
+The Makefile release gate runs `ci/ai-blaise/deploy-check.sh` with
+`REQUIRE_HELM=1`, so rendered chart checks fail closed when Helm is unavailable
+instead of being skipped as exploratory evidence.
+
+The production-values smoke installs through `scripts/citus-scale/deploy.sh
+MODE=install`, which live-gates the human deploy wrapper. The optional
+`tools` Deployment is a dev-only rendered contract until separately promoted;
+the production smoke executes the built `citusctl` image as a Job instead. The
+Argo application manifest is a GitOps render contract, not live controller
+evidence by itself.

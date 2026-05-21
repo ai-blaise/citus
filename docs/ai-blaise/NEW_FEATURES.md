@@ -679,7 +679,7 @@ policies across shards.
 ### TS18: Executable Timescale Bridge State
 
 **Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`, `citus`
@@ -694,7 +694,7 @@ of only returning SQL text that references missing internal routines.
 **Citus comparison**: Vanilla Citus does not expose a TimescaleDB bridge state
 catalog or apply functions for Timescale policy fanout.
 
-Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+Contract/runtime evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `ai_blaise_citus` into a real `postgres:17` container, creates the bridge-state
 catalog, exercises public apply entrypoints where plain PostgreSQL can safely
 emulate dependency calls, requires durable `companion_timescale_bridge_state`
@@ -704,9 +704,9 @@ paths fail closed when TimescaleDB dependency functions are absent.
 a real `timescale/timescaledb:latest-pg17` container, stubs only the Citus
 distribution entrypoint, and verifies real TimescaleDB hypertable,
 compression, retention, reorder, continuous aggregate, and bridge-state
-behavior. This status applies only to the installable bridge-state SQL
-surface; the broader distributed TimescaleDB integration features it records
-remain alpha until proven against real TimescaleDB/Citus cohabitation.
+behavior. TS18 remains alpha until real Citus+TimescaleDB cohabitation runs
+without a stubbed distribution entrypoint and records the exact image digest,
+command log, and CI or VM evidence.
 
 **References**:
 
@@ -3568,13 +3568,14 @@ queries.
 **Bundled extension dep**: none
 
 **Summary**: Builds real Rust application images for the operator, pool,
-sidecars, and `citusctl`, with the deployed services defaulting to the
-long-running `serve` command. The pool image separates PostgreSQL TCP traffic
-from admin probes and requires a configured upstream before readiness. The
-Kubernetes production smoke also verifies live operator and sidecar health,
-readiness, and metrics over port-forwarded pod traffic before accepting the
-deployment, and aggregates pool request metrics across replicas after the SQL
-smoke so service load balancing cannot hide a cold pool pod.
+sidecars, and `citusctl`, with deployed services defaulting to the long-running
+`serve` command and the `citusctl` tool image defaulting to `plan inspect
+cluster`. The pool image separates PostgreSQL TCP traffic from admin probes and
+requires a configured upstream before readiness. The Kubernetes production smoke
+also verifies live operator and sidecar health, readiness, and metrics over
+port-forwarded pod traffic before accepting the deployment, runs the built
+`citusctl` image as a Job, and aggregates pool request metrics across replicas
+after the SQL smoke so service load balancing cannot hide a cold pool pod.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
 app containers and PostgreSQL traffic path rather than synthetic responder
@@ -3595,9 +3596,20 @@ behavior but not release image-pinning evidence. Release image builds write
 `artifacts/ai-blaise-image-digests.tsv` and fail if pushed images do not report
 immutable repo digests. The deploy workflow and `gate-close` run
 `ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
+the Makefile smoke targets set `REQUIRE_DOCKER=1` so missing Docker fails the
+release gate instead of silently skipping live evidence. `gate-close` also runs
+the image/deploy contract checks directly, with `REQUIRE_HELM=1` for rendered
+chart checks so missing Helm fails the release gate instead of silently skipping
+render evidence. The deploy wrapper install path is now live-gated by the
+`values-prod.yaml` phase of the kind smoke through `MODE=install`, while the
+optional tools Deployment remains dev-only and is not production evidence. The
+kind smoke also runs the built `citusctl` image and
+requires the `plan inspect cluster` output so tool images are executed, not
+merely built or loaded. The
 `deploy/k8s/argo/app.yaml` targets the `main` release branch and
 `values-prod.yaml` for GitOps deployment with namespace creation and pruning
-enabled.
+enabled; the Argo application is a GitOps render contract, not live controller
+evidence.
 
 **References**:
 

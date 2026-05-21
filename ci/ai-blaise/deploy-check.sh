@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+require_helm="${REQUIRE_HELM:-0}"
 chart_dir="deploy/k8s/helm/citus-overlay"
 argo_app="deploy/k8s/argo/app.yaml"
 kind_smoke="ci/ai-blaise/kind-production-smoke.sh"
@@ -135,7 +136,10 @@ grep -q 'helm upgrade --install' "${kind_smoke}"
 grep -q 'global.requireImageDigest=false' "${kind_smoke}"
 grep -q 'apply_monitoring_crds' "${kind_smoke}"
 grep -q 'PROD_VALUES_NAMESPACE' "${kind_smoke}"
-grep -q -- '-f deploy/k8s/helm/citus-overlay/values-prod.yaml' "${kind_smoke}"
+grep -q 'DEPLOY_PROFILE=prod' "${kind_smoke}"
+grep -q 'MODE=install' "${kind_smoke}"
+grep -q 'ALLOW_MUTABLE_IMAGE_TAGS=1' "${kind_smoke}"
+grep -q 'scripts/citus-scale/deploy.sh' "${kind_smoke}"
 grep -q 'assert_no_alpha_workload_deployments' "${kind_smoke}"
 grep -q 'exhaustive image-matrix smoke passed' "${kind_smoke}"
 grep -q 'helm uninstall "${release}"' "${kind_smoke}"
@@ -144,6 +148,10 @@ grep -q 'values-prod.yaml production profile smoke passed' "${kind_smoke}"
 grep -q 'probe_deployment_http' "${kind_smoke}"
 grep -q 'expected_probe_component' "${kind_smoke}"
 grep -q 'probe_pool_admin_pods' "${kind_smoke}"
+grep -q 'pool admin smoke did not observe ready upstream metrics' "${kind_smoke}"
+grep -q 'run_citusctl_image_smoke' "${kind_smoke}"
+grep -q 'ai-blaise-citusctl-image-smoke' "${kind_smoke}"
+grep -q 'citusctl inspect destructive=false requires_plan_id=true steps=3' "${kind_smoke}"
 grep -q 'port-forward' "${kind_smoke}"
 grep -q '/healthz' "${kind_smoke}"
 grep -q '/readyz' "${kind_smoke}"
@@ -337,5 +345,9 @@ if command -v helm >/dev/null 2>&1; then
   fi
   grep -q 'refusing to install non-production values file' "${render_dir}/deploy-wrapper-install.err"
 else
+  if [[ "${require_helm}" == "1" ]]; then
+    echo "helm is required for rendered chart profile checks" >&2
+    exit 1
+  fi
   echo "helm unavailable; skipping rendered chart profile checks"
 fi

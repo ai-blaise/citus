@@ -10,6 +10,7 @@ WORKDIR /workspace
 
 ARG PACKAGE
 ARG BIN
+ARG DEFAULT_ARGS=serve
 
 COPY Cargo.toml Cargo.lock ./
 COPY companion ./companion
@@ -25,6 +26,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp "/workspace/target/release/${BIN}" /tmp/ai-blaise-app
 
 FROM debian:${DEBIAN_VERSION}-slim AS runtime
+ARG DEFAULT_ARGS=serve
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
@@ -34,7 +36,18 @@ RUN apt-get update \
 
 COPY --from=builder /tmp/ai-blaise-app /usr/local/bin/ai-blaise-app
 
+ENV AI_BLAISE_DEFAULT_ARGS="${DEFAULT_ARGS}"
+RUN printf '%s\n' \
+    '#!/usr/bin/env sh' \
+    'set -eu' \
+    'if [ "$#" -eq 0 ]; then' \
+    '  set -- ${AI_BLAISE_DEFAULT_ARGS}' \
+    'fi' \
+    'exec /usr/local/bin/ai-blaise-app "$@"' \
+    > /usr/local/bin/ai-blaise-entrypoint \
+    && chmod +x /usr/local/bin/ai-blaise-entrypoint
+
 USER 65532:65532
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/ai-blaise-app"]
-CMD ["serve"]
+ENTRYPOINT ["/usr/local/bin/ai-blaise-entrypoint"]
+CMD []

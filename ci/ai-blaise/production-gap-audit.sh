@@ -408,6 +408,7 @@ for pattern in (
     "o2: distributed stats view",
     "coordinator and worker behavior to debug distributed plans",
     "validated cohabitation",
+    "ts18` for the installable timescale bridge-state sql surface",
 ):
     if pattern in docs_compact:
         fail(f"NEW_FEATURES.md contains stale production-ready overclaim: {pattern}")
@@ -423,6 +424,7 @@ for phrase in (
     "release prerequisites, not a waiver for alpha features",
     "production-release mode intentionally fails",
     "contract-only, or model-only without measured evidence",
+    "fail closed if docker is unavailable",
     "production-gap-audit",
 ):
     if phrase not in releasing_compact:
@@ -676,7 +678,10 @@ for phrase in (
     "helm upgrade --install",
     "global.requireImageDigest=false",
     "apply_monitoring_crds",
-    "-f deploy/k8s/helm/citus-overlay/values-prod.yaml",
+    "DEPLOY_PROFILE=prod",
+    "MODE=install",
+    "ALLOW_MUTABLE_IMAGE_TAGS=1",
+    "scripts/citus-scale/deploy.sh",
     "assert_no_alpha_workload_deployments",
     "exhaustive image-matrix smoke passed",
     'helm uninstall "${release}"',
@@ -688,7 +693,11 @@ for phrase in (
     "/metrics",
     "psql -h ai-blaise-citus-pool",
     "probe_pool_admin_pods",
+    "pool admin smoke did not observe ready upstream metrics",
     "ai_blaise_citus_pool_requests_total",
+    "run_citusctl_image_smoke",
+    "ai-blaise-citusctl-image-smoke",
+    "citusctl inspect destructive=false requires_plan_id=true steps=3",
 ):
     if phrase not in kind_smoke:
         fail(f"kind-production-smoke.sh is missing live deployment proof marker: {phrase}")
@@ -697,6 +706,8 @@ build_app_images = read(ROOT / "scripts/citus-scale/build-app-images.sh")
 for phrase in (
     "DIGEST_FILE",
     "push_output",
+    "DEFAULT_ARGS",
+    "plan inspect cluster",
     "ai-blaise-image-digests.tsv",
     "did not report an immutable repo digest",
 ):
@@ -734,6 +745,26 @@ if "Install Helm for rendered chart checks" not in deploy_workflow:
 gate_close_dependencies = makefile.split("gate-close:", 1)[-1].splitlines()[0]
 if "kind-production-smoke" not in gate_close_dependencies:
     fail("gate-close must include the live Kubernetes production smoke")
+if "image-check" not in gate_close_dependencies:
+    fail("gate-close must include image-check")
+if "deploy-check" not in gate_close_dependencies:
+    fail("gate-close must include deploy-check")
+if "image-check:\n\t@bash ci/ai-blaise/image-check.sh" not in makefile:
+    fail("Makefile image-check target must run bash ci/ai-blaise/image-check.sh")
+if "deploy-check:\n\t@REQUIRE_HELM=1 bash ci/ai-blaise/deploy-check.sh" not in makefile:
+    fail("Makefile deploy-check target must fail closed with REQUIRE_HELM=1")
+for target, command in (
+    ("pool-proxy-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh"),
+    ("sql-extension-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/sql-extension-smoke.sh"),
+    ("timescale-bridge-smoke", "REQUIRE_DOCKER=1 ci/ai-blaise/timescale-bridge-smoke.sh"),
+    (
+        "observability-replication-smoke",
+        "REQUIRE_DOCKER=1 ci/ai-blaise/observability-replication-smoke.sh",
+    ),
+):
+    target_marker = f"{target}:\n\t@{command}"
+    if target_marker not in makefile:
+        fail(f"Makefile {target} target must fail closed with {command}")
 
 for path, text in (
     (DEPLOY_WORKFLOW, deploy_workflow),
@@ -797,6 +828,18 @@ if "deploy.sh default production render must require immutable operator/pool ima
     fail("deploy-check.sh must reject deploy wrapper production renders without immutable image digests")
 if "requires an immutable digest" not in deploy_check:
     fail("deploy-check.sh must assert Helm emits the immutable digest failure")
+if 'require_helm="${REQUIRE_HELM:-0}"' not in deploy_check:
+    fail("deploy-check.sh must expose REQUIRE_HELM fail-closed mode")
+if "helm is required for rendered chart profile checks" not in deploy_check:
+    fail("deploy-check.sh must fail when required Helm is missing")
+for phrase in (
+    "DEPLOY_PROFILE=prod",
+    "MODE=install",
+    "ALLOW_MUTABLE_IMAGE_TAGS=1",
+    "scripts/citus-scale/deploy.sh",
+):
+    if phrase not in deploy_check or phrase not in kind_smoke:
+        fail(f"kind-production-smoke.sh/deploy-check.sh must live-gate deploy wrapper install marker: {phrase}")
 
 for phrase in (
     "requireImageDigest:",
@@ -889,6 +932,7 @@ for phrase in (
     "operator_image_digest=sha256:",
     "ai-blaise-image-digests.tsv",
     "pushed image without a reported",
+    "makefile smoke targets set `require_docker=1`",
     "allow_mutable_image_tags=1",
     "must not be used as release image-pinning evidence",
     "gitops sync intentionally fails closed",
@@ -926,6 +970,15 @@ for phrase in (
     "gitops sync fails closed",
     "ai-blaise-image-digests.tsv",
     "release pushes fail",
+    "release gate could silently skip live docker smokes",
+    "makefile live-smoke targets now set `require_docker=1`",
+    "release gate could silently skip rendered helm chart checks",
+    "makefile release gate now runs `image-check` and `deploy-check`",
+    "require_helm=1",
+    "deploy wrapper install path is now live-gated",
+    "`ts18` remains alpha until real citus+timescaledb cohabitation",
+    "tools deployment remains dev-only",
+    "argo application is a gitops render contract, not live controller evidence",
 ):
     if phrase not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve deploy-wrapper guardrail: {phrase}")

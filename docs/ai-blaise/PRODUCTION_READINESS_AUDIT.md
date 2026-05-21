@@ -83,6 +83,27 @@ more production-ready than the artifacts justified.
     not write a durable digest manifest or fail when a pushed image lacked a
     repo digest. Production values could require digests while the release path
     still left operators to discover them manually.
+23. `make -f Makefile.ai-blaise gate-close` invoked Docker-backed live smokes
+    through targets that did not set `REQUIRE_DOCKER=1`. On a machine without
+    Docker, the documented release gate could silently skip live Docker smokes
+    while still reporting success for those targets.
+24. The D13 runtime image matrix included `citusctl`, but the shared Dockerfile
+    defaulted every image to `serve` and no live smoke executed the built
+    `citusctl` image. The image could therefore be built and loaded while its
+    default container behavior failed before running any tool command.
+25. The documented `gate-close` release path did not directly run
+    `image-check` or `deploy-check`, and `deploy-check.sh` skipped rendered Helm
+    checks when Helm was unavailable. A release gate could silently skip
+    rendered Helm chart checks and image contract validation unless the separate
+    GitHub workflows were inspected manually.
+26. `TS18` was marked production-ready even though its real TimescaleDB smoke
+    stubbed the Citus distribution entrypoint. That made the bridge-state SQL
+    surface look fully cohabitation-proven before a real Citus+TimescaleDB run
+    existed.
+27. The D8 deploy wrapper supported `MODE=install`, but the live kind smoke used
+    `helm upgrade --install` directly for the production-values phase. The
+    production-safe human deploy wrapper install path was therefore documented
+    and rendered, but not live-gated.
 
 ## Corrections
 
@@ -199,6 +220,30 @@ more production-ready than the artifacts justified.
   report an immutable repo digest for a pushed image, giving production
   render/install a concrete source for `OPERATOR_IMAGE_DIGEST` and
   `POOL_IMAGE_DIGEST`.
+- The Makefile live-smoke targets now set `REQUIRE_DOCKER=1` for pool proxy,
+  SQL extension, real TimescaleDB bridge, and primary/standby observability
+  replication smokes. Direct scripts may still skip for exploratory local use,
+  but the documented `gate-close` release path fails closed if Docker is
+  unavailable.
+- The shared Rust runtime Dockerfile now accepts explicit default command args.
+  Service images still default to `serve`, while the `citusctl` image defaults
+  to `plan inspect cluster`. The kind production smoke runs a Kubernetes Job from
+  the built `citusctl` image and requires the expected plan output, so the tool
+  image is executed as part of D13 evidence rather than merely built and loaded.
+- The Makefile release gate now runs `image-check` and `deploy-check` directly.
+  The `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm is a release
+  gate failure instead of a skipped rendered-chart evidence path.
+- `TS18` remains alpha until real Citus+TimescaleDB cohabitation runs without a
+  stubbed distribution entrypoint and records image digest, command log, and CI
+  or VM evidence. The current TimescaleDB smoke is contract/runtime evidence for
+  the bridge-state SQL surface, not production evidence for distributed
+  cohabitation.
+- The D8 deploy wrapper install path is now live-gated: the `values-prod.yaml`
+  phase of `kind-production-smoke.sh` installs through
+  `scripts/citus-scale/deploy.sh MODE=install` instead of bypassing the wrapper.
+  The optional tools Deployment remains dev-only; production evidence executes
+  the built `citusctl` image through a smoke Job. The Argo application is a
+  GitOps render contract, not live controller evidence.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
@@ -225,7 +270,15 @@ Rule 10 completion for this branch requires local and VM verification of:
   digests; local kind smokes that disable the digest requirement are runtime
   smoke evidence only, not release image-pinning evidence.
 - Every production-promoted SQL runtime smoke must be part of the GitHub image
-  workflow, `gate-close`, and static production gap audit guards.
+  workflow, `gate-close`, and static production gap audit guards; Makefile
+  release smoke targets must set `REQUIRE_DOCKER=1` so missing Docker is a
+  failure, not a skipped evidence path.
+- The local release gate must run the same image and deploy contract checks as
+  GitHub; rendered Helm checks must use `REQUIRE_HELM=1` so missing Helm is a
+  failure, not a skipped evidence path.
+- Production-ready Timescale/Citus claims require a real cohabitation run; stubs
+  are acceptable only for alpha contract/runtime evidence and must be called out
+  as such.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
 
@@ -237,16 +290,16 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 161
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Seven narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Six narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence: `D13`
 for the production runtime image matrix, `O4` for the shared sidecar
 health/readiness/metrics runtime, `O1` for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
-streaming standby, `R4` for the installable idle transaction detection SQL
-surface, and `TS18` for the installable Timescale bridge-state SQL surface
-verified in both plain PostgreSQL and a real TimescaleDB container. The other
-154 feature headings remain
+streaming standby, and `R4` for the installable idle transaction detection SQL
+surface. `TS18` remains alpha until real Citus+TimescaleDB cohabitation is
+verified without a stubbed distribution entrypoint. The other
+155 feature headings remain
 `Status: alpha`. The remaining 79 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
