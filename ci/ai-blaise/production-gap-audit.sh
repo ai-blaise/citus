@@ -34,6 +34,7 @@ OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 DEPLOY_SCRIPT = ROOT / "scripts/citus-scale/deploy.sh"
+SIDECAR_SHARED_README = ROOT / "sidecar/shared/README.md"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
 DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
 EXHAUSTIVE_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-exhaustive.yaml"
@@ -540,6 +541,34 @@ for phrase in (
 ):
     if phrase not in architecture_compact:
         fail(f"ARCHITECTURE.md must preserve alpha evidence boundary: {phrase}")
+
+shared_readme_compact = compact(read(SIDECAR_SHARED_README))
+if "### o5: opentelemetry traces" in docs_compact:
+    fail("O5 must not claim OpenTelemetry traces before trace emission/export is implemented")
+o5_entry = next((entry for entry in entries if entry["id"] == "O5"), None)
+if o5_entry is None:
+    fail("O5 feature heading is required while operator sidecar deployment contracts exist")
+if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in o5_entry["body"]:
+    fail("O5 must cite the operator canonical runner as alpha contract evidence")
+for phrase in (
+    "the current implementation does not emit or export opentelemetry traces",
+    "trace propagation remains unimplemented until real runtime code",
+):
+    if phrase not in docs_compact:
+        fail(f"NEW_FEATURES.md must preserve the O5 tracing boundary: {phrase}")
+for phrase in (
+    "tracing and opentelemetry export are not implemented in this shared runtime",
+    "`feature: o5` remains alpha for the sidecar deployment contract",
+    "configuration loading and postgresql connection helpers are also outside the current shared runtime surface",
+):
+    if phrase not in shared_readme_compact:
+        fail(f"sidecar/shared README must preserve the O5 tracing boundary: {phrase}")
+for stale in (
+    "metrics, tracing",
+    "postgresql connection helpers.",
+):
+    if stale in shared_readme_compact:
+        fail(f"sidecar/shared README must not overclaim unimplemented runtime helpers: {stale}")
 
 for phrase in (
     "while bundle1 remains alpha",

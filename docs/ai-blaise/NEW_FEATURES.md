@@ -4076,7 +4076,7 @@ only to the shared probe/metrics runtime.
 - In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
 - Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
-### O5: OpenTelemetry Traces And Sidecar Deployment Contract
+### O5: Sidecar Deployment Contract
 
 **Overlay**: `operator/src/crds/sidecar.rs`
 **Status**: alpha
@@ -4086,10 +4086,12 @@ only to the shared probe/metrics runtime.
 
 **Summary**: Defines the operator-facing sidecar deployment contract for
 replicas, resources, and type-specific configuration across the V2 sidecar
-surface.
+surface. The current implementation does not emit or export OpenTelemetry
+traces; trace propagation remains unimplemented until real runtime code,
+collector wiring, and live VM/Kubernetes evidence are added.
 
-**Motivation**: Traces and rollout behavior are only useful if every sidecar is
-declared and reconciled through a consistent resource contract.
+**Motivation**: Rollout behavior is only useful if every sidecar is declared
+and reconciled through a consistent resource contract.
 
 **Citus comparison**: Vanilla Citus does not ship out-of-process sidecar
 deployment objects.
@@ -4098,6 +4100,7 @@ deployment objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### O6: Grafana Dashboards As ConfigMaps
 

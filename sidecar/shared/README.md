@@ -7,8 +7,14 @@
 > Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
-Shared sidecar library for health, readiness, metrics, tracing, configuration,
-and PostgreSQL connection helpers.
+Shared sidecar library for health, readiness, metrics, drain handling, and
+sidecar contract validation.
+
+Tracing and OpenTelemetry export are not implemented in this shared runtime.
+`FEATURE: O5` remains alpha for the sidecar deployment contract until real
+trace emission, collector wiring, and live VM/Kubernetes evidence are added.
+Configuration loading and PostgreSQL connection helpers are also outside the
+current shared runtime surface.
 
 Current implemented surface:
 

@@ -104,6 +104,11 @@ more production-ready than the artifacts justified.
     `helm upgrade --install` directly for the production-values phase. The
     production-safe human deploy wrapper install path was therefore documented
     and rendered, but not live-gated.
+28. `FEATURE: O5` and the shared sidecar README referred to OpenTelemetry
+    traces, configuration, and PostgreSQL connection helpers even though the
+    runtime has no trace emission, collector wiring, OTEL dependency,
+    configuration loader, or PostgreSQL helper module. That made an alpha
+    deployment-contract entry read like broader runtime implementation existed.
 
 ## Corrections
 
@@ -265,6 +270,11 @@ more production-ready than the artifacts justified.
   The optional tools Deployment remains dev-only; production evidence executes
   the built `citusctl` image through a smoke Job. The Argo application is a
   GitOps render contract, not live controller evidence.
+- The O5 register entry and shared sidecar README now describe only the
+  implemented sidecar deployment contract. They explicitly state that tracing
+  and OpenTelemetry export, configuration loading, and PostgreSQL connection
+  helpers are not implemented, and the production gap audit rejects
+  reintroduced claims until real runtime code and live evidence exist.
 - The D7 direct Helm install path now fails closed by default. `values.yaml`
   requires immutable operator and pool image digests, disables alpha sidecars,
   disables the optional tools Deployment, and disables alpha runtime/security
@@ -339,7 +349,7 @@ feature headings remain
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.
-The audit guard also reports 77 feature headings without an explicit
+The audit guard also reports 73 feature headings without an explicit
 Executable, CI, Acceptance, SQL runtime, or SQL extension reference line; those
 entries may still have source markers, but they are not independently
 evidenced enough for production signoff.
