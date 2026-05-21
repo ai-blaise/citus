@@ -11,11 +11,11 @@ Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
 Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
-`db_doctor`, `extension_catalog`, `geo_distributed`, `graph_bridge`,
-`index_advisor`, `jsonschema_bridge`, `ledger`, `lsp_metadata`, `migration`,
-`observability`, `ops_contracts`, `plan_freeze`, `router_assist`,
-`schema_jobs`, `search_bridge`, `tenants`, `toolkit_distributed`, `vector`,
-and `webhooks`.
+`db_doctor`, `domain_contracts`, `extension_catalog`, `geo_distributed`,
+`graph_bridge`, `index_advisor`, `jsonschema_bridge`, `ledger`,
+`lsp_metadata`, `migration`, `observability`, `ops_contracts`, `plan_freeze`,
+`router_assist`, `schema_jobs`, `search_bridge`, `tenants`,
+`toolkit_distributed`, `vector`, and `webhooks`.
 
 ## Current Surface
 
@@ -55,6 +55,11 @@ and `webhooks`.
 - `ToolkitDistributedPlan` for `FEATURE: T8`, `FEATURE: TS13`,
   `FEATURE: TS14`, `FEATURE: TS15`, `FEATURE: TS16`, `FEATURE: TS17`, and
   `FEATURE: L9`
+- `canonical_domain_contracts_report` executes the deterministic companion
+  evidence batch across vector, auth, graph, geo, advisor, JSON schema,
+  migration, plan freeze, router, search, ledger, toolkit, tenant, and webhook
+  contracts; `companion_contracts run-domain-contracts-canonical` emits the
+  TSV summary used by CI.
 - `ExtensionContract` for the V2 bundled and optional extension surfaces,
   including `FEATURE: A7`, `FEATURE: Search1`, `FEATURE: G1`,
   `FEATURE: JS1`, `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: O7`,
@@ -84,9 +89,10 @@ and `webhooks`.
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 Use `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- \
 run-advanced-planner-canonical`, `cargo run -p ai_blaise_citus_companion \
---bin companion_contracts -- run-extension-catalog-canonical`, and `cargo run \
--p ai_blaise_citus_companion --bin companion_contracts -- \
-run-operations-canonical` to emit TSV reports for the broad V2 companion
-contracts.
+--bin companion_contracts -- run-extension-catalog-canonical`, `cargo run -p \
+ai_blaise_citus_companion --bin companion_contracts -- \
+run-domain-contracts-canonical`, and `cargo run -p \
+ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+to emit TSV reports for the broad V2 companion contracts.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale
 bridge functions.

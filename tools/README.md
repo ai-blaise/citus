@@ -17,6 +17,11 @@ Developer and operator tools:
 - `citus-mcp`
 - `citus-watch`
 
+`citusctl` now has a deterministic canonical command runner covering dev,
+apply, inspect, time-travel, and WAL replay planning contracts.
+`cargo run -p ai_blaise_citusctl -- run-canonical` emits the summary used by
+CI.
+
 `citus-lsp` now has the initial Rust diagnostic contract for distributed SQL
 editing: Citus colocation checks, distribution-column safety, tenant-filter
 hints, Timescale hypertable bridge diagnostics, and quick-fix planning.

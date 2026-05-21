@@ -33,6 +33,8 @@ jobs:
         run: cargo check -p ai_blaise_citusctl --tests
       - name: Test
         run: cargo test -p ai_blaise_citusctl
+      - name: Run canonical citusctl report
+        run: cargo run -q -p ai_blaise_citusctl -- run-canonical
 
   lsp:
     runs-on: ubuntu-latest

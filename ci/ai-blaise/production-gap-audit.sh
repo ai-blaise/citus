@@ -330,6 +330,148 @@ if source_only_non_alpha:
         + ", ".join(source_only_non_alpha)
     )
 
+def v2_addendum_rows(docs):
+    marker = "## V2 Completion Register Addendum"
+    if marker not in docs:
+        fail("NEW_FEATURES.md is missing the V2 completion register addendum")
+    section = docs.split(marker, 1)[1]
+    header = None
+    rows = {}
+    for line in section.splitlines():
+        if not line.startswith("|"):
+            if header and rows:
+                break
+            continue
+        if set(line.replace("|", "").strip()) == {"-"}:
+            continue
+        columns = [column.strip() for column in line.strip("|").split("|")]
+        if columns[0] == "ID":
+            header = columns
+            continue
+        if header is None:
+            continue
+        if len(columns) != len(header):
+            fail(f"V2 addendum row has {len(columns)} columns but header has {len(header)}: {line}")
+        row = dict(zip(header, columns))
+        rows[row["ID"]] = row
+    return rows
+
+addendum_by_id = v2_addendum_rows(docs)
+if set(addendum_by_id) != source_only_ids:
+    fail(
+        "V2 addendum rows must exactly cover source-only alpha ids; missing rows: "
+        + ", ".join(sorted(source_only_ids - set(addendum_by_id)))
+        + "; extra rows: "
+        + ", ".join(sorted(set(addendum_by_id) - source_only_ids))
+    )
+
+source_only_evidence_requirements = {
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical": {
+        "A7",
+        "A12",
+        "C11",
+        "C12",
+        "C13",
+        "EF6",
+        "F2",
+        "F5",
+        "G1",
+        "Geo1",
+        "IA1",
+        "IA2",
+        "JS1",
+        "L11",
+        "M6",
+        "M10",
+        "M12",
+        "MR7",
+        "O7",
+        "O8",
+        "O9",
+        "O11",
+        "O12",
+        "PM1",
+        "PM2",
+        "R6",
+        "R11",
+        "Search1",
+        "Search4",
+        "Search5",
+        "Search6",
+        "Sec3",
+        "Sec4",
+        "Sec10",
+        "Sec11",
+        "Sec14",
+        "Sec15",
+        "WF1",
+    },
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical": {
+        "A10",
+        "A11",
+        "Edge1",
+        "Edge2",
+        "F3",
+        "F4",
+        "L7",
+        "L10",
+        "M4",
+        "MR3",
+        "MR6",
+        "R3",
+        "R8",
+        "R12",
+        "S1",
+        "S3",
+        "S8",
+        "S12",
+        "Sto2",
+        "T4",
+        "T10",
+        "T11",
+        "T13",
+        "T14",
+        "TS10",
+        "TS11",
+    },
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical": {
+        "A9",
+        "D9",
+        "D10",
+        "MR9",
+        "RT5",
+        "S7",
+        "Sec7",
+        "Sec8",
+        "Sec9",
+        "T6",
+    },
+    "cargo run -p ai_blaise_citus_mcp -- run-canonical": {
+        "D11",
+    },
+    "cargo run -p ai_blaise_citus_pool -- run-canonical": {
+        "T7",
+    },
+}
+expected_source_only_evidence_ids = set().union(*source_only_evidence_requirements.values())
+if expected_source_only_evidence_ids != source_only_ids:
+    fail(
+        "production gap audit source-only evidence requirement ids drifted; missing: "
+        + ", ".join(sorted(source_only_ids - expected_source_only_evidence_ids))
+        + "; extra: "
+        + ", ".join(sorted(expected_source_only_evidence_ids - source_only_ids))
+    )
+for command, feature_ids in sorted(source_only_evidence_requirements.items()):
+    evidence = f"`{command}`"
+    for feature_id in sorted(feature_ids):
+        row = addendum_by_id[feature_id]
+        if row.get("Status", "").lower() != "alpha":
+            fail(f"{feature_id} addendum row must remain alpha")
+        if f"`FEATURE: {feature_id}`" not in row.get("Reference", ""):
+            fail(f"{feature_id} addendum row must cite its source FEATURE marker")
+        if evidence not in row.get("Evidence", ""):
+            fail(f"{feature_id} addendum row must cite executable evidence command {command}")
+
 if len(production_entries) < 1:
     fail("production gap audit expects at least one promoted, evidence-backed feature")
 
@@ -387,6 +529,15 @@ if expected_alpha_count not in audit_compact:
     fail(
         "PRODUCTION_READINESS_AUDIT.md must report the current alpha heading count"
     )
+expected_source_only_count = (
+    f"remaining {len(source_only_ids)} source markers are represented as v2 completion addendum rows"
+)
+if expected_source_only_count not in audit_compact:
+    fail(
+        "PRODUCTION_READINESS_AUDIT.md must report the current source-only addendum row count"
+    )
+if "every addendum row has a deterministic executable evidence command" not in audit_compact:
+    fail("PRODUCTION_READINESS_AUDIT.md must state source-only addendum evidence coverage")
 
 expected_source_only = f"remaining {len(source_only_ids)} source markers"
 if expected_source_only not in audit_compact:
@@ -589,6 +740,75 @@ for feature_id in sorted(operator_canonical_ids):
         fail(f"{feature_id} feature heading is required for operator canonical evidence")
     if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in entry["body"]:
         fail(f"{feature_id} must cite the operator canonical runner as alpha contract evidence")
+evidence_runner_requirements = {
+    "cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical": {
+        "A1",
+        "API4",
+        "G2",
+        "G3",
+        "Geo2",
+        "Geo3",
+        "IA3",
+        "JS2",
+        "L9",
+        "M1",
+        "M11",
+        "M13",
+        "M2",
+        "M7",
+        "PM3",
+        "PM4",
+        "S13",
+        "S14",
+        "S6",
+        "Search3",
+        "Search9",
+        "Sec1",
+        "Sec2",
+        "Sec5",
+        "Sec6",
+        "T8",
+        "TO3",
+        "TO4",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS9",
+        "WH2",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical": {
+        "A3",
+        "A4",
+        "A6",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical": {
+        "API2",
+        "API5",
+        "API6",
+    },
+    "cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical": {
+        "Auth2",
+        "Auth4",
+        "Auth5",
+    },
+    "cargo run -p ai_blaise_citusctl -- run-canonical": {
+        "B5",
+        "D1",
+        "D2",
+        "M8",
+        "WF2",
+    },
+}
+for command, feature_ids in sorted(evidence_runner_requirements.items()):
+    line = f"Executable: `{command}`"
+    for feature_id in sorted(feature_ids):
+        entry = entry_by_id.get(feature_id)
+        if entry is None:
+            fail(f"{feature_id} feature heading is required for executable alpha evidence")
+        if line not in entry["body"]:
+            fail(f"{feature_id} must cite {command} as alpha contract evidence")
 for phrase in (
     "the current implementation does not emit or export opentelemetry traces",
     "trace propagation remains unimplemented until real runtime code",

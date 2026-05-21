@@ -16,8 +16,12 @@ Current implemented surface:
 - `ExecutionIntent`
 - `CitusCtlCommand`
 - `CitusCtlPlan`
+- `CitusCtlCanonicalReport`
+- `canonical_citusctl_report`
 - `parse_request`
 - `v2_command_catalog`
 
 These contracts cover `FEATURE: D1`, `FEATURE: D2`, `FEATURE: M8`,
-`FEATURE: B3`, `FEATURE: B5`, and `FEATURE: WF2`.
+`FEATURE: B3`, `FEATURE: B5`, and `FEATURE: WF2`. The canonical runner
+includes `dev up`, plan-gated `apply`, `inspect cluster`, UTC `time-travel`,
+and WAL replay validation.
