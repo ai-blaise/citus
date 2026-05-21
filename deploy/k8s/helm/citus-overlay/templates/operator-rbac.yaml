@@ -4,6 +4,7 @@ metadata:
   name: {{ include "citus-overlay.name" . }}-operator
   labels:
     {{- include "citus-overlay.labels" . | nindent 4 }}
+{{- if .Values.operator.controllerRbac.enabled }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -49,3 +50,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "citus-overlay.name" . }}-operator
     namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -759,6 +759,32 @@ assert_no_alpha_workload_deployments() {
   fi
 }
 
+assert_operator_controller_rbac_present() {
+  if ! kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+    echo "values-exhaustive.yaml must render operator controller ClusterRole" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+  if ! kubectl get clusterrolebinding "${chart_name}-operator" >/dev/null 2>&1; then
+    echo "values-exhaustive.yaml must render operator controller ClusterRoleBinding" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+}
+
+assert_operator_controller_rbac_absent() {
+  if kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+    echo "production-safe profile rendered alpha operator controller ClusterRole" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+  if kubectl get clusterrolebinding "${chart_name}-operator" >/dev/null 2>&1; then
+    echo "production-safe profile rendered alpha operator controller ClusterRoleBinding" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+}
+
 assert_observability_resources() {
   local dashboards="configmap/${chart_name}-dashboards"
   local alerts="prometheusrules.monitoring.coreos.com/${chart_name}-alerts"
@@ -853,6 +879,7 @@ helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
 
 wait_for_deployments
 assert_observability_resources
+assert_operator_controller_rbac_present
 
 probe_deployment_http "${chart_name}-operator" operator 8080 18080
 
@@ -918,6 +945,7 @@ assert_observability_resources
 assert_deployment_replicas "${chart_name}-operator" 2
 assert_deployment_replicas "${chart_name}-pool" 3
 assert_no_alpha_workload_deployments
+assert_operator_controller_rbac_absent
 probe_deployment_http "${chart_name}-operator" operator 8080 18140
 run_pool_sql_smoke
 
@@ -956,6 +984,7 @@ assert_observability_resources
 assert_deployment_replicas "${chart_name}-operator" 2
 assert_deployment_replicas "${chart_name}-pool" 3
 assert_no_alpha_workload_deployments
+assert_operator_controller_rbac_absent
 probe_deployment_http "${chart_name}-operator" operator 8080 18180
 run_pool_sql_smoke
 

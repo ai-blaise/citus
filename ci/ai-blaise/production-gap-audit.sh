@@ -2234,9 +2234,17 @@ if 'resources: ["*"]' in operator_rbac_template:
     fail("operator RBAC must enumerate ai-blaise resources explicitly")
 if '"secrets"' in operator_rbac_template:
     fail("operator RBAC must not grant Secret access while secret binding is alpha")
+if "{{- if .Values.operator.controllerRbac.enabled }}" not in operator_rbac_template:
+    fail("operator controller RBAC must be gated behind operator.controllerRbac.enabled")
 for resource in ("citusclusters", "hypertables", "scheduledrepacks"):
     if resource not in operator_rbac_template:
         fail(f"operator RBAC must include explicit resource: {resource}")
+if not re.search(r"operator:\n(?:  .*\n)*  controllerRbac:\n    enabled:\s+false\b", default_values):
+    fail("values.yaml default profile must disable alpha operator controller RBAC")
+if not re.search(r"operator:\n(?:  .*\n)*  controllerRbac:\n    enabled:\s+false\b", prod_values):
+    fail("values-prod.yaml must disable alpha operator controller RBAC")
+if not re.search(r"operator:\n(?:  .*\n)*  controllerRbac:\n    enabled:\s+true\b", exhaustive_values):
+    fail("values-exhaustive.yaml must be the explicit operator controller RBAC coverage profile")
 
 for phrase in (
     "FEATURE: Sec13",
@@ -2287,6 +2295,24 @@ if "values.yaml must not enable alpha sidecars by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha sidecars enabled in default values")
 if "values.yaml must not enable alpha runtime/security intent controls by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in default values")
+for phrase in (
+    "values.yaml default render must not include operator controller RBAC",
+    "values-prod.yaml render must not include operator controller RBAC",
+    "values-dev.yaml render must not include operator controller RBAC",
+    "deploy.sh default render must use production values without operator controller RBAC",
+):
+    if phrase not in deploy_check:
+        fail(
+            "deploy-check.sh must reject operator controller RBAC in production-safe renders: "
+            + phrase
+        )
+for phrase in (
+    "assert_operator_controller_rbac_present",
+    "assert_operator_controller_rbac_absent",
+    "production-safe profile rendered alpha operator controller ClusterRole",
+):
+    if phrase not in kind_smoke:
+        fail(f"kind-production-smoke.sh must live-gate operator controller RBAC boundary: {phrase}")
 if "deploy.sh default production render must require immutable operator/pool image digests" not in deploy_check:
     fail("deploy-check.sh must reject deploy wrapper production renders without immutable image digests")
 if "requires an immutable digest" not in deploy_check:

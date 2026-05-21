@@ -4257,9 +4257,11 @@ queries.
 **Summary**: Provides a production-safe direct Helm install surface for the
 ai-blaise overlay. The chart defaults in `values.yaml` require immutable
 operator/pool image digests and keep alpha sidecars, tools, and alpha
-runtime/security intent disabled. Non-production image-matrix coverage moved to
-the explicit `values-exhaustive.yaml` profile, while `values-dev.yaml` remains
-the small developer profile.
+runtime/security intent disabled. They also omit controller-grade operator
+RBAC while the operator production runtime only serves probes/metrics.
+Non-production image-matrix coverage moved to the explicit
+`values-exhaustive.yaml` profile, while `values-dev.yaml` remains the small
+developer profile.
 
 **Motivation**: A direct `helm upgrade --install` command should fail closed
 unless production image identity is supplied, and it must not install the
@@ -4274,8 +4276,9 @@ and alpha runtime/security intent in the default profile. The same check keeps
 `values-exhaustive.yaml` as the only direct Helm profile with all alpha
 sidecars enabled. `ci/ai-blaise/kind-production-smoke.sh` now installs the
 default chart profile with direct Helm against a live kind cluster, verifies
-operator/pool replicas, rejects alpha workload deployments, and runs live SQL
-plus operator admin traffic through the installed release.
+operator/pool replicas, rejects alpha workload deployments and controller-grade
+operator RBAC, and runs live SQL plus operator admin traffic through the
+installed release.
 
 **References**:
 
@@ -4311,10 +4314,12 @@ Production evidence: `ci/ai-blaise/kind-production-smoke.sh` runs
 `scripts/citus-scale/deploy.sh` with `DEPLOY_PROFILE=prod` and `MODE=install`
 against a live kind cluster, verifies the resulting `values-prod.yaml` release
 has only operator/pool/PostgreSQL workloads, runs live SQL and pool admin
-traffic through the installed release, and proves the wrapper install path is
-part of `make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
+traffic through the installed release, rejects controller-grade operator RBAC
+in the production profile, and proves the wrapper install path is part of
+`make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
 statically rejects regressions that remove the production default,
-digest-inputs, mutable-tag escape hatch, or non-production install refusal.
+digest-inputs, mutable-tag escape hatch, controller RBAC boundary, or
+non-production install refusal.
 
 **References**:
 
@@ -4340,6 +4345,9 @@ also verifies live operator and sidecar health, readiness, and metrics over
 port-forwarded pod traffic before accepting the deployment, runs the built
 `citusctl` image as a Job, and aggregates pool request metrics across replicas
 after the SQL smoke so service load balancing cannot hide a cold pool pod.
+Controller-grade operator RBAC remains an alpha chart contract enabled only by
+the exhaustive profile until the operator runs real Kubernetes watches and
+reconciliation.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
 app containers and PostgreSQL traffic path rather than synthetic responder

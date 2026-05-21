@@ -41,6 +41,10 @@ more production-ready than the artifacts justified.
 12. The operator ClusterRole granted wildcard ai-blaise resources and Secret
     access even though the current production operator path only serves
     probes/metrics and External Secrets integration remains alpha.
+12a. Even after narrowing the resource list, the production/default Helm
+     profiles still rendered controller-grade operator ClusterRole and
+     ClusterRoleBinding resources despite the current operator `serve` path not
+     running a Kubernetes controller.
 13. The Argo application enabled self-heal but disabled pruning, so stale alpha
     deployments from an earlier non-production profile could survive after
     switching GitOps to `values-prod.yaml`.
@@ -210,14 +214,20 @@ more production-ready than the artifacts justified.
   wildcard grant, and it no longer grants Secret access while secret binding
   remains alpha. The deploy check and production gap audit reject wildcard CRD
   resources or Secret permissions in the operator role.
+- Production/default Helm profiles now render only the operator ServiceAccount;
+  controller-grade operator ClusterRole and ClusterRoleBinding resources are
+  gated behind the explicit alpha `operator.controllerRbac.enabled` flag and
+  rendered by `values-exhaustive.yaml` only for non-production contract
+  coverage. Deploy checks and the production gap audit reject those RBAC
+  resources in default/prod renders.
 - The Kubernetes production smoke now runs three live Helm profiles in kind.
   The explicit `values-exhaustive.yaml` image-matrix profile still proves every
   Rust app image can serve probes and pool SQL traffic, the default
   `values.yaml` profile proves direct Helm installs fail closed to the
   production-safe operator/pool surface, and a separate `values-prod.yaml`
   profile proves that production values install with operator/pool replicas, no
-  alpha sidecar or tools deployments, monitoring CRDs present, and live SQL
-  through the pool.
+  alpha sidecar or tools deployments, no controller-grade operator RBAC,
+  monitoring CRDs present, and live SQL through the pool.
 - The Argo application now uses `values-prod.yaml` so GitOps deployment matches
   the production profile, targets the `main` release branch, and the deploy
   workflow plus `gate-close` now invoke the live kind production smoke instead

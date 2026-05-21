@@ -7,8 +7,11 @@
 > Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
-Rust `kube-rs` operator for Citus topology, CRDs, sidecars, and ai-blaise
-feature orchestration.
+Rust operator contract model for Citus topology, CRDs, sidecars, and ai-blaise
+feature orchestration. The current production `serve` path exposes only the
+shared health/readiness/metrics runtime; live Kubernetes watches, CRD status
+updates, and controller reconciliation remain alpha until a real controller is
+implemented and live-gated.
 
 The first implemented specs are `CitusCluster` for `FEATURE: S4` topology
 selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
@@ -20,7 +23,7 @@ selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
 catalog: `Vectorizer`, `Sidecar`, `Migration`, `ConflictPolicy`,
 `Federation`, `SearchIndex`, `Webhook`, `Function`, and `ScheduledRepack`.
 They validate the declarative
-inputs needed to reconcile coordinator-worker versus coordinator-less layouts,
+inputs needed to plan coordinator-worker versus coordinator-less layouts,
 topology-aware placement, extension cohabitation, `TS1` distributed
 hypertables, schema tenants, region-aware storage, survival targets, branch
 storage, scale-to-zero intent, encrypted backup policy, vector destinations,

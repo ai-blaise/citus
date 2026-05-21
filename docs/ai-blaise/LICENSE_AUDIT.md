@@ -14,7 +14,7 @@ are consumed only through unmodified binaries or optional external services.
 | TimescaleDB TSL parts | Timescale License | Do not patch TSL source; consume unmodified binaries only where allowed. |
 | pgcat | MIT | Fork or port pooler concepts into `pool/`. |
 | pgrx | MIT / Apache-2.0 | Use for companion extension packaging. |
-| kube-rs | MIT / Apache-2.0 | Use for operator implementation. |
+| kube-rs | MIT / Apache-2.0 | Planned for alpha operator-controller implementation; the current production operator runtime has no kube-rs dependency. |
 | pg_repack | BSD-style | Bundle or call for online repack workflows. |
 | pgvector | PostgreSQL License | Bundle for vector indexes. |
 | pg_cron | PostgreSQL License | Bundle for scheduled policy jobs. |

@@ -3,6 +3,8 @@ global:
 
 operator:
   replicas: 1
+  controllerRbac:
+    enabled: false
 
 pool:
   replicas: 1
