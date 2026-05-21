@@ -9,6 +9,8 @@ cd "${repo_root}"
 cluster="${KIND_CLUSTER:-ai-blaise-citus-prod-smoke}"
 namespace="${NAMESPACE:-ai-blaise-prod-live}"
 release="${HELM_RELEASE:-ai-blaise-prod-live}"
+default_values_namespace="${DEFAULT_VALUES_NAMESPACE:-${namespace}-default}"
+default_values_release="${DEFAULT_VALUES_HELM_RELEASE:-${release}-default}"
 prod_values_namespace="${PROD_VALUES_NAMESPACE:-${namespace}-values}"
 prod_values_release="${PROD_VALUES_HELM_RELEASE:-${release}-values}"
 chart_name="${CHART_NAME:-ai-blaise-citus}"
@@ -605,6 +607,7 @@ install_postgres_fixture "${namespace}"
 helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
   --namespace "${namespace}" \
   --create-namespace \
+  --values deploy/k8s/helm/citus-overlay/values-exhaustive.yaml \
   --set "global.imageRegistry=${registry}" \
   --set "global.imagePullPolicy=IfNotPresent" \
   --set "global.requireImageDigest=false" \
@@ -663,11 +666,55 @@ if kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
   exit 1
 fi
 
+namespace="${default_values_namespace}"
+release="${default_values_release}"
+install_postgres_fixture "${namespace}"
+
+helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
+  --namespace "${namespace}" \
+  --create-namespace \
+  --set "global.imageRegistry=${registry}" \
+  --set "global.imagePullPolicy=IfNotPresent" \
+  --set "global.requireImageDigest=false" \
+  --set "operator.image.tag=${tag}" \
+  --set "pool.image.tag=${tag}" \
+  --set "operator.resources.requests.cpu=${smoke_request_cpu}" \
+  --set "operator.resources.requests.memory=${smoke_request_memory}" \
+  --set "operator.resources.limits.cpu=${smoke_limit_cpu}" \
+  --set "operator.resources.limits.memory=${smoke_limit_memory}" \
+  --set "pool.resources.requests.cpu=${smoke_request_cpu}" \
+  --set "pool.resources.requests.memory=${smoke_request_memory}" \
+  --set "pool.resources.limits.cpu=${smoke_limit_cpu}" \
+  --set "pool.resources.limits.memory=${smoke_limit_memory}"
+
+wait_for_deployments
+assert_deployment_replicas "${chart_name}-operator" 2
+assert_deployment_replicas "${chart_name}-pool" 3
+assert_no_alpha_workload_deployments
+probe_deployment_http "${chart_name}-operator" operator 8080 18140
+run_pool_sql_smoke
+
+kubectl -n "${namespace}" get deployment,pod,svc
+echo "ai_blaise_citus values.yaml default production-safe profile smoke passed in kind/${cluster}/${namespace}"
+
+helm uninstall "${release}" --namespace "${namespace}"
+for _ in $(seq 1 30); do
+  if ! kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+done
+if kubectl get clusterrole "${chart_name}-operator" >/dev/null 2>&1; then
+  echo "timed out waiting for ${chart_name}-operator ClusterRole cleanup" >&2
+  exit 1
+fi
+
 namespace="${prod_values_namespace}"
+release="${prod_values_release}"
 install_postgres_fixture "${namespace}"
 
 CHART_DIR=deploy/k8s/helm/citus-overlay \
-  RELEASE_NAME="${prod_values_release}" \
+  RELEASE_NAME="${release}" \
   NAMESPACE="${namespace}" \
   DEPLOY_PROFILE=prod \
   MODE=install \

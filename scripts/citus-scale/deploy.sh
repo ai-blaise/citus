@@ -46,7 +46,10 @@ else
     dev)
       values_file="${chart_dir}/values-dev.yaml"
       ;;
-    exhaustive|default)
+    exhaustive)
+      values_file="${chart_dir}/values-exhaustive.yaml"
+      ;;
+    default)
       values_file="${chart_dir}/values.yaml"
       ;;
     *)

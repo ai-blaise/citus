@@ -22,6 +22,7 @@ required_files=(
   "${chart_dir}/Chart.yaml"
   "${chart_dir}/values.yaml"
   "${chart_dir}/values-dev.yaml"
+  "${chart_dir}/values-exhaustive.yaml"
   "${chart_dir}/values-prod.yaml"
   "${chart_dir}/templates/operator-deployment.yaml"
   "${chart_dir}/templates/operator-rbac.yaml"
@@ -60,13 +61,18 @@ grep -q '^observability:$' "${chart_dir}/values.yaml"
 grep -q '^security:$' "${chart_dir}/values.yaml"
 grep -q '^sidecarDefaults:$' "${chart_dir}/values.yaml"
 grep -q '^sidecars:$' "${chart_dir}/values.yaml"
-grep -q 'ioMethod: io_uring' "${chart_dir}/values.yaml"
+grep -q 'requireImageDigest: true' "${chart_dir}/values.yaml"
 grep -q 'protocolPipeline:' "${chart_dir}/values.yaml"
 grep -q 'adminPort:' "${chart_dir}/values.yaml"
 grep -q 'upstream:' "${chart_dir}/values.yaml"
 grep -q 'cidrAllowlist:' "${chart_dir}/values.yaml"
 grep -q 'externalSecrets:' "${chart_dir}/values.yaml"
 grep -q 'releaseAttestation:' "${chart_dir}/values.yaml"
+grep -q 'requireImageDigest: false' "${chart_dir}/values-exhaustive.yaml"
+grep -q 'ioMethod: io_uring' "${chart_dir}/values-exhaustive.yaml"
+grep -q 'protocolPipeline:' "${chart_dir}/values-exhaustive.yaml"
+grep -q 'externalSecrets:' "${chart_dir}/values-exhaustive.yaml"
+grep -q 'releaseAttestation:' "${chart_dir}/values-exhaustive.yaml"
 grep -q 'FEATURE: O6' "${chart_dir}/templates/observability-dashboards.yaml"
 grep -q 'FEATURE: O10' "${chart_dir}/templates/observability-prometheusrules.yaml"
 grep -q 'kind: ConfigMap' "${chart_dir}/templates/observability-dashboards.yaml"
@@ -130,6 +136,7 @@ fi
 grep -q 'FEATURE: D8' scripts/citus-scale/deploy.sh
 grep -q 'deploy_profile="${DEPLOY_PROFILE:-prod}"' scripts/citus-scale/deploy.sh
 grep -q 'values-prod.yaml' scripts/citus-scale/deploy.sh
+grep -q 'values-exhaustive.yaml' scripts/citus-scale/deploy.sh
 grep -q 'ALLOW_ALPHA_INSTALL' scripts/citus-scale/deploy.sh
 grep -q 'OPERATOR_IMAGE_DIGEST' scripts/citus-scale/deploy.sh
 grep -q 'POOL_IMAGE_DIGEST' scripts/citus-scale/deploy.sh
@@ -139,8 +146,10 @@ grep -q 'FEATURE: D13' "${kind_smoke}"
 grep -q 'kind create cluster' "${kind_smoke}"
 grep -q 'scripts/citus-scale/build-app-images.sh' "${kind_smoke}"
 grep -q 'helm upgrade --install' "${kind_smoke}"
+grep -q 'values-exhaustive.yaml' "${kind_smoke}"
 grep -q 'global.requireImageDigest=false' "${kind_smoke}"
 grep -q 'apply_monitoring_crds' "${kind_smoke}"
+grep -q 'DEFAULT_VALUES_NAMESPACE' "${kind_smoke}"
 grep -q 'PROD_VALUES_NAMESPACE' "${kind_smoke}"
 grep -q 'DEPLOY_PROFILE=prod' "${kind_smoke}"
 grep -q 'MODE=install' "${kind_smoke}"
@@ -150,6 +159,7 @@ grep -q 'assert_no_alpha_workload_deployments' "${kind_smoke}"
 grep -q 'exhaustive image-matrix smoke passed' "${kind_smoke}"
 grep -q 'helm uninstall "${release}"' "${kind_smoke}"
 grep -q 'ClusterRole cleanup' "${kind_smoke}"
+grep -q 'values.yaml default production-safe profile smoke passed' "${kind_smoke}"
 grep -q 'values-prod.yaml production profile smoke passed' "${kind_smoke}"
 grep -q 'probe_deployment_http' "${kind_smoke}"
 grep -q 'expected_probe_component' "${kind_smoke}"
@@ -205,6 +215,7 @@ required_sidecars=(
 for values_file in \
   "${chart_dir}/values.yaml" \
   "${chart_dir}/values-dev.yaml" \
+  "${chart_dir}/values-exhaustive.yaml" \
   "${chart_dir}/values-prod.yaml"; do
   for sidecar in "${required_sidecars[@]}"; do
     if ! grep -Eq "^[[:space:]]*- name: ${sidecar}$" "${values_file}"; then
@@ -226,6 +237,21 @@ prod_enabled_sidecars="$(
 if [[ -n "${prod_enabled_sidecars}" ]]; then
   echo "values-prod.yaml must not enable alpha sidecars by default:" >&2
   echo "${prod_enabled_sidecars}" >&2
+  exit 1
+fi
+
+default_enabled_sidecars="$(
+  awk '
+    /^sidecars:$/ { in_sidecars = 1; next }
+    in_sidecars && /^[^[:space:]-]/ { in_sidecars = 0 }
+    in_sidecars && /^[[:space:]]*- name:/ { name = $3 }
+    in_sidecars && /^[[:space:]]+enabled:[[:space:]]+true$/ { print name }
+  ' "${chart_dir}/values.yaml"
+)"
+
+if [[ -n "${default_enabled_sidecars}" ]]; then
+  echo "values.yaml must not enable alpha sidecars by default:" >&2
+  echo "${default_enabled_sidecars}" >&2
   exit 1
 fi
 
@@ -271,6 +297,49 @@ if [[ -n "${prod_enabled_alpha_intent}" ]]; then
   exit 1
 fi
 
+default_enabled_alpha_intent="$(
+  python3 - "${chart_dir}/values.yaml" <<'PY'
+import pathlib
+import re
+import sys
+
+values = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+
+def section(name: str) -> str:
+    match = re.search(rf"^{name}:\n(?P<body>(?:  .*\n|  \n)*)", values, re.M)
+    return match.group("body") if match else ""
+
+pool = section("pool")
+postgres = section("postgres")
+security = section("security")
+findings = []
+
+if re.search(r"protocolPipeline:\n(?:    .*\n)*    enabled:\s+true\b", pool):
+    findings.append("T7 pool.protocolPipeline.enabled")
+
+if re.search(r"ioMethod:\s+io_uring\b", postgres):
+    findings.append("T6 postgres.ioMethod")
+
+if re.search(r"externalSecrets:\n(?:    .*\n)*    enabled:\s+true\b", security):
+    findings.append("Sec7 security.externalSecrets.enabled")
+
+if re.search(r"tls:\n(?:    .*\n)*    (clients|postgres|sidecars):\s+true\b", security):
+    findings.append("Sec8 security.tls")
+
+if re.search(r"releaseAttestation:\n(?:    .*\n)*    (sbom|cosign):\s+true\b", security):
+    findings.append("Sec9 security.releaseAttestation")
+
+print("\n".join(findings))
+PY
+)"
+
+if [[ -n "${default_enabled_alpha_intent}" ]]; then
+  echo "values.yaml must not enable alpha runtime/security intent controls by default:" >&2
+  echo "${default_enabled_alpha_intent}" >&2
+  exit 1
+fi
+
+grep -q 'requireImageDigest: true' "${chart_dir}/values.yaml"
 grep -q 'requireImageDigest: true' "${chart_dir}/values-prod.yaml"
 
 if grep -R "{{" "${chart_dir}/crds"; then
@@ -291,9 +360,20 @@ if command -v helm >/dev/null 2>&1; then
   }
   trap cleanup_render EXIT
 
-  helm template default-check "${chart_dir}" >"${render_dir}/default.yaml"
+  if helm template default-check-missing-digest "${chart_dir}" >"${render_dir}/default-missing-digest.yaml" 2>"${render_dir}/default-missing-digest.err"; then
+    echo "values.yaml default render must require immutable operator/pool image digests" >&2
+    exit 1
+  fi
+  grep -q 'requires an immutable digest' "${render_dir}/default-missing-digest.err"
+
+  helm template default-check "${chart_dir}" \
+    --set operator.image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111 \
+    --set pool.image.digest=sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+    >"${render_dir}/default.yaml"
   helm template dev-check "${chart_dir}" \
     -f "${chart_dir}/values-dev.yaml" >"${render_dir}/dev.yaml"
+  helm template exhaustive-check "${chart_dir}" \
+    -f "${chart_dir}/values-exhaustive.yaml" >"${render_dir}/exhaustive.yaml"
   if helm template prod-check-missing-digest "${chart_dir}" \
     -f "${chart_dir}/values-prod.yaml" >"${render_dir}/prod-missing-digest.yaml" 2>"${render_dir}/prod-missing-digest.err"; then
     echo "values-prod.yaml render must require immutable operator/pool image digests" >&2
@@ -308,10 +388,22 @@ if command -v helm >/dev/null 2>&1; then
     >"${render_dir}/prod.yaml"
 
   grep -q 'kind: Deployment' "${render_dir}/default.yaml"
-  grep -q 'kind: NetworkPolicy' "${render_dir}/default.yaml"
-  grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${render_dir}/default.yaml"
-  grep -q '10.0.0.0/8' "${render_dir}/default.yaml"
-  grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/default.yaml"
+  grep -q 'name: ai-blaise-citus-operator' "${render_dir}/default.yaml"
+  grep -q 'name: ai-blaise-citus-pool' "${render_dir}/default.yaml"
+  grep -q 'kind: ServiceMonitor' "${render_dir}/default.yaml"
+  grep -q 'kind: PrometheusRule' "${render_dir}/default.yaml"
+  if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/default.yaml"; then
+    echo "values.yaml default render must not include alpha sidecar deployments" >&2
+    exit 1
+  fi
+  if grep -q 'app.kubernetes.io/component: tools' "${render_dir}/default.yaml"; then
+    echo "values.yaml default render must not include alpha tools deployment" >&2
+    exit 1
+  fi
+  grep -q 'kind: NetworkPolicy' "${render_dir}/exhaustive.yaml"
+  grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${render_dir}/exhaustive.yaml"
+  grep -q '10.0.0.0/8' "${render_dir}/exhaustive.yaml"
+  grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/exhaustive.yaml"
   grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: tools' "${render_dir}/dev.yaml"
