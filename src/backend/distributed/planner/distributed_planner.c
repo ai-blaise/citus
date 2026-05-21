@@ -76,6 +76,7 @@
 
 static List *plannerRestrictionContextList = NIL;
 int MultiTaskQueryLogLevel = CITUS_LOG_LEVEL_OFF; /* multi-task query log level */
+planner_hook_type PreviousPlannerHook = NULL;
 static uint64 NextPlanId = 1;
 
 /* keep track of planner call stack levels */
@@ -147,6 +148,10 @@ static void ConcatenateRTablesAndPerminfos(PlannedStmt *mainPlan,
 static bool CheckPostPlanDistribution(DistributedPlanningContext *planContext,
 									  bool isDistributedQuery,
 									  List *rangeTableList);
+static PlannedStmt * CallPreviousPlannerHook(Query *parse,
+											 const char *query_string,
+											 int cursorOptions,
+											 ParamListInfo boundParams);
 #if PG_VERSION_NUM >= PG_VERSION_18
 static int DisableSelfJoinElimination(void);
 #endif
@@ -274,9 +279,9 @@ distributed_planner(Query *parse,
 			 * restriction information per table and parse tree transformations made by
 			 * postgres' planner.
 			 */
-			planContext.plan = standard_planner(planContext.query, NULL,
-												planContext.cursorOptions,
-												planContext.boundParams);
+			planContext.plan = CallPreviousPlannerHook(planContext.query, query_string,
+													   planContext.cursorOptions,
+													   planContext.boundParams);
 #if PG_VERSION_NUM >= PG_VERSION_18
 			if (needsDistributedPlanning)
 			{
@@ -338,6 +343,29 @@ distributed_planner(Query *parse,
 	AttributeQueryIfAnnotated(query_string, parse->commandType);
 
 	return result;
+}
+
+
+/*
+ * FEATURE: TS6
+ *
+ * Preserve a trusted coextension planner hook captured before Citus installed
+ * distributed_planner. Citus remains the outer hook, while the previous hook
+ * keeps its normal chance to transform or plan the statement before falling
+ * back to PostgreSQL's standard planner.
+ */
+static PlannedStmt *
+CallPreviousPlannerHook(Query *parse,
+						const char *query_string,
+						int cursorOptions,
+						ParamListInfo boundParams)
+{
+	if (PreviousPlannerHook != NULL)
+	{
+		return PreviousPlannerHook(parse, query_string, cursorOptions, boundParams);
+	}
+
+	return standard_planner(parse, NULL, cursorOptions, boundParams);
 }
 
 

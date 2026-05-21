@@ -29,6 +29,7 @@ SQL_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
+TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
@@ -56,6 +57,7 @@ SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
 CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 TS6_PATCH = ROOT / "patches/0001-allow-trusted-hook-coextensions.patch"
+SHARED_LIBRARY_INIT = ROOT / "src/backend/distributed/shared_library_init.c"
 KIND_TIMESCALE_SMOKE = ROOT / "tests/e2e/kind-timescale-citus-smoke.sh"
 CUSTOM_CONTRACT_READMES = [
     ROOT / path
@@ -264,6 +266,7 @@ sql_smoke = read(SQL_SMOKE)
 image_check = read(IMAGE_CHECK)
 pool_smoke = read(POOL_SMOKE)
 timescale_smoke = read(TIMESCALE_SMOKE)
+timescale_cohabitation_smoke = read(TIMESCALE_COHABITATION_SMOKE)
 observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
 kind_timescale_smoke = read(KIND_TIMESCALE_SMOKE)
@@ -290,6 +293,7 @@ sidecar_workflow = read(SIDECAR_WORKFLOW)
 slop_workflow = read(SLOP_WORKFLOW)
 makefile = read(MAKEFILE)
 ts6_patch = read(TS6_PATCH)
+shared_library_init = read(SHARED_LIBRARY_INIT)
 sources = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", sources))
@@ -417,8 +421,9 @@ for pattern in (
     if pattern in docs_compact:
         fail(f"NEW_FEATURES.md contains stale production-ready overclaim: {pattern}")
 for phrase in (
-    "citus.cohabit_extensions` is a deployment-level trust contract, not production evidence",
-    "real citus+timescaledb cohabitation smoke records the exact image digest",
+    "ts6 source changes are now integrated into the fork",
+    "timescale-cohabitation-smoke.sh",
+    "cohabiting server without defining any citus stub",
     "validates the configured timescale/citus cohabitation precondition",
 ):
     if phrase not in docs_compact:
@@ -470,11 +475,11 @@ for phrase in (
         fail(f"E2E.md must preserve model-disclosure phrase: {phrase}")
 
 for phrase in (
-    "current suite boundary is intentionally conservative",
-    "not production evidence for hook-chain safety",
-    "live kind smoke is opt-in",
-    "requires a real operand image containing postgres, citus, timescaledb, and `ai_blaise_citus`",
-    "exact image digest, command log, and ci or vm run",
+    "ts6 source changes",
+    "timescale-cohabitation-smoke.sh",
+    "shared_preload_libraries=timescaledb,citus",
+    "without defining a citus stub",
+    "broader ts1/ts2/ts3/ts4/ts5/ts12 distributed timescale features remain alpha",
 ):
     if phrase not in cohabitation_compact:
         fail(f"COHABITATION.md must preserve cohabitation evidence boundary: {phrase}")
@@ -530,8 +535,8 @@ for phrase in (
     "feature: bundle1` alpha operand-image contract",
     "not production evidence for the full operand image",
     "real operand image build/initdb smoke",
-    "not production evidence for hook-chain safety",
-    "real citus+timescaledb cohabitation smoke records the exact image",
+    "timescale-cohabitation-smoke.sh",
+    "broader ts1/ts2/ts3/ts4/ts5/ts12 distributed feature entries remain alpha",
 ):
     if phrase not in architecture_compact:
         fail(f"ARCHITECTURE.md must preserve alpha evidence boundary: {phrase}")
@@ -664,6 +669,42 @@ for phrase in (
         fail(f"timescale-bridge-smoke.sh is missing real Timescale proof marker: {phrase}")
     if phrase not in image_check:
         fail(f"image-check.sh must statically guard Timescale smoke marker: {phrase}")
+
+for phrase in (
+    "timescale/timescaledb:latest-pg17",
+    "shared_preload_libraries=timescaledb,citus",
+    "citus.cohabit_extensions=timescaledb",
+    "CREATE EXTENSION IF NOT EXISTS citus",
+    "CREATE EXTENSION IF NOT EXISTS timescaledb",
+    "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus",
+    "SELECT create_distributed_table('citus_smoke_events', 'tenant_id')",
+    "SELECT apply_distribute_hypertable",
+    "SELECT apply_compression_policy_distributed",
+    "SELECT apply_retention_policy_distributed",
+    "SELECT apply_reorder_policy_distributed",
+    "SELECT apply_continuous_aggregate_distributed",
+    "SELECT apply_time_range_shard_pruner",
+    "pg_dist_partition",
+    "expected six Timescale bridge feature ids",
+    "timescale-cohabitation-evidence.tsv",
+):
+    if phrase not in timescale_cohabitation_smoke:
+        fail(
+            "timescale-cohabitation-smoke.sh is missing real cohabitation marker: "
+            + phrase
+        )
+    if phrase not in image_check:
+        fail(f"image-check.sh must statically guard cohabitation smoke marker: {phrase}")
+if "CREATE FUNCTION create_distributed_table" in timescale_cohabitation_smoke:
+    fail("timescale-cohabitation-smoke.sh must not stub Citus create_distributed_table")
+for phrase in (
+    "IsTrustedHookCoextension",
+    'pg_strcasecmp(coextensionName, "timescaledb")',
+):
+    if phrase not in shared_library_init:
+        fail(f"shared_library_init.c must constrain trusted coextensions: {phrase}")
+    if phrase not in image_check:
+        fail(f"image-check.sh must statically guard trusted coextension marker: {phrase}")
 
 for phrase in (
     "wal_level=replica",
@@ -837,6 +878,7 @@ for phrase in (
     "bash ci/ai-blaise/app-image-digest-manifest-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh",
+    "REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-cohabitation-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh",
 ):
     if phrase not in image_workflow:
@@ -846,6 +888,7 @@ for target in (
     "app-image-digest-manifest-smoke",
     "sql-extension-smoke",
     "timescale-bridge-smoke",
+    "timescale-cohabitation-smoke",
     "observability-replication-smoke",
 ):
     if target not in makefile.split("gate-close:", 1)[-1]:
@@ -1018,7 +1061,8 @@ for phrase in (
     "makefile release gate now runs `image-check` and `deploy-check`",
     "require_helm=1",
     "deploy wrapper install path is now live-gated",
-    "`ts18` remains alpha until real citus+timescaledb cohabitation",
+    "`ts18` now has real citus+timescaledb cohabitation evidence",
+    "ts6 and ts18 are therefore production-ready narrow surfaces",
     "tools deployment remains dev-only",
     "argo application is a gitops render contract, not live controller evidence",
     "sec13 pool cidr access control is now enforced by the live pool data path",

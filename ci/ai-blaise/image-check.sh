@@ -8,10 +8,12 @@ load_order="${image_dir}/shared-preload-libraries.conf"
 init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
 image_overview="images/README.ai-blaise.md"
 runtime_dockerfile="images/rust-runtime/Dockerfile"
+timescale_cohabitation_dockerfile="images/citus-timescale-cohabitation/Dockerfile"
 build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
+timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 
@@ -24,9 +26,11 @@ for file in \
   "${image_overview}" \
   "${image_dir}/README.md" \
   "${runtime_dockerfile}" \
+  "${timescale_cohabitation_dockerfile}" \
   "${build_app_images}" \
   "${pool_proxy_smoke}" \
   "${timescale_bridge_smoke}" \
+  "${timescale_cohabitation_smoke}" \
   "${observability_replication_smoke}" \
   "${app_digest_smoke}"; do
   if [[ ! -s "${file}" ]]; then
@@ -41,6 +45,10 @@ if [[ ! -x "${build_app_images}" ]]; then
 fi
 if [[ ! -x "${timescale_bridge_smoke}" ]]; then
   echo "missing executable Timescale bridge smoke: ${timescale_bridge_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${timescale_cohabitation_smoke}" ]]; then
+  echo "missing executable Timescale/Citus cohabitation smoke: ${timescale_cohabitation_smoke}" >&2
   exit 1
 fi
 if [[ ! -x "${observability_replication_smoke}" ]]; then
@@ -277,6 +285,43 @@ grep -Fq "SELECT apply_continuous_aggregate_distributed" "${timescale_bridge_smo
 grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_bridge_smoke}"
 grep -Fq "_timescaledb_catalog.hypertable" "${timescale_bridge_smoke}"
 grep -Fq "companion_timescale_bridge_state" "${timescale_bridge_smoke}"
+grep -Fq "FEATURE: TS6 TS18" "${timescale_cohabitation_dockerfile}"
+grep -Fq "timescale/timescaledb:latest-pg17" "${timescale_cohabitation_dockerfile}"
+grep -Fq "make install" "${timescale_cohabitation_dockerfile}"
+grep -Fq "ai_blaise_citus--0.1.0.sql" "${timescale_cohabitation_dockerfile}"
+grep -Fq "FEATURE: TS6 TS18" "${timescale_cohabitation_smoke}"
+grep -Fq "TIMESCALE_COHABITATION_BASE_IMAGE" "${timescale_cohabitation_smoke}"
+grep -Fq "shared_preload_libraries=timescaledb,citus" "${timescale_cohabitation_smoke}"
+grep -Fq "citus.cohabit_extensions=timescaledb" "${timescale_cohabitation_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS citus" "${timescale_cohabitation_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS timescaledb" "${timescale_cohabitation_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT create_distributed_table('citus_smoke_events', 'tenant_id')" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_distribute_hypertable" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_compression_policy_distributed" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_retention_policy_distributed" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_reorder_policy_distributed" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_continuous_aggregate_distributed" "${timescale_cohabitation_smoke}"
+grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_cohabitation_smoke}"
+grep -Fq "pg_dist_partition" "${timescale_cohabitation_smoke}"
+grep -Fq "expected six Timescale bridge feature ids" "${timescale_cohabitation_smoke}"
+grep -Fq "timescale-cohabitation-evidence.tsv" "${timescale_cohabitation_smoke}"
+if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_cohabitation_smoke}"; then
+  echo "real Timescale/Citus cohabitation smoke must not stub create_distributed_table" >&2
+  exit 1
+fi
+grep -Fq "citus.cohabit_extensions" src/backend/distributed/shared_library_init.c
+grep -Fq "ErrorIfHooksAlreadyRegistered" src/backend/distributed/shared_library_init.c
+grep -Fq "IsTrustedHookCoextension" src/backend/distributed/shared_library_init.c
+grep -Fq 'pg_strcasecmp(coextensionName, "timescaledb")' src/backend/distributed/shared_library_init.c
+grep -Fq "PreviousPlannerHook = planner_hook" src/backend/distributed/shared_library_init.c
+grep -Fq "PreviousExecutorStartHook = ExecutorStart_hook" src/backend/distributed/shared_library_init.c
+grep -Fq "PreviousExecutorRunHook = ExecutorRun_hook" src/backend/distributed/shared_library_init.c
+grep -Fq "PreviousExplainOneQueryHook = ExplainOneQuery_hook" src/backend/distributed/shared_library_init.c
+grep -Fq "CallPreviousPlannerHook" src/backend/distributed/planner/distributed_planner.c
+grep -Fq "RunPreviousExecutorStartHook" src/backend/distributed/executor/multi_executor.c
+grep -Fq "RunPreviousExecutorRunHook" src/backend/distributed/executor/multi_executor.c
+grep -Fq "PreviousExplainOneQueryHook" src/backend/distributed/planner/multi_explain.c
 grep -Fq "wal_level=replica" "${observability_replication_smoke}"
 grep -Fq "pg_basebackup" "${observability_replication_smoke}"
 grep -Fq "PostgreSQL init process complete" "${observability_replication_smoke}"

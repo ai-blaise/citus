@@ -536,22 +536,20 @@ not consult TimescaleDB dimension slices.
 - `patches/0001-allow-trusted-hook-coextensions.patch`
 - `patches/0002-preserve-trusted-hook-chain-state.patch`
 
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Allows Citus to load after preexisting PostgreSQL hooks when the
 operator explicitly configures trusted cohabiting extensions, then preserves
-the captured planner, executor, and non-distributed EXPLAIN hook chain.
+the captured planner, executor, and non-distributed EXPLAIN hook chain. The
+TS6 source changes are now integrated into the fork, while the patch files
+remain as rebase/reference artifacts for upstream review.
 
 **Motivation**: Citus's upstream guard rejects any preexisting planner,
 utility, executor, or explain hook. ai-blaise/citus needs a controlled,
 operator-approved path for cohabiting extensions, starting with TimescaleDB.
-`citus.cohabit_extensions` is a deployment-level trust contract, not
-production evidence for hook-chain safety until a real Citus+TimescaleDB
-cohabitation smoke records the exact image digest, command log, and CI or VM
-run in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 
 **SQL surface / API**:
 
@@ -559,13 +557,26 @@ run in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 citus.cohabit_extensions = 'timescaledb'
 ```
 
+The production allowlist currently recognizes only `timescaledb`; unsupported
+names do not satisfy the trust check and Citus keeps its upstream first-hook
+guard.
+
 **Citus comparison**: Vanilla Citus errors if these hooks are already set at
 load time. With TS6 enabled, ai-blaise/citus remains the outer Citus hook while
 delegating to trusted preexisting hooks where the Citus path can safely do so.
 
+Production evidence: `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds a
+real `timescale/timescaledb:latest-pg17` image with this Citus fork installed,
+starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
+`citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
+and `ai_blaise_citus` in the same server. The VM run in the production audit
+records the image identity and command path, and the smoke is part of
+`make -f Makefile.ai-blaise gate-close`.
+
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
+- Executable: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
 - In-source marker after patch application:
   `FEATURE: TS6` in
   `src/backend/distributed/shared_library_init.c`,
@@ -679,7 +690,7 @@ policies across shards.
 ### TS18: Executable Timescale Bridge State
 
 **Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`, `citus`
@@ -694,7 +705,7 @@ of only returning SQL text that references missing internal routines.
 **Citus comparison**: Vanilla Citus does not expose a TimescaleDB bridge state
 catalog or apply functions for Timescale policy fanout.
 
-Contract/runtime evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `ai_blaise_citus` into a real `postgres:17` container, creates the bridge-state
 catalog, exercises public apply entrypoints where plain PostgreSQL can safely
 emulate dependency calls, requires durable `companion_timescale_bridge_state`
@@ -704,9 +715,13 @@ paths fail closed when TimescaleDB dependency functions are absent.
 a real `timescale/timescaledb:latest-pg17` container, stubs only the Citus
 distribution entrypoint, and verifies real TimescaleDB hypertable,
 compression, retention, reorder, continuous aggregate, and bridge-state
-behavior. TS18 remains alpha until real Citus+TimescaleDB cohabitation runs
-without a stubbed distribution entrypoint and records the exact image digest,
-command log, and CI or VM evidence.
+behavior. `ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous
+stub gap by building this Citus fork into a real TimescaleDB PG17 image,
+loading `timescaledb,citus` with `citus.cohabit_extensions=timescaledb`,
+creating real `citus`, `timescaledb`, and `ai_blaise_citus` extensions,
+requiring real `create_distributed_table` rows in `pg_dist_partition`, and
+then executing the TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live
+cohabiting server without defining any Citus stub.
 
 **References**:
 
@@ -715,6 +730,7 @@ command log, and CI or VM evidence.
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - CI: `ci/ai-blaise/timescale-bridge-smoke.sh`
+- CI: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
 
 ### TS13: Distributed time_bucket_gapfill
 

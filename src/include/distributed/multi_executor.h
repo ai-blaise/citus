@@ -11,6 +11,7 @@
 #define MULTI_EXECUTOR_H
 
 #include "executor/execdesc.h"
+#include "executor/executor.h"
 #include "nodes/execnodes.h"
 #include "nodes/parsenodes.h"
 
@@ -72,6 +73,8 @@ extern int ExecutorSlowStartInterval;
 extern bool SortReturning;
 extern bool EnableSortedMerge;
 extern int ExecutorLevel;
+extern ExecutorStart_hook_type PreviousExecutorStartHook;
+extern ExecutorRun_hook_type PreviousExecutorRunHook;
 
 
 extern void CitusExecutorStart(QueryDesc *queryDesc, int eflags);

@@ -95,9 +95,14 @@ bool EnableSortedMerge = true;
  * another executor to run the SQL UDF.
  */
 int ExecutorLevel = 0;
+ExecutorStart_hook_type PreviousExecutorStartHook = NULL;
+ExecutorRun_hook_type PreviousExecutorRunHook = NULL;
 
 
 /* local function forward declarations */
+static void RunPreviousExecutorStartHook(QueryDesc *queryDesc, int eflags);
+static void RunPreviousExecutorRunHook(QueryDesc *queryDesc, ScanDirection direction,
+									   uint64 count, bool execute_once);
 static Relation StubRelation(TupleDesc tupleDescriptor);
 static char * GetObjectTypeString(ObjectType objType);
 static bool AlterTableConstraintCheck(QueryDesc *queryDesc);
@@ -135,7 +140,7 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
 			 * XactReadOnly to false.
 			 */
 			XactReadOnly = false;
-			standard_ExecutorStart(queryDesc, eflags);
+			RunPreviousExecutorStartHook(queryDesc, eflags);
 			XactReadOnly = true;
 		}
 		PG_CATCH();
@@ -147,6 +152,25 @@ CitusExecutorStart(QueryDesc *queryDesc, int eflags)
 	}
 	else
 #endif
+	{
+		RunPreviousExecutorStartHook(queryDesc, eflags);
+	}
+}
+
+
+/*
+ * FEATURE: TS6
+ *
+ * Continue an executor-start hook chain that was present before Citus loaded.
+ */
+static void
+RunPreviousExecutorStartHook(QueryDesc *queryDesc, int eflags)
+{
+	if (PreviousExecutorStartHook != NULL)
+	{
+		PreviousExecutorStartHook(queryDesc, eflags);
+	}
+	else
 	{
 		standard_ExecutorStart(queryDesc, eflags);
 	}
@@ -239,20 +263,7 @@ CitusExecutorRun(QueryDesc *queryDesc,
 			/* postgres will switch here again and will restore back on its own */
 			MemoryContextSwitchTo(oldcontext);
 
-			#if PG_VERSION_NUM >= PG_VERSION_18
-
-			/* PG18+ drops the “execute_once” argument */
-			standard_ExecutorRun(queryDesc,
-								 direction,
-								 count);
-		#else
-
-			/* PG17-: original four-arg signature */
-			standard_ExecutorRun(queryDesc,
-								 direction,
-								 count,
-								 execute_once);
-		#endif
+			RunPreviousExecutorRunHook(queryDesc, direction, count, execute_once);
 		}
 
 		if (totalTime)
@@ -308,6 +319,34 @@ CitusExecutorRun(QueryDesc *queryDesc,
 		PG_RE_THROW();
 	}
 	PG_END_TRY();
+}
+
+
+/*
+ * FEATURE: TS6
+ *
+ * Continue an executor-run hook chain that was present before Citus loaded.
+ */
+static void
+RunPreviousExecutorRunHook(QueryDesc *queryDesc,
+						   ScanDirection direction, uint64 count, bool execute_once)
+{
+	if (PreviousExecutorRunHook != NULL)
+	{
+#if PG_VERSION_NUM >= PG_VERSION_18
+		PreviousExecutorRunHook(queryDesc, direction, count);
+#else
+		PreviousExecutorRunHook(queryDesc, direction, count, execute_once);
+#endif
+	}
+	else
+	{
+#if PG_VERSION_NUM >= PG_VERSION_18
+		standard_ExecutorRun(queryDesc, direction, count);
+#else
+		standard_ExecutorRun(queryDesc, direction, count, execute_once);
+#endif
+	}
 }
 
 

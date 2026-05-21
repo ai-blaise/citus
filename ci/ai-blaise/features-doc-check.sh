@@ -5,6 +5,10 @@ base="${BASE_SHA:-}"
 head="${HEAD_SHA:-HEAD}"
 
 if [[ -z "${base}" ]]; then
+  if git config --get remote.origin.url >/dev/null 2>&1; then
+    git fetch -q origin main:refs/remotes/origin/main >/dev/null 2>&1 || true
+  fi
+
   if git rev-parse --verify origin/main >/dev/null 2>&1; then
     base="origin/main"
   else
