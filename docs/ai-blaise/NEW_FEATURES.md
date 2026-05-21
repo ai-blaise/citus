@@ -220,6 +220,8 @@ pooler.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T1` in `pool/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Benchmark: `benchmarks/sysbench/run-suite.sh` (TPS / p95 per workload)
+- Benchmark: `benchmarks/tpcc/run.sh` (tpmC, p99 latency, error rate)
 
 ### T2: Plan Cache Placement-Generation Invalidation
 
@@ -449,6 +451,9 @@ depends on that target, so missing Docker cannot silently skip this evidence.
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Gate: `make -f Makefile.ai-blaise gate-close`
+- Benchmark: `benchmarks/tpcc/run.sh`, `benchmarks/sysbench/run-suite.sh`
+  (V2 gate 10 performance acceptance; alpha until full runs land in
+  `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`)
 
 ## TimescaleDB Integration
 
@@ -492,6 +497,8 @@ partitions, but it has no distributed-hypertable orchestration.
   and `e2e/src/timescale_on_citus.rs`
 - SQL runtime: `FEATURE: TS18` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Benchmark: `benchmarks/timescale-ingest/ingest.py` (rows/s, compression
+  ratio, queryable lag; alpha until full runs land)
 
 ### TS2: Distributed Compression Policy
 
@@ -6601,6 +6608,9 @@ alpha.
 
 - In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
+  `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
+  acceptance; alpha until full runs land)
 
 ### R3: Columnstore-On-Worker Policy
 
