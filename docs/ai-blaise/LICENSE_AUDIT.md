@@ -5,6 +5,25 @@ The release rule is simple: permissive or compatible copyleft components can
 be integrated, source patches stay upstream-minimal, and restricted components
 are consumed only through unmodified binaries or optional external services.
 
+Per-language transitive dependency tables live at the repo root and are
+generated from each language's lockfile:
+
+- [`ATTRIBUTIONS-Rust.md`](../../ATTRIBUTIONS-Rust.md) — every Rust crate in
+  the Cargo workspace, grouped by license. Generated from
+  `cargo metadata --format-version 1`.
+- [`ATTRIBUTIONS-Go.md`](../../ATTRIBUTIONS-Go.md) — every Go module under
+  `tools/citus-admin/` once the WhoDB fork lands. Generated from
+  `go list -m -json all`.
+- [`ATTRIBUTIONS-TypeScript.md`](../../ATTRIBUTIONS-TypeScript.md) — every
+  npm package under `tools/citus-schema-designer/` and `tools/citus-admin/`
+  once the DrawDB and WhoDB front-end forks land. Generated from
+  `package.json` + the lockfile.
+
+`ci/ai-blaise/license-check.sh` enforces the presence of those three files,
+that they are linked from this audit, and that no Rust transitive dep
+resolves to a GPL-2.0 or GPL-3.0 SPDX expression (AGPL / LGPL transitive
+deps remain compatible).
+
 ## Required Checks
 
 | Component | License posture | Integration rule |
