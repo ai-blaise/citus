@@ -3353,14 +3353,13 @@ issuance can enforce step-up authentication.
 ### PM3: Plan Freeze Companion Module
 
 **Overlay**: `companion/src/plan_freeze.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_hint_plan`, `sr_plan`
 
-**Summary**: Defines companion SQL-plan contracts for freezing a repeatable
-plan, binding it to a hint set, and auto-promoting it after enough consistent
-executions.
+**Summary**: Provides an installable SQL plan-freeze registry that stores
+query hashes, plan XML, hint-set names, and promotion thresholds.
 
 **Motivation**: Planner changes in a distributed database need an explicit
 escape hatch for latency-sensitive tenant queries before a regression reaches
@@ -3369,22 +3368,37 @@ users.
 **Citus comparison**: Vanilla Citus does not ship a plan-freeze companion
 module or auto-promotion policy.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `PM3` as `sql-runtime`, calls
+`companion_internal.plan_freeze('query-hash-1', '<Plan><Node /></Plan>',
+'orders_hint')`, attaches promotion thresholds with
+`companion_internal.plan_auto_promote(...)`, verifies the frozen plan is
+visible through `companion_plan_freezes`, and verifies an empty query hash
+fails closed. This status covers the local SQL plan-freeze registry and
+promotion-policy state only; actual planner enforcement, hint injection,
+pg_hint_plan/sr_plan integration, auto-promotion workers, distributed plan
+capture, and plan XML validation remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs`
+- SQL runtime: `FEATURE: PM3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### PM4: Plan Regression Detection
 
 **Overlay**: `companion/src/plan_freeze.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_hint_plan`, `sr_plan`
 
-**Summary**: Adds latency and cost regression policy evaluation for frozen and
-candidate plans.
+**Summary**: Adds installable SQL latency and cost regression policy
+evaluation for frozen-plan candidates.
 
 **Motivation**: Auto-promoted plans need a measurable guardrail that flags
 candidate regressions before they replace a known-good plan.
@@ -3392,11 +3406,26 @@ candidate regressions before they replace a known-good plan.
 **Citus comparison**: Vanilla Citus exposes plans and costs, but it does not
 ship this persistent regression detector.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `PM4` as `sql-runtime`, attaches a
+regression policy through `companion_internal.plan_regression_guard(...)`,
+verifies `companion_plan_regression_violates(...)` flags a latency regression,
+verifies an allowed candidate does not violate policy, verifies regression
+samples are recorded, and verifies a missing frozen plan fails closed. This
+status covers the local SQL regression-policy evaluator and sample log only;
+automatic production-plan replacement, query capture, pg_hint_plan/sr_plan
+enforcement, workload baselining, and distributed planner integration remain
+alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs`
+- SQL runtime: `FEATURE: PM4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Index Advisor
 

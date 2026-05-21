@@ -406,6 +406,16 @@ more production-ready than the artifacts justified.
   zero-shard failures in the PostgreSQL smoke, and does not claim dynamic shard
   creation, Citus router integration, operator rebalancing, pool data-plane
   routing, or distributed range metadata propagation.
+- The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
+  plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
+  set names, and promotion policy thresholds, and PM4 evaluates latency/cost
+  regression policies with a sample log. The PostgreSQL smoke verifies visible
+  plan-freeze state, policy storage, a violating sample, a non-violating
+  sample, recorded samples, and fail-closed missing/empty identifiers. This is
+  not evidence for planner enforcement, hint injection, pg_hint_plan/sr_plan
+  integration, auto-promotion workers, distributed plan capture, plan XML
+  validation, automatic production-plan replacement, query capture, workload
+  baselining, or distributed planner integration.
 - The SQL extension now installs `FEATURE: Sec5` and `FEATURE: Sec6` ledger
   runtime helpers: append-only ledger entry and seal tables,
   `companion_internal.ledger_transfer(...)`,
@@ -499,7 +509,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 25 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 27 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -520,7 +530,8 @@ for the file-backed `citus-lsp` diagnostic and quick-fix CLI, plus `Sec1` for
 installable SQL tenant RLS helper predicates, plus `Sec5` and `Sec6` for the
 append-only SQL ledger and pgcrypto HMAC seal runtime, plus `Sec2` for the
 installable HS256 SQL JWT verifier, plus `S6` and `S13` for installable SQL
-placement-generation and shard-index routing helpers. The other 139
+placement-generation and shard-index routing helpers, plus `PM3` and `PM4`
+for installable SQL plan-freeze and regression-policy helpers. The other 137
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

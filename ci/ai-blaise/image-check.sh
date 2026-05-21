@@ -259,6 +259,15 @@ grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/
 grep -Fq "CREATE FUNCTION companion_set_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_current_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.plan_freezes" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.plan_promotion_policies" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_policies" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.plan_regression_samples" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_plan_freezes" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.plan_freeze" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.plan_auto_promote" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.plan_regression_guard" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_plan_regression_violates" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE VIEW companion_shard_placement_generations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.bump_placement_generation" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -282,6 +291,8 @@ grep -Fq "CREATE VIEW companion_ledger_entries" "${image_dir}/extensions/ai_blai
 grep -Fq "'Sec5', 'immutable ledger', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'PM3', 'plan freeze companion module', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'PM4', 'plan regression detection', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S6', 'placement generation helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'S13', 'range routing helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Sec1', 'RLS helpers', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -304,6 +315,17 @@ grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_set_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_session_claims" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_current_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.plan_freeze" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.plan_auto_promote" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_internal.plan_regression_guard" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_plan_regression_violates" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_plan_freezes" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM3 plan freeze state was not visible with policy metadata" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM4 regression guard did not flag latency regression" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM4 regression guard flagged an allowed candidate" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM4 regression samples were not recorded" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM3 plan_freeze accepted an empty query hash" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PM4 regression guard accepted an unknown frozen plan" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_internal.bump_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_placement_generation" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_local_placement_matches" ci/ai-blaise/sql-extension-smoke.sh
