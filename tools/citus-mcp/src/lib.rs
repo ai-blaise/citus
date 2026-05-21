@@ -3,12 +3,21 @@
 // FEATURE: MCP1
 // FEATURE: MCP2
 // FEATURE: MCP3
+// FEATURE: MCP4
 // FEATURE: D11
 
 use std::error::Error;
 use std::fmt;
 
+use native_tls::TlsConnector;
+use postgres::Client;
+use postgres_native_tls::MakeTlsConnector;
 use serde_json::{json, Map, Value};
+
+pub const MCP_DATABASE_URL_ENV: &str = "AI_BLAISE_MCP_DATABASE_URL";
+pub const MCP_MAX_ROWS_ENV: &str = "AI_BLAISE_MCP_MAX_ROWS";
+pub const MCP_MAX_ROWS_CEILING: u32 = 1_000;
+pub const MCP_MAX_TIMEOUT_MS: u32 = 300_000;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct McpToolRequest {
@@ -73,6 +82,9 @@ impl McpTool {
             if *timeout_ms == 0 {
                 return Err(McpToolError::InvalidTimeout);
             }
+            if *timeout_ms > MCP_MAX_TIMEOUT_MS {
+                return Err(McpToolError::TimeoutTooLarge);
+            }
         }
 
         Ok(())
@@ -122,10 +134,12 @@ pub enum SafeMode {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum McpToolError {
+    Database(String),
     ForbiddenSchema(String),
     InvalidIdentifier(&'static str),
     InvalidTimeout,
     MissingRequiredField(&'static str),
+    TimeoutTooLarge,
     UnsafeSql(String),
     UnsafeToolDenied,
 }
@@ -133,6 +147,7 @@ pub enum McpToolError {
 impl fmt::Display for McpToolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Database(error) => write!(formatter, "{error}"),
             Self::ForbiddenSchema(schema) => {
                 write!(formatter, "schema {schema} is outside allowed_schemas")
             }
@@ -143,6 +158,9 @@ impl fmt::Display for McpToolError {
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
             }
+            Self::TimeoutTooLarge => {
+                write!(formatter, "timeout_ms must not exceed {MCP_MAX_TIMEOUT_MS}")
+            }
             Self::UnsafeSql(reason) => write!(formatter, "{reason}"),
             Self::UnsafeToolDenied => write!(formatter, "safe mode denied a destructive tool"),
         }
@@ -150,6 +168,68 @@ impl fmt::Display for McpToolError {
 }
 
 impl Error for McpToolError {}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct McpDatabaseExecutionConfig {
+    pub database_url: String,
+    pub max_rows: u32,
+}
+
+impl McpDatabaseExecutionConfig {
+    pub fn new(database_url: String, max_rows: u32) -> Result<Self, McpToolError> {
+        if max_rows == 0 {
+            return Err(McpToolError::Database(format!(
+                "{MCP_MAX_ROWS_ENV} must be greater than zero"
+            )));
+        }
+        if max_rows > MCP_MAX_ROWS_CEILING {
+            return Err(McpToolError::Database(format!(
+                "{MCP_MAX_ROWS_ENV} must not exceed {MCP_MAX_ROWS_CEILING}"
+            )));
+        }
+
+        Ok(Self {
+            database_url,
+            max_rows,
+        })
+    }
+
+    pub fn from_env() -> Result<Option<Self>, McpToolError> {
+        let database_url = match std::env::var(MCP_DATABASE_URL_ENV) {
+            Ok(value) if !value.trim().is_empty() => value,
+            _ => return Ok(None),
+        };
+        let max_rows = match std::env::var(MCP_MAX_ROWS_ENV) {
+            Ok(value) => value.parse::<u32>().map_err(|_| {
+                McpToolError::Database(format!("{MCP_MAX_ROWS_ENV} must be a positive integer"))
+            })?,
+            Err(_) => 50,
+        };
+
+        Self::new(database_url, max_rows).map(Some)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct McpDatabaseExecutionReport {
+    pub tool_name: String,
+    pub message: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Value>,
+}
+
+impl McpDatabaseExecutionReport {
+    fn content_text(&self) -> String {
+        format!(
+            "executed {} rows={} columns={} message={} result={}",
+            self.tool_name,
+            self.rows.len(),
+            self.columns.len(),
+            self.message,
+            Value::Array(self.rows.clone())
+        )
+    }
+}
 
 fn validate_required(field: &'static str, value: &str) -> Result<(), McpToolError> {
     if value.trim().is_empty() {
@@ -388,6 +468,114 @@ pub fn canonical_mcp_execution_report() -> Result<McpExecutionReport, McpToolErr
     })
 }
 
+pub fn execute_mcp_tool_against_database(
+    request: &McpToolRequest,
+    config: &McpDatabaseExecutionConfig,
+) -> Result<McpDatabaseExecutionReport, McpToolError> {
+    request.validate()?;
+
+    match &request.tool {
+        McpTool::QueryWithTimeout { sql, timeout_ms } => {
+            let bounded_sql = bounded_readonly_query(sql, config.max_rows);
+            run_database_query(
+                config,
+                "query_with_timeout",
+                "bounded read-only query",
+                &bounded_sql,
+                *timeout_ms,
+            )
+        }
+        McpTool::RunExplain { sql } => {
+            let explain_sql = explain_query(sql);
+            run_explain_query(
+                config,
+                "run_explain",
+                "read-only explain plan",
+                &explain_sql,
+                5_000,
+            )
+        }
+        McpTool::ListShards => {
+            if relation_exists(config, "pg_dist_shard")? {
+                run_database_query(
+                    config,
+                    "list_shards",
+                    "pg_dist_shard catalog rows",
+                    &format!(
+                        "SELECT shardid::text AS shardid, logicalrelid::text AS relation_name \
+                         FROM pg_dist_shard ORDER BY shardid LIMIT {}",
+                        config.max_rows
+                    ),
+                    5_000,
+                )
+            } else {
+                Ok(empty_database_report(
+                    "list_shards",
+                    "pg_dist_shard catalog is absent on this database",
+                ))
+            }
+        }
+        McpTool::ListHypertables => {
+            if relation_exists(config, "_timescaledb_catalog.hypertable")? {
+                run_database_query(
+                    config,
+                    "list_hypertables",
+                    "TimescaleDB hypertable catalog rows",
+                    &format!(
+                        "SELECT schema_name::text, table_name::text \
+                         FROM _timescaledb_catalog.hypertable \
+                         ORDER BY schema_name, table_name LIMIT {}",
+                        config.max_rows
+                    ),
+                    5_000,
+                )
+            } else {
+                Ok(empty_database_report(
+                    "list_hypertables",
+                    "TimescaleDB hypertable catalog is absent on this database",
+                ))
+            }
+        }
+        McpTool::SuggestIndex { table } => {
+            let (schema, relation) = qualified_table_parts(table)?;
+            run_database_query(
+                config,
+                "suggest_index",
+                "existing index inventory for tenant-scoped table",
+                &format!(
+                    "SELECT indexname::text, indexdef::text FROM pg_indexes \
+                     WHERE schemaname = '{}' AND tablename = '{}' \
+                     ORDER BY indexname LIMIT {}",
+                    escape_sql_literal(schema),
+                    escape_sql_literal(relation),
+                    config.max_rows
+                ),
+                5_000,
+            )
+        }
+        McpTool::CurrentLag => run_database_query(
+            config,
+            "current_lag",
+            "replication lag snapshot",
+            "SELECT COALESCE(max(replay_lag), interval '0 seconds')::text AS max_replay_lag \
+                 FROM pg_stat_replication",
+            5_000,
+        ),
+        McpTool::CurrentReplicationStatus => run_database_query(
+            config,
+            "current_replication_status",
+            "replication connection snapshot",
+            "SELECT count(*)::text AS replication_connections FROM pg_stat_replication",
+            5_000,
+        ),
+        McpTool::RebalanceDryRun { .. } => Ok(empty_database_report(
+            "rebalance_dry_run",
+            "rebalance dry-run remains validation-only until Citus rebalance planning is wired",
+        )),
+        McpTool::TenantArchive { .. } => Err(McpToolError::UnsafeToolDenied),
+    }
+}
+
 pub fn handle_mcp_stdio_request(line: &str) -> String {
     handle_mcp_stdio_request_with_server_info(line, "ai-blaise-citus-mcp")
 }
@@ -450,21 +638,28 @@ fn handle_tools_call(id: Value, params: Option<&Value>) -> Value {
         .unwrap_or_default();
 
     match mcp_request_from_call(name, &arguments).and_then(validate_tenant_policy) {
-        Ok(request) => jsonrpc_result(
-            id,
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": format!(
-                        "validated {} safe_mode={} tenant_scope={}",
-                        name,
-                        safe_mode_label(request.safe_mode),
-                        request.tenant_scope.as_ref().map(|scope| scope.tenant_id.as_str()).unwrap_or("none"),
-                    ),
-                }],
-                "isError": false,
-            }),
-        ),
+        Ok(request) => match handle_valid_tool_request(name, request) {
+            Ok(text) => jsonrpc_result(
+                id,
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": text,
+                    }],
+                    "isError": false,
+                }),
+            ),
+            Err(message) => jsonrpc_result(
+                id,
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": message,
+                    }],
+                    "isError": true,
+                }),
+            ),
+        },
         Err(message) => jsonrpc_result(
             id,
             json!({
@@ -475,6 +670,25 @@ fn handle_tools_call(id: Value, params: Option<&Value>) -> Value {
                 "isError": true,
             }),
         ),
+    }
+}
+
+fn handle_valid_tool_request(name: &str, request: McpToolRequest) -> Result<String, String> {
+    match McpDatabaseExecutionConfig::from_env() {
+        Ok(Some(config)) => execute_mcp_tool_against_database(&request, &config)
+            .map(|report| report.content_text())
+            .map_err(|error| error.to_string()),
+        Ok(None) => Ok(format!(
+            "validated {} safe_mode={} tenant_scope={}",
+            name,
+            safe_mode_label(request.safe_mode),
+            request
+                .tenant_scope
+                .as_ref()
+                .map(|scope| scope.tenant_id.as_str())
+                .unwrap_or("none"),
+        )),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -664,6 +878,218 @@ fn safe_mode_label(safe_mode: SafeMode) -> &'static str {
     }
 }
 
+fn bounded_readonly_query(sql: &str, max_rows: u32) -> String {
+    format!(
+        "SELECT * FROM ({}) AS ai_blaise_mcp_readonly_result LIMIT {max_rows}",
+        strip_trailing_statement_terminator(sql)
+    )
+}
+
+fn explain_query(sql: &str) -> String {
+    let stripped = strip_trailing_statement_terminator(sql);
+    if stripped
+        .trim_start()
+        .to_ascii_lowercase()
+        .starts_with("explain")
+    {
+        stripped
+    } else {
+        format!("EXPLAIN (FORMAT TEXT) {stripped}")
+    }
+}
+
+fn strip_trailing_statement_terminator(sql: &str) -> String {
+    sql.trim().trim_end_matches(';').trim_end().to_string()
+}
+
+fn qualified_table_parts(table: &str) -> Result<(&str, &str), McpToolError> {
+    let Some((schema, relation)) = table.split_once('.') else {
+        return Err(McpToolError::InvalidIdentifier("table"));
+    };
+    Ok((schema, relation))
+}
+
+fn escape_sql_literal(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn run_database_query(
+    config: &McpDatabaseExecutionConfig,
+    tool_name: &str,
+    message: &str,
+    sql: &str,
+    timeout_ms: u32,
+) -> Result<McpDatabaseExecutionReport, McpToolError> {
+    if timeout_ms == 0 {
+        return Err(McpToolError::InvalidTimeout);
+    }
+    let mut client = connect_database(config)?;
+    begin_readonly_transaction(&mut client, timeout_ms, tool_name)?;
+    let rows = match query_rows_as_json(&mut client, sql, config.max_rows) {
+        Ok(rows) => rows,
+        Err(error) => {
+            rollback_best_effort(&mut client);
+            return Err(McpToolError::Database(format!(
+                "{tool_name} execution failed: {error}"
+            )));
+        }
+    };
+    commit_transaction(&mut client, tool_name)?;
+
+    Ok(McpDatabaseExecutionReport {
+        tool_name: tool_name.to_string(),
+        message: message.to_string(),
+        columns: derive_columns(&rows),
+        rows,
+    })
+}
+
+fn run_explain_query(
+    config: &McpDatabaseExecutionConfig,
+    tool_name: &str,
+    message: &str,
+    sql: &str,
+    timeout_ms: u32,
+) -> Result<McpDatabaseExecutionReport, McpToolError> {
+    if timeout_ms == 0 {
+        return Err(McpToolError::InvalidTimeout);
+    }
+    let mut client = connect_database(config)?;
+    begin_readonly_transaction(&mut client, timeout_ms, tool_name)?;
+    let plan_rows = match client.query(sql, &[]) {
+        Ok(rows) => rows,
+        Err(error) => {
+            rollback_best_effort(&mut client);
+            return Err(McpToolError::Database(format!(
+                "{tool_name} execution failed: {error}"
+            )));
+        }
+    };
+    let mut rows = Vec::new();
+    for row in plan_rows.into_iter().take(config.max_rows as usize) {
+        let plan: String = match row.try_get(0) {
+            Ok(plan) => plan,
+            Err(error) => {
+                rollback_best_effort(&mut client);
+                return Err(McpToolError::Database(format!(
+                    "{tool_name} result decoding failed: {error}"
+                )));
+            }
+        };
+        rows.push(json!({ "QUERY PLAN": plan }));
+    }
+    commit_transaction(&mut client, tool_name)?;
+
+    Ok(McpDatabaseExecutionReport {
+        tool_name: tool_name.to_string(),
+        message: message.to_string(),
+        columns: vec!["QUERY PLAN".to_string()],
+        rows,
+    })
+}
+
+fn relation_exists(
+    config: &McpDatabaseExecutionConfig,
+    relation: &str,
+) -> Result<bool, McpToolError> {
+    let result = run_database_query(
+        config,
+        "relation_exists",
+        "relation existence check",
+        &format!(
+            "SELECT to_regclass('{}')::text AS relation_name",
+            escape_sql_literal(relation)
+        ),
+        5_000,
+    )?;
+    Ok(result
+        .rows
+        .first()
+        .and_then(Value::as_object)
+        .and_then(|row| row.get("relation_name"))
+        .and_then(Value::as_str)
+        .is_some())
+}
+
+fn connect_database(config: &McpDatabaseExecutionConfig) -> Result<Client, McpToolError> {
+    let connector = TlsConnector::builder()
+        .build()
+        .map_err(|error| McpToolError::Database(format!("TLS connector setup failed: {error}")))?;
+    let connector = MakeTlsConnector::new(connector);
+    Client::connect(&config.database_url, connector).map_err(|error| {
+        McpToolError::Database(format!("{MCP_DATABASE_URL_ENV} connection failed: {error}"))
+    })
+}
+
+fn begin_readonly_transaction(
+    client: &mut Client,
+    timeout_ms: u32,
+    tool_name: &str,
+) -> Result<(), McpToolError> {
+    client
+        .batch_execute(&format!(
+            "BEGIN READ ONLY; \
+             SET LOCAL statement_timeout = {timeout_ms}; \
+             SET LOCAL idle_in_transaction_session_timeout = {timeout_ms};"
+        ))
+        .map_err(|error| {
+            McpToolError::Database(format!(
+                "{tool_name} read-only transaction setup failed: {error}"
+            ))
+        })
+}
+
+fn commit_transaction(client: &mut Client, tool_name: &str) -> Result<(), McpToolError> {
+    client.batch_execute("COMMIT").map_err(|error| {
+        McpToolError::Database(format!(
+            "{tool_name} read-only transaction commit failed: {error}"
+        ))
+    })
+}
+
+fn rollback_best_effort(client: &mut Client) {
+    let _ = client.batch_execute("ROLLBACK");
+}
+
+fn query_rows_as_json(client: &mut Client, sql: &str, max_rows: u32) -> Result<Vec<Value>, String> {
+    let row = client
+        .query_one(&json_aggregation_sql(sql, max_rows), &[])
+        .map_err(|error| error.to_string())?;
+    let json_text: String = row.try_get(0).map_err(|error| error.to_string())?;
+    let value: Value = serde_json::from_str(&json_text).map_err(|error| error.to_string())?;
+    value
+        .as_array()
+        .cloned()
+        .ok_or_else(|| "database JSON aggregation did not return an array".to_string())
+}
+
+fn json_aggregation_sql(sql: &str, max_rows: u32) -> String {
+    format!(
+        "WITH ai_blaise_mcp_limited AS ( \
+             SELECT * FROM ({}) AS ai_blaise_mcp_result LIMIT {max_rows} \
+         ) \
+         SELECT COALESCE(jsonb_agg(to_jsonb(ai_blaise_mcp_limited)), '[]'::jsonb)::text \
+         FROM ai_blaise_mcp_limited",
+        strip_trailing_statement_terminator(sql)
+    )
+}
+
+fn derive_columns(rows: &[Value]) -> Vec<String> {
+    rows.first()
+        .and_then(Value::as_object)
+        .map(|object| object.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn empty_database_report(tool_name: &str, message: &str) -> McpDatabaseExecutionReport {
+    McpDatabaseExecutionReport {
+        tool_name: tool_name.to_string(),
+        message: message.to_string(),
+        columns: Vec::new(),
+        rows: Vec::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,6 +1175,7 @@ mod tests {
 
     #[test]
     fn stdio_tools_call_accepts_tenant_scoped_safe_query() {
+        std::env::remove_var(MCP_DATABASE_URL_ENV);
         let response = handle_mcp_stdio_request(
             r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT 1","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
         );
@@ -763,6 +1190,7 @@ mod tests {
 
     #[test]
     fn stdio_tools_call_denies_destructive_archive() {
+        std::env::remove_var(MCP_DATABASE_URL_ENV);
         let response = handle_mcp_stdio_request(
             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tenant_archive","arguments":{"tenant_name":"tenant-a","tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
         );
@@ -777,6 +1205,7 @@ mod tests {
 
     #[test]
     fn stdio_tools_call_requires_tenant_scope_for_queries() {
+        std::env::remove_var(MCP_DATABASE_URL_ENV);
         let response = handle_mcp_stdio_request(
             r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT 1","timeout_ms":1000}}}"#,
         );
@@ -832,7 +1261,25 @@ mod tests {
     }
 
     #[test]
+    fn query_timeout_has_a_production_ceiling() {
+        let request = McpToolRequest {
+            tool: McpTool::QueryWithTimeout {
+                sql: "SELECT count(*) FROM tenant_a.orders".to_string(),
+                timeout_ms: MCP_MAX_TIMEOUT_MS + 1,
+            },
+            tenant_scope: Some(TenantScope {
+                tenant_id: "tenant-a".to_string(),
+                allowed_schemas: vec!["tenant_a".to_string()],
+            }),
+            safe_mode: SafeMode::Required,
+        };
+
+        assert_eq!(request.validate(), Err(McpToolError::TimeoutTooLarge));
+    }
+
+    #[test]
     fn stdio_tools_call_denies_cross_schema_query() {
+        std::env::remove_var(MCP_DATABASE_URL_ENV);
         let response = handle_mcp_stdio_request(
             r#"{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT count(*) FROM tenant_b.orders","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}"#,
         );
@@ -842,6 +1289,35 @@ mod tests {
         assert_eq!(
             value["result"]["content"][0]["text"],
             "schema tenant_b is outside allowed_schemas"
+        );
+    }
+
+    #[test]
+    fn builds_bounded_readonly_query() {
+        assert_eq!(
+            bounded_readonly_query("SELECT 1;", 25),
+            "SELECT * FROM (SELECT 1) AS ai_blaise_mcp_readonly_result LIMIT 25"
+        );
+    }
+
+    #[test]
+    fn builds_explain_query_without_double_explain() {
+        assert_eq!(explain_query("SELECT 1;"), "EXPLAIN (FORMAT TEXT) SELECT 1");
+        assert_eq!(explain_query("EXPLAIN SELECT 1;"), "EXPLAIN SELECT 1");
+    }
+
+    #[test]
+    fn database_config_rejects_unbounded_row_limits() {
+        let config = McpDatabaseExecutionConfig::new(
+            "postgresql://postgres@127.0.0.1/postgres".to_string(),
+            MCP_MAX_ROWS_CEILING + 1,
+        );
+
+        assert_eq!(
+            config,
+            Err(McpToolError::Database(format!(
+                "{MCP_MAX_ROWS_ENV} must not exceed {MCP_MAX_ROWS_CEILING}"
+            )))
         );
     }
 }

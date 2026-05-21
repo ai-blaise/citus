@@ -119,6 +119,11 @@ runner for `FEATURE: S9`.
 `sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
 tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
 `FEATURE: MCP3`.
+`tools/citus-mcp/src/lib.rs` also executes the production-ready read-only MCP
+database runtime for `FEATURE: MCP4`, using `AI_BLAISE_MCP_DATABASE_URL`, the
+maintained PostgreSQL client with native TLS support, read-only transactions,
+statement timeouts, bounded JSON result materialization, tenant schema
+validation, and destructive-tool denial.
 `sidecar/mcp/src/main.rs` runs the sidecar MCP stdio and HTTP JSON-RPC policy
 bridges for `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
 `FEATURE: D11`.
@@ -3952,9 +3957,11 @@ is required, and reject a tenant-scoped query missing tenant scope.
 Kubernetes production smoke sends `POST /mcp` through a port-forward to the
 deployed exhaustive-profile MCP sidecar pod and verifies the same initialize,
 tenant query validation, cross-schema denial, and destructive-denial behavior.
-Authentication integration and real database/Kubernetes tool execution remain
-alpha; production values keep the MCP sidecar disabled until that runtime
-contract is implemented and live-gated.
+MCP4 covers read-only database execution for `tools/citus-mcp`;
+authentication, mutating database execution, Kubernetes tool execution, and
+production sidecar enablement remain alpha. Production values keep the MCP
+sidecar disabled until the sidecar runtime contract is implemented and
+live-gated.
 
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
@@ -3993,8 +4000,10 @@ safe-mode denial message while non-destructive tenant-scoped validation calls
 are accepted. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
 `ci/ai-blaise/kind-production-smoke.sh` verify the same denial through the
 sidecar HTTP `serve` path and the deployed Kubernetes sidecar. Disabling safe
-mode for mutating production operations remains alpha. Authentication
-integration and real database/Kubernetes tool execution remain alpha.
+mode for mutating production operations remains alpha. MCP4 covers read-only
+database execution for `tools/citus-mcp`; authentication, mutating database
+execution, Kubernetes tool execution, and production sidecar enablement remain
+alpha.
 
 **Motivation**: Agent operations should be inspect-first and dry-run-biased
 unless explicitly allowed.
@@ -4036,8 +4045,9 @@ and verify `tenant_b` SQL is rejected when only `tenant_a` is allowed.
 `ci/ai-blaise/kind-production-smoke.sh` verify the same tenant-scope checks
 through the sidecar HTTP `serve` path and the deployed Kubernetes sidecar.
 Real database authorization, per-user auth, and sidecar session isolation
-remain alpha. Authentication integration and real database/Kubernetes tool
-execution remain alpha.
+remain alpha. MCP4 covers read-only database execution for `tools/citus-mcp`;
+authentication, mutating database execution, Kubernetes tool execution, and
+production sidecar enablement remain alpha.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
 multi-tenant operator usage.
@@ -4055,6 +4065,51 @@ multi-tenant operator usage.
 - CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 - CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
 - CI: `ci/ai-blaise/kind-production-smoke.sh`
+
+### MCP4: Read-Only Database Tool Execution
+
+**Overlay**: `tools/citus-mcp`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Executes the read-only MCP database tool subset from the real
+`tools/citus-mcp` stdio server when `AI_BLAISE_MCP_DATABASE_URL` is set.
+
+Production evidence: `ci/ai-blaise/mcp-db-smoke.sh` launches a real
+`postgres:17` container, creates tenant-scoped data plus a `pg_dist_shard`
+catalog fixture, starts `cargo run -q -p ai_blaise_citus_mcp -- serve-stdio`
+with `AI_BLAISE_MCP_DATABASE_URL`, and drives JSON-RPC over stdin/stdout. The
+smoke proves `query_with_timeout` returns live rows from `tenant_a.orders`,
+`run_explain` returns a database-generated plan, `list_shards` reads catalog
+rows including shard `102008` for `tenant_a.orders`, a `tenant_b` query is
+denied before database execution with `schema tenant_b is outside
+allowed_schemas`, and `tenant_archive` remains denied with `safe mode denied a
+destructive tool`. The implementation uses the maintained PostgreSQL Rust
+client with native TLS support rather than a toy protocol parser, wraps each
+execution in `BEGIN READ ONLY`, applies `SET LOCAL statement_timeout`, limits
+materialized rows with `AI_BLAISE_MCP_MAX_ROWS` capped at 1000 rows, caps
+caller-supplied query timeouts at 300000 ms, and returns JSON rows through the
+MCP text response.
+
+**Current boundary**: This production-ready claim is intentionally narrow:
+read-only query, explain, catalog, replication-status, and index-inventory
+execution through `tools/citus-mcp`. Authentication, mutating database
+execution, Kubernetes tool execution, and production sidecar enablement remain
+alpha and must stay disabled until separately implemented and live-gated.
+
+**Motivation**: Agent-visible database reads need real execution evidence
+without granting mutation or Kubernetes authority.
+
+**Citus comparison**: Vanilla Citus does not ship MCP database tool execution.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MCP4` in `tools/citus-mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- serve-stdio`
+- CI: `ci/ai-blaise/mcp-db-smoke.sh`
 
 ## Operations / DX
 
@@ -6180,10 +6235,12 @@ destructive-denial, and
 missing-tenant-scope requests. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
 `ci/ai-blaise/kind-production-smoke.sh` verify the sidecar `serve` HTTP
 JSON-RPC path, including deployed Kubernetes `POST /mcp` traffic. The
-operations runner still records the broader workflow contract. Authentication
-integration and real database/Kubernetes tool execution remain alpha, as do
-authenticated multi-user MCP deployment, policy isolation beyond request
-validation, and live database/Kubernetes mutations.
+operations runner still records the broader workflow contract. MCP4 covers
+read-only database execution for `tools/citus-mcp`; authentication, mutating
+database execution, Kubernetes tool execution, and production sidecar
+enablement remain alpha. Authenticated multi-user MCP deployment, policy
+isolation beyond request validation, and live database/Kubernetes mutations
+also remain alpha.
 
 **Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
 

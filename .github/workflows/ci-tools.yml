@@ -23,6 +23,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_mcp -- run-canonical
       - name: Run MCP stdio smoke
         run: bash ci/ai-blaise/mcp-stdio-smoke.sh
+      - name: Run MCP database smoke
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/mcp-db-smoke.sh
 
   citusctl:
     runs-on: ubuntu-latest
