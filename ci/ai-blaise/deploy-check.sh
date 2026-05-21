@@ -117,6 +117,10 @@ if [[ ! -x "${kind_smoke}" ]]; then
 fi
 
 grep -q 'FEATURE: D8' scripts/citus-scale/deploy.sh
+grep -q 'deploy_profile="${DEPLOY_PROFILE:-prod}"' scripts/citus-scale/deploy.sh
+grep -q 'values-prod.yaml' scripts/citus-scale/deploy.sh
+grep -q 'ALLOW_ALPHA_INSTALL' scripts/citus-scale/deploy.sh
+grep -q 'refusing to install non-production values file' scripts/citus-scale/deploy.sh
 grep -q 'FEATURE: D13' "${kind_smoke}"
 grep -q 'kind create cluster' "${kind_smoke}"
 grep -q 'scripts/citus-scale/build-app-images.sh' "${kind_smoke}"
@@ -288,6 +292,22 @@ if command -v helm >/dev/null 2>&1; then
     echo "values-prod.yaml render must not include alpha tools deployment" >&2
     exit 1
   fi
+
+  MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-default.yaml"
+  DEPLOY_PROFILE=dev MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-dev.yaml"
+  grep -q 'name: ai-blaise-citus-operator' "${render_dir}/deploy-wrapper-default.yaml"
+  grep -q 'name: ai-blaise-citus-pool' "${render_dir}/deploy-wrapper-default.yaml"
+  if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/deploy-wrapper-default.yaml"; then
+    echo "deploy.sh default render must use production values without alpha sidecars" >&2
+    exit 1
+  fi
+  grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/deploy-wrapper-dev.yaml"
+
+  if DEPLOY_PROFILE=dev MODE=install scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-install.out" 2>"${render_dir}/deploy-wrapper-install.err"; then
+    echo "deploy.sh must refuse non-production installs unless ALLOW_ALPHA_INSTALL=1" >&2
+    exit 1
+  fi
+  grep -q 'refusing to install non-production values file' "${render_dir}/deploy-wrapper-install.err"
 else
   echo "helm unavailable; skipping rendered chart profile checks"
 fi

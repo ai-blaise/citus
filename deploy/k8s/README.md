@@ -39,3 +39,10 @@ The Argo application targets the `main` release branch, uses
 `values-prod.yaml`, creates the target namespace, and prunes stale rendered
 resources so GitOps deploys the same production profile that the smoke
 verifies without leaving disabled alpha workloads behind.
+
+The human deploy wrapper is production-safe by default as well:
+`scripts/citus-scale/deploy.sh` defaults `DEPLOY_PROFILE=prod` to
+`values-prod.yaml`. Use `DEPLOY_PROFILE=dev` or `DEPLOY_PROFILE=exhaustive`
+for rendering non-production profiles, and set `ALLOW_ALPHA_INSTALL=1` only
+when intentionally installing dev, exhaustive, or custom values that may enable
+alpha sidecars or alpha runtime/security intent.
