@@ -1563,6 +1563,7 @@ for phrase in (
     "set local statement_timeout",
     "capped at 1000 rows",
     "caps caller-supplied query timeouts at 300000 ms",
+    "rejects `explain analyze`",
     "query_with_timeout",
     "run_explain",
     "list_shards",
@@ -1586,6 +1587,7 @@ for phrase in (
     "SET LOCAL statement_timeout",
     "query_rows_as_json",
     "TimeoutTooLarge",
+    "safe-mode MCP EXPLAIN must not use ANALYZE",
     "tenant_archive",
 ):
     require_text(ROOT / "tools/citus-mcp/src/lib.rs", phrase)

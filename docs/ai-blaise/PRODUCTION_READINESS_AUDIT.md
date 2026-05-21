@@ -161,8 +161,8 @@ more production-ready than the artifacts justified.
     validation-only tool behavior. The corrective boundary is `MCP4`: a narrow
     production-ready `tools/citus-mcp` read-only database execution runtime
     backed by the maintained PostgreSQL driver, native TLS support, read-only
-    transactions, bounded result materialization, row/timeout ceilings, and a
-    real PostgreSQL smoke.
+    transactions, bounded result materialization, row/timeout ceilings,
+    `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
 
 ## Corrections
 
@@ -565,7 +565,9 @@ optional, integration-target, preload, feature-coverage, and hard-block
 extension contracts, plus `MCP4` for the narrow `tools/citus-mcp` read-only
 database execution runtime against real PostgreSQL with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
-destructive-tool denial. The MCP entries `MCP1`, `MCP2`, `MCP3`, and `D11` now
+destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
+do not execute the explained statement. The MCP entries `MCP1`, `MCP2`,
+`MCP3`, and `D11` now
 remain alpha for the broader workflow: they have real stdio and HTTP JSON-RPC
 process smokes, obvious cross-schema request denial, and exhaustive-profile
 Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
