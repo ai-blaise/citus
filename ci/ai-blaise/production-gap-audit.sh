@@ -31,6 +31,7 @@ IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 LSP_SMOKE = ROOT / "ci/ai-blaise/citus-lsp-smoke.sh"
 MCP_SMOKE = ROOT / "ci/ai-blaise/mcp-stdio-smoke.sh"
+MCP_DB_SMOKE = ROOT / "ci/ai-blaise/mcp-db-smoke.sh"
 MCP_SIDECAR_SMOKE = ROOT / "ci/ai-blaise/mcp-sidecar-stdio-smoke.sh"
 MCP_SIDECAR_HTTP_SMOKE = ROOT / "ci/ai-blaise/mcp-sidecar-http-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
@@ -302,6 +303,7 @@ tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
 lsp_smoke = read(LSP_SMOKE)
 mcp_smoke = read(MCP_SMOKE)
+mcp_db_smoke = read(MCP_DB_SMOKE)
 mcp_sidecar_smoke = read(MCP_SIDECAR_SMOKE)
 mcp_sidecar_http_smoke = read(MCP_SIDECAR_HTTP_SMOKE)
 ts6_patch = read(TS6_PATCH)
@@ -1532,7 +1534,7 @@ for feature_id in ("MCP1", "MCP2", "MCP3", "D11"):
     if entry is None:
         fail(f"{feature_id} feature heading is required for MCP runtime contract evidence")
     if entry["status"].lower() in PRODUCTION_STATUSES:
-        fail(f"{feature_id} must remain alpha until MCP auth and real DB/Kubernetes execution are implemented")
+        fail(f"{feature_id} must remain alpha until broader MCP auth, mutation, Kubernetes, and sidecar production contracts are implemented")
     body_compact = compact(entry["body"])
     for phrase in (
         "ci/ai-blaise/mcp-stdio-smoke.sh",
@@ -1540,10 +1542,75 @@ for feature_id in ("MCP1", "MCP2", "MCP3", "D11"):
         "ci/ai-blaise/mcp-sidecar-http-smoke.sh",
         "serve-stdio",
         "json-rpc",
-        "authentication integration and real database/kubernetes tool execution remain alpha",
+        "mcp4 covers read-only database execution",
+        "authentication, mutating database execution, kubernetes tool execution, and production sidecar enablement remain alpha",
     ):
         if phrase not in body_compact:
             fail(f"{feature_id} must cite MCP runtime contract evidence marker: {phrase}")
+
+mcp4 = entry_by_id.get("MCP4")
+if mcp4 is None:
+    fail("MCP4 feature heading is required for the production-ready MCP database runtime")
+if mcp4["status"].lower() not in PRODUCTION_STATUSES:
+    fail("MCP4 must be marked production-ready for the narrow read-only database runtime")
+mcp4_body = compact(mcp4["body"])
+for phrase in (
+    "ci/ai-blaise/mcp-db-smoke.sh",
+    "ai_blaise_mcp_database_url",
+    "postgres:17",
+    "maintained postgresql rust client with native tls support",
+    "begin read only",
+    "set local statement_timeout",
+    "capped at 1000 rows",
+    "caps caller-supplied query timeouts at 300000 ms",
+    "query_with_timeout",
+    "run_explain",
+    "list_shards",
+    "schema tenant_b is outside allowed_schemas",
+    "safe mode denied a destructive tool",
+    "authentication, mutating database execution, kubernetes tool execution, and production sidecar enablement remain alpha",
+):
+    if phrase not in mcp4_body:
+        fail(f"MCP4 production-ready entry is missing boundary/evidence marker: {phrase}")
+for phrase in (
+    "FEATURE: MCP4",
+    "MCP_DATABASE_URL_ENV",
+    "AI_BLAISE_MCP_DATABASE_URL",
+    "MCP_MAX_ROWS_ENV",
+    "MCP_MAX_ROWS_CEILING",
+    "MCP_MAX_TIMEOUT_MS",
+    "native_tls::TlsConnector",
+    "postgres::Client",
+    "postgres_native_tls::MakeTlsConnector",
+    "BEGIN READ ONLY",
+    "SET LOCAL statement_timeout",
+    "query_rows_as_json",
+    "TimeoutTooLarge",
+    "tenant_archive",
+):
+    require_text(ROOT / "tools/citus-mcp/src/lib.rs", phrase)
+for phrase in (
+    "FEATURE: MCP4",
+    "postgres:17",
+    "POSTGRES_HOST_AUTH_METHOD=trust",
+    "AI_BLAISE_MCP_DATABASE_URL",
+    "AI_BLAISE_MCP_MAX_ROWS",
+    "\"name\": \"query_with_timeout\"",
+    "\"name\": \"run_explain\"",
+    "\"name\": \"list_shards\"",
+    "executed query_with_timeout",
+    "executed run_explain",
+    "executed list_shards",
+    "schema tenant_b is outside allowed_schemas",
+    "safe mode denied a destructive tool",
+    "ai_blaise_citus_mcp database smoke passed",
+):
+    if phrase not in mcp_db_smoke:
+        fail(f"mcp-db-smoke.sh is missing real database proof marker: {phrase}")
+if "REQUIRE_DOCKER=1 bash ci/ai-blaise/mcp-db-smoke.sh" not in tools_workflow:
+    fail("tools workflow must run the MCP database smoke")
+if "mcp-db-smoke" not in makefile:
+    fail("Makefile gate-close must include the MCP database smoke")
 for phrase in (
     "FEATURE: MCP1 MCP2 MCP3 D11",
     "serve-stdio",

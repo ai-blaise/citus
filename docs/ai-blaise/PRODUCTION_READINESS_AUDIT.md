@@ -157,6 +157,12 @@ more production-ready than the artifacts justified.
     seal plans, but the extension did not install append-only ledger tables,
     hash-chain verification, or pgcrypto-backed seal functions that a real
     database could execute.
+39. The MCP JSON-RPC tools had production-looking process smokes but only
+    validation-only tool behavior. The corrective boundary is `MCP4`: a narrow
+    production-ready `tools/citus-mcp` read-only database execution runtime
+    backed by the maintained PostgreSQL driver, native TLS support, read-only
+    transactions, bounded result materialization, row/timeout ceilings, and a
+    real PostgreSQL smoke.
 
 ## Corrections
 
@@ -518,8 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 240 source `FEATURE:` markers and 240
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 95 narrow headings
+The current feature inventory contains 241 source `FEATURE:` markers and 241
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 96 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -556,12 +562,17 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts. The MCP entries `MCP1`, `MCP2`, `MCP3`, and `D11` now
-remain alpha: they have real stdio and HTTP JSON-RPC process smokes, obvious
-cross-schema request denial, and exhaustive-profile Kubernetes sidecar traffic
-proof, but they are still validation-only and production values keep the MCP
-sidecar disabled until authentication and real database/Kubernetes tool
-execution are implemented and live-gated. The
+extension contracts, plus `MCP4` for the narrow `tools/citus-mcp` read-only
+database execution runtime against real PostgreSQL with native TLS driver
+support, read-only transactions, row/timeout bounds, tenant schema denial, and
+destructive-tool denial. The MCP entries `MCP1`, `MCP2`, `MCP3`, and `D11` now
+remain alpha for the broader workflow: they have real stdio and HTTP JSON-RPC
+process smokes, obvious cross-schema request denial, and exhaustive-profile
+Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
+execution for `tools/citus-mcp`. Authentication, mutating database execution,
+Kubernetes tool execution, and production sidecar enablement remain alpha, and
+production values keep the MCP sidecar disabled until those contracts are
+implemented and live-gated. The
 other 145
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
