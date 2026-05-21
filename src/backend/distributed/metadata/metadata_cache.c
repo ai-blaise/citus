@@ -262,6 +262,18 @@ static WorkerNode **WorkerNodeArray = NULL;
 static int WorkerNodeCount = 0;
 static bool workerNodeHashValid = false;
 
+/*
+ * FEATURE: T2
+ *
+ * Monotonic in-process counter advanced whenever pg_dist_placement is
+ * mutated. Plan caches (pool-side, T2) snapshot this counter when they
+ * record a cached plan and treat the cached entry as stale once the
+ * counter has advanced past the snapshot. The counter is intentionally
+ * process-local and reset on backend start; callers that need cross-
+ * process invariants must also subscribe to relcache invalidations.
+ */
+static uint64 placementGeneration = 0;
+
 /* default value is -1, for coordinator it's 0 and for worker nodes > 0 */
 static int32 LocalGroupId = -1;
 
@@ -342,6 +354,7 @@ PG_FUNCTION_INFO_V1(citus_dist_partition_cache_invalidate);
 PG_FUNCTION_INFO_V1(master_dist_partition_cache_invalidate);
 PG_FUNCTION_INFO_V1(citus_dist_shard_cache_invalidate);
 PG_FUNCTION_INFO_V1(master_dist_shard_cache_invalidate);
+PG_FUNCTION_INFO_V1(citus_placement_generation);
 PG_FUNCTION_INFO_V1(citus_dist_placement_cache_invalidate);
 PG_FUNCTION_INFO_V1(master_dist_placement_cache_invalidate);
 PG_FUNCTION_INFO_V1(citus_dist_node_cache_invalidate);
@@ -4043,7 +4056,57 @@ citus_dist_placement_cache_invalidate(PG_FUNCTION_ARGS)
 		CitusInvalidateRelcacheByShardId(newShardId);
 	}
 
+	/* FEATURE: T2 -- announce a new placement generation to plan caches */
+	BumpPlacementGeneration();
+
 	PG_RETURN_DATUM(PointerGetDatum(NULL));
+}
+
+
+/*
+ * FEATURE: T2
+ *
+ * CurrentPlacementGeneration returns the in-process monotonic counter
+ * that is advanced whenever pg_dist_placement is mutated. Pool-side
+ * plan caches snapshot this value when they record a cached plan and
+ * compare against it to decide whether a partial invalidation suffices.
+ */
+uint64
+CurrentPlacementGeneration(void)
+{
+	return placementGeneration;
+}
+
+
+/*
+ * FEATURE: T2
+ *
+ * BumpPlacementGeneration advances the in-process placement-generation
+ * counter. Callers must be cache-invalidation paths for pg_dist_placement
+ * (the trigger function on the catalog and any direct in-memory mutation
+ * helpers). Wraps to zero on uint64 overflow, which would require ~10^11
+ * rebalance events at one second each.
+ */
+void
+BumpPlacementGeneration(void)
+{
+	placementGeneration++;
+}
+
+
+/*
+ * FEATURE: T2
+ *
+ * citus_placement_generation returns the in-process monotonic
+ * placement-generation counter as a SQL bigint. Companion-side
+ * subscribers poll this UDF to drive partial plan-cache invalidation.
+ */
+Datum
+citus_placement_generation(PG_FUNCTION_ARGS)
+{
+	CheckCitusVersion(ERROR);
+
+	PG_RETURN_INT64((int64) placementGeneration);
 }
 
 
@@ -5630,7 +5693,8 @@ CitusInvalidateRelcacheByRelid(Oid relationId)
 
 /*
  * Register a relcache invalidation for the distributed relation associated
- * with the shard.
+ * with the shard. Also advances the placement-generation counter consumed by
+ * pool-side partial plan-cache invalidation (FEATURE: T2).
  */
 void
 CitusInvalidateRelcacheByShardId(int64 shardId)
@@ -5639,6 +5703,9 @@ CitusInvalidateRelcacheByShardId(int64 shardId)
 	int scanKeyCount = 1;
 	Form_pg_dist_shard shardForm = NULL;
 	Relation pgDistShard = table_open(DistShardRelationId(), AccessShareLock);
+
+	/* FEATURE: T2 -- advance the placement generation for plan caches */
+	BumpPlacementGeneration();
 
 	/*
 	 * Load shard, to find the associated relation id. Can't use
