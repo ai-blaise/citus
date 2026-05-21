@@ -25,3 +25,8 @@ These contracts cover `FEATURE: D1`, `FEATURE: D2`, `FEATURE: M8`,
 `FEATURE: B3`, `FEATURE: B5`, and `FEATURE: WF2`. The canonical runner
 includes `dev up`, plan-gated `apply`, `inspect cluster`, UTC `time-travel`,
 and WAL replay validation.
+
+`FEATURE: D2` is production-ready only for the real CLI plan-id guard:
+`ci/ai-blaise/citusctl-smoke.sh` requires `citusctl apply` without a plan ID
+to fail before any apply-mode command can proceed. The broader command
+surfaces listed above remain alpha unless their feature entries say otherwise.

@@ -35,6 +35,8 @@ jobs:
         run: cargo test -p ai_blaise_citusctl
       - name: Run canonical citusctl report
         run: cargo run -q -p ai_blaise_citusctl -- run-canonical
+      - name: Run citusctl plan-id smoke
+        run: bash ci/ai-blaise/citusctl-smoke.sh
 
   lsp:
     runs-on: ubuntu-latest

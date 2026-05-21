@@ -351,6 +351,12 @@ more production-ready than the artifacts justified.
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
   rejection against a real `postgres:17` container while JWT issuance, RLS
   enforcement, JWT verification, and token-cache behavior remain alpha.
+- The `citusctl` CLI now has a direct executable smoke for the narrow
+  `FEATURE: D2` apply-mode plan-id guard. The smoke requires `citusctl apply`
+  without a plan ID to fail closed and verifies valid plan/apply summaries from
+  the real binary. This is not evidence for mutating cluster apply execution,
+  manifest reconciliation, migrations, backups, PITR, WAL replay, or dev
+  cluster lifecycle.
 
 ## Verification Standard
 
@@ -397,6 +403,10 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Auth2 production evidence is limited to installable SQL session-claim
   helpers. It must not be cited as evidence for Auth1 JWT issuance, Sec1 RLS
   policy enforcement, Sec2 JWT verification, or Auth3 token-cache behavior.
+- D2 production evidence is limited to the real `citusctl` CLI apply-mode
+  plan-id guard and command-summary smoke. It must not be cited as evidence for
+  full mutating apply execution, manifest reconciliation, migrations, backups,
+  PITR, WAL replay, or dev cluster lifecycle.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -406,7 +416,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 15 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 16 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -421,7 +431,8 @@ trusted hook-coextension source path under real Timescale/Citus cohabitation,
 cohabitation, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
 pipelining through the real pool proxy data port, plus `Auth2` for installable
-SQL session-claim helpers under a real PostgreSQL extension smoke. The other 149
+SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
+for the real `citusctl` apply-mode plan-id guard. The other 148
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

@@ -56,6 +56,7 @@ POOL_WORKFLOW = ROOT / ".github/workflows/ci-pool.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
+TOOLS_WORKFLOW = ROOT / ".github/workflows/ci-tools.yml"
 CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 TS6_PATCH = ROOT / "patches/0001-allow-trusted-hook-coextensions.patch"
@@ -293,6 +294,7 @@ pool_workflow = read(POOL_WORKFLOW)
 operator_workflow = read(OPERATOR_WORKFLOW)
 sidecar_workflow = read(SIDECAR_WORKFLOW)
 slop_workflow = read(SLOP_WORKFLOW)
+tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
 ts6_patch = read(TS6_PATCH)
 shared_library_init = read(SHARED_LIBRARY_INIT)
@@ -518,6 +520,23 @@ for phrase in (
 ):
     if compact(phrase) not in compact(auth2_entry["body"]):
         fail(f"Auth2 production-ready boundary is missing: {phrase}")
+
+d2_entry = entry_by_id.get("D2")
+if d2_entry is None:
+    fail("D2 feature heading is required for citusctl plan-id evidence")
+if d2_entry["status"].lower() not in PRODUCTION_STATUSES:
+    fail("D2 must remain production-ready only for the real citusctl plan-id guard")
+for phrase in (
+    "explicit plan ID before apply-mode CLI execution",
+    "citusctl apply",
+    "citusctl: plan_id must not be empty",
+    "plan inspect cluster",
+    "apply plan-123 apply",
+    "Broader citusctl dev cluster lifecycle, full plan/apply execution, migrations, backups, PITR, WAL replay, and operator mutation workflows remain alpha",
+    "ci/ai-blaise/citusctl-smoke.sh",
+):
+    if compact(phrase) not in compact(d2_entry["body"]):
+        fail(f"D2 production-ready boundary is missing: {phrase}")
 
 non_production_with_prod_evidence = sorted(
     entry["id"] for entry in alpha_entries if "Production evidence:" in entry["body"]
@@ -922,6 +941,14 @@ for stale in (
 ):
     if stale in shared_readme_compact:
         fail(f"sidecar/shared README must not overclaim unimplemented runtime helpers: {stale}")
+
+require_text(ROOT / "ci/ai-blaise/citusctl-smoke.sh", "citusctl apply without a plan id unexpectedly succeeded")
+require_text(ROOT / "ci/ai-blaise/citusctl-smoke.sh", "citusctl: plan_id must not be empty")
+require_text(ROOT / "ci/ai-blaise/citusctl-smoke.sh", "apply plan-123 apply deploy/k8s/helm/citus-overlay/values-prod.yaml")
+if "bash ci/ai-blaise/citusctl-smoke.sh" not in tools_workflow:
+    fail("tools workflow must run the citusctl plan-id smoke for D2")
+if "citusctl-smoke" not in makefile:
+    fail("Makefile gate-close must include the citusctl plan-id smoke for D2")
 
 for phrase in (
     "while bundle1 remains alpha",
