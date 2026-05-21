@@ -22,4 +22,8 @@ and chart YAML with `kubectl --dry-run=client`, starts the operand image, loads
 Citus and TimescaleDB together, and verifies `companion_feature_status()` when
 the `ai_blaise_citus` companion extension is available.
 
+Contract mode is not cohabitation production evidence, and live mode is not run
+by default. A live run counts as evidence only when the operand image digest,
+command log, and CI or VM run are recorded in the production-readiness audit.
+
 End-to-end acceptance gates run here as the implementation matures.

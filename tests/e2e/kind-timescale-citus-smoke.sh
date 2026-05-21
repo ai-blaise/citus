@@ -29,7 +29,7 @@ require_file "${chart_dir}/values.yaml"
 require_file "${chart_dir}/crds/ai-blaise-citus-crds.yaml"
 
 if [[ "${run_live}" != "1" ]]; then
-  echo "kind smoke contract verified; set RUN_KIND_SMOKE=1 and SMOKE_DB_IMAGE to run live"
+  echo "kind smoke contract-only check verified; set RUN_KIND_SMOKE=1 and SMOKE_DB_IMAGE to run live cohabitation evidence"
   exit 0
 fi
 

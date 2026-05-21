@@ -70,6 +70,11 @@ more production-ready than the artifacts justified.
     without a shared production boundary. A reader could therefore mistake
     local canonical reports or empty benchmark scaffolding for production
     evidence on alpha features.
+20. The cohabitation docs and TS6 patch metadata referred to a cohabitation
+    suite without stating that default contract checks and the opt-in kind
+    smoke shape are not production evidence. A reader could therefore treat
+    the `citus.cohabit_extensions` trust contract as proof that a real
+    Citus+TimescaleDB hook chain was production-verified.
 
 ## Corrections
 
@@ -163,6 +168,13 @@ more production-ready than the artifacts justified.
   benchmark targets, or local runtime models are CI artifacts or planning
   scaffolding, not production evidence. The production gap audit
   machine-checks that every custom boundary doc preserves the wording.
+- The cohabitation docs, TS6 patch metadata, and opt-in kind smoke now state
+  that `citus.cohabit_extensions` is a deployment-level trust contract, not
+  production evidence. Static patch checks, pure Rust acceptance models, and
+  default contract-mode smoke output remain non-production until a live
+  Citus+TimescaleDB cohabitation run records the operand image digest, command
+  log, and CI or VM evidence in the audit. The production gap audit
+  machine-checks that boundary.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:

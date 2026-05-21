@@ -546,8 +546,12 @@ operator explicitly configures trusted cohabiting extensions, then preserves
 the captured planner, executor, and non-distributed EXPLAIN hook chain.
 
 **Motivation**: Citus's upstream guard rejects any preexisting planner,
-utility, executor, or explain hook. ai-blaise/citus needs a controlled path for
-validated cohabitation, starting with TimescaleDB.
+utility, executor, or explain hook. ai-blaise/citus needs a controlled,
+operator-approved path for cohabiting extensions, starting with TimescaleDB.
+`citus.cohabit_extensions` is a deployment-level trust contract, not
+production evidence for hook-chain safety until a real Citus+TimescaleDB
+cohabitation smoke records the exact image digest, command log, and CI or VM
+run in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 
 **SQL surface / API**:
 
@@ -594,8 +598,8 @@ Timescale-aware distributed hypertables.
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
   (`HypertableApplyPlan` creates `ai_blaise_citus`, checks
-  `companion_feature_status()`, verifies Timescale/Citus cohabitation, then
-  applies ordered companion SQL)
+  `companion_feature_status()`, validates the configured Timescale/Citus
+  cohabitation precondition, then applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
   and canonical SQL emitter `e2e/src/bin/timescale_apply_plan.rs`
 
