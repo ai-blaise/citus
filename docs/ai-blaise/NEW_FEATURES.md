@@ -323,6 +323,14 @@ parallel-commit transaction-status sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
+- Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
+  PostgreSQL-core logical commit clock the parallel-commit path depends on for
+  monotonic shard-finalize ordering. Runtime gate stays alpha until the
+  txn_status sidecar lands; the patch is the upstream-quality diff that makes
+  the gate compilable. Tracked under FEATURE: PGC1.
+- Executable: `patches/postgres/0002-per-subtrans-commit-ts.patch` lets the
+  coordinator attribute divergent per-shard commit timestamps inside a single
+  umbrella transaction. Tracked under FEATURE: PGC2.
 
 ### T8: Toolkit Two-Step Aggregate Pushdown
 
@@ -1654,6 +1662,89 @@ classification contract.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `patches/postgres/0001-logical-commit-clock.patch` and
+  `patches/postgres/0002-per-subtrans-commit-ts.patch` provide the PG-core
+  pieces the seven-class conflict resolver needs: monotonic commit timestamps
+  to break last-update-wins ties deterministically, and per-subtransaction
+  origin attribution so a forced delta apply keeps the remote node id instead
+  of the apply worker's. Tracked under FEATURE: PGC1 and FEATURE: PGC2.
+
+### PGC1: PostgreSQL Logical Commit Clock
+
+**Overlay**: `patches/postgres/0001-logical-commit-clock.patch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds a per-XLogCtl Lamport clock and an XLogReserveInsertHook so
+commit timestamps are monotonically increasing in commit-LSN order, with a
+per-backend remoteTransactionStopTimestamp that lets logical replication apply
+workers bump the local clock forward when a remote transaction carries a
+timestamp ahead of the local clock.
+
+**Motivation**: Multi-master and parallel-commit deployments cannot resolve
+conflicts deterministically when commit timestamps can move backwards inside a
+single node's WAL. The hook closes that gap by running under the WAL-insert
+lock so the commit time chosen by the hook is the same time that determines
+LSN order. FEATURE: T5 (parallel commit transaction status) and FEATURE: C5
+(replication conflict taxonomy) both depend on this clock.
+
+**Citus comparison**: Vanilla PostgreSQL records `xactStopTimestamp` per
+backend but does not enforce monotonic increase across the cluster; vanilla
+Citus inherits that behaviour. The patch is the canonical pgEdge/Spock
+contribution to pgsql-hackers, rebased to PostgreSQL 17.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- Upstream: `docs/ai-blaise/UPSTREAM_SYNC.md` (pgsql-hackers + pgEdge/spock
+  links)
+- In-source: `FEATURE: PGC1` in
+  `patches/postgres/0001-logical-commit-clock.patch`
+- In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
+  format and FEATURE markers. Runtime activation requires the custom-PG-compile
+  pipeline; the patch stays alpha-with-placeholder until that ships, where
+  alpha means not production-ready.
+
+### PGC2: PostgreSQL Per-Subtransaction Commit Timestamps
+
+**Overlay**: `patches/postgres/0002-per-subtrans-commit-ts.patch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds `SubTransactionCommitTsEntry` so a single replication or
+parallel-commit transaction can record a per-subxid commit time and origin
+node id distinct from the umbrella transaction. The override is persisted via
+a new `COMMIT_TS_SUBTRANS_TS` (`0x20`) WAL record under the existing
+`RM_COMMIT_TS_ID` resource manager and replayed during recovery.
+
+**Motivation**: Spock's delta-apply path forces a row update in a
+subtransaction when last-update-wins would otherwise keep the local row; the
+forced row must keep the remote commit timestamp and origin so a downstream
+resolver can attribute the change correctly. FEATURE: T5 reuses the same
+override for shard-level finalize timestamps inside an umbrella commit, and
+FEATURE: C5 reuses it to attribute forced updates to the originating node.
+
+**Citus comparison**: Vanilla PostgreSQL keeps one commit timestamp per top
+xid; vanilla Citus does not extend that. The patch is the canonical
+pgEdge/Spock contribution to pgsql-hackers, rebased to PostgreSQL 17.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- Upstream: `docs/ai-blaise/UPSTREAM_SYNC.md` (pgsql-hackers + pgEdge/spock
+  links)
+- In-source: `FEATURE: PGC2` in
+  `patches/postgres/0002-per-subtrans-commit-ts.patch`
+- In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
+  format and FEATURE markers. Runtime activation requires the custom-PG-compile
+  pipeline; the patch stays alpha-with-placeholder until that ships, where
+  alpha means not production-ready.
 
 ### C6: CSI Snapshot Branching
 
