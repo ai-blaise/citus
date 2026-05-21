@@ -56,6 +56,11 @@ more production-ready than the artifacts justified.
     operand image was built or packaged as a release artifact even though the
     detailed Bundle1 docs correctly kept it alpha pending a real operand image
     build/initdb smoke.
+17. The GitOps application and Kubernetes smoke used `values-prod.yaml`, but
+    the human deploy wrapper still defaulted to `values.yaml`, the exhaustive
+    alpha profile. A direct `MODE=install scripts/citus-scale/deploy.sh`
+    invocation could therefore install alpha sidecars and alpha runtime/security
+    intent without making that choice explicit.
 
 ## Corrections
 
@@ -130,6 +135,12 @@ more production-ready than the artifacts justified.
   file smokes are not production evidence for the full operand image until a
   real operand image build/initdb smoke exists. The production gap audit
   machine-checks that wording and rejects stale operand-image overclaims.
+- The deploy wrapper defaults to `values-prod.yaml` through
+  `DEPLOY_PROFILE=prod`. Rendering dev or exhaustive profiles remains
+  available, but `MODE=install` refuses any non-production or custom values file
+  unless `ALLOW_ALPHA_INSTALL=1` is set explicitly for that run. The deploy
+  check and production gap audit enforce the production-safe default and the
+  non-production install guard.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:

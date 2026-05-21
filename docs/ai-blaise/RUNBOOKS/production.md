@@ -73,6 +73,12 @@ the operator and pool with alpha sidecars/tools disabled while pool SQL/admin
 traffic still works. The deploy workflow and `gate-close` run this smoke at
 larger integration boundaries.
 
+The `scripts/citus-scale/deploy.sh` deploy wrapper defaults to
+`values-prod.yaml` through `DEPLOY_PROFILE=prod`. Rendering dev or exhaustive
+profiles is allowed for review and smoke-test work, but installing any
+non-production or custom values file is blocked unless `ALLOW_ALPHA_INSTALL=1`
+is set explicitly for that run.
+
 ## Hardening Controls
 
 These runtime and security controls are alpha intent, not active production

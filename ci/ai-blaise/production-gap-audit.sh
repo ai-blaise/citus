@@ -30,6 +30,7 @@ TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
 KIND_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
+DEPLOY_SCRIPT = ROOT / "scripts/citus-scale/deploy.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
 DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
 ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
@@ -208,6 +209,7 @@ timescale_smoke = read(TIMESCALE_SMOKE)
 observability_replication_smoke = read(OBSERVABILITY_REPLICATION_SMOKE)
 kind_smoke = read(KIND_SMOKE)
 deploy_check = read(DEPLOY_CHECK)
+deploy_script = read(DEPLOY_SCRIPT)
 prod_values = read(PROD_VALUES)
 default_values = read(DEFAULT_VALUES)
 argo_app = read(ARGO_APP)
@@ -358,6 +360,7 @@ for phrase in (
     "v2 acceptance model",
     "production-gap-audit",
     "probe-only traffic is insufficient",
+    "deploy wrapper defaults to `values-prod.yaml`",
 ):
     if phrase not in runbook_compact:
         fail(f"production runbook must preserve guardrail phrase: {phrase}")
@@ -686,9 +689,34 @@ for phrase in (
     "runtime and security controls are alpha intent",
     "not active production enforcement",
     "production values keep those alpha controls disabled",
+    "deploy wrapper defaults to `values-prod.yaml`",
 ):
     if phrase not in runbook_compact:
         fail(f"production runbook must preserve runtime/security alpha guardrail: {phrase}")
+
+for phrase in (
+    'deploy_profile="${DEPLOY_PROFILE:-prod}"',
+    "values-prod.yaml",
+    "ALLOW_ALPHA_INSTALL",
+    "refusing to install non-production values file",
+):
+    if phrase not in deploy_script:
+        fail(f"deploy.sh must preserve production-safe default marker: {phrase}")
+
+for phrase in (
+    'deploy_profile="${DEPLOY_PROFILE:-prod}"',
+    "deploy.sh default render must use production values without alpha sidecars",
+    "deploy.sh must refuse non-production installs unless ALLOW_ALPHA_INSTALL=1",
+):
+    if phrase not in deploy_check:
+        fail(f"deploy-check.sh must enforce deploy wrapper production-safe default: {phrase}")
+
+for phrase in (
+    "deploy wrapper defaults to `values-prod.yaml`",
+    "allow_alpha_install=1",
+):
+    if phrase not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve deploy-wrapper guardrail: {phrase}")
 
 for path in (
     DOCS,
