@@ -155,6 +155,8 @@ The tool overlays expose deterministic canonical runners for their library
 contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 `tools/citus-schema-designer/src/main.rs`, `tools/citus-tui/src/main.rs`, and
 `tools/citus-watch/src/main.rs`.
+`ci/ai-blaise/citusctl-smoke.sh` exercises the real `citusctl` binary for the
+`FEATURE: D2` plan-id guard.
 
 ## Operand Image
 
@@ -3584,12 +3586,16 @@ ai-blaise single-command local cluster contract.
 ### D2: citusctl apply
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Requires an explicit plan ID before apply-mode CLI execution.
+**Summary**: Requires an explicit plan ID before apply-mode CLI execution and
+fails closed when `citusctl apply` is invoked without one. This status applies
+only to the real CLI parser/guard behavior; mutating cluster apply execution,
+manifest reconciliation, migrations, backup restore, PITR, WAL replay, and dev
+cluster lifecycle remain alpha until separately live-proven.
 
 **Motivation**: Mutating operations should only run from a reviewed plan so
 operator and CI behavior stay auditable.
@@ -3597,11 +3603,21 @@ operator and CI behavior stay auditable.
 **Citus comparison**: Vanilla Citus does not ship this plan-gated apply
 workflow.
 
+Production evidence: `ci/ai-blaise/citusctl-smoke.sh` runs the real
+`ai_blaise_citusctl` binary locally, on the VM, and in the GitHub Actions
+`tools` workflow. The smoke requires `citusctl apply` without a plan ID to fail
+with `citusctl: plan_id must not be empty`, then verifies `plan inspect
+cluster`, `plan apply ...`, and `apply plan-123 apply ...` emit the expected
+non-mutating plan summaries and execute-step counts. Broader citusctl dev
+cluster lifecycle, full plan/apply execution, migrations, backups, PITR, WAL
+replay, and operator mutation workflows remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- CI: `ci/ai-blaise/citusctl-smoke.sh`
 
 ### D3: citus-tui Interactive Shell
 
