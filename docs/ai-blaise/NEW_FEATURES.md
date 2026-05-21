@@ -6908,24 +6908,35 @@ contract.
 
 ### T6: PG18 io_uring Default
 
-**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Overlay**: `companion/src/ops_contracts.rs`, `images/citus-pg-overlay/Dockerfile`, `ci/ai-blaise/sql-extension-smoke.sh`, and Helm values
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Tracks the Postgres I/O method policy for an eventual PG18
-io_uring default.
+**Summary**: Tracks the Postgres I/O method policy for the PG18 io_method
+contract, paired with the PG version matrix in the overlay image and smoke
+harness.
 
-**Current boundary**: The operations contract validates the expected toggle;
-PG18 operand image proof and kernel/runtime compatibility tests remain alpha.
+**Current boundary**: The operations contract validates the expected toggle.
+The overlay Dockerfile now builds for PG17 and PG18 via `--build-arg PG_MAJOR`,
+and `ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL contract
+against both PG17 and PG18 base images on every PR, asserting `io_method`
+accepts its contract value without breaking Citus or any bundled extension.
+PG18 stays alpha until the full bundled-extension binary set has verified PG18
+builds (see `docs/ai-blaise/BUNDLED_EXTENSIONS.md` PG version matrix) and a
+real-kernel `io_method=io_uring` run is recorded under
+`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 
-**Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy.
+**Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy or
+emit a multi-PG-major operand image from a single overlay contract.
 
 **References**:
 
 - In-source: `FEATURE: T6` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `make -f Makefile.ai-blaise sql-extension-smoke` (runs PG17 and PG18 matrix)
+- Executable: `make -f Makefile.ai-blaise build-image-matrix` (builds PG17 and PG18 overlay images)
 
 ### T7: Pipelined Client Protocol In Pool
 

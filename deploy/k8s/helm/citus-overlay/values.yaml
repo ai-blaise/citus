@@ -47,6 +47,12 @@ pool:
     cidrAllowlist: []
 
 postgres:
+  # postgresMajor selects the PostgreSQL operand image variant emitted by
+  # images/citus-pg-overlay/Dockerfile. Default 17 for stability; flip to 18
+  # explicitly once the full PG18 smoke and PG18 bundled-extension binaries
+  # are green. See docs/ai-blaise/NEW_FEATURES.md T6 and
+  # docs/ai-blaise/BUNDLED_EXTENSIONS.md for the per-extension PG matrix.
+  postgresMajor: 17
   ioMethod: ""
 
 sidecarDefaults:

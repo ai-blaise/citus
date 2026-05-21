@@ -43,3 +43,20 @@ hook-chain source path, and TS18 covers the installable bridge-state SQL under
 real Citus+TimescaleDB cohabitation. The broader TS1/TS2/TS3/TS4/TS5/TS12
 distributed Timescale features remain alpha until multi-worker fanout,
 rebalance, and operator reconciliation are proven end to end.
+
+## PostgreSQL Version Matrix
+
+The cohabitation contract spans the ai-blaise/citus PG-version matrix:
+
+| PG major | Cohabitation status                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------- |
+| 17       | TS6 and TS18 production-ready against `timescale/timescaledb:latest-pg17`.                        |
+| 18       | TS6 source-path verified by `ci/ai-blaise/sql-extension-smoke.sh` PG18 matrix entry. TS18 real    |
+|          | Timescale+Citus image evidence stays alpha until a `latest-pg18` Timescale base is published.     |
+| 16       | Suppressed pending the `background_rebalance_parallel_reference_tables` upstream flake fix.       |
+
+`ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL extension contract
+against both PG17 and PG18 on every PR. The PG18 leg also asserts the new
+`io_method` GUC accepts its contract value without breaking Citus or any
+bundled extension surface; this guards TS6 cohabitation under the PG18
+io_method default (T6).

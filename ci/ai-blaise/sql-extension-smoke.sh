@@ -1,12 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Smoke matrix: ai_blaise_citus companion SQL extension across the PostgreSQL
+# major versions ai-blaise/citus supports. The same SQL surface must come up
+# against PG17 and PG18 operand bases. PG18 adds `io_method` as a configured
+# GUC; this harness asserts it accepts the contract value without breaking
+# Citus or any bundled extension. PG16 stays out of the matrix until the
+# upstream `background_rebalance_parallel_reference_tables` flake fix lands
+# (tracked alongside the PG-version coverage in the smoke runbook).
+
 repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
 control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
-postgres_image="${SQL_EXTENSION_SMOKE_IMAGE:-postgres:17}"
 require_docker="${REQUIRE_DOCKER:-0}"
+
+# PG_MAJOR matrix is explicit: PG17 (current operand default) plus PG18
+# (forward target for T6 io_method). Override with SQL_EXTENSION_SMOKE_PG_MAJORS
+# (whitespace-separated) for local repro, e.g.
+#   SQL_EXTENSION_SMOKE_PG_MAJORS=18 bash ci/ai-blaise/sql-extension-smoke.sh
+# TODO: re-enable 16 once the
+# `background_rebalance_parallel_reference_tables` upstream flake fix merges.
+pg_majors_default="17 18"
+read -r -a pg_majors <<<"${SQL_EXTENSION_SMOKE_PG_MAJORS:-${pg_majors_default}}"
+
+# PG18 ships io_method as a real GUC. Default to the safe `worker` value (also
+# the upstream PG18 default) so the smoke matches stock container kernels.
+# Operators verifying io_uring kernels can set io_method=io_uring explicitly.
+pg18_io_method="${SQL_EXTENSION_SMOKE_IO_METHOD:-worker}"
 
 for file in "${control_file}" "${sql_file}"; do
   if [[ ! -s "${file}" ]]; then
@@ -24,51 +45,83 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 0
 fi
 
-container="ai-blaise-sql-extension-smoke-${RANDOM}-$$"
+active_container=""
 cleanup() {
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  if [[ -n "${active_container}" ]]; then
+    docker rm -f "${active_container}" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
-docker run \
-  --name "${container}" \
-  -e POSTGRES_PASSWORD=postgres \
-  -v "${control_file}:/usr/share/postgresql/17/extension/ai_blaise_citus.control:ro" \
-  -v "${sql_file}:/usr/share/postgresql/17/extension/ai_blaise_citus--0.1.0.sql:ro" \
-  -d "${postgres_image}" \
-  -c shared_preload_libraries=pg_stat_statements >/dev/null
+run_smoke_for_pg_major() {
+  local pg_major="$1"
+  local postgres_image="${SQL_EXTENSION_SMOKE_IMAGE:-postgres:${pg_major}}"
+  local container="ai-blaise-sql-extension-smoke-pg${pg_major}-${RANDOM}-$$"
+  active_container="${container}"
 
-init_complete=0
-for _ in $(seq 1 120); do
-  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
-    init_complete=1
-    break
+  echo "=== sql-extension-smoke vs ${postgres_image} (PG${pg_major}) ==="
+
+  # PG18 introduces io_method. Verify the GUC accepts the contract value and
+  # does not break Citus or any bundled extension. PG17 does not expose
+  # io_method, so the run-args stay version-conditioned.
+  local -a postgres_args
+  postgres_args=(-c "shared_preload_libraries=pg_stat_statements")
+  if [[ "${pg_major}" -ge 18 ]]; then
+    postgres_args+=(-c "io_method=${pg18_io_method}")
   fi
-  sleep 1
-done
 
-if [[ "${init_complete}" != "1" ]]; then
-  docker logs "${container}" >&2 || true
-  echo "postgres container did not finish init scripts" >&2
-  exit 1
-fi
+  docker run \
+    --name "${container}" \
+    -e POSTGRES_PASSWORD=postgres \
+    -v "${control_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus.control:ro" \
+    -v "${sql_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0.sql:ro" \
+    -d "${postgres_image}" \
+    "${postgres_args[@]}" >/dev/null
 
-ready=0
-for _ in $(seq 1 60); do
-  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
-    ready=1
-    break
+  local init_complete=0
+  local _
+  for _ in $(seq 1 120); do
+    if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+      init_complete=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "${init_complete}" != "1" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "postgres container did not finish init scripts (PG${pg_major})" >&2
+    exit 1
   fi
-  sleep 1
-done
 
-if [[ "${ready}" != "1" ]]; then
-  docker logs "${container}" >&2 || true
-  echo "postgres container did not become ready" >&2
-  exit 1
-fi
+  local ready=0
+  for _ in $(seq 1 60); do
+    if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
 
-docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+  if [[ "${ready}" != "1" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "postgres container did not become ready (PG${pg_major})" >&2
+    exit 1
+  fi
+
+  if [[ "${pg_major}" -ge 18 ]]; then
+    local io_method_observed
+    io_method_observed="$(
+      docker exec "${container}" psql -U postgres -Atqc "SHOW io_method"
+    )"
+    if [[ "${io_method_observed}" != "${pg18_io_method}" ]]; then
+      docker logs "${container}" >&2 || true
+      echo "PG${pg_major} io_method GUC did not accept '${pg18_io_method}' (observed: '${io_method_observed}')" >&2
+      exit 1
+    fi
+  fi
+
+  docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
 CREATE EXTENSION pg_stat_statements;
 CREATE EXTENSION pgcrypto;
 SELECT pg_stat_statements_reset();
@@ -1887,27 +1940,41 @@ END $$;
 RESET ROLE;
 SQL
 
-docker exec -d "${container}" sh -c \
-  "(printf 'BEGIN;\nSELECT pg_backend_pid();\n'; sleep 60; printf 'COMMIT;\n') | psql -U postgres -v ON_ERROR_STOP=1"
+  docker exec -d "${container}" sh -c \
+    "(printf 'BEGIN;\nSELECT pg_backend_pid();\n'; sleep 60; printf 'COMMIT;\n') | psql -U postgres -v ON_ERROR_STOP=1"
 
-idle_seen=0
-for _ in $(seq 1 20); do
-  idle_count="$(
-    docker exec "${container}" psql -U postgres -Atqv ON_ERROR_STOP=1 \
-      -c "SELECT count(*) FROM companion_idle_transactions('100 milliseconds'::interval) WHERE state = 'idle in transaction';"
-  )"
-  if [[ "${idle_count}" =~ ^[1-9][0-9]*$ ]]; then
-    idle_seen=1
-    break
+  local idle_seen=0
+  local idle_count
+  for _ in $(seq 1 20); do
+    idle_count="$(
+      docker exec "${container}" psql -U postgres -Atqv ON_ERROR_STOP=1 \
+        -c "SELECT count(*) FROM companion_idle_transactions('100 milliseconds'::interval) WHERE state = 'idle in transaction';"
+    )"
+    if [[ "${idle_count}" =~ ^[1-9][0-9]*$ ]]; then
+      idle_seen=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "${idle_seen}" != "1" ]]; then
+    docker exec "${container}" psql -U postgres -v ON_ERROR_STOP=1 \
+      -c "SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE datname = current_database() ORDER BY pid;" >&2 || true
+    echo "companion_idle_transactions did not detect a real idle transaction (PG${pg_major})" >&2
+    exit 1
   fi
-  sleep 1
+
+  docker rm -f "${container}" >/dev/null 2>&1 || true
+  active_container=""
+  echo "ai_blaise_citus SQL extension smoke passed with ${postgres_image}"
+}
+
+for pg_major in "${pg_majors[@]}"; do
+  if ! [[ "${pg_major}" =~ ^[0-9]+$ ]]; then
+    echo "invalid PG_MAJOR value: '${pg_major}' (must be numeric)" >&2
+    exit 1
+  fi
+  run_smoke_for_pg_major "${pg_major}"
 done
 
-if [[ "${idle_seen}" != "1" ]]; then
-  docker exec "${container}" psql -U postgres -v ON_ERROR_STOP=1 \
-    -c "SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE datname = current_database() ORDER BY pid;" >&2 || true
-  echo "companion_idle_transactions did not detect a real idle transaction" >&2
-  exit 1
-fi
-
-echo "ai_blaise_citus SQL extension smoke passed with ${postgres_image}"
+echo "ai_blaise_citus SQL extension smoke passed across PG majors: ${pg_majors[*]}"
