@@ -141,6 +141,11 @@ more production-ready than the artifacts justified.
 35. `FEATURE: Auth2` had Rust/sidecar claim-shape contracts, but no installable
     SQL runtime for setting or reading session claims. That meant tenant-aware
     SQL surfaces could not be promoted without a real Postgres extension smoke.
+36. `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` had useful in-memory
+    analyzer tests and a canonical TSV emitter, but no file-backed CLI smoke
+    over real migration SQL and metadata. That left IDE diagnostics and
+    quick-fix claims short of production evidence for an executable user
+    surface.
 
 ## Corrections
 
@@ -357,6 +362,15 @@ more production-ready than the artifacts justified.
   the real binary. This is not evidence for mutating cluster apply execution,
   manifest reconciliation, migrations, backups, PITR, WAL replay, or dev
   cluster lifecycle.
+- The `citus-lsp` CLI now has a direct executable smoke for the narrow
+  `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
+  surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
+  <migration.sql>` against a real SQL file and metadata TSV, verifies
+  diagnostics and quick-fix actions, verifies distributed hypertable bridge
+  suppression, and verifies bad or missing metadata fails closed. This is not
+  evidence for JSON-RPC language-server protocol integration, editor
+  transport, workspace indexing, automatic file rewrites, or full PostgreSQL
+  grammar coverage.
 
 ## Verification Standard
 
@@ -407,6 +421,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,
   PITR, WAL replay, or dev cluster lifecycle.
+- D4/M5/TS8 production evidence is limited to the file-backed `citus-lsp`
+  diagnostic and quick-fix action CLI over supported SQL migration statements.
+  It must not be cited as evidence for JSON-RPC editor integration, workspace
+  indexing, automatic rewrites, or full PostgreSQL grammar coverage.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -416,7 +434,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 16 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 19 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -432,7 +450,8 @@ cohabitation, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
 pipelining through the real pool proxy data port, plus `Auth2` for installable
 SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
-for the real `citusctl` apply-mode plan-id guard. The other 148
+for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
+for the file-backed `citus-lsp` diagnostic and quick-fix CLI. The other 145
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

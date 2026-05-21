@@ -637,14 +637,23 @@ Timescale-aware distributed hypertables.
 ### TS8: LSP Rules For Hypertable Invariants
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds edit-time diagnostics for creating Timescale hypertables on
-distributed tables without the companion bridge, exposed through the canonical
-`citus-lsp` diagnostic emitter.
+distributed tables without the companion bridge, exposed through the
+file-backed `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`
+CLI and the canonical diagnostic emitter.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
+verifies the distributed-hypertable invariant diagnostic, then verifies that
+`apply_distribute_hypertable(...)` suppresses that warning. Broader JSON-RPC
+language-server protocol integration, editor transport, workspace indexing,
+automatic file rewrites, and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: The required Timescale integration is subtle enough that users
 need IDE feedback before invalid SQL reaches a migration or operator reconcile.
@@ -1772,14 +1781,24 @@ operator-owned migration object.
 ### M5: LSP Refactor Quick-Fixes
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds typed quick-fix actions for missing Citus distribution
-columns and related colocation repairs, exposed through the canonical
-`citus-lsp` diagnostic emitter.
+columns and related colocation repairs, exposed through the file-backed
+`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI and
+the canonical diagnostic emitter.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`
+and verifies quick-fix action emission for missing distribution columns,
+non-colocated joins, missing tenant filters, missing search analyzers, and
+distributed hypertable bridge usage. Broader JSON-RPC language-server protocol
+integration, editor transport, workspace indexing, automatic file rewrites,
+and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: Migrations should fail early in the editor with a concrete
 fix plan before CI or the operator has to reject a schema change.
@@ -3647,14 +3666,25 @@ administration shell.
 ### D4: citus-lsp IDE Diagnostics
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds the initial Citus-aware LSP analyzer contract for
 non-colocated joins, unsafe distribution-column alters, missing tenant filters,
-missing search analyzers, and a runnable canonical diagnostic emitter.
+missing search analyzers, and the file-backed
+`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
+verifies missing distribution column, non-colocated join,
+distribution-column alter, hypertable invariant, missing tenant filter, and
+missing search analyzer diagnostics, and verifies fail-closed behavior for bad
+metadata or missing metadata. Broader JSON-RPC language-server protocol
+integration, editor transport, workspace indexing, automatic file rewrites,
+and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: Developers need edit-time errors for distributed SQL rules
 rather than discovering them during deploy-time reconciliation.

@@ -29,6 +29,7 @@ V2_ACCEPTANCE = ROOT / "ci/ai-blaise/v2-acceptance-check.sh"
 SQL_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
+LSP_SMOKE = ROOT / "ci/ai-blaise/citus-lsp-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
@@ -296,6 +297,7 @@ sidecar_workflow = read(SIDECAR_WORKFLOW)
 slop_workflow = read(SLOP_WORKFLOW)
 tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
+lsp_smoke = read(LSP_SMOKE)
 ts6_patch = read(TS6_PATCH)
 shared_library_init = read(SHARED_LIBRARY_INIT)
 sources = source_text()
@@ -537,6 +539,26 @@ for phrase in (
 ):
     if compact(phrase) not in compact(d2_entry["body"]):
         fail(f"D2 production-ready boundary is missing: {phrase}")
+
+for feature_id, feature_name in (
+    ("D4", "file-backed Citus/Timescale SQL diagnostics"),
+    ("M5", "file-backed quick-fix action emission"),
+    ("TS8", "file-backed distributed hypertable invariant diagnostics"),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for citus-lsp production evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready for the narrow citus-lsp {feature_name} surface")
+    for phrase in (
+        "citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>",
+        "ci/ai-blaise/citus-lsp-smoke.sh",
+        "real SQL file",
+        "metadata TSV",
+        "Broader JSON-RPC language-server protocol integration, editor transport, workspace indexing, automatic file rewrites, and full PostgreSQL grammar coverage remain alpha",
+    ):
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
 
 non_production_with_prod_evidence = sorted(
     entry["id"] for entry in alpha_entries if "Production evidence:" in entry["body"]
@@ -949,6 +971,33 @@ if "bash ci/ai-blaise/citusctl-smoke.sh" not in tools_workflow:
     fail("tools workflow must run the citusctl plan-id smoke for D2")
 if "citusctl-smoke" not in makefile:
     fail("Makefile gate-close must include the citusctl plan-id smoke for D2")
+
+for phrase in (
+    "citus-lsp file-backed smoke passed",
+    "CREATE TABLE tenant_a.invoices",
+    "SELECT create_distributed_table('public.shipments', 'tenant_id')",
+    "SELECT create_hypertable('public.events', 'created_at')",
+    "SELECT apply_distribute_hypertable('public.events', 'device_id', 'created_at', '1 day')",
+    "missing_distribution_column",
+    "non_colocated_join",
+    "distribution_column_alter",
+    "hypertable_invariant",
+    "missing_tenant_filter",
+    "missing_search_analyzer",
+    "add_distribution_column table=tenant_a.invoices column=tenant_id",
+    "align_colocation left_table=public.orders right_table=public.events distribution_column=tenant_id",
+    "add_tenant_filter table=public.orders tenant_column=tenant_id",
+    "use_distributed_hypertable_bridge table=public.events time_column=created_at",
+    "set_search_analyzer index_name=orders_search analyzer=english",
+    "bad metadata unexpectedly succeeded",
+    "missing metadata unexpectedly succeeded",
+):
+    if phrase not in lsp_smoke:
+        fail(f"citus-lsp-smoke.sh must preserve file-backed diagnostic proof marker: {phrase}")
+if "bash ci/ai-blaise/citus-lsp-smoke.sh" not in tools_workflow:
+    fail("tools workflow must run the citus-lsp file-backed smoke for D4/M5/TS8")
+if "citus-lsp-smoke" not in makefile:
+    fail("Makefile gate-close must include the citus-lsp file-backed smoke")
 
 for phrase in (
     "while bundle1 remains alpha",

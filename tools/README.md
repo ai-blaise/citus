@@ -22,9 +22,11 @@ apply, inspect, time-travel, and WAL replay planning contracts.
 `cargo run -p ai_blaise_citusctl -- run-canonical` emits the summary used by
 CI.
 
-`citus-lsp` now has the initial Rust diagnostic contract for distributed SQL
-editing: Citus colocation checks, distribution-column safety, tenant-filter
-hints, Timescale hypertable bridge diagnostics, and quick-fix planning.
+`citus-lsp` now has a file-backed diagnostic CLI for supported distributed SQL
+migration statements: Citus colocation checks, distribution-column safety,
+tenant-filter hints, Timescale hypertable bridge diagnostics, and quick-fix
+planning. `ci/ai-blaise/citus-lsp-smoke.sh` guards the promoted CLI surface;
+JSON-RPC editor transport and full PostgreSQL grammar coverage remain alpha.
 
 `citus-watch` now has the initial Rust dashboard contract for the unified
 operator view over companion metadata, Prometheus metrics, and pool-side

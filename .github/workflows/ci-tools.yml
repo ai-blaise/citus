@@ -49,6 +49,8 @@ jobs:
         run: cargo check -p ai_blaise_citus_lsp --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_lsp
+      - name: Run file-backed LSP smoke
+        run: bash ci/ai-blaise/citus-lsp-smoke.sh
 
   watch:
     runs-on: ubuntu-latest
