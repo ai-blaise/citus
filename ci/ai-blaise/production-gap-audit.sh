@@ -550,6 +550,45 @@ if o5_entry is None:
     fail("O5 feature heading is required while operator sidecar deployment contracts exist")
 if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in o5_entry["body"]:
     fail("O5 must cite the operator canonical runner as alpha contract evidence")
+operator_canonical_ids = {
+    "A8",
+    "B2",
+    "B6",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "EF3",
+    "F1",
+    "M3",
+    "MR1",
+    "MR2",
+    "MR4",
+    "MR8",
+    "O5",
+    "R2",
+    "R7",
+    "S2",
+    "S4",
+    "S10",
+    "S11",
+    "Search2",
+    "Search7",
+    "TO1",
+    "TO2",
+    "TO5",
+    "TS7",
+    "WH1",
+}
+entry_by_id = {entry["id"]: entry for entry in entries}
+for feature_id in sorted(operator_canonical_ids):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for operator canonical evidence")
+    if "Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`" not in entry["body"]:
+        fail(f"{feature_id} must cite the operator canonical runner as alpha contract evidence")
 for phrase in (
     "the current implementation does not emit or export opentelemetry traces",
     "trace propagation remains unimplemented until real runtime code",
