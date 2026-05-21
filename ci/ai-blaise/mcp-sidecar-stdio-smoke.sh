@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 proc = subprocess.Popen(
-    ["cargo", "run", "-q", "-p", "ai_blaise_citus_mcp", "--", "serve-stdio"],
+    ["cargo", "run", "-q", "-p", "ai_blaise_citus_sidecar_mcp", "--", "serve-stdio"],
     stdin=subprocess.PIPE,
     stdout=subprocess.PIPE,
     stderr=subprocess.PIPE,
@@ -28,7 +28,7 @@ def request(payload):
     line = proc.stdout.readline()
     if not line:
         stderr = proc.stderr.read() if proc.stderr is not None else ""
-        raise AssertionError(f"citus-mcp serve-stdio closed stdout early: {stderr}")
+        raise AssertionError(f"mcp-sidecar serve-stdio closed stdout early: {stderr}")
     return json.loads(line)
 
 
@@ -40,11 +40,11 @@ try:
             "method": "initialize",
             "params": {
                 "protocolVersion": "2024-11-05",
-                "clientInfo": {"name": "ai-blaise-smoke", "version": "0"},
+                "clientInfo": {"name": "ai-blaise-sidecar-smoke", "version": "0"},
             },
         }
     )
-    assert initialize["result"]["serverInfo"]["name"] == "ai-blaise-citus-mcp"
+    assert initialize["result"]["serverInfo"]["name"] == "ai-blaise-citus-mcp-sidecar"
     assert initialize["result"]["capabilities"]["tools"]["listChanged"] is False
 
     tools = request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
@@ -144,5 +144,5 @@ if proc.returncode != 0:
     print(stderr, file=sys.stderr)
     raise SystemExit(proc.returncode)
 
-print("ai_blaise_citus_mcp stdio smoke passed")
+print("ai_blaise_citus_sidecar_mcp stdio smoke passed")
 PY

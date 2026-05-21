@@ -22,7 +22,8 @@ These contracts cover `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
 the `FEATURE: D11` MCP developer workflow.
 Use `cargo run -p ai_blaise_citus_mcp -- run-canonical` to emit the
 deterministic tool policy TSV report.
-Use `cargo run -p ai_blaise_citus_mcp -- serve-stdio` for the production-ready
+Use `cargo run -p ai_blaise_citus_mcp -- serve-stdio` for the validation-only
 stdio policy surface that is smoke-tested by
-`ci/ai-blaise/mcp-stdio-smoke.sh`. Live database/Kubernetes tool execution and
-the `sidecar/mcp` deployment remain alpha.
+`ci/ai-blaise/mcp-stdio-smoke.sh`. Authentication integration, live
+database/Kubernetes tool execution, and production deployment of the
+`sidecar/mcp` service remain alpha.

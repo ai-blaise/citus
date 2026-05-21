@@ -23,6 +23,7 @@ smoke_request_cpu="${SMOKE_REQUEST_CPU:-10m}"
 smoke_request_memory="${SMOKE_REQUEST_MEMORY:-32Mi}"
 smoke_limit_cpu="${SMOKE_LIMIT_CPU:-250m}"
 smoke_limit_memory="${SMOKE_LIMIT_MEMORY:-256Mi}"
+tmp_dir=""
 
 required_commands=(curl docker helm kind kubectl)
 for command_name in "${required_commands[@]}"; do
@@ -58,6 +59,9 @@ images=(
 cleanup() {
   if [[ "${keep_kind}" != "1" ]]; then
     kind delete cluster --name "${cluster}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${tmp_dir}" ]]; then
+    rm -rf "${tmp_dir}"
   fi
 }
 trap cleanup EXIT
@@ -201,6 +205,100 @@ probe_deployment_http() {
   fi
 
   cleanup_port_forward
+}
+
+probe_mcp_sidecar_jsonrpc() {
+  local deployment="${chart_name}-sidecar-mcp"
+  local local_port=18130
+  local log_file
+  local port_forward_pid
+  local initialize_response
+  local validated_response
+  local denied_response
+  local cross_schema_response
+
+  log_file="$(mktemp)"
+  kubectl -n "${namespace}" port-forward \
+    --address 127.0.0.1 \
+    "deployment/${deployment}" \
+    "${local_port}:8080" >"${log_file}" 2>&1 &
+  port_forward_pid="$!"
+
+  cleanup_mcp_port_forward() {
+    kill "${port_forward_pid}" >/dev/null 2>&1 || true
+    wait "${port_forward_pid}" >/dev/null 2>&1 || true
+    rm -f "${log_file}"
+  }
+
+  if ! wait_for_http "http://127.0.0.1:${local_port}/readyz" "mcp sidecar readyz"; then
+    cat "${log_file}" >&2 || true
+    cleanup_mcp_port_forward
+    return 1
+  fi
+
+  # Prove deployed sidecar traffic, not just process-local tests: curl sends
+  # POST /mcp HTTP/1.1 over a port-forward to the live Kubernetes Deployment.
+  initialize_response="$(
+    curl -fsS \
+      -H 'content-type: application/json' \
+      --data '{"jsonrpc":"2.0","id":1,"method":"initialize"}' \
+      "http://127.0.0.1:${local_port}/mcp"
+  )"
+  if ! printf '%s\n' "${initialize_response}" |
+    grep -F '"name":"ai-blaise-citus-mcp-sidecar"' >/dev/null; then
+    echo "mcp sidecar initialize did not identify the deployed sidecar server" >&2
+    printf '%s\n' "${initialize_response}" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_mcp_port_forward
+    return 1
+  fi
+
+  validated_response="$(
+    curl -fsS \
+      -H 'content-type: application/json' \
+      --data '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT count(*) FROM tenant_a.orders","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}' \
+      "http://127.0.0.1:${local_port}/mcp"
+  )"
+  if ! printf '%s\n' "${validated_response}" |
+    grep -F 'validated query_with_timeout' >/dev/null; then
+    echo "mcp sidecar did not validate tenant-scoped query_with_timeout" >&2
+    printf '%s\n' "${validated_response}" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_mcp_port_forward
+    return 1
+  fi
+
+  denied_response="$(
+    curl -fsS \
+      -H 'content-type: application/json' \
+      --data '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"tenant_archive","arguments":{"tenant_name":"tenant-a","tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}' \
+      "http://127.0.0.1:${local_port}/mcp"
+  )"
+  if ! printf '%s\n' "${denied_response}" |
+    grep -F 'safe mode denied a destructive tool' >/dev/null; then
+    echo "mcp sidecar did not deny destructive tenant_archive" >&2
+    printf '%s\n' "${denied_response}" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_mcp_port_forward
+    return 1
+  fi
+
+  cross_schema_response="$(
+    curl -fsS \
+      -H 'content-type: application/json' \
+      --data '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"query_with_timeout","arguments":{"sql":"SELECT count(*) FROM tenant_b.orders","timeout_ms":1000,"tenant_id":"tenant-a","allowed_schemas":["tenant_a"]}}}' \
+      "http://127.0.0.1:${local_port}/mcp"
+  )"
+  if ! printf '%s\n' "${cross_schema_response}" |
+    grep -F 'schema tenant_b is outside allowed_schemas' >/dev/null; then
+    echo "mcp sidecar did not reject cross-schema query_with_timeout" >&2
+    printf '%s\n' "${cross_schema_response}" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_mcp_port_forward
+    return 1
+  fi
+
+  cleanup_mcp_port_forward
 }
 
 expected_probe_component() {
@@ -487,6 +585,81 @@ probe_pool_rejected_metrics() {
   fi
 }
 
+trigger_pool_app_cidr_rejection() {
+  local local_port=18210
+  local pods
+  local pod
+
+  pods="$(
+    kubectl -n "${namespace}" get pods \
+      -l "app.kubernetes.io/name=${chart_name},app.kubernetes.io/component=pool" \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'
+  )"
+
+  if [[ -z "${pods}" ]]; then
+    echo "no pool pods found for app-level CIDR rejection trigger" >&2
+    return 1
+  fi
+
+  while IFS= read -r pod; do
+    [[ -n "${pod}" ]] || continue
+
+    local log_file
+    local port_forward_pid
+    local attempt
+
+    log_file="$(mktemp)"
+    kubectl -n "${namespace}" port-forward \
+      --address 127.0.0.1 \
+      "pod/${pod}" \
+      "${local_port}:5432" >"${log_file}" 2>&1 &
+    port_forward_pid="$!"
+
+    cleanup_pool_data_port_forward() {
+      kill "${port_forward_pid}" >/dev/null 2>&1 || true
+      wait "${port_forward_pid}" >/dev/null 2>&1 || true
+      rm -f "${log_file}"
+    }
+
+    for attempt in $(seq 1 30); do
+      if python3 - "${local_port}" 2>/dev/null <<'PY'
+import socket
+import struct
+import sys
+
+port = int(sys.argv[1])
+startup = struct.pack("!II", 8, 196608)
+with socket.create_connection(("127.0.0.1", port), timeout=2) as sock:
+    try:
+        sock.sendall(startup)
+    except OSError:
+        pass
+PY
+      then
+        cleanup_pool_data_port_forward
+        local_port="$((local_port + 1))"
+        continue 2
+      fi
+      sleep 1
+    done
+
+    echo "pool app-level CIDR rejection trigger could not connect through port-forward to ${pod}" >&2
+    cat "${log_file}" >&2 || true
+    cleanup_pool_data_port_forward
+    return 1
+  done <<<"${pods}"
+
+  for attempt in $(seq 1 30); do
+    if probe_pool_rejected_metrics; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "pool app-level CIDR rejection trigger did not surface rejected metrics" >&2
+  return 1
+}
+
 run_pool_cidr_deny_smoke() {
   helm upgrade "${release}" deploy/k8s/helm/citus-overlay \
     --namespace "${namespace}" \
@@ -525,7 +698,7 @@ spec:
               fi
 YAML
   wait_for_job ai-blaise-pool-cidr-deny-smoke
-  probe_pool_rejected_metrics
+  trigger_pool_app_cidr_rejection
   echo "ai_blaise_citus pool CIDR deny smoke passed in kind/${cluster}/${namespace}"
 }
 
@@ -642,8 +815,11 @@ kubectl config use-context "kind-${cluster}" >/dev/null
 apply_monitoring_crds
 
 if [[ "${build_images}" == "1" ]]; then
+  tmp_dir="$(mktemp -d)"
   IMAGE_REGISTRY="${registry}" TAG="${tag}" PUSH=false \
+    DIGEST_FILE="${tmp_dir}/ai-blaise-image-digests.tsv" \
     scripts/citus-scale/build-app-images.sh
+  test -s "${tmp_dir}/ai-blaise-image-digests.tsv"
 fi
 
 for image in "${images[@]}"; do
@@ -696,6 +872,7 @@ for sidecar in "${images[@]}"; do
   sidecar_probe_port="$((sidecar_probe_port + 1))"
 done
 
+probe_mcp_sidecar_jsonrpc
 run_pool_sql_smoke
 run_pool_cidr_deny_smoke
 run_citusctl_image_smoke

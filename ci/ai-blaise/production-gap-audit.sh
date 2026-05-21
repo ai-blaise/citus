@@ -31,6 +31,8 @@ IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 POOL_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 LSP_SMOKE = ROOT / "ci/ai-blaise/citus-lsp-smoke.sh"
 MCP_SMOKE = ROOT / "ci/ai-blaise/mcp-stdio-smoke.sh"
+MCP_SIDECAR_SMOKE = ROOT / "ci/ai-blaise/mcp-sidecar-stdio-smoke.sh"
+MCP_SIDECAR_HTTP_SMOKE = ROOT / "ci/ai-blaise/mcp-sidecar-http-smoke.sh"
 TIMESCALE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 OBSERVABILITY_REPLICATION_SMOKE = ROOT / "ci/ai-blaise/observability-replication-smoke.sh"
@@ -300,6 +302,8 @@ tools_workflow = read(TOOLS_WORKFLOW)
 makefile = read(MAKEFILE)
 lsp_smoke = read(LSP_SMOKE)
 mcp_smoke = read(MCP_SMOKE)
+mcp_sidecar_smoke = read(MCP_SIDECAR_SMOKE)
+mcp_sidecar_http_smoke = read(MCP_SIDECAR_HTTP_SMOKE)
 ts6_patch = read(TS6_PATCH)
 shared_library_init = read(SHARED_LIBRARY_INIT)
 sources = source_text()
@@ -1526,14 +1530,20 @@ if "citusctl-smoke" not in makefile:
 for feature_id in ("MCP1", "MCP2", "MCP3", "D11"):
     entry = entry_by_id.get(feature_id)
     if entry is None:
-        fail(f"{feature_id} feature heading is required for MCP stdio production evidence")
+        fail(f"{feature_id} feature heading is required for MCP runtime contract evidence")
+    if entry["status"].lower() in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain alpha until MCP auth and real DB/Kubernetes execution are implemented")
+    body_compact = compact(entry["body"])
     for phrase in (
         "ci/ai-blaise/mcp-stdio-smoke.sh",
+        "ci/ai-blaise/mcp-sidecar-stdio-smoke.sh",
+        "ci/ai-blaise/mcp-sidecar-http-smoke.sh",
         "serve-stdio",
-        "JSON-RPC",
+        "json-rpc",
+        "authentication integration and real database/kubernetes tool execution remain alpha",
     ):
-        if phrase not in entry["body"]:
-            fail(f"{feature_id} must cite MCP stdio production evidence marker: {phrase}")
+        if phrase not in body_compact:
+            fail(f"{feature_id} must cite MCP runtime contract evidence marker: {phrase}")
 for phrase in (
     "FEATURE: MCP1 MCP2 MCP3 D11",
     "serve-stdio",
@@ -1543,6 +1553,7 @@ for phrase in (
     "\"name\": \"tenant_archive\"",
     "safe mode denied a destructive tool",
     "tenant_scope is required",
+    "schema tenant_b is outside allowed_schemas",
     "ai_blaise_citus_mcp stdio smoke passed",
 ):
     if phrase not in mcp_smoke:
@@ -1551,6 +1562,56 @@ if "bash ci/ai-blaise/mcp-stdio-smoke.sh" not in tools_workflow:
     fail("tools workflow must run the MCP stdio smoke")
 if "mcp-stdio-smoke" not in makefile:
     fail("Makefile gate-close must include the MCP stdio smoke")
+for phrase in (
+    "FEATURE: MCP1 MCP2 MCP3 D11",
+    "ai_blaise_citus_sidecar_mcp",
+    "serve-stdio",
+    "ai-blaise-citus-mcp-sidecar",
+    "\"method\": \"initialize\"",
+    "\"method\": \"tools/list\"",
+    "\"name\": \"query_with_timeout\"",
+    "\"name\": \"tenant_archive\"",
+    "safe mode denied a destructive tool",
+    "tenant_scope is required",
+    "schema tenant_b is outside allowed_schemas",
+    "ai_blaise_citus_sidecar_mcp stdio smoke passed",
+):
+    if phrase not in mcp_sidecar_smoke:
+        fail(f"mcp-sidecar-stdio-smoke.sh is missing real stdio proof marker: {phrase}")
+if "bash ci/ai-blaise/mcp-sidecar-stdio-smoke.sh" not in sidecar_workflow:
+    fail("sidecar workflow must run the MCP sidecar stdio smoke")
+if "mcp-sidecar-stdio-smoke" not in makefile:
+    fail("Makefile gate-close must include the MCP sidecar stdio smoke")
+for phrase in (
+    "FEATURE: MCP1 MCP2 MCP3 D11",
+    "ai_blaise_citus_sidecar_mcp",
+    "serve",
+    "GET\", \"/readyz\"",
+    "POST\", \"/mcp\"",
+    "ai-blaise-citus-mcp-sidecar",
+    "\"method\": \"initialize\"",
+    "\"name\": \"query_with_timeout\"",
+    "\"name\": \"tenant_archive\"",
+    "schema tenant_b is outside allowed_schemas",
+    "safe mode denied a destructive tool",
+    "ai_blaise_citus_sidecar_mcp HTTP smoke passed",
+):
+    if phrase not in mcp_sidecar_http_smoke:
+        fail(f"mcp-sidecar-http-smoke.sh is missing real HTTP proof marker: {phrase}")
+for phrase in (
+    "probe_mcp_sidecar_jsonrpc",
+    "POST /mcp HTTP/1.1",
+    "ai-blaise-citus-mcp-sidecar",
+    "validated query_with_timeout",
+    "schema tenant_b is outside allowed_schemas",
+    "safe mode denied a destructive tool",
+):
+    if phrase not in kind_smoke:
+        fail(f"kind-production-smoke.sh must prove deployed MCP sidecar JSON-RPC: {phrase}")
+if "bash ci/ai-blaise/mcp-sidecar-http-smoke.sh" not in sidecar_workflow:
+    fail("sidecar workflow must run the MCP sidecar HTTP smoke")
+if "mcp-sidecar-http-smoke" not in makefile:
+    fail("Makefile gate-close must include the MCP sidecar HTTP smoke")
 
 for phrase in (
     "citus-lsp file-backed smoke passed",
@@ -2004,8 +2065,11 @@ for phrase in (
     "ai_blaise_citus_pool_requests_total",
     "run_pool_cidr_deny_smoke",
     "ai-blaise-pool-cidr-deny-smoke",
+    "trigger_pool_app_cidr_rejection",
+    "socket.create_connection",
     "pool CIDR deny smoke passed",
     "ai_blaise_citus_pool_rejected_connections_total",
+    'DIGEST_FILE="${tmp_dir}/ai-blaise-image-digests.tsv"',
     "run_citusctl_image_smoke",
     "ai-blaise-citusctl-image-smoke",
     "citusctl inspect destructive=false requires_plan_id=true steps=3",
