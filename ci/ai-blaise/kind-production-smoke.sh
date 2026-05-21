@@ -468,6 +468,7 @@ helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
   --create-namespace \
   --set "global.imageRegistry=${registry}" \
   --set "global.imagePullPolicy=IfNotPresent" \
+  --set "global.requireImageDigest=false" \
   --set "operator.image.tag=${tag}" \
   --set "pool.image.tag=${tag}" \
   --set "sidecarDefaults.tag=${tag}" \
@@ -530,6 +531,7 @@ helm upgrade --install "${prod_values_release}" deploy/k8s/helm/citus-overlay \
   -f deploy/k8s/helm/citus-overlay/values-prod.yaml \
   --set "global.imageRegistry=${registry}" \
   --set "global.imagePullPolicy=IfNotPresent" \
+  --set "global.requireImageDigest=false" \
   --set "operator.image.tag=${tag}" \
   --set "pool.image.tag=${tag}" \
   --set "sidecarDefaults.tag=${tag}" \

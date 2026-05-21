@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: operator
-          image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.operator.image.repository "tag" .Values.operator.image.tag) }}
+          image: {{ include "citus-overlay.image" (dict "Values" .Values "repository" .Values.operator.image.repository "tag" .Values.operator.image.tag "digest" .Values.operator.image.digest) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
             - serve

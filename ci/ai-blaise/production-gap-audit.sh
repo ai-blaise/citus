@@ -36,6 +36,11 @@ DEPLOY_SCRIPT = ROOT / "scripts/citus-scale/deploy.sh"
 PROD_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values-prod.yaml"
 DEFAULT_VALUES = ROOT / "deploy/k8s/helm/citus-overlay/values.yaml"
 ARGO_APP = ROOT / "deploy/k8s/argo/app.yaml"
+HELPER_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/_helpers.tpl"
+OPERATOR_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/operator-deployment.yaml"
+POOL_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/pool-deployment.yaml"
+SIDECAR_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/sidecar-deployments.yaml"
+TOOLS_DEPLOYMENT_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/tools-deployment.yaml"
 DASHBOARD_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml"
 PROMRULE_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml"
 OPERATOR_RBAC_TEMPLATE = ROOT / "deploy/k8s/helm/citus-overlay/templates/operator-rbac.yaml"
@@ -265,6 +270,11 @@ deploy_script = read(DEPLOY_SCRIPT)
 prod_values = read(PROD_VALUES)
 default_values = read(DEFAULT_VALUES)
 argo_app = read(ARGO_APP)
+helper_template = read(HELPER_TEMPLATE)
+operator_deployment_template = read(OPERATOR_DEPLOYMENT_TEMPLATE)
+pool_deployment_template = read(POOL_DEPLOYMENT_TEMPLATE)
+sidecar_deployment_template = read(SIDECAR_DEPLOYMENT_TEMPLATE)
+tools_deployment_template = read(TOOLS_DEPLOYMENT_TEMPLATE)
 dashboard_template = read(DASHBOARD_TEMPLATE)
 promrule_template = read(PROMRULE_TEMPLATE)
 operator_rbac_template = read(OPERATOR_RBAC_TEMPLATE)
@@ -664,6 +674,7 @@ for phrase in (
     "kind create cluster",
     "scripts/citus-scale/build-app-images.sh",
     "helm upgrade --install",
+    "global.requireImageDigest=false",
     "apply_monitoring_crds",
     "-f deploy/k8s/helm/citus-overlay/values-prod.yaml",
     "assert_no_alpha_workload_deployments",
@@ -681,6 +692,29 @@ for phrase in (
 ):
     if phrase not in kind_smoke:
         fail(f"kind-production-smoke.sh is missing live deployment proof marker: {phrase}")
+
+build_app_images = read(ROOT / "scripts/citus-scale/build-app-images.sh")
+for phrase in (
+    "DIGEST_FILE",
+    "push_output",
+    "ai-blaise-image-digests.tsv",
+    "did not report an immutable repo digest",
+):
+    if phrase not in build_app_images:
+        fail(f"build-app-images.sh must preserve release digest manifest marker: {phrase}")
+    if phrase not in image_check:
+        fail(f"image-check.sh must guard release digest manifest marker: {phrase}")
+for phrase in (
+    "app-image-digest-manifest-smoke.sh",
+    "FAKE_DOCKER_DIGEST_MODE=missing",
+    "FAKE_DOCKER_PUSH_DIGEST_MODE=missing",
+):
+    if phrase not in image_check:
+        fail(f"image-check.sh must guard release digest smoke marker: {phrase}")
+if "repository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" not in build_app_images:
+    fail("build-app-images.sh must write the release digest manifest header")
+if "repository\\\\timage\\\\ttag\\\\tdigest\\\\tpackage\\\\tbinary\\\\tpushed" not in image_check:
+    fail("image-check.sh must guard the release digest manifest header")
 
 if "values-prod.yaml" not in argo_app or "valueFiles:" not in argo_app:
     fail("Argo application must install the production values profile")
@@ -736,6 +770,7 @@ for resource in ("citusclusters", "hypertables", "scheduledrepacks"):
         fail(f"operator RBAC must include explicit resource: {resource}")
 
 for phrase in (
+    "bash ci/ai-blaise/app-image-digest-manifest-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh",
     "REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh",
@@ -744,6 +779,7 @@ for phrase in (
         fail(f"ci-image.yml must run production runtime smoke: {phrase}")
 
 for target in (
+    "app-image-digest-manifest-smoke",
     "sql-extension-smoke",
     "timescale-bridge-smoke",
     "observability-replication-smoke",
@@ -755,6 +791,37 @@ if "values-prod.yaml must not enable alpha sidecars by default" not in deploy_ch
     fail("deploy-check.sh must reject alpha sidecars enabled in production values")
 if "values-prod.yaml must not enable alpha runtime/security intent controls by default" not in deploy_check:
     fail("deploy-check.sh must reject alpha runtime/security intent controls enabled in production values")
+if "values-prod.yaml render must require immutable operator/pool image digests" not in deploy_check:
+    fail("deploy-check.sh must reject production values renders without immutable image digests")
+if "deploy.sh default production render must require immutable operator/pool image digests" not in deploy_check:
+    fail("deploy-check.sh must reject deploy wrapper production renders without immutable image digests")
+if "requires an immutable digest" not in deploy_check:
+    fail("deploy-check.sh must assert Helm emits the immutable digest failure")
+
+for phrase in (
+    "requireImageDigest:",
+    "digest: \"\"",
+):
+    if phrase not in default_values:
+        fail(f"values.yaml must preserve image digest field: {phrase}")
+if "requireImageDigest: true" not in prod_values:
+    fail("values-prod.yaml must require immutable image digests")
+
+for phrase in (
+    "global.requireImageDigest",
+    "requires an immutable digest",
+    "@%s",
+):
+    if phrase not in helper_template:
+        fail(f"Helm image helper must preserve digest guard/render marker: {phrase}")
+for path, text, phrase in (
+    (OPERATOR_DEPLOYMENT_TEMPLATE, operator_deployment_template, "operator.image.digest"),
+    (POOL_DEPLOYMENT_TEMPLATE, pool_deployment_template, "pool.image.digest"),
+    (SIDECAR_DEPLOYMENT_TEMPLATE, sidecar_deployment_template, "sidecarDefaults.digest"),
+    (TOOLS_DEPLOYMENT_TEMPLATE, tools_deployment_template, "tools.image.digest"),
+):
+    if phrase not in text:
+        fail(f"{path} must pass image digest into the image helper")
 inside_sidecars = False
 current_sidecar = ""
 enabled_sidecars = []
@@ -818,6 +885,13 @@ for phrase in (
     "not active production enforcement",
     "production values keep those alpha controls disabled",
     "deploy wrapper defaults to `values-prod.yaml`",
+    "global.requireimagedigest: true",
+    "operator_image_digest=sha256:",
+    "ai-blaise-image-digests.tsv",
+    "pushed image without a reported",
+    "allow_mutable_image_tags=1",
+    "must not be used as release image-pinning evidence",
+    "gitops sync intentionally fails closed",
 ):
     if phrase not in runbook_compact:
         fail(f"production runbook must preserve runtime/security alpha guardrail: {phrase}")
@@ -826,6 +900,9 @@ for phrase in (
     'deploy_profile="${DEPLOY_PROFILE:-prod}"',
     "values-prod.yaml",
     "ALLOW_ALPHA_INSTALL",
+    "OPERATOR_IMAGE_DIGEST",
+    "POOL_IMAGE_DIGEST",
+    "ALLOW_MUTABLE_IMAGE_TAGS",
     "refusing to install non-production values file",
 ):
     if phrase not in deploy_script:
@@ -835,6 +912,8 @@ for phrase in (
     'deploy_profile="${DEPLOY_PROFILE:-prod}"',
     "deploy.sh default render must use production values without alpha sidecars",
     "deploy.sh must refuse non-production installs unless ALLOW_ALPHA_INSTALL=1",
+    "values-prod.yaml render must require immutable operator/pool image digests",
+    "deploy.sh default production render must require immutable operator/pool image digests",
 ):
     if phrase not in deploy_check:
         fail(f"deploy-check.sh must enforce deploy wrapper production-safe default: {phrase}")
@@ -842,6 +921,11 @@ for phrase in (
 for phrase in (
     "deploy wrapper defaults to `values-prod.yaml`",
     "allow_alpha_install=1",
+    "values-prod.yaml` sets `global.requireimagedigest: true`",
+    "runtime behavior, not release image pinning",
+    "gitops sync fails closed",
+    "ai-blaise-image-digests.tsv",
+    "release pushes fail",
 ):
     if phrase not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve deploy-wrapper guardrail: {phrase}")

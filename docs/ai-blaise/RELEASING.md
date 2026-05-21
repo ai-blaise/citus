@@ -23,6 +23,8 @@ Release artifacts must include:
 
 - source tag
 - overlay images
+- `artifacts/ai-blaise-image-digests.tsv` from
+  `scripts/citus-scale/build-app-images.sh`
 - SBOMs
 - signed container images
 - updated `NEW_FEATURES.md`

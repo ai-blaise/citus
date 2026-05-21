@@ -13,6 +13,7 @@ dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
+app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -26,7 +27,8 @@ for file in \
   "${build_app_images}" \
   "${pool_proxy_smoke}" \
   "${timescale_bridge_smoke}" \
-  "${observability_replication_smoke}"; do
+  "${observability_replication_smoke}" \
+  "${app_digest_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -43,6 +45,10 @@ if [[ ! -x "${timescale_bridge_smoke}" ]]; then
 fi
 if [[ ! -x "${observability_replication_smoke}" ]]; then
   echo "missing executable observability replication smoke: ${observability_replication_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${app_digest_smoke}" ]]; then
+  echo "missing executable app image digest manifest smoke: ${app_digest_smoke}" >&2
   exit 1
 fi
 
@@ -134,6 +140,16 @@ grep -Fq "not production evidence" "${image_dir}/README.md"
 grep -Fq "every binary package" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 grep -Fq "FEATURE: D13" "${build_app_images}"
+grep -Fq "DIGEST_FILE" "${build_app_images}"
+grep -Fq "push_output" "${build_app_images}"
+grep -Fq "ai-blaise-image-digests.tsv" "${build_app_images}"
+grep -Fq "pushed image" "${build_app_images}"
+grep -Fq "did not report an immutable repo digest" "${build_app_images}"
+grep -Fq "repository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" "${build_app_images}"
+grep -Fq "build-app-images.sh must fail a pushed image without an immutable digest" "${app_digest_smoke}"
+grep -Fq "digest manifest must include header plus 20 image rows" "${app_digest_smoke}"
+grep -Fq "FAKE_DOCKER_DIGEST_MODE=missing" "${app_digest_smoke}"
+grep -Fq "FAKE_DOCKER_PUSH_DIGEST_MODE=missing" "${app_digest_smoke}"
 grep -Fq 'cargo build --release -p "${PACKAGE}" --bin "${BIN}"' "${runtime_dockerfile}"
 grep -Fq 'ENTRYPOINT ["/usr/local/bin/ai-blaise-app"]' "${runtime_dockerfile}"
 grep -Fq 'CMD ["serve"]' "${runtime_dockerfile}"

@@ -48,8 +48,16 @@ Before promotion, build the real Rust runtime image matrix:
 
 ```bash
 IMAGE_REGISTRY=ghcr.io/ai-blaise TAG="${RELEASE_TAG}" \
+  DIGEST_FILE=artifacts/ai-blaise-image-digests.tsv PUSH=true \
   scripts/citus-scale/build-app-images.sh
 ```
+
+For release builds, `scripts/citus-scale/build-app-images.sh` writes
+`artifacts/ai-blaise-image-digests.tsv` with repository, tag, package, binary,
+push status, and immutable repo digest. A pushed image without a reported
+`sha256:` digest fails the build. Use the operator and pool rows from that
+manifest as `OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` for production
+render/install.
 
 Production traffic tests must use these images, not substitute responder
 containers. Production values start the operator and pool with `serve`, while
@@ -78,6 +86,15 @@ The `scripts/citus-scale/deploy.sh` deploy wrapper defaults to
 profiles is allowed for review and smoke-test work, but installing any
 non-production or custom values file is blocked unless `ALLOW_ALPHA_INSTALL=1`
 is set explicitly for that run.
+
+Production renders and installs require immutable operator and pool image
+digests. `values-prod.yaml` sets `global.requireImageDigest: true`; pass
+`OPERATOR_IMAGE_DIGEST=sha256:...` and `POOL_IMAGE_DIGEST=sha256:...` (or the
+equivalent Helm values) for release candidates. `ALLOW_MUTABLE_IMAGE_TAGS=1`
+is only for local/dev smoke work with locally loaded images and must not be
+used as release image-pinning evidence. GitOps sync intentionally fails closed
+until the release branch or deployment overlay supplies the operator and pool
+digests.
 
 ## Hardening Controls
 
@@ -113,6 +130,7 @@ promotion.
 ## Exit Criteria
 
 - All release-scope gates are green for the exact commit and image digest.
+- `values-prod.yaml` renders with immutable operator and pool image digests.
 - No release-scope feature remains alpha, contract-only, or model-only without
   explicit measured production evidence.
 - Runbook evidence links CI runs, Helm render output, image attestations, and

@@ -50,6 +50,7 @@ fi
 grep -q '^apiVersion: v2$' "${chart_dir}/Chart.yaml"
 grep -q '^name: ai-blaise-citus-overlay$' "${chart_dir}/Chart.yaml"
 grep -q '^global:$' "${chart_dir}/values.yaml"
+grep -q 'requireImageDigest:' "${chart_dir}/values.yaml"
 grep -q '^operator:$' "${chart_dir}/values.yaml"
 grep -q '^pool:$' "${chart_dir}/values.yaml"
 grep -q '^postgres:$' "${chart_dir}/values.yaml"
@@ -76,6 +77,7 @@ if grep -R "ai_blaise_citus_sidecar_ready" "${chart_dir}/templates"; then
 fi
 grep -q 'args:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/operator-deployment.yaml"
+grep -q 'operator.image.digest' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'livenessProbe:' "${chart_dir}/templates/operator-deployment.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/operator-deployment.yaml"
@@ -84,6 +86,7 @@ grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_ADMIN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_LISTEN_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'AI_BLAISE_POOL_UPSTREAM_ADDR' "${chart_dir}/templates/pool-deployment.yaml"
+grep -q 'pool.image.digest' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'name: admin' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
 grep -q 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml"
@@ -93,6 +96,7 @@ grep -A4 'livenessProbe:' "${chart_dir}/templates/pool-deployment.yaml" | grep -
 grep -q 'targetPort: admin' "${chart_dir}/templates/pool-service.yaml"
 grep -q 'args:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'AI_BLAISE_LISTEN_ADDR' "${chart_dir}/templates/sidecar-deployments.yaml"
+grep -q 'sidecarDefaults.digest' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'readinessProbe:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'livenessProbe:' "${chart_dir}/templates/sidecar-deployments.yaml"
 grep -q 'readOnlyRootFilesystem: true' "${chart_dir}/templates/sidecar-deployments.yaml"
@@ -120,11 +124,15 @@ grep -q 'FEATURE: D8' scripts/citus-scale/deploy.sh
 grep -q 'deploy_profile="${DEPLOY_PROFILE:-prod}"' scripts/citus-scale/deploy.sh
 grep -q 'values-prod.yaml' scripts/citus-scale/deploy.sh
 grep -q 'ALLOW_ALPHA_INSTALL' scripts/citus-scale/deploy.sh
+grep -q 'OPERATOR_IMAGE_DIGEST' scripts/citus-scale/deploy.sh
+grep -q 'POOL_IMAGE_DIGEST' scripts/citus-scale/deploy.sh
+grep -q 'ALLOW_MUTABLE_IMAGE_TAGS' scripts/citus-scale/deploy.sh
 grep -q 'refusing to install non-production values file' scripts/citus-scale/deploy.sh
 grep -q 'FEATURE: D13' "${kind_smoke}"
 grep -q 'kind create cluster' "${kind_smoke}"
 grep -q 'scripts/citus-scale/build-app-images.sh' "${kind_smoke}"
 grep -q 'helm upgrade --install' "${kind_smoke}"
+grep -q 'global.requireImageDigest=false' "${kind_smoke}"
 grep -q 'apply_monitoring_crds' "${kind_smoke}"
 grep -q 'PROD_VALUES_NAMESPACE' "${kind_smoke}"
 grep -q -- '-f deploy/k8s/helm/citus-overlay/values-prod.yaml' "${kind_smoke}"
@@ -249,6 +257,8 @@ if [[ -n "${prod_enabled_alpha_intent}" ]]; then
   exit 1
 fi
 
+grep -q 'requireImageDigest: true' "${chart_dir}/values-prod.yaml"
+
 if grep -R "{{" "${chart_dir}/crds"; then
   echo "crds/ files must be static Kubernetes YAML, not Helm templates" >&2
   exit 1
@@ -270,8 +280,18 @@ if command -v helm >/dev/null 2>&1; then
   helm template default-check "${chart_dir}" >"${render_dir}/default.yaml"
   helm template dev-check "${chart_dir}" \
     -f "${chart_dir}/values-dev.yaml" >"${render_dir}/dev.yaml"
+  if helm template prod-check-missing-digest "${chart_dir}" \
+    -f "${chart_dir}/values-prod.yaml" >"${render_dir}/prod-missing-digest.yaml" 2>"${render_dir}/prod-missing-digest.err"; then
+    echo "values-prod.yaml render must require immutable operator/pool image digests" >&2
+    exit 1
+  fi
+  grep -q 'requires an immutable digest' "${render_dir}/prod-missing-digest.err"
+
   helm template prod-check "${chart_dir}" \
-    -f "${chart_dir}/values-prod.yaml" >"${render_dir}/prod.yaml"
+    -f "${chart_dir}/values-prod.yaml" \
+    --set operator.image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111 \
+    --set pool.image.digest=sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+    >"${render_dir}/prod.yaml"
 
   grep -q 'kind: Deployment' "${render_dir}/default.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/default.yaml"
@@ -293,7 +313,15 @@ if command -v helm >/dev/null 2>&1; then
     exit 1
   fi
 
-  MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-default.yaml"
+  if MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-missing-digest.yaml" 2>"${render_dir}/deploy-wrapper-missing-digest.err"; then
+    echo "deploy.sh default production render must require immutable operator/pool image digests" >&2
+    exit 1
+  fi
+  grep -q 'requires an immutable digest' "${render_dir}/deploy-wrapper-missing-digest.err"
+
+  OPERATOR_IMAGE_DIGEST=sha256:1111111111111111111111111111111111111111111111111111111111111111 \
+    POOL_IMAGE_DIGEST=sha256:2222222222222222222222222222222222222222222222222222222222222222 \
+    MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-default.yaml"
   DEPLOY_PROFILE=dev MODE=template scripts/citus-scale/deploy.sh >"${render_dir}/deploy-wrapper-dev.yaml"
   grep -q 'name: ai-blaise-citus-operator' "${render_dir}/deploy-wrapper-default.yaml"
   grep -q 'name: ai-blaise-citus-pool' "${render_dir}/deploy-wrapper-default.yaml"
