@@ -114,6 +114,11 @@ more production-ready than the artifacts justified.
     embedded Grafana JSON, missing panel expressions, or an unguarded pool
     error-rate denominator could slip through without a parsed dashboard or
     alert-expression contract.
+30. Several alpha feature entries still used production-sounding language such
+    as stable production queries, multi-tenant production usage, live
+    operations, and live dashboard views. Even when future-prerequisite framed,
+    those phrases made alpha contracts read closer to promoted runtime behavior
+    than their status allowed.
 
 ## Corrections
 
@@ -299,6 +304,11 @@ more production-ready than the artifacts justified.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
   O2 is local-node activity stats with a compatibility alias, and R4 is
   idle-transaction detection only, not cancellation or termination.
+- Alpha feature entries now avoid production-sounding phrases for unpromoted
+  surfaces such as vectorizer accounting, pool pipelining, plan freeze, MCP
+  tenant scoping, and citus-watch dashboard/TUI contracts. The production gap
+  audit rejects the stale phrases so alpha contracts stay visibly
+  non-production.
 
 ## Verification Standard
 
@@ -332,6 +342,9 @@ Rule 10 completion for this branch requires local and VM verification of:
 - Production-ready observability chart claims require parsed Grafana JSON,
   exact panel/PromQL contracts, live installed ConfigMap/PrometheusRule
   resources, and guarded pool error-rate expressions.
+- Alpha feature docs must not use production-sounding wording for unpromoted
+  contracts; use runtime, tenant-workload, or operator-workflow language until
+  measured production evidence supports a status promotion.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
 
