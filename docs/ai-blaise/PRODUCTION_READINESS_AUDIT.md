@@ -272,7 +272,10 @@ more production-ready than the artifacts justified.
   `values-exhaustive.yaml` file, and the kind smoke installs both that explicit
   image-matrix profile and the default production-safe chart profile.
 - The observability dashboard and alert templates now query
-  `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
+  `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime, and
+  the live kind production smoke requires the installed dashboard ConfigMap and
+  PrometheusRule resources to contain the production dashboard JSON payloads
+  and alert names in every Helm profile installed by the smoke.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
   O2 is local-node activity stats with a compatibility alias, and R4 is
   idle-transaction detection only, not cancellation or termination.
@@ -317,18 +320,20 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 11 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 13 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
 shared sidecar health/readiness/metrics runtime, `O1` for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
-streaming standby, and `R4` for the installable idle transaction detection SQL
-surface, `TS6` for the integrated trusted hook-coextension source path under
-real Timescale/Citus cohabitation, `TS18` for the installable bridge-state SQL
-surface under real Timescale/Citus cohabitation, plus `Sec13` for pool CIDR
-access control with live allowed and denied SQL traffic proof. The other 153
+streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
+`O10` for the live-installed PrometheusRule alert bundle, and `R4` for the
+installable idle transaction detection SQL surface, `TS6` for the integrated
+trusted hook-coextension source path under real Timescale/Citus cohabitation,
+`TS18` for the installable bridge-state SQL surface under real Timescale/Citus
+cohabitation, plus `Sec13` for pool CIDR access control with live allowed and
+denied SQL traffic proof. The other 151
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;

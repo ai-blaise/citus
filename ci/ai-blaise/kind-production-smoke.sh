@@ -586,6 +586,49 @@ assert_no_alpha_workload_deployments() {
   fi
 }
 
+assert_observability_resources() {
+  local dashboards="configmap/${chart_name}-dashboards"
+  local alerts="prometheusrules.monitoring.coreos.com/${chart_name}-alerts"
+  local dashboard_yaml
+  local alert_yaml
+
+  if ! dashboard_yaml="$(kubectl -n "${namespace}" get "${dashboards}" -o yaml)"; then
+    echo "missing Grafana dashboard ConfigMap: ${dashboards}" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+  if ! alert_yaml="$(kubectl -n "${namespace}" get "${alerts}" -o yaml)"; then
+    echo "missing PrometheusRule alert resource: ${alerts}" >&2
+    dump_k8s_diagnostics
+    exit 1
+  fi
+
+  for marker in \
+    "ai-blaise-citus-overview.json" \
+    "ai-blaise-citus-sidecars.json" \
+    "ai_blaise_sidecar_ready" \
+    "ai_blaise_citus_pool_errors_total"; do
+    if ! printf '%s\n' "${dashboard_yaml}" | grep -Fq "${marker}"; then
+      echo "${dashboards} is missing Grafana dashboard marker: ${marker}" >&2
+      dump_k8s_diagnostics
+      exit 1
+    fi
+  done
+
+  for marker in \
+    "AiBlaiseCitusReplicationLagHigh" \
+    "AiBlaiseCitusSidecarNotReady" \
+    "AiBlaiseCitusVectorizerBacklogHigh" \
+    "AiBlaiseCitusPoolErrorRateHigh" \
+    "ai_blaise_sidecar_ready"; do
+    if ! printf '%s\n' "${alert_yaml}" | grep -Fq "${marker}"; then
+      echo "${alerts} is missing PrometheusRule marker: ${marker}" >&2
+      dump_k8s_diagnostics
+      exit 1
+    fi
+  done
+}
+
 if ! kind get clusters | grep -Fxq "${cluster}"; then
   kind create cluster --name "${cluster}"
 fi
@@ -628,6 +671,7 @@ helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
   --set "sidecarDefaults.resources.limits.memory=${smoke_limit_memory}"
 
 wait_for_deployments
+assert_observability_resources
 
 probe_deployment_http "${chart_name}-operator" operator 8080 18080
 
@@ -688,6 +732,7 @@ helm upgrade --install "${release}" deploy/k8s/helm/citus-overlay \
   --set "pool.resources.limits.memory=${smoke_limit_memory}"
 
 wait_for_deployments
+assert_observability_resources
 assert_deployment_replicas "${chart_name}-operator" 2
 assert_deployment_replicas "${chart_name}-pool" 3
 assert_no_alpha_workload_deployments
@@ -725,6 +770,7 @@ CHART_DIR=deploy/k8s/helm/citus-overlay \
   scripts/citus-scale/deploy.sh
 
 wait_for_deployments
+assert_observability_resources
 assert_deployment_replicas "${chart_name}-operator" 2
 assert_deployment_replicas "${chart_name}-pool" 3
 assert_no_alpha_workload_deployments

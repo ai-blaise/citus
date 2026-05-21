@@ -118,7 +118,7 @@ observability:
     enabled: true
     folder: ai-blaise-citus
   alertRules:
-    enabled: false
+    enabled: true
     interval: 30s
     thresholds:
       replicationLagSeconds: 60

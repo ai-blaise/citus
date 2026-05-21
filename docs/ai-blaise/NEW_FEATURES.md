@@ -4102,7 +4102,7 @@ deployment objects.
 ### O6: Grafana Dashboards As ConfigMaps
 
 **Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4117,16 +4117,27 @@ of hand-maintained JSON pasted into each cluster.
 **Citus comparison**: Vanilla Citus does not ship ai-blaise dashboard
 ConfigMaps.
 
+Production evidence: the kind production smoke in
+`ci/ai-blaise/kind-production-smoke.sh` installs the default `values.yaml`,
+`values-prod.yaml`, and explicit exhaustive Helm profiles into a real kind
+cluster, then requires the live
+`configmap/ai-blaise-citus-dashboards` resource to contain both dashboard JSON
+payloads plus the emitted `ai_blaise_sidecar_ready` and pool error-rate metric
+queries. `ci/ai-blaise/deploy-check.sh` also renders the production profiles
+with Helm and statically guards the dashboard markers.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O6` in
   `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
 
 ### O10: Alert Rules For Top Pains
 
 **Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4139,11 +4150,23 @@ for the failure modes most likely to hurt users first.
 
 **Citus comparison**: Vanilla Citus does not ship these ai-blaise alert rules.
 
+Production evidence: the kind production smoke in
+`ci/ai-blaise/kind-production-smoke.sh` installs the monitoring CRDs into a
+real kind cluster before Helm install, applies the default `values.yaml`,
+`values-prod.yaml`, and explicit exhaustive chart profiles, then requires the
+live
+`prometheusrules.monitoring.coreos.com/ai-blaise-citus-alerts` resource to
+contain the replication-lag, sidecar-readiness, vectorizer-backlog, and
+pool-error-rate alerts. `ci/ai-blaise/deploy-check.sh` renders the same
+production profiles with Helm and statically guards the alert names.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O10` in
   `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
 
 ### O13: citus-watch TUI
 

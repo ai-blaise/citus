@@ -57,7 +57,9 @@ through the pool service, proves the pool CIDR deny path with live Kubernetes
 traffic, and executes the built `citusctl` image. It also installs the default
 `values.yaml` profile with direct Helm and the production `values-prod.yaml`
 profile through the deploy wrapper, where alpha sidecars and tools remain
-disabled.
+disabled. For `FEATURE: O6` and `FEATURE: O10`, the same smoke requires the
+live dashboard ConfigMap and PrometheusRule resources to contain the expected
+dashboard JSON payloads and alert names after each Helm profile is installed.
 The Argo application targets the `main` release branch, uses
 `values-prod.yaml`, creates the target namespace, and prunes stale rendered
 resources so GitOps deploys the same production profile that the smoke
