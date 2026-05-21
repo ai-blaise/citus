@@ -357,9 +357,8 @@ pool starts classifying real SQL.
 **Bundled extension dep**: none
 
 **Summary**: Defines pool protocol pipelining limits for in-flight work and
-transaction pipelining, and keeps the production `serve` data plane as a real
-byte-transparent PostgreSQL TCP proxy while routing policy becomes
-shard-aware.
+transaction pipelining, while the current `serve` data plane remains a real
+byte-transparent PostgreSQL TCP proxy until routing policy becomes shard-aware.
 
 **Motivation**: Pool throughput work needs an explicit backpressure contract
 before pipelining reaches the data path.
@@ -953,7 +952,7 @@ are wired in.
 micro-cost accounting, emitted by the canonical vectorizer worker run.
 
 **Motivation**: Cost dashboards and token budgets require a durable accounting
-shape before provider calls run in production.
+shape before provider calls are enabled for tenant workloads.
 
 **Citus comparison**: Vanilla Citus does not account for embedding provider
 usage.
@@ -3225,7 +3224,8 @@ binding it to a hint set, and auto-promoting it after enough stable
 executions.
 
 **Motivation**: Planner changes in a distributed database need an explicit
-escape hatch for stable production queries before a regression reaches users.
+escape hatch for latency-sensitive tenant queries before a regression reaches
+users.
 
 **Citus comparison**: Vanilla Citus does not ship a plan-freeze companion
 module or auto-promotion policy.
@@ -3513,7 +3513,7 @@ unless explicitly allowed.
 requests.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
-multi-tenant production usage.
+multi-tenant operator usage.
 
 **Citus comparison**: Vanilla Citus has no tenant-scoped AI-agent tool layer.
 
@@ -3676,7 +3676,7 @@ live CRD or companion state.
 **Bundled extension dep**: none
 
 **Summary**: Defines the dashboard data-source and panel contract for the
-`citus-watch` live view.
+`citus-watch` operator view.
 
 **Motivation**: Operators need a single terminal dashboard that can read
 companion metadata, Prometheus metrics, and pool signals without hand-built
@@ -4263,13 +4263,13 @@ division.
 **Bundled extension dep**: none
 
 **Summary**: Defines the initial Rust contract for the `citus-watch` unified
-live view across cluster topology, shards, hypertables, EXPLAIN, rebalance,
-vectorizer backlog, search indexes, tenants, and branches.
+operator view across cluster topology, shards, hypertables, EXPLAIN,
+rebalance, vectorizer backlog, search indexes, tenants, and branches.
 
-**Motivation**: Live operations need a compact, terminal-native view that
+**Motivation**: Runtime operations need a compact, terminal-native view that
 tracks the same companion and metrics surfaces used by dashboards and alerts.
 
-**Citus comparison**: Vanilla Citus does not ship a dedicated live
+**Citus comparison**: Vanilla Citus does not ship a dedicated runtime
 operations TUI.
 
 **References**:

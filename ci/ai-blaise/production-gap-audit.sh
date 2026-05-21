@@ -310,6 +310,7 @@ alpha_entries = [
     entry for entry in entries if entry["status"].lower() not in PRODUCTION_STATUSES
 ]
 source_only_ids = source_ids - entry_ids
+entry_by_id = {entry["id"]: entry for entry in entries}
 
 if not source_ids:
     fail("no source FEATURE markers found")
@@ -493,6 +494,23 @@ if non_production_with_prod_evidence:
         "non-production headings must not carry Production evidence fields: "
         + ", ".join(non_production_with_prod_evidence)
     )
+
+stale_alpha_production_phrases = [
+    ("T15", "production `serve` data plane"),
+    ("A5", "provider calls run in production"),
+    ("PM3", "stable production queries"),
+    ("MCP3", "multi-tenant production usage"),
+    ("D12", "`citus-watch` live view"),
+    ("O13", "live operations need"),
+    ("O13", "dedicated live operations tui"),
+    ("O13", "`citus-watch` unified live view"),
+]
+for feature_id, phrase in stale_alpha_production_phrases:
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for alpha wording guard")
+    if compact(phrase) in compact(entry["body"]):
+        fail(f"{feature_id} alpha heading contains production-sounding stale phrase: {phrase}")
 
 audit_compact = compact(audit)
 docs_compact = compact(docs)
@@ -734,7 +752,6 @@ operator_canonical_ids = {
     "TS7",
     "WH1",
 }
-entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in sorted(operator_canonical_ids):
     entry = entry_by_id.get(feature_id)
     if entry is None:
