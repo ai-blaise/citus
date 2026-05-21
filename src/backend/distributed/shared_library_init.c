@@ -160,6 +160,7 @@ DEFINE_COLUMNAR_PASSTHROUGH_FUNC(test_columnar_storage_write_new_page)
 
 #define DUMMY_REAL_TIME_EXECUTOR_ENUM_VALUE 9999999
 static char *CitusVersion = CITUS_VERSION;
+static char *CohabitExtensions = "";
 static char *DeprecatedEmptyString = "";
 static char *MitmfifoEmptyString = "";
 static bool DeprecatedDeferShardDeleteOnMove = true;
@@ -199,6 +200,11 @@ static void CitusCleanupConnectionsAtExit(int code, Datum arg);
 static void SaveBackendStatsIntoSavedBackendStatsHashAtExit(int code, Datum arg);
 static void DecrementExternalClientBackendCounterAtExit(int code, Datum arg);
 static void CreateRequiredDirectories(void);
+static void RegisterCitusPreloadConfigVariables(void);
+static void ErrorIfHooksAlreadyRegistered(void);
+static bool CitusHasAlreadyRegisteredHooks(void);
+static bool CitusHasTrustedHookCoextensions(void);
+static bool IsTrustedHookCoextension(const char *coextensionName);
 static void RegisterCitusConfigVariables(void);
 static void OverridePostgresConfigProperties(void);
 static bool ErrorIfNotASuitableDeadlockFactor(double *newval, void **extra,
@@ -436,22 +442,12 @@ _PG_init(void)
 	set_mem_constraint_handler_s(ereport_constraint_handler);
 
 	/*
-	 * Perform checks before registering any hooks, to avoid erroring out in a
-	 * partial state.
-	 *
-	 * In many cases (e.g. planner and utility hook, to run inside
-	 * pg_stat_statements et. al.) we have to be loaded before other hooks
-	 * (thus as the innermost/last running hook) to be able to do our
-	 * duties. For simplicity insist that all hooks are previously unused.
+	 * Register preload GUCs before checking hooks. They are needed during
+	 * preload and must be visible before the full Citus GUC table is registered.
 	 */
-	if (planner_hook != NULL || ProcessUtility_hook != NULL ||
-		ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
-		ExplainOneQuery_hook != NULL)
-	{
-		ereport(ERROR, (errmsg("Citus has to be loaded first"),
-						errhint("Place citus at the beginning of "
-								"shared_preload_libraries.")));
-	}
+	RegisterCitusPreloadConfigVariables();
+
+	ErrorIfHooksAlreadyRegistered();
 
 	ResizeStackToMaximumDepth();
 
@@ -482,14 +478,18 @@ _PG_init(void)
 	RegisterCitusCustomScanMethods();
 
 	/* intercept planner */
+	PreviousPlannerHook = planner_hook;
 	planner_hook = distributed_planner;
 
 	/* register for planner hook */
 	set_rel_pathlist_hook = multi_relation_restriction_hook;
 	get_relation_info_hook = multi_get_relation_info_hook;
 	set_join_pathlist_hook = multi_join_restriction_hook;
+	PreviousExecutorStartHook = ExecutorStart_hook;
 	ExecutorStart_hook = CitusExecutorStart;
+	PreviousExecutorRunHook = ExecutorRun_hook;
 	ExecutorRun_hook = citus_executor_run_adapter;
+	PreviousExplainOneQueryHook = ExplainOneQuery_hook;
 	ExplainOneQuery_hook = CitusExplainOneQuery;
 	prev_ExecutorEnd = ExecutorEnd_hook;
 	ExecutorEnd_hook = CitusAttributeToEnd;
@@ -970,6 +970,109 @@ CreateRequiredDirectories(void)
 						errmsg("could not create directory \"%s\": %m",
 							   subdir)));
 	}
+}
+
+
+/*
+ * Register GUCs that are needed before Citus performs its preload hook checks.
+ */
+static void
+RegisterCitusPreloadConfigVariables(void)
+{
+	DefineCustomStringVariable(
+		"citus.cohabit_extensions",
+		gettext_noop("Lists extensions allowed to install hooks before Citus."),
+		gettext_noop("Citus normally must be loaded before PostgreSQL planner, "
+					 "utility, executor, and explain hooks are installed. This "
+					 "setting lists extensions the operator trusts during "
+					 "preload."),
+		&CohabitExtensions,
+		"",
+		PGC_POSTMASTER,
+		GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE,
+		NULL, NULL, NULL);
+}
+
+
+static void
+ErrorIfHooksAlreadyRegistered(void)
+{
+	if (!CitusHasAlreadyRegisteredHooks())
+	{
+		return;
+	}
+
+	if (CitusHasTrustedHookCoextensions())
+	{
+		ereport(LOG, (errmsg("allowing Citus to load after preexisting hooks"),
+					  errdetail("citus.cohabit_extensions is set to \"%s\".",
+								CohabitExtensions)));
+		return;
+	}
+
+	/*
+	 * In many cases (e.g. planner and utility hook, to run inside
+	 * pg_stat_statements et. al.) we have to be loaded before other hooks
+	 * (thus as the innermost/last running hook) to be able to do our
+	 * duties. For simplicity insist that all hooks are previously unused unless
+	 * the operator explicitly opts into a trusted cohabitation chain.
+	 */
+	ereport(ERROR, (errmsg("Citus has to be loaded first"),
+					errhint("Place citus at the beginning of "
+							"shared_preload_libraries or configure "
+							"citus.cohabit_extensions for trusted "
+							"coextensions.")));
+}
+
+
+static bool
+CitusHasAlreadyRegisteredHooks(void)
+{
+	return planner_hook != NULL || ProcessUtility_hook != NULL ||
+		   ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
+		   ExplainOneQuery_hook != NULL;
+}
+
+
+static bool
+CitusHasTrustedHookCoextensions(void)
+{
+	List *cohabitExtensionList = NIL;
+	bool hasTrustedHookCoextensions = false;
+
+	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
+	{
+		return false;
+	}
+
+	char *cohabitExtensions = pstrdup(CohabitExtensions);
+	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
+	{
+		ListCell *cohabitExtensionCell = NULL;
+
+		foreach(cohabitExtensionCell, cohabitExtensionList)
+		{
+			char *coextensionName = (char *) lfirst(cohabitExtensionCell);
+
+			if (IsTrustedHookCoextension(coextensionName))
+			{
+				hasTrustedHookCoextensions = true;
+				break;
+			}
+		}
+
+		list_free(cohabitExtensionList);
+	}
+	pfree(cohabitExtensions);
+
+	return hasTrustedHookCoextensions;
+}
+
+
+static bool
+IsTrustedHookCoextension(const char *coextensionName)
+{
+	return pg_strcasecmp(coextensionName, "timescaledb") == 0;
 }
 
 

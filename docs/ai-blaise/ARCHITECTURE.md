@@ -19,9 +19,8 @@ The fork combines upstream Citus with ai-blaise overlay components.
 
 The first end-to-end acceptance path is:
 
-1. Apply the TS6 cohabitation patch series:
-   `patches/0001-allow-trusted-hook-coextensions.patch` and
-   `patches/0002-preserve-trusted-hook-chain-state.patch`.
+1. Use the integrated TS6 cohabitation source changes; the historical patch
+   files in `patches/` remain as rebase/reference artifacts.
 2. Build `companion/citus_timescale`.
 3. Reconcile the `Hypertable` CRD in `operator/`.
 4. Drive `e2e/` Timescale-on-Citus acceptance.
@@ -38,7 +37,9 @@ extension bundle is not yet proven by a real operand image build/initdb smoke.
 The Hypertable operator reconcile path now wraps those companion plans in a
 guarded apply plan: create the extension, validate
 `companion_feature_status()`, validate the configured Timescale/Citus
-cohabitation precondition, then run the ordered TS1/TS2/TS3/TS4/TS5 SQL. That
-precondition is not production evidence for hook-chain safety; TS6 remains
-alpha until a real Citus+TimescaleDB cohabitation smoke records the exact image
-digest, command log, and CI or VM run in the production-readiness audit.
+cohabitation precondition, then run the ordered TS1/TS2/TS3/TS4/TS5 SQL.
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` provides the current live
+cohabitation proof for the integrated TS6 hook-chain source and the TS18
+installable bridge-state SQL. The broader TS1/TS2/TS3/TS4/TS5/TS12 distributed
+feature entries remain alpha until multi-worker fanout, rebalance, and
+operator reconciliation are measured end to end.

@@ -43,6 +43,11 @@ while IFS= read -r patch || [[ -n "${patch}" ]]; do
   fi
 
   echo "checking ${patch_path}"
-  git apply --check --whitespace=error "${patch_path}"
-  git apply --whitespace=error "${patch_path}"
+  if git apply --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+    git apply --whitespace=error "${patch_path}"
+  elif git apply --reverse --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+    echo "already integrated ${patch_path}"
+  else
+    git apply --check --whitespace=error "${patch_path}"
+  fi
 done < "${worktree}/${series}"

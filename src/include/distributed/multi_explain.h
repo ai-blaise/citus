@@ -12,6 +12,7 @@
 
 #include "tuple_destination.h"
 
+#include "commands/explain.h"
 #include "executor/executor.h"
 
 typedef enum
@@ -24,6 +25,7 @@ typedef enum
 extern bool ExplainDistributedQueries;
 extern bool ExplainAllTasks;
 extern int ExplainAnalyzeSortMethod;
+extern ExplainOneQuery_hook_type PreviousExplainOneQueryHook;
 
 extern void FreeSavedExplainPlan(void);
 extern void CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,

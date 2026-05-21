@@ -85,10 +85,11 @@ sidecars/tools disabled while pool SQL/admin traffic still works. The deploy
 workflow and `gate-close` run this smoke at larger integration boundaries.
 
 The Makefile smoke targets set `REQUIRE_DOCKER=1` for the Docker-backed live
-smokes, including pool proxy, SQL extension, real TimescaleDB bridge, and
-primary/standby observability replication. Missing Docker is therefore a release
-gate failure, not skipped evidence. Running the direct scripts without
-`REQUIRE_DOCKER=1` is only for exploratory local checks.
+smokes, including pool proxy, SQL extension, real TimescaleDB bridge, real
+Citus+TimescaleDB cohabitation, and primary/standby observability
+replication. Missing Docker is therefore a release gate failure, not skipped
+evidence. Running the direct scripts without `REQUIRE_DOCKER=1` is only for
+exploratory local checks.
 
 The Makefile release gate also runs the image and deploy contract checks
 directly. Its `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm fails

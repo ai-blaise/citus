@@ -138,9 +138,9 @@ more production-ready than the artifacts justified.
   backend, and requires `companion_idle_transactions(...)` to detect it.
 - The image workflow and `gate-close` now run every promoted SQL runtime
   smoke: the plain PostgreSQL extension smoke, the real TimescaleDB bridge
-  smoke, and the primary/standby observability replication smoke. The
-  production gap audit rejects regressions that leave a promoted runtime smoke
-  out of those gates.
+  smoke, the real Citus+TimescaleDB cohabitation smoke, and the
+  primary/standby observability replication smoke. The production gap audit
+  rejects regressions that leave a promoted runtime smoke out of those gates.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is a manifest/init contract, not production evidence that
   every binary package is installed in a runnable operand image. The production
@@ -206,13 +206,20 @@ more production-ready than the artifacts justified.
   benchmark targets, or local runtime models are CI artifacts or planning
   scaffolding, not production evidence. The production gap audit
   machine-checks that every custom boundary doc preserves the wording.
-- The cohabitation docs, TS6 patch metadata, and opt-in kind smoke now state
-  that `citus.cohabit_extensions` is a deployment-level trust contract, not
-  production evidence. Static patch checks, pure Rust acceptance models, and
-  default contract-mode smoke output remain non-production until a live
-  Citus+TimescaleDB cohabitation run records the operand image digest, command
-  log, and CI or VM evidence in the audit. The production gap audit
-  machine-checks that boundary.
+- The TS6 cohabitation source changes are now integrated into the fork. The
+  patch files remain as rebase/reference artifacts, and
+  `ci/ai-blaise/patches-check.sh` accepts either clean application to an
+  upstream-like tree or clean reverse application when the patch is already
+  integrated. `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds this Citus
+  fork into `timescale/timescaledb:latest-pg17`, starts PostgreSQL with
+  `shared_preload_libraries=timescaledb,citus` and
+  `citus.cohabit_extensions=timescaledb`, creates real `citus`,
+  `timescaledb`, and `ai_blaise_citus` extensions, verifies real
+  `pg_dist_partition` rows, and executes TS1/TS2/TS3/TS4/TS5/TS12 apply
+  functions without defining a Citus stub. TS6 and TS18 are therefore
+  production-ready narrow surfaces; the broader distributed Timescale feature
+  entries remain alpha until multi-worker fanout, rebalance, and operator
+  reconciliation are proven end to end.
 - The Helm image helper now supports digest-pinned images, and the default
   `values.yaml` profile and `values-prod.yaml` both set
   `global.requireImageDigest: true` so production rendering fails unless the
@@ -231,10 +238,10 @@ more production-ready than the artifacts justified.
   render/install a concrete source for `OPERATOR_IMAGE_DIGEST` and
   `POOL_IMAGE_DIGEST`.
 - The Makefile live-smoke targets now set `REQUIRE_DOCKER=1` for pool proxy,
-  SQL extension, real TimescaleDB bridge, and primary/standby observability
-  replication smokes. Direct scripts may still skip for exploratory local use,
-  but the documented `gate-close` release path fails closed if Docker is
-  unavailable.
+  SQL extension, real TimescaleDB bridge, real Citus+TimescaleDB
+  cohabitation, and primary/standby observability replication smokes. Direct
+  scripts may still skip for exploratory local use, but the documented
+  `gate-close` release path fails closed if Docker is unavailable.
 - The shared Rust runtime Dockerfile now accepts explicit default command args.
   Service images still default to `serve`, while the `citusctl` image defaults
   to `plan inspect cluster`. The kind production smoke runs a Kubernetes Job from
@@ -243,11 +250,15 @@ more production-ready than the artifacts justified.
 - The Makefile release gate now runs `image-check` and `deploy-check` directly.
   The `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm is a release
   gate failure instead of a skipped rendered-chart evidence path.
-- `TS18` remains alpha until real Citus+TimescaleDB cohabitation runs without a
-  stubbed distribution entrypoint and records image digest, command log, and CI
-  or VM evidence. The current TimescaleDB smoke is contract/runtime evidence for
-  the bridge-state SQL surface, not production evidence for distributed
-  cohabitation.
+- `TS18` now has real Citus+TimescaleDB cohabitation evidence without a stubbed
+  distribution entrypoint. The VM run built
+  `ai-blaise-citus-timescale-cohabitation:local` from
+  `timescale/timescaledb:latest-pg17`, installed this Citus fork and the
+  `ai_blaise_citus` SQL extension, created real `citus`, `timescaledb`, and
+  `ai_blaise_citus` extensions, inserted through a real Citus distributed
+  table, and then executed the bridge apply functions against the cohabiting
+  server. The generated evidence file is
+  `artifacts/timescale-cohabitation-evidence.tsv`.
 - The D8 deploy wrapper install path is now live-gated: the `values-prod.yaml`
   phase of `kind-production-smoke.sh` installs through
   `scripts/citus-scale/deploy.sh MODE=install` instead of bypassing the wrapper.
@@ -292,9 +303,9 @@ Rule 10 completion for this branch requires local and VM verification of:
 - The local release gate must run the same image and deploy contract checks as
   GitHub; rendered Helm checks must use `REQUIRE_HELM=1` so missing Helm is a
   failure, not a skipped evidence path.
-- Production-ready Timescale/Citus claims require a real cohabitation run; stubs
-  are acceptable only for alpha contract/runtime evidence and must be called out
-  as such.
+- Production-ready Timescale/Citus claims require a real cohabitation run; the
+  stubbed Timescale bridge smoke remains useful contract evidence, but promoted
+  TS6/TS18 evidence must come from the non-stubbed cohabitation smoke.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
 
@@ -306,18 +317,19 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. Nine narrow headings are
-`Status: production-ready` because they have live VM/GitHub evidence: `D7`
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 11 narrow headings
+are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
 shared sidecar health/readiness/metrics runtime, `O1` for the installable
 `pg_stat_statements` percentile view, `O2` for the installable local activity
 stats view, `O3` for the installable replication-lag view against a real
 streaming standby, and `R4` for the installable idle transaction detection SQL
-surface, plus `Sec13` for pool CIDR access control with live allowed and denied
-SQL traffic proof. `TS18` remains alpha until real Citus+TimescaleDB
-cohabitation is verified without a stubbed distribution entrypoint. The other
-155 feature headings remain
+surface, `TS6` for the integrated trusted hook-coextension source path under
+real Timescale/Citus cohabitation, `TS18` for the installable bridge-state SQL
+surface under real Timescale/Citus cohabitation, plus `Sec13` for pool CIDR
+access control with live allowed and denied SQL traffic proof. The other 153
+feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it

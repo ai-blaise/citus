@@ -14,6 +14,7 @@
 
 #include "nodes/pathnodes.h"
 #include "nodes/plannodes.h"
+#include "optimizer/planner.h"
 
 #include "pg_version_constants.h"
 
@@ -31,6 +32,7 @@
 
 /* level of planner calls */
 extern int PlannerLevel;
+extern planner_hook_type PreviousPlannerHook;
 
 
 /* RouterPlanType is used to determine the router plan to invoke */

@@ -12,16 +12,17 @@ expects to be the innermost hook in several paths.
 ai-blaise/citus needs an explicit, operator-controlled path for trusted
 cohabitation tests. Add a postmaster GUC, citus.cohabit_extensions, that allows
 startup to continue when preexisting hooks are present and the deployment has
-listed trusted coextensions. The first target is TimescaleDB cohabitation.
+listed supported trusted coextensions. The first supported target is
+TimescaleDB cohabitation.
 
 This patch intentionally does not infer hook ownership from function pointers.
-The GUC is a deployment-level trust contract, not production evidence. Listed
-extensions are safe for production only after a real Citus+TimescaleDB
-cohabitation smoke records the exact image digest, command log, and CI or VM
-run in the production-readiness audit.
+The GUC is a deployment-level trust contract, not production evidence. Supported
+coextensions are safe for production only after a real Citus+TimescaleDB
+cohabitation smoke records the exact image digest, command log, and CI or VM run
+in the production-readiness audit.
 ---
- src/backend/distributed/shared_library_init.c | 106 +++++++++++++++++++++----
- 1 file changed, 91 insertions(+), 15 deletions(-)
+ src/backend/distributed/shared_library_init.c | 110 +++++++++++++++++++++----
+ 1 file changed, 95 insertions(+), 15 deletions(-)
 
 diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
 --- a/src/backend/distributed/shared_library_init.c
@@ -34,7 +35,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
  static char *DeprecatedEmptyString = "";
  static char *MitmfifoEmptyString = "";
  static bool DeprecatedDeferShardDeleteOnMove = true;
-@@ -194,6 +195,10 @@ static void CitusCleanupConnectionsAtExit(int code, Datum arg);
+@@ -194,6 +195,11 @@ static void CitusCleanupConnectionsAtExit(int code, Datum arg);
  static void SaveBackendStatsIntoSavedBackendStatsHashAtExit(int code, Datum arg);
  static void DecrementExternalClientBackendCounterAtExit(int code, Datum arg);
  static void CreateRequiredDirectories(void);
@@ -42,6 +43,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +static void ErrorIfHooksAlreadyRegistered(void);
 +static bool CitusHasAlreadyRegisteredHooks(void);
 +static bool CitusHasTrustedHookCoextensions(void);
++static bool IsTrustedHookCoextension(const char *coextensionName);
  static void RegisterCitusConfigVariables(void);
  static void OverridePostgresConfigProperties(void);
  static bool ErrorIfNotASuitableDeadlockFactor(double *newval, void **extra,
@@ -71,10 +73,11 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
  
  	ResizeStackToMaximumDepth();
  
-@@ -973,6 +969,87 @@ CreateRequiredDirectories(void)
+@@ -973,6 +969,109 @@ CreateRequiredDirectories(void)
  	}
  }
  
++
 +/*
 + * Register GUCs that are needed before Citus performs its preload hook checks.
 + */
@@ -94,6 +97,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE,
 +		NULL, NULL, NULL);
 +}
++
 +
 +static void
 +ErrorIfHooksAlreadyRegistered(void)
@@ -125,6 +129,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +							"coextensions.")));
 +}
 +
++
 +static bool
 +CitusHasAlreadyRegisteredHooks(void)
 +{
@@ -133,11 +138,11 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		   ExplainOneQuery_hook != NULL;
 +}
 +
++
 +static bool
 +CitusHasTrustedHookCoextensions(void)
 +{
 +	List *cohabitExtensionList = NIL;
-+	char *cohabitExtensions = NULL;
 +	bool hasTrustedHookCoextensions = false;
 +
 +	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
@@ -145,15 +150,34 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		return false;
 +	}
 +
-+	cohabitExtensions = pstrdup(CohabitExtensions);
++	char *cohabitExtensions = pstrdup(CohabitExtensions);
 +	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
 +	{
-+		hasTrustedHookCoextensions = cohabitExtensionList != NIL;
++		ListCell *cohabitExtensionCell = NULL;
++
++		foreach(cohabitExtensionCell, cohabitExtensionList)
++		{
++			char *coextensionName = (char *) lfirst(cohabitExtensionCell);
++
++			if (IsTrustedHookCoextension(coextensionName))
++			{
++				hasTrustedHookCoextensions = true;
++				break;
++			}
++		}
++
 +		list_free(cohabitExtensionList);
 +	}
 +	pfree(cohabitExtensions);
 +
 +	return hasTrustedHookCoextensions;
++}
++
++
++static bool
++IsTrustedHookCoextension(const char *coextensionName)
++{
++	return pg_strcasecmp(coextensionName, "timescaledb") == 0;
 +}
 +
  
