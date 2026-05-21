@@ -613,6 +613,7 @@ Timescale-aware distributed hypertables.
   cohabitation precondition, then applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
   and canonical SQL emitter `e2e/src/bin/timescale_apply_plan.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TS8: LSP Rules For Hypertable Invariants
 
@@ -996,6 +997,7 @@ fan embedding jobs across Citus workers safely.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A8` in `operator/src/crds/vectorizer.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Topology
 
@@ -1022,6 +1024,7 @@ Kubernetes-native CRD for topology spread constraints.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S4: Coordinator-Less Topology Mode
 
@@ -1045,6 +1048,7 @@ not ship ai-blaise's pool/operator topology mode.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S5: Raft Per Shard Group
 
@@ -1134,6 +1138,7 @@ ship a Kubernetes tenant CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S10` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S11: Survival Goals
 
@@ -1155,6 +1160,7 @@ failure domain goal for topology-aware reconciliation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S13: Range-Based Dynamic Sharding
 
@@ -1248,6 +1254,7 @@ scale-to-zero semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### R4: Idle-In-Transaction Detector
 
@@ -1332,6 +1339,7 @@ does not provide a scheduled repack CRD.
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### R9: Cross-Tier Query Planner Input
 
@@ -1402,6 +1410,7 @@ policy objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C5: Replication Conflict Taxonomy
 
@@ -1424,6 +1433,7 @@ classification contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C6: CSI Snapshot Branching
 
@@ -1445,6 +1455,7 @@ copy-on-write implementations can be reconciled safely.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C6` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C7: Branch Suspend
 
@@ -1466,6 +1477,7 @@ or ad hoc suspend state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C7` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C8: Branch Promote
 
@@ -1487,6 +1499,7 @@ created and suspended the branch, so status and ownership stay consistent.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C8` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C9: Migration Framework
 
@@ -1508,6 +1521,7 @@ that can coordinate validation, retries, and conflict handling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C10: Online DDL State Machine
 
@@ -1719,6 +1733,7 @@ operator-owned migration object.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### M5: LSP Refactor Quick-Fixes
 
@@ -1856,6 +1871,7 @@ region CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR1` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR2: SurvivalGoal CRD
 
@@ -1877,6 +1893,7 @@ before it places shards.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR2` in `operator/src/crds/survival_goal.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR4: Tablespaces By Region
 
@@ -1899,6 +1916,7 @@ manage them as region objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR5: Pool GeoIP Routing
 
@@ -1943,6 +1961,7 @@ tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR8` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Backup / PITR
 
@@ -1991,6 +2010,7 @@ declarative schedule.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### B3: PITR Restore
 
@@ -2083,6 +2103,7 @@ deployment-specific tooling.
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
 - In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Tenant Operations
 
@@ -2106,6 +2127,7 @@ rather than interpreting arbitrary schema names.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO1` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TO2: Tenant Quotas
 
@@ -2126,6 +2148,7 @@ runtime admission control is wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TO3: Tenant Migration Online
 
@@ -2192,6 +2215,7 @@ inside one-off placement annotations.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
 - In-source: `FEATURE: TO5` in `companion/src/tenants.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Search
 
@@ -2217,6 +2241,7 @@ index CRD.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search2` in `operator/src/crds/search_index.rs`
 - In-source: `FEATURE: Search2` in `companion/src/search_bridge.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### Search3: Hybrid BM25 + Vector Ranking
 
@@ -2260,6 +2285,7 @@ objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### Search8: Search-Aware Cold Tier
 
@@ -2837,6 +2863,7 @@ sidecar runtimes can share the same desired state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### EF4: Database Callback Over UDS
 
@@ -3242,6 +3269,7 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### WH2: Companion Webhook Helpers
 
@@ -3805,6 +3833,7 @@ not ship a federation CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Graph
 

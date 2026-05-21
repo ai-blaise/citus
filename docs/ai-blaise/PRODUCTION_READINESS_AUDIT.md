@@ -349,7 +349,7 @@ feature headings remain
 completion references or addendum rows rather than standalone feature headings;
 those rows also remain alpha. This is acceptable for catalog integrity, but it
 is not a production claim for the full feature plan.
-The audit guard also reports 73 feature headings without an explicit
+The audit guard also reports 49 feature headings without an explicit
 Executable, CI, Acceptance, SQL runtime, or SQL extension reference line; those
 entries may still have source markers, but they are not independently
 evidenced enough for production signoff.
