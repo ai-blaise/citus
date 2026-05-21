@@ -41,7 +41,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "TS9",
         feature_name: "doctor rules for cohabitation",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS12",
@@ -51,32 +51,32 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "TS13",
         feature_name: "distributed time_bucket_gapfill",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS14",
         feature_name: "distributed metric toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS15",
         feature_name: "distributed approximate toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS16",
         feature_name: "distributed downsampler toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS17",
         feature_name: "distributed state toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "A1",
         feature_name: "pgai-compatible vectorizer DSL",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search2",
@@ -131,17 +131,17 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "T8",
         feature_name: "toolkit two-step aggregate pushdown",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "L9",
         feature_name: "worker partial aggregate pushdown",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M7",
         feature_name: "pre-flight cohabit-extension check",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "PM3",
