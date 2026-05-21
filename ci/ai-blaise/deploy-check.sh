@@ -149,6 +149,10 @@ grep -q 'helm upgrade --install' "${kind_smoke}"
 grep -q 'values-exhaustive.yaml' "${kind_smoke}"
 grep -q 'global.requireImageDigest=false' "${kind_smoke}"
 grep -q 'apply_monitoring_crds' "${kind_smoke}"
+grep -q 'assert_observability_resources' "${kind_smoke}"
+grep -q 'configmap/${chart_name}-dashboards' "${kind_smoke}"
+grep -q 'prometheusrules.monitoring.coreos.com/${chart_name}-alerts' "${kind_smoke}"
+grep -q 'AiBlaiseCitusSidecarNotReady' "${kind_smoke}"
 grep -q 'DEFAULT_VALUES_NAMESPACE' "${kind_smoke}"
 grep -q 'PROD_VALUES_NAMESPACE' "${kind_smoke}"
 grep -q 'DEPLOY_PROFILE=prod' "${kind_smoke}"
@@ -391,7 +395,10 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'name: ai-blaise-citus-operator' "${render_dir}/default.yaml"
   grep -q 'name: ai-blaise-citus-pool' "${render_dir}/default.yaml"
   grep -q 'kind: ServiceMonitor' "${render_dir}/default.yaml"
+  grep -q 'kind: ConfigMap' "${render_dir}/default.yaml"
   grep -q 'kind: PrometheusRule' "${render_dir}/default.yaml"
+  grep -q 'ai-blaise-citus-overview.json' "${render_dir}/default.yaml"
+  grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/default.yaml"
   if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/default.yaml"; then
     echo "values.yaml default render must not include alpha sidecar deployments" >&2
     exit 1
@@ -404,6 +411,8 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST' "${render_dir}/exhaustive.yaml"
   grep -q '10.0.0.0/8' "${render_dir}/exhaustive.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-analytical' "${render_dir}/exhaustive.yaml"
+  grep -q 'kind: PrometheusRule' "${render_dir}/exhaustive.yaml"
+  grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/exhaustive.yaml"
   grep -q 'kind: Deployment' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: sidecar-mcp' "${render_dir}/dev.yaml"
   grep -q 'app.kubernetes.io/component: tools' "${render_dir}/dev.yaml"
@@ -411,7 +420,10 @@ if command -v helm >/dev/null 2>&1; then
   grep -q 'name: ai-blaise-citus-operator' "${render_dir}/prod.yaml"
   grep -q 'name: ai-blaise-citus-pool' "${render_dir}/prod.yaml"
   grep -q 'kind: ServiceMonitor' "${render_dir}/prod.yaml"
+  grep -q 'kind: ConfigMap' "${render_dir}/prod.yaml"
   grep -q 'kind: PrometheusRule' "${render_dir}/prod.yaml"
+  grep -q 'ai-blaise-citus-overview.json' "${render_dir}/prod.yaml"
+  grep -q 'AiBlaiseCitusSidecarNotReady' "${render_dir}/prod.yaml"
   grep -q 'ai_blaise_sidecar_ready' "${render_dir}/prod.yaml"
   if grep -q 'app.kubernetes.io/component: sidecar-' "${render_dir}/prod.yaml"; then
     echo "values-prod.yaml render must not include alpha sidecar deployments" >&2
