@@ -61,6 +61,10 @@ more production-ready than the artifacts justified.
     alpha profile. A direct `MODE=install scripts/citus-scale/deploy.sh`
     invocation could therefore install alpha sidecars and alpha runtime/security
     intent without making that choice explicit.
+18. The disaster-recovery runbook described a region-loss drill before every
+    production release without stating that `FEATURE: MR9` is still alpha and
+    that the checklist is not production evidence until real failover, PITR,
+    backup-restore, sidecar, and conflict-policy drill logs exist.
 
 ## Corrections
 
@@ -141,6 +145,12 @@ more production-ready than the artifacts justified.
   unless `ALLOW_ALPHA_INSTALL=1` is set explicitly for that run. The deploy
   check and production gap audit enforce the production-safe default and the
   non-production install guard.
+- The disaster-recovery runbook now states that it is a release prerequisite
+  and operational checklist, not production evidence by itself. It keeps
+  `FEATURE: MR9` alpha until live multi-region failover, PITR restore, backup
+  artifact restore, sidecar readiness, and conflict-policy evidence is measured
+  against real runtime infrastructure. The production gap audit machine-checks
+  that guardrail.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:

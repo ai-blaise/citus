@@ -16,6 +16,7 @@ AUDIT = ROOT / "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
 UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
+DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
@@ -195,6 +196,7 @@ audit = read(AUDIT)
 releasing = read(RELEASING)
 runbook = read(RUNBOOK)
 upgrade_runbook = read(UPGRADE_RUNBOOK)
+dr_runbook = read(DR_RUNBOOK)
 e2e_doc = read(E2E_DOC)
 architecture_doc = read(ARCHITECTURE_DOC)
 bundled_extensions_doc = read(BUNDLED_EXTENSIONS_DOC)
@@ -284,6 +286,7 @@ docs_compact = compact(docs)
 releasing_compact = compact(releasing)
 runbook_compact = compact(runbook)
 upgrade_runbook_compact = compact(upgrade_runbook)
+dr_runbook_compact = compact(dr_runbook)
 e2e_compact = compact(e2e_doc)
 architecture_compact = compact(architecture_doc)
 bundled_extensions_compact = compact(bundled_extensions_doc)
@@ -412,6 +415,19 @@ for phrase in (
 ):
     if phrase not in upgrade_runbook_compact:
         fail(f"upgrade runbook must preserve operand-image alpha guardrail: {phrase}")
+
+for phrase in (
+    "release prerequisite and operational checklist, not production evidence by itself",
+    "feature: mr9` remains alpha",
+    "live multi-region failover drill",
+    "pitr restore",
+    "backup artifact restore",
+    "sidecar readiness check",
+    "conflict-policy report",
+    "completing the document checklist alone does not promote",
+):
+    if phrase not in dr_runbook_compact:
+        fail(f"disaster recovery runbook must preserve MR9 alpha guardrail: {phrase}")
 
 for path, text in (
     (IMAGES_OVERVIEW, images_overview_compact),
@@ -724,6 +740,7 @@ for path in (
     RELEASING,
     RUNBOOK,
     UPGRADE_RUNBOOK,
+    DR_RUNBOOK,
     E2E_DOC,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
