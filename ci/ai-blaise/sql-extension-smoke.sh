@@ -70,6 +70,7 @@ fi
 
 docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
 CREATE EXTENSION pg_stat_statements;
+CREATE EXTENSION pgcrypto;
 SELECT pg_stat_statements_reset();
 SELECT 1 AS ai_blaise_pg_stat_statements_seed;
 CREATE EXTENSION ai_blaise_citus;
@@ -201,10 +202,10 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('Auth2', 'Sec1', 'O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'Sec1', 'Sec5', 'Sec6', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 6 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, and observability features as sql-runtime';
+  ) <> 8 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2, Sec1, Sec5, Sec6, and observability features as sql-runtime';
   END IF;
 
   PERFORM companion_set_session_claims(
@@ -389,6 +390,105 @@ BEGIN
   END IF;
 
   PERFORM * FROM companion_pg_dist_replication_lag LIMIT 1;
+END $$;
+
+DO $$
+DECLARE
+  first_hash text;
+  second_hash text;
+  computed_seal text;
+BEGIN
+  first_hash := companion_internal.ledger_transfer(
+    'tr_001',
+    'cash',
+    'revenue',
+    5000,
+    'USD',
+    'genesis'
+  );
+  IF first_hash IS NULL OR length(first_hash) <> 64 THEN
+    RAISE EXCEPTION 'Sec5 ledger transfer did not return a sha256 entry hash';
+  END IF;
+
+  second_hash := companion_internal.ledger_transfer(
+    'tr_002',
+    'cash',
+    'deferred_revenue',
+    2500,
+    'USD',
+    first_hash
+  );
+  IF second_hash IS NULL OR second_hash = first_hash THEN
+    RAISE EXCEPTION 'Sec5 second ledger transfer did not advance the hash chain';
+  END IF;
+  IF NOT companion_ledger_chain_valid() THEN
+    RAISE EXCEPTION 'Sec5 ledger chain should verify after ordered transfers';
+  END IF;
+
+  computed_seal := companion_ledger_seal('tr_001', 'ledger-secret', 'hmac-sha256');
+  IF computed_seal IS NULL OR length(computed_seal) <> 64 THEN
+    RAISE EXCEPTION 'Sec6 ledger seal did not return a sha256 HMAC';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_ledger_entries
+    WHERE transfer_id = 'tr_001'
+      AND entry_hash = first_hash
+      AND hmac_algorithm = 'hmac-sha256'
+      AND companion_ledger_entries.seal = computed_seal
+  ) THEN
+    RAISE EXCEPTION 'Sec6 ledger seal was not visible through companion_ledger_entries';
+  END IF;
+
+  BEGIN
+    PERFORM companion_internal.ledger_transfer(
+      'tr_bad_prev',
+      'cash',
+      'revenue',
+      100,
+      'USD',
+      'missing-hash'
+    );
+    RAISE EXCEPTION 'Sec5 ledger transfer accepted a missing previous hash';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'previous_hash does not reference an existing ledger entry' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    UPDATE companion_internal.ledger_entries
+    SET amount_cents = 1
+    WHERE transfer_id = 'tr_001';
+    RAISE EXCEPTION 'Sec5 ledger entries must reject mutation';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'companion ledger is append-only' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    DELETE FROM companion_internal.ledger_seals
+    WHERE transfer_id = 'tr_001';
+    RAISE EXCEPTION 'Sec6 ledger seals must reject deletion';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'companion ledger is append-only' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM companion_ledger_seal('tr_002', 'ledger-secret', 'hmac-md5');
+    RAISE EXCEPTION 'Sec6 ledger seal accepted an unsupported algorithm';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'unsupported ledger HMAC algorithm: hmac-md5' THEN
+        RAISE;
+      END IF;
+  END;
 END $$;
 
 CREATE ROLE ai_blaise_rls_smoke;

@@ -149,6 +149,10 @@ more production-ready than the artifacts justified.
 37. `FEATURE: Sec1` had a Rust policy-plan contract and Auth2 had live session
     claims, but the extension still lacked installable SQL predicates that a
     real PostgreSQL RLS policy could execute under a non-superuser role.
+38. `FEATURE: Sec5` and `FEATURE: Sec6` described ledger transfer and HMAC
+    seal plans, but the extension did not install append-only ledger tables,
+    hash-chain verification, or pgcrypto-backed seal functions that a real
+    database could execute.
 
 ## Corrections
 
@@ -382,6 +386,18 @@ more production-ready than the artifacts justified.
   cross-tenant insert, and verifies missing tenant claims fail closed. This is
   not evidence for automatic policy generation, JWT verification, pool
   authentication, or auto-API integration.
+- The SQL extension now installs `FEATURE: Sec5` and `FEATURE: Sec6` ledger
+  runtime helpers: append-only ledger entry and seal tables,
+  `companion_internal.ledger_transfer(...)`,
+  `companion_ledger_chain_valid()`, and `companion_ledger_seal(...)`. The
+  PostgreSQL extension smoke installs `pgcrypto`, appends chained ledger
+  transfers, verifies chain validity, rejects a missing previous hash, seals a
+  transfer with HMAC-SHA256, verifies the seal through
+  `companion_ledger_entries`, rejects direct mutation/deletion through
+  append-only triggers, and rejects unsupported HMAC algorithms. This is not
+  evidence for multi-party accounting workflows, external ledger backends,
+  external secret resolution, key rotation, hardware-backed signing, tenant
+  workflow authorization, or migration/operator integration.
 
 ## Verification Standard
 
@@ -432,6 +448,12 @@ Rule 10 completion for this branch requires local and VM verification of:
   predicates under a real PostgreSQL RLS policy. It must not be cited as
   evidence for automatic policy generation, JWT verification, pool
   authentication, or auto-API integration.
+- Sec5/Sec6 production evidence is limited to the local SQL ledger runtime:
+  append-only entries, append-only HMAC seals, hash-chain verification, and
+  pgcrypto-backed seal calculation. It must not be cited as evidence for
+  external ledger backends, external secret resolution, key rotation,
+  hardware-backed signing, accounting workflow authorization, or
+  migration/operator integration.
 - D2 production evidence is limited to the real `citusctl` CLI apply-mode
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,
@@ -449,7 +471,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 240 source `FEATURE:` markers and 164
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 20 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 22 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -467,7 +489,8 @@ pipelining through the real pool proxy data port, plus `Auth2` for installable
 SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
 for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
 for the file-backed `citus-lsp` diagnostic and quick-fix CLI, plus `Sec1` for
-installable SQL tenant RLS helper predicates. The other 144
+installable SQL tenant RLS helper predicates, plus `Sec5` and `Sec6` for the
+append-only SQL ledger and pgcrypto HMAC seal runtime. The other 142
 feature headings remain
 `Status: alpha`. The remaining 76 source markers are represented as V2
 completion addendum rows rather than standalone feature headings; every

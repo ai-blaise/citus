@@ -161,12 +161,12 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Sec5",
         feature_name: "immutable ledger",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec6",
         feature_name: "ledger HMAC tamper evidence",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M1",

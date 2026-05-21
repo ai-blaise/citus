@@ -51,8 +51,8 @@ AS $$
         ('PM3', 'plan freeze companion module', 'sql-plan'),
         ('PM4', 'plan regression detection', 'sql-plan'),
         ('IA3', 'companion index advisor', 'sql-plan'),
-        ('Sec5', 'immutable ledger', 'sql-plan'),
-        ('Sec6', 'ledger HMAC tamper evidence', 'sql-plan'),
+        ('Sec5', 'immutable ledger', 'sql-runtime'),
+        ('Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'),
         ('M1', 'pgroll-style expand-contract migrations', 'sql-plan'),
         ('M11', 'online column-type migration', 'sql-plan'),
         ('WH2', 'companion webhook helpers', 'sql-plan'),
@@ -228,6 +228,210 @@ BEGIN
         RAISE EXCEPTION '% requires visible function % from extension %',
             current_query(), function_name, extension_name;
     END IF;
+END;
+$$;
+
+-- FEATURE: Sec5
+-- FEATURE: Sec6
+CREATE TABLE IF NOT EXISTS companion_internal.ledger_entries (
+    ledger_sequence bigserial PRIMARY KEY,
+    transfer_id text NOT NULL UNIQUE,
+    debit_account text NOT NULL,
+    credit_account text NOT NULL,
+    amount_cents bigint NOT NULL CHECK (amount_cents > 0),
+    currency text NOT NULL,
+    previous_hash text NOT NULL,
+    entry_hash text NOT NULL UNIQUE,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.ledger_seals (
+    seal_sequence bigserial PRIMARY KEY,
+    transfer_id text NOT NULL UNIQUE
+        REFERENCES companion_internal.ledger_entries(transfer_id),
+    hmac_algorithm text NOT NULL,
+    seal text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE FUNCTION companion_internal.prevent_ledger_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RAISE EXCEPTION 'companion ledger is append-only';
+END;
+$$;
+
+CREATE TRIGGER companion_ledger_entries_append_only
+BEFORE UPDATE OR DELETE ON companion_internal.ledger_entries
+FOR EACH ROW EXECUTE FUNCTION companion_internal.prevent_ledger_mutation();
+
+CREATE TRIGGER companion_ledger_seals_append_only
+BEFORE UPDATE OR DELETE ON companion_internal.ledger_seals
+FOR EACH ROW EXECUTE FUNCTION companion_internal.prevent_ledger_mutation();
+
+CREATE VIEW companion_ledger_entries AS
+SELECT
+    entries.ledger_sequence,
+    entries.transfer_id,
+    entries.debit_account,
+    entries.credit_account,
+    entries.amount_cents,
+    entries.currency,
+    entries.previous_hash,
+    entries.entry_hash,
+    seals.hmac_algorithm,
+    seals.seal,
+    entries.created_at
+FROM companion_internal.ledger_entries AS entries
+LEFT JOIN companion_internal.ledger_seals AS seals
+  ON seals.transfer_id = entries.transfer_id;
+
+CREATE FUNCTION companion_internal.ledger_transfer(
+    p_transfer_id text,
+    p_debit_account text,
+    p_credit_account text,
+    p_amount_cents bigint,
+    p_currency text,
+    p_previous_hash text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    canonical_payload text;
+    computed_hash text;
+BEGIN
+    PERFORM companion_internal.require_visible_function('digest', 'pgcrypto');
+
+    IF p_transfer_id IS NULL OR btrim(p_transfer_id) = '' THEN
+        RAISE EXCEPTION 'transfer_id must not be empty';
+    END IF;
+    IF p_debit_account IS NULL OR btrim(p_debit_account) = '' THEN
+        RAISE EXCEPTION 'debit_account must not be empty';
+    END IF;
+    IF p_credit_account IS NULL OR btrim(p_credit_account) = '' THEN
+        RAISE EXCEPTION 'credit_account must not be empty';
+    END IF;
+    IF btrim(p_debit_account) = btrim(p_credit_account) THEN
+        RAISE EXCEPTION 'debit_account and credit_account must differ';
+    END IF;
+    IF p_amount_cents IS NULL OR p_amount_cents <= 0 THEN
+        RAISE EXCEPTION 'amount_cents must be greater than zero';
+    END IF;
+    IF p_currency IS NULL OR btrim(p_currency) = '' THEN
+        RAISE EXCEPTION 'currency must not be empty';
+    END IF;
+    IF p_previous_hash IS NULL OR btrim(p_previous_hash) = '' THEN
+        RAISE EXCEPTION 'previous_hash must not be empty';
+    END IF;
+    IF btrim(p_previous_hash) <> 'genesis'
+       AND NOT EXISTS (
+           SELECT 1
+           FROM companion_internal.ledger_entries AS entries
+           WHERE entries.entry_hash = btrim(p_previous_hash)
+       ) THEN
+        RAISE EXCEPTION 'previous_hash does not reference an existing ledger entry';
+    END IF;
+
+    canonical_payload := concat_ws(
+        '|',
+        btrim(p_transfer_id),
+        btrim(p_debit_account),
+        btrim(p_credit_account),
+        p_amount_cents::text,
+        upper(btrim(p_currency)),
+        btrim(p_previous_hash)
+    );
+    computed_hash := encode(digest(canonical_payload, 'sha256'), 'hex');
+
+    INSERT INTO companion_internal.ledger_entries(
+        transfer_id,
+        debit_account,
+        credit_account,
+        amount_cents,
+        currency,
+        previous_hash,
+        entry_hash
+    )
+    VALUES (
+        btrim(p_transfer_id),
+        btrim(p_debit_account),
+        btrim(p_credit_account),
+        p_amount_cents,
+        upper(btrim(p_currency)),
+        btrim(p_previous_hash),
+        computed_hash
+    );
+
+    RETURN computed_hash;
+END;
+$$;
+
+CREATE FUNCTION companion_ledger_chain_valid()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+AS $$
+    WITH ordered AS (
+        SELECT
+            ledger_sequence,
+            previous_hash,
+            lag(entry_hash) OVER (ORDER BY ledger_sequence) AS expected_previous_hash
+        FROM companion_internal.ledger_entries
+    )
+    SELECT NOT EXISTS (
+        SELECT 1
+        FROM ordered
+        WHERE previous_hash <> COALESCE(expected_previous_hash, 'genesis')
+    )
+$$;
+
+CREATE FUNCTION companion_ledger_seal(
+    p_transfer_id text,
+    p_secret text,
+    p_algorithm text DEFAULT 'hmac-sha256'
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    entry companion_internal.ledger_entries%ROWTYPE;
+    hmac_type text;
+    computed_seal text;
+BEGIN
+    PERFORM companion_internal.require_visible_function('hmac', 'pgcrypto');
+
+    IF p_transfer_id IS NULL OR btrim(p_transfer_id) = '' THEN
+        RAISE EXCEPTION 'transfer_id must not be empty';
+    END IF;
+    IF p_secret IS NULL OR p_secret = '' THEN
+        RAISE EXCEPTION 'ledger seal secret must not be empty';
+    END IF;
+    IF lower(btrim(p_algorithm)) = 'hmac-sha256' THEN
+        hmac_type := 'sha256';
+    ELSIF lower(btrim(p_algorithm)) = 'hmac-sha512' THEN
+        hmac_type := 'sha512';
+    ELSE
+        RAISE EXCEPTION 'unsupported ledger HMAC algorithm: %', p_algorithm;
+    END IF;
+
+    SELECT *
+    INTO entry
+    FROM companion_internal.ledger_entries AS entries
+    WHERE entries.transfer_id = btrim(p_transfer_id);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'ledger transfer_id does not exist: %', p_transfer_id;
+    END IF;
+
+    computed_seal := encode(hmac(entry.entry_hash, p_secret, hmac_type), 'hex');
+    INSERT INTO companion_internal.ledger_seals(transfer_id, hmac_algorithm, seal)
+    VALUES (entry.transfer_id, lower(btrim(p_algorithm)), computed_seal);
+
+    RETURN computed_seal;
 END;
 $$;
 

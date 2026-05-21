@@ -542,6 +542,40 @@ for phrase in (
     if compact(phrase) not in compact(sec1_entry["body"]):
         fail(f"Sec1 production-ready boundary is missing: {phrase}")
 
+for feature_id, required_phrases in (
+    (
+        "Sec5",
+        (
+            "installable append-only ledger table",
+            "companion_internal.ledger_transfer",
+            "companion_ledger_chain_valid",
+            "rejects a transfer with a missing previous hash",
+            "append-only trigger",
+            "multi-party accounting workflows, external ledger backends, tenant workflow authorization, and migration/operator integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+    (
+        "Sec6",
+        (
+            "installable `companion_ledger_seal` function",
+            "companion_ledger_entries",
+            "append-only trigger",
+            "unsupported HMAC algorithms fail closed",
+            "external secret resolution, key rotation, hardware-backed signing, and privileged workflow integration remain alpha",
+            "ci/ai-blaise/sql-extension-smoke.sh",
+        ),
+    ),
+):
+    entry = entry_by_id.get(feature_id)
+    if entry is None:
+        fail(f"{feature_id} feature heading is required for ledger SQL runtime evidence")
+    if entry["status"].lower() not in PRODUCTION_STATUSES:
+        fail(f"{feature_id} must remain production-ready only for the narrow SQL ledger runtime")
+    for phrase in required_phrases:
+        if compact(phrase) not in compact(entry["body"]):
+            fail(f"{feature_id} production-ready boundary is missing: {phrase}")
+
 d2_entry = entry_by_id.get("D2")
 if d2_entry is None:
     fail("D2 feature heading is required for citusctl plan-id evidence")
@@ -1097,6 +1131,7 @@ for phrase in (
     "shared_preload_libraries=pg_stat_statements",
     "PostgreSQL init process complete",
     "CREATE EXTENSION pg_stat_statements;",
+    "CREATE EXTENSION pgcrypto;",
     "ai_blaise_pg_stat_statements_seed",
     "companion_pg_stat_statements_p95",
     "companion_pg_stat_local_activity",
@@ -1116,10 +1151,17 @@ for phrase in (
     "companion_current_tenant_id",
     "companion_require_tenant_id",
     "companion_tenant_id_matches",
+    "companion_internal.ledger_transfer",
+    "companion_ledger_chain_valid",
+    "companion_ledger_seal",
     "ALTER TABLE rls_smoke_orders ENABLE ROW LEVEL SECURITY",
     "CREATE POLICY rls_smoke_tenant_isolation",
     "SET ROLE ai_blaise_rls_smoke",
     "Sec1 RLS WITH CHECK allowed a cross-tenant insert",
+    "Sec5 ledger transfer did not return a sha256 entry hash",
+    "Sec5 ledger entries must reject mutation",
+    "Sec6 ledger seals must reject deletion",
+    "Sec6 ledger seal accepted an unsupported algorithm",
     "uid claim must not be empty",
     "companion_pg_stat_local_activity",
     "companion_idle_transactions('100 milliseconds'::interval)",
@@ -1134,8 +1176,16 @@ for phrase in (
     "CREATE FUNCTION companion_require_tenant_id",
     "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id text)",
     "CREATE FUNCTION companion_tenant_id_matches(row_tenant_id uuid)",
+    "CREATE TABLE IF NOT EXISTS companion_internal.ledger_entries",
+    "CREATE TABLE IF NOT EXISTS companion_internal.ledger_seals",
+    "CREATE FUNCTION companion_internal.ledger_transfer",
+    "CREATE FUNCTION companion_ledger_chain_valid",
+    "CREATE FUNCTION companion_ledger_seal",
+    "CREATE VIEW companion_ledger_entries",
     "'Auth2', 'tenant-aware claims', 'sql-runtime'",
     "'Sec1', 'RLS helpers', 'sql-runtime'",
+    "'Sec5', 'immutable ledger', 'sql-runtime'",
+    "'Sec6', 'ledger HMAC tamper evidence', 'sql-runtime'",
 ):
     if phrase not in sources:
         fail(f"ai_blaise_citus SQL extension is missing Auth2/Sec1 runtime marker: {phrase}")
