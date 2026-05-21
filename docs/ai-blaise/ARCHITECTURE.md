@@ -43,3 +43,27 @@ cohabitation proof for the integrated TS6 hook-chain source and the TS18
 installable bridge-state SQL. The broader TS1/TS2/TS3/TS4/TS5/TS12 distributed
 feature entries remain alpha until multi-worker fanout, rebalance, and
 operator reconciliation are implemented and measured end to end.
+
+## Architecture Decision Records
+
+Cross-cutting decisions are recorded under `docs/ai-blaise/ADR/`:
+
+- [`0001-fork-not-rewrite.md`](ADR/0001-fork-not-rewrite.md) — fork
+  `citusdata/citus` rather than rewriting.
+- [`0002-overlay-not-patch.md`](ADR/0002-overlay-not-patch.md) — new
+  code lives in non-overlapping overlay directories; only `patches/`
+  touches upstream files.
+- [`0003-pgcat-fork-not-greenfield.md`](ADR/0003-pgcat-fork-not-greenfield.md)
+  — `pool/` forks `perplexityai/pgcat` (MIT).
+- [`0004-pg_lake-fork-for-analytical.md`](ADR/0004-pg_lake-fork-for-analytical.md)
+  — `sidecar/analytical` forks `Snowflake-Labs/pg_lake` (Apache 2.0)
+  with a Rust DataFusion + DuckDB engine.
+- [`0005-rust-kube-rs-not-go.md`](ADR/0005-rust-kube-rs-not-go.md) —
+  the operator is Rust + `kube-rs`, joining the same Cargo workspace
+  as companion / sidecars / pool / tools.
+- [`0006-cnpg-substrate-not-bypass.md`](ADR/0006-cnpg-substrate-not-bypass.md)
+  — CloudNativePG manages Postgres lifecycle; our operator layers
+  Citus-specific topology on top.
+- [`0007-raft-per-shardgroup.md`](ADR/0007-raft-per-shardgroup.md) —
+  one `raft-rs` group per shard group for placement, lease, and
+  split/merge decisions.
