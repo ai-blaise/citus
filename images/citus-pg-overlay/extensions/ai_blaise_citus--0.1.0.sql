@@ -279,6 +279,67 @@ CREATE TABLE IF NOT EXISTS companion_internal.toolkit_aggregate_plans (
     UNIQUE (source_table, worker_view, coordinator_view, aggregate_kind)
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.schema_jobs (
+    job_name text PRIMARY KEY,
+    table_name text NOT NULL,
+    state text NOT NULL CHECK (
+        state IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled')
+    ),
+    lease_seconds integer NOT NULL CHECK (lease_seconds > 0),
+    lease_expires_at timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.schema_job_operations (
+    operation_id bigserial PRIMARY KEY,
+    job_name text NOT NULL
+        REFERENCES companion_internal.schema_jobs(job_name)
+        ON DELETE CASCADE,
+    operation_type text NOT NULL CHECK (
+        operation_type IN ('add_column', 'backfill', 'swap_column', 'drop_column')
+    ),
+    column_name text,
+    sql_type text,
+    statement text,
+    new_column_name text,
+    rendered_sql text NOT NULL,
+    recorded_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.tenant_moves (
+    move_id bigserial PRIMARY KEY,
+    tenant_name text NOT NULL,
+    source_worker text NOT NULL,
+    target_worker text NOT NULL,
+    region_affinity text,
+    status text NOT NULL CHECK (status IN ('queued', 'completed', 'canceled')),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (source_worker <> target_worker)
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.tenant_quotas (
+    tenant_name text PRIMARY KEY,
+    max_connections integer NOT NULL CHECK (max_connections > 0),
+    max_qps integer NOT NULL CHECK (max_qps > 0),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.tenant_archives (
+    archive_id bigserial PRIMARY KEY,
+    tenant_name text NOT NULL,
+    destination_uri text NOT NULL,
+    retention_days integer NOT NULL CHECK (retention_days > 0),
+    status text NOT NULL CHECK (status IN ('queued', 'completed', 'canceled')),
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.tenant_region_affinities (
+    tenant_name text PRIMARY KEY,
+    region_affinity text NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -331,12 +392,12 @@ AS $$
         ('Sec2', 'JWT verification UDF', 'sql-runtime'),
         ('S6', 'placement generation helpers', 'sql-runtime'),
         ('S13', 'range routing helpers', 'sql-runtime'),
-        ('C10', 'online schema job state machine', 'runtime-contract'),
-        ('M2', 'gh-ost-style online DDL', 'runtime-contract'),
-        ('S14', 'tenant migration online', 'runtime-contract'),
-        ('TO3', 'tenant migration online', 'runtime-contract'),
-        ('TO4', 'tenant archive', 'runtime-contract'),
-        ('TO5', 'tenant region affinity', 'runtime-contract'),
+        ('C10', 'online schema job state machine', 'sql-runtime'),
+        ('M2', 'gh-ost-style online DDL', 'sql-runtime'),
+        ('S14', 'tenant migration online', 'sql-runtime'),
+        ('TO3', 'tenant migration online', 'sql-runtime'),
+        ('TO4', 'tenant archive', 'sql-runtime'),
+        ('TO5', 'tenant region affinity', 'sql-runtime'),
         ('D4', 'citus-lsp metadata views', 'sql-plan'),
         ('M5', 'LSP migration quick-fix metadata', 'sql-plan'),
         ('D7', 'Helm one-line install', 'ops-contract'),
@@ -1083,6 +1144,441 @@ BEGIN
         created_at = now();
 
     RETURN worker_sql || E'\n' || coordinator_sql;
+END;
+$$;
+
+-- FEATURE: C10
+-- FEATURE: M2
+CREATE VIEW companion_schema_jobs AS
+SELECT
+    job_name,
+    table_name,
+    state,
+    lease_seconds,
+    lease_expires_at,
+    created_at,
+    updated_at
+FROM companion_internal.schema_jobs;
+
+CREATE VIEW companion_schema_job_operations AS
+SELECT
+    operation_id,
+    job_name,
+    operation_type,
+    column_name,
+    sql_type,
+    statement,
+    new_column_name,
+    rendered_sql,
+    recorded_at
+FROM companion_internal.schema_job_operations;
+
+CREATE FUNCTION companion_internal.schema_job_start(
+    p_job_name text,
+    p_table_name text,
+    p_lease_seconds integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    table_regclass regclass;
+BEGIN
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+    IF p_table_name IS NULL OR btrim(p_table_name) = '' THEN
+        RAISE EXCEPTION 'table_name must not be empty';
+    END IF;
+    table_regclass := p_table_name::regclass;
+    IF p_lease_seconds IS NULL OR p_lease_seconds <= 0 THEN
+        RAISE EXCEPTION 'lease_seconds must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.schema_jobs(
+        job_name,
+        table_name,
+        state,
+        lease_seconds,
+        lease_expires_at
+    )
+    VALUES (
+        btrim(p_job_name),
+        table_regclass::text,
+        'delete_only',
+        p_lease_seconds,
+        now() + make_interval(secs => p_lease_seconds)
+    )
+    ON CONFLICT (job_name) DO UPDATE
+    SET table_name = EXCLUDED.table_name,
+        state = 'delete_only',
+        lease_seconds = EXCLUDED.lease_seconds,
+        lease_expires_at = EXCLUDED.lease_expires_at,
+        updated_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_add_operation(
+    p_job_name text,
+    p_operation_type text,
+    p_column_name text DEFAULT NULL,
+    p_sql_type text DEFAULT NULL,
+    p_statement text DEFAULT NULL,
+    p_new_column_name text DEFAULT NULL
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    job_table text;
+    normalized_operation text;
+    rendered_sql text;
+BEGIN
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+    SELECT table_name
+    INTO job_table
+    FROM companion_internal.schema_jobs
+    WHERE job_name = btrim(p_job_name)
+      AND state <> 'canceled';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+    normalized_operation := lower(btrim(p_operation_type));
+    IF normalized_operation NOT IN ('add_column', 'backfill', 'swap_column', 'drop_column') THEN
+        RAISE EXCEPTION 'unsupported schema job operation: %', p_operation_type;
+    END IF;
+
+    IF normalized_operation = 'add_column' THEN
+        IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+            RAISE EXCEPTION 'column_name must not be empty';
+        END IF;
+        IF p_sql_type IS NULL OR btrim(p_sql_type) = '' THEN
+            RAISE EXCEPTION 'sql_type must not be empty';
+        END IF;
+        rendered_sql := format(
+            'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I %s;',
+            job_table,
+            btrim(p_column_name),
+            btrim(p_sql_type)
+        );
+    ELSIF normalized_operation = 'backfill' THEN
+        IF p_statement IS NULL OR btrim(p_statement) = '' THEN
+            RAISE EXCEPTION 'statement must not be empty';
+        END IF;
+        rendered_sql := btrim(p_statement);
+    ELSIF normalized_operation = 'swap_column' THEN
+        IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+            RAISE EXCEPTION 'column_name must not be empty';
+        END IF;
+        IF p_new_column_name IS NULL OR btrim(p_new_column_name) = '' THEN
+            RAISE EXCEPTION 'new_column_name must not be empty';
+        END IF;
+        rendered_sql := format(
+            'ALTER TABLE %s RENAME COLUMN %I TO %I;',
+            job_table,
+            btrim(p_column_name),
+            btrim(p_new_column_name)
+        );
+    ELSE
+        IF p_column_name IS NULL OR btrim(p_column_name) = '' THEN
+            RAISE EXCEPTION 'column_name must not be empty';
+        END IF;
+        rendered_sql := format(
+            'ALTER TABLE %s DROP COLUMN IF EXISTS %I;',
+            job_table,
+            btrim(p_column_name)
+        );
+    END IF;
+
+    INSERT INTO companion_internal.schema_job_operations(
+        job_name,
+        operation_type,
+        column_name,
+        sql_type,
+        statement,
+        new_column_name,
+        rendered_sql
+    )
+    VALUES (
+        btrim(p_job_name),
+        normalized_operation,
+        NULLIF(btrim(COALESCE(p_column_name, '')), ''),
+        NULLIF(btrim(COALESCE(p_sql_type, '')), ''),
+        NULLIF(btrim(COALESCE(p_statement, '')), ''),
+        NULLIF(btrim(COALESCE(p_new_column_name, '')), ''),
+        rendered_sql
+    );
+
+    RETURN rendered_sql;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_advance(
+    p_job_name text,
+    p_next_state text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    current_state text;
+    normalized_next text;
+BEGIN
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+    normalized_next := lower(btrim(p_next_state));
+    IF normalized_next NOT IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled') THEN
+        RAISE EXCEPTION 'unsupported schema job state: %', p_next_state;
+    END IF;
+
+    SELECT state
+    INTO current_state
+    FROM companion_internal.schema_jobs
+    WHERE job_name = btrim(p_job_name);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+
+    IF NOT (
+        (current_state = 'delete_only' AND normalized_next = 'write_only')
+        OR (current_state = 'write_only' AND normalized_next = 'backfill')
+        OR (current_state = 'backfill' AND normalized_next = 'public')
+        OR normalized_next IN ('paused', 'canceled')
+    ) THEN
+        RAISE EXCEPTION 'invalid schema job transition: % -> %', current_state, normalized_next;
+    END IF;
+
+    UPDATE companion_internal.schema_jobs
+    SET state = normalized_next,
+        updated_at = now()
+    WHERE job_name = btrim(p_job_name);
+
+    RETURN normalized_next;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_render_plan(p_job_name text)
+RETURNS text
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    rendered_plan text;
+BEGIN
+    SELECT string_agg(rendered_sql, E'\n' ORDER BY operation_id)
+    INTO rendered_plan
+    FROM companion_internal.schema_job_operations
+    WHERE job_name = btrim(p_job_name);
+
+    IF rendered_plan IS NULL THEN
+        RAISE EXCEPTION 'schema job has no operations: %', p_job_name;
+    END IF;
+
+    RETURN rendered_plan;
+END;
+$$;
+
+-- FEATURE: S14
+-- FEATURE: TO3
+-- FEATURE: TO4
+-- FEATURE: TO5
+CREATE VIEW companion_tenant_moves AS
+SELECT
+    move_id,
+    tenant_name,
+    source_worker,
+    target_worker,
+    region_affinity,
+    status,
+    created_at
+FROM companion_internal.tenant_moves;
+
+CREATE VIEW companion_tenant_quotas AS
+SELECT
+    tenant_name,
+    max_connections,
+    max_qps,
+    updated_at
+FROM companion_internal.tenant_quotas;
+
+CREATE VIEW companion_tenant_archives AS
+SELECT
+    archive_id,
+    tenant_name,
+    destination_uri,
+    retention_days,
+    status,
+    created_at
+FROM companion_internal.tenant_archives;
+
+CREATE VIEW companion_tenant_region_affinities AS
+SELECT
+    tenant_name,
+    region_affinity,
+    updated_at
+FROM companion_internal.tenant_region_affinities;
+
+CREATE FUNCTION companion_internal.plan_tenant_move(
+    p_tenant_name text,
+    p_source_worker text,
+    p_target_worker text,
+    p_region_affinity text DEFAULT NULL
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    move_id bigint;
+BEGIN
+    IF p_tenant_name IS NULL OR btrim(p_tenant_name) = '' THEN
+        RAISE EXCEPTION 'tenant_name must not be empty';
+    END IF;
+    IF p_source_worker IS NULL OR btrim(p_source_worker) = '' THEN
+        RAISE EXCEPTION 'source_worker must not be empty';
+    END IF;
+    IF p_target_worker IS NULL OR btrim(p_target_worker) = '' THEN
+        RAISE EXCEPTION 'target_worker must not be empty';
+    END IF;
+    IF btrim(p_source_worker) = btrim(p_target_worker) THEN
+        RAISE EXCEPTION 'source_worker and target_worker must differ';
+    END IF;
+    IF p_region_affinity IS NOT NULL AND btrim(p_region_affinity) = '' THEN
+        RAISE EXCEPTION 'region_affinity must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.tenant_moves(
+        tenant_name,
+        source_worker,
+        target_worker,
+        region_affinity,
+        status
+    )
+    VALUES (
+        btrim(p_tenant_name),
+        btrim(p_source_worker),
+        btrim(p_target_worker),
+        NULLIF(btrim(COALESCE(p_region_affinity, '')), ''),
+        'queued'
+    )
+    RETURNING companion_internal.tenant_moves.move_id
+    INTO move_id;
+
+    RETURN move_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.set_tenant_quota(
+    p_tenant_name text,
+    p_max_connections integer,
+    p_max_qps integer
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_tenant_name IS NULL OR btrim(p_tenant_name) = '' THEN
+        RAISE EXCEPTION 'tenant_name must not be empty';
+    END IF;
+    IF p_max_connections IS NULL OR p_max_connections <= 0 THEN
+        RAISE EXCEPTION 'max_connections must be greater than zero';
+    END IF;
+    IF p_max_qps IS NULL OR p_max_qps <= 0 THEN
+        RAISE EXCEPTION 'max_qps must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.tenant_quotas(
+        tenant_name,
+        max_connections,
+        max_qps
+    )
+    VALUES (
+        btrim(p_tenant_name),
+        p_max_connections,
+        p_max_qps
+    )
+    ON CONFLICT (tenant_name) DO UPDATE
+    SET max_connections = EXCLUDED.max_connections,
+        max_qps = EXCLUDED.max_qps,
+        updated_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.plan_tenant_archive(
+    p_tenant_name text,
+    p_destination_uri text,
+    p_retention_days integer
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    archive_id bigint;
+BEGIN
+    IF p_tenant_name IS NULL OR btrim(p_tenant_name) = '' THEN
+        RAISE EXCEPTION 'tenant_name must not be empty';
+    END IF;
+    IF p_destination_uri IS NULL OR btrim(p_destination_uri) = '' THEN
+        RAISE EXCEPTION 'destination_uri must not be empty';
+    END IF;
+    IF p_retention_days IS NULL OR p_retention_days <= 0 THEN
+        RAISE EXCEPTION 'retention_days must be greater than zero';
+    END IF;
+
+    INSERT INTO companion_internal.tenant_archives(
+        tenant_name,
+        destination_uri,
+        retention_days,
+        status
+    )
+    VALUES (
+        btrim(p_tenant_name),
+        btrim(p_destination_uri),
+        p_retention_days,
+        'queued'
+    )
+    RETURNING companion_internal.tenant_archives.archive_id
+    INTO archive_id;
+
+    RETURN archive_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.set_tenant_region_affinity(
+    p_tenant_name text,
+    p_region_affinity text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_tenant_name IS NULL OR btrim(p_tenant_name) = '' THEN
+        RAISE EXCEPTION 'tenant_name must not be empty';
+    END IF;
+    IF p_region_affinity IS NULL OR btrim(p_region_affinity) = '' THEN
+        RAISE EXCEPTION 'region_affinity must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.tenant_region_affinities(
+        tenant_name,
+        region_affinity
+    )
+    VALUES (
+        btrim(p_tenant_name),
+        btrim(p_region_affinity)
+    )
+    ON CONFLICT (tenant_name) DO UPDATE
+    SET region_affinity = EXCLUDED.region_affinity,
+        updated_at = now();
 END;
 $$;
 

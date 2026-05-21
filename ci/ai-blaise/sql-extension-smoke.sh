@@ -149,6 +149,12 @@ CREATE TABLE toolkit_smoke_metrics (
 
 CREATE SCHEMA doctor_smoke;
 
+CREATE TABLE schema_tenant_smoke_accounts (
+  account_id bigint PRIMARY KEY,
+  tenant_id text NOT NULL,
+  balance_cents bigint NOT NULL
+);
+
 CREATE FUNCTION create_hypertable(
   table_name regclass,
   time_column text,
@@ -266,6 +272,9 @@ DECLARE
   doctor_violations jsonb;
   toolkit_sql text;
   toolkit_feature_count integer;
+  schema_plan text;
+  tenant_move_id bigint;
+  tenant_archive_id bigint;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -302,10 +311,11 @@ BEGIN
       'Search2', 'Search3', 'Search9', 'G2', 'G3', 'API4',
       'JS2', 'M13', 'Geo2', 'Geo3',
       'A1', 'TS9', 'M7', 'T8', 'L9', 'TS13', 'TS14', 'TS15', 'TS16', 'TS17',
+      'C10', 'M2', 'S14', 'TO3', 'TO4', 'TO5',
       'O1', 'O2', 'O3', 'R4'
     )
       AND status = 'sql-runtime'
-  ) <> 37 THEN
+  ) <> 43 THEN
     RAISE EXCEPTION 'companion_feature_status must mark custom SQL runtime features as sql-runtime';
   END IF;
 
@@ -581,6 +591,167 @@ BEGIN
   EXCEPTION
     WHEN raise_exception THEN
       IF SQLERRM <> 'unsupported toolkit aggregate: unknown_agg' THEN
+        RAISE;
+      END IF;
+  END;
+
+  PERFORM companion_internal.schema_job_start(
+    'accounts-online-balance',
+    'schema_tenant_smoke_accounts',
+    60
+  );
+  schema_plan := companion_internal.schema_job_add_operation(
+    'accounts-online-balance',
+    'add_column',
+    'balance_cents_shadow',
+    'bigint'
+  );
+  IF schema_plan <> 'ALTER TABLE schema_tenant_smoke_accounts ADD COLUMN IF NOT EXISTS balance_cents_shadow bigint;' THEN
+    RAISE EXCEPTION 'C10/M2 add-column operation rendered unexpected SQL: %', schema_plan;
+  END IF;
+  PERFORM companion_internal.schema_job_add_operation(
+    'accounts-online-balance',
+    'backfill',
+    NULL,
+    NULL,
+    'UPDATE schema_tenant_smoke_accounts SET balance_cents_shadow = balance_cents'
+  );
+  IF companion_internal.schema_job_advance('accounts-online-balance', 'write_only') <> 'write_only' THEN
+    RAISE EXCEPTION 'C10 schema job did not advance to write_only';
+  END IF;
+  PERFORM companion_internal.schema_job_advance('accounts-online-balance', 'backfill');
+  PERFORM companion_internal.schema_job_advance('accounts-online-balance', 'public');
+  schema_plan := companion_internal.schema_job_render_plan('accounts-online-balance');
+  IF schema_plan NOT LIKE '%ADD COLUMN IF NOT EXISTS balance_cents_shadow bigint%'
+     OR schema_plan NOT LIKE '%UPDATE schema_tenant_smoke_accounts SET balance_cents_shadow = balance_cents%' THEN
+    RAISE EXCEPTION 'M2 schema job render plan missed expected operations: %', schema_plan;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_schema_jobs
+    WHERE job_name = 'accounts-online-balance'
+      AND state = 'public'
+  ) THEN
+    RAISE EXCEPTION 'C10 schema job final state was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.schema_job_advance(
+      'accounts-online-balance',
+      'delete_only'
+    );
+    RAISE EXCEPTION 'C10 accepted an invalid state transition';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'invalid schema job transition: public -> delete_only' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.schema_job_start(
+      'bad-schema-job',
+      'schema_tenant_smoke_accounts',
+      0
+    );
+    RAISE EXCEPTION 'C10 accepted a zero lease';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'lease_seconds must be greater than zero' THEN
+        RAISE;
+      END IF;
+  END;
+
+  tenant_move_id := companion_internal.plan_tenant_move(
+    'tenant-a',
+    'worker-1',
+    'worker-2',
+    'us-east1'
+  );
+  IF tenant_move_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM companion_tenant_moves
+    WHERE move_id = tenant_move_id
+      AND tenant_name = 'tenant-a'
+      AND source_worker = 'worker-1'
+      AND target_worker = 'worker-2'
+      AND region_affinity = 'us-east1'
+      AND status = 'queued'
+  ) THEN
+    RAISE EXCEPTION 'S14/TO3 tenant move was not visible';
+  END IF;
+  PERFORM companion_internal.set_tenant_quota('tenant-a', 25, 500);
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_tenant_quotas
+    WHERE tenant_name = 'tenant-a'
+      AND max_connections = 25
+      AND max_qps = 500
+  ) THEN
+    RAISE EXCEPTION 'S14 tenant quota was not visible';
+  END IF;
+  tenant_archive_id := companion_internal.plan_tenant_archive(
+    'tenant-a',
+    's3://archives/tenant-a',
+    90
+  );
+  IF tenant_archive_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM companion_tenant_archives
+    WHERE archive_id = tenant_archive_id
+      AND tenant_name = 'tenant-a'
+      AND retention_days = 90
+  ) THEN
+    RAISE EXCEPTION 'TO4 tenant archive was not visible';
+  END IF;
+  PERFORM companion_internal.set_tenant_region_affinity('tenant-a', 'us-east1');
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_tenant_region_affinities
+    WHERE tenant_name = 'tenant-a'
+      AND region_affinity = 'us-east1'
+  ) THEN
+    RAISE EXCEPTION 'TO5 tenant region affinity was not visible';
+  END IF;
+  BEGIN
+    PERFORM companion_internal.plan_tenant_move(
+      'tenant-b',
+      'worker-1',
+      'worker-1'
+    );
+    RAISE EXCEPTION 'TO3 accepted a same-worker tenant move';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'source_worker and target_worker must differ' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.set_tenant_quota('tenant-a', 0, 500);
+    RAISE EXCEPTION 'S14 accepted a zero connection quota';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'max_connections must be greater than zero' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.plan_tenant_archive(
+      'tenant-a',
+      's3://archives/tenant-a',
+      0
+    );
+    RAISE EXCEPTION 'TO4 accepted zero retention';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'retention_days must be greater than zero' THEN
+        RAISE;
+      END IF;
+  END;
+  BEGIN
+    PERFORM companion_internal.set_tenant_region_affinity('tenant-a', '');
+    RAISE EXCEPTION 'TO5 accepted empty region affinity';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'region_affinity must not be empty' THEN
         RAISE;
       END IF;
   END;

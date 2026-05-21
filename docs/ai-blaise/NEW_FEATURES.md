@@ -1357,13 +1357,22 @@ alpha.
 ### S14: Tenant Migration Online
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant move plans between workers with optional region
-affinity preservation.
+**Summary**: Provides installable SQL tenant move and quota helper state for
+online tenant migration planning.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.plan_tenant_move(...)`
+records `companion_tenant_moves`, `companion_internal.set_tenant_quota(...)`
+records `companion_tenant_quotas`, and verifies same-worker moves and zero
+connection quotas fail closed. Actual shard movement, pool draining, tenant
+traffic migration, copy/backfill workers, and operator reconciliation remain
+alpha.
 
 **Motivation**: Tenant moves must be represented as validated plans before the
 operator and companion coordinate online migration.
@@ -1375,7 +1384,10 @@ tenant-level online migration plan.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S14` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: S14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Resource Efficiency
 
@@ -1697,13 +1709,23 @@ that can coordinate validation, retries, and conflict handling.
 ### C10: Online DDL State Machine
 
 **Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds the schema-job state machine for `DELETE_ONLY`,
-`WRITE_ONLY`, `BACKFILL`, and `PUBLIC` transitions.
+**Summary**: Provides an installable SQL schema-job state machine for
+`delete_only`, `write_only`, `backfill`, and `public` transitions with leased
+job records.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.schema_job_start(...)`
+records `companion_schema_jobs`, `companion_internal.schema_job_advance(...)`
+enforces valid forward transitions, and verifies invalid state transitions and
+zero leases fail closed. Actual DDL execution workers, dual-write triggers,
+backfill scheduling, lock orchestration, rollback, and operator reconciliation
+remain alpha.
 
 **Motivation**: Online schema changes need a validated state model before the
 operator and schema-job sidecar can coordinate DDL safely.
@@ -1716,7 +1738,10 @@ state machine.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: C10` in `sidecar/schema_job/src/lib.rs`
+- SQL runtime: `FEATURE: C10` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### C1: CDC Sidecar
 
@@ -1879,13 +1904,23 @@ ship a pgroll-style expand/contract migration layer.
 ### M2: gh-ost-Style Online DDL
 
 **Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the schema-job operation/state model used by trigger and
-backfill based online DDL.
+**Summary**: Provides installable SQL online-DDL operation rendering for
+add-column, backfill, swap-column, and drop-column schema job steps.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.schema_job_add_operation(...)` records
+`companion_schema_job_operations`, renders add-column and backfill SQL, and
+`companion_internal.schema_job_render_plan(...)` returns the ordered operation
+plan. Actual online DDL execution, trigger dual-writes, backfill workers,
+cutover validation, rollback, and distributed-table orchestration remain
+alpha.
 
 **Motivation**: Online DDL needs explicit state transitions and lease
 validation before a sidecar or companion UDF can execute it.
@@ -1898,7 +1933,10 @@ gh-ost-style online DDL state machinery.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M2` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: M2` in `sidecar/schema_job/src/lib.rs`
+- SQL runtime: `FEATURE: M2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M3: Migration CRD
 
@@ -2380,13 +2418,20 @@ runtime admission control is wired in.
 ### TO3: Tenant Migration Online
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant move plans that carry source worker, target
-worker, and optional region affinity.
+**Summary**: Provides installable SQL tenant move planning with source worker,
+target worker, optional region affinity, and queued move state.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.plan_tenant_move(...)`
+records `companion_tenant_moves` and verifies same-worker tenant moves fail
+closed. Actual shard rebalancing, tenant traffic draining, data copy,
+cutover, and operator reconciliation remain alpha.
 
 **Motivation**: Tenant movement needs a typed plan that can be validated before
 rebalance, pool draining, and schema routing are coordinated.
@@ -2398,18 +2443,29 @@ tenant-level online move contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO3` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TO4: Tenant Archive
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant archive plans with destination URI and retention
-policy.
+**Summary**: Provides installable SQL tenant archive planning with destination
+URI, retention days, and queued archive state.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.plan_tenant_archive(...)` records
+`companion_tenant_archives` and verifies zero retention fails closed. Actual
+archive export, object-store writes, delete workflows, legal hold, and
+operator reconciliation remain alpha.
 
 **Motivation**: Tenant offboarding needs an auditable archive operation before
 data removal can be automated.
@@ -2421,18 +2477,29 @@ automation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO4` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TO5: Tenant Region Affinity
 
 **Overlay**: `operator/src/crds/tenant.rs`, `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records the preferred region for a tenant so placement and
-migration reconcilers can keep tenant data close to its users.
+**Summary**: Provides installable SQL tenant region-affinity metadata helpers
+for placement and migration planning.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.set_tenant_region_affinity(...)` records
+`companion_tenant_region_affinities` and verifies empty region affinity fails
+closed. Actual placement enforcement, shard movement, regional failover
+policy, scheduler integration, and operator reconciliation remain alpha.
 
 **Motivation**: Region affinity needs to be part of tenant intent, not hidden
 inside one-off placement annotations.
@@ -2444,7 +2511,11 @@ inside one-off placement annotations.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
 - In-source: `FEATURE: TO5` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO5` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Search
 
