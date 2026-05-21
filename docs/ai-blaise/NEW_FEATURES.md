@@ -3604,6 +3604,44 @@ queries.
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### D8: Infrastructure Deploy Wrapper
+
+**Overlay**: `scripts/citus-scale/deploy.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides the production-safe human deploy wrapper for rendering
+and installing the Helm overlay. The wrapper defaults to `values-prod.yaml`,
+accepts release image tags and immutable operator/pool digests, refuses
+non-production installs unless `ALLOW_ALPHA_INSTALL=1` is set explicitly, and
+requires `ALLOW_MUTABLE_IMAGE_TAGS=1` before production rendering can bypass
+digest pinning for local smoke images.
+
+**Motivation**: Operators need one deploy entrypoint whose default behavior
+matches GitOps and production values, so a direct install cannot accidentally
+deploy the exhaustive alpha profile.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy
+wrapper or its production-profile guardrails.
+
+Production evidence: `ci/ai-blaise/kind-production-smoke.sh` runs
+`scripts/citus-scale/deploy.sh` with `DEPLOY_PROFILE=prod` and `MODE=install`
+against a live kind cluster, verifies the resulting `values-prod.yaml` release
+has only operator/pool/PostgreSQL workloads, runs live SQL and pool admin
+traffic through the installed release, and proves the wrapper install path is
+part of `make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
+statically rejects regressions that remove the production default,
+digest-inputs, mutable-tag escape hatch, or non-production install refusal.
+
+**References**:
+
+- In-source: `FEATURE: D8` in `scripts/citus-scale/deploy.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
 ### D13: Production Runtime Image Matrix
 
 **Overlay**: `images/rust-runtime`, `scripts/citus-scale`
@@ -4099,7 +4137,6 @@ run-operations-canonical`, depending on whether the row is backed by
 | C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` |
 | C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` |
 | D7 | Helm one-line install | `companion/src/ops_contracts.rs` and `deploy/k8s/helm/citus-overlay` | alpha | Vanilla Citus does not ship this overlay chart. | `FEATURE: D7` |
-| D8 | Infrastructure deploy wrapper | `companion/src/ops_contracts.rs` and `scripts/citus-scale/deploy.sh` | alpha | Vanilla Citus does not ship the ai-blaise deploy wrapper. | `FEATURE: D8` |
 | D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` |
 | D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` |
 | D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |
