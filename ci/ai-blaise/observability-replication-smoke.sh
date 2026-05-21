@@ -48,6 +48,21 @@ docker run \
   -c max_replication_slots=5 \
   -c listen_addresses='*' >/dev/null
 
+primary_init_complete=0
+for _ in $(seq 1 120); do
+  if docker logs "${primary}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    primary_init_complete=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${primary_init_complete}" != "1" ]]; then
+  docker logs "${primary}" >&2 || true
+  echo "primary postgres container did not finish init scripts" >&2
+  exit 1
+fi
+
 primary_ready=0
 for _ in $(seq 1 90); do
   if docker exec "${primary}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then

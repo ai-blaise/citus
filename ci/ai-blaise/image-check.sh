@@ -249,8 +249,13 @@ grep -Fq "CREATE VIEW companion_timescale_bridge_state" "${image_dir}/extensions
 grep -Fq "CREATE VIEW companion_pg_stat_statements_p95" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST" "${pool_proxy_smoke}"
+grep -Fq "ai_blaise_citus_pool_rejected_connections_total" "${pool_proxy_smoke}"
+grep -Fq "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" "${pool_proxy_smoke}"
+grep -Fq "PostgreSQL init process complete" "${pool_proxy_smoke}"
 grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PostgreSQL init process complete" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh
@@ -274,6 +279,7 @@ grep -Fq "_timescaledb_catalog.hypertable" "${timescale_bridge_smoke}"
 grep -Fq "companion_timescale_bridge_state" "${timescale_bridge_smoke}"
 grep -Fq "wal_level=replica" "${observability_replication_smoke}"
 grep -Fq "pg_basebackup" "${observability_replication_smoke}"
+grep -Fq "PostgreSQL init process complete" "${observability_replication_smoke}"
 grep -Fq "pg_is_in_recovery()" "${observability_replication_smoke}"
 grep -Fq "companion_pg_stat_local_activity" "${observability_replication_smoke}"
 grep -Fq "companion_pg_stat_distributed" "${observability_replication_smoke}"

@@ -28,7 +28,10 @@ cluster` and is executed by the kind production smoke as a Kubernetes Job. The
 operator and sidecars expose shared `/healthz`, `/readyz`, and `/metrics`
 endpoints. The pool exposes PostgreSQL traffic on its `postgres` port and admin
 probes on its separate `admin` port; its readiness probe checks that
-`pool.upstream.host:pool.upstream.port` accepts TCP connections.
+`pool.upstream.host:pool.upstream.port` accepts TCP connections. The pool
+PostgreSQL data port enforces `pool.networkPolicy.cidrAllowlist` in the live
+proxy through `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST`, and the chart renders a
+matching NetworkPolicy for clusters with NetworkPolicy-capable CNI support.
 Release image builds set `PUSH=true` and write
 `artifacts/ai-blaise-image-digests.tsv`; production Helm values consume the
 operator and pool `sha256:` digests from that manifest.
@@ -40,11 +43,13 @@ same sidecar names so environment overlays cannot silently drop a daemon from
 the install path. `ci/ai-blaise/deploy-check.sh` enforces that list.
 `ci/ai-blaise/pool-proxy-smoke.sh` verifies the pool data port by running a
 real PostgreSQL query through `serve`, while CI requires Docker for that live
-traffic gate.
+traffic gate. The smoke also proves CIDR-denied SQL traffic is rejected and
+reported through pool metrics.
 `ci/ai-blaise/kind-production-smoke.sh` builds the real Rust image matrix,
 loads it into kind, installs the Helm chart with a real PostgreSQL upstream,
-verifies SQL plus admin metrics through the pool service, and executes the
-built `citusctl` image. It now installs both the exhaustive image-matrix chart
+verifies SQL plus admin metrics through the pool service, proves the pool CIDR
+deny path with live Kubernetes traffic, and executes the built `citusctl`
+image. It now installs both the exhaustive image-matrix chart
 profile and the production
 `values-prod.yaml` profile, where alpha sidecars and tools remain disabled.
 The Argo application targets the `main` release branch, uses

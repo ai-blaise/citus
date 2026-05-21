@@ -3022,6 +3022,51 @@ can be isolated reliably.
 - In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
+### Sec13: Pool CIDR Access Control
+
+**Overlay**: `pool/src/proxy.rs`, `deploy/k8s/helm/citus-overlay`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Enforces a comma-separated client CIDR allowlist on the pool
+PostgreSQL data port through `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST`, renders
+that allowlist from Helm values, emits rejected-connection metrics, and renders
+a matching Kubernetes `NetworkPolicy` for clusters with NetworkPolicy-capable
+CNI enforcement.
+
+**Motivation**: Production pool deployments need a fail-closed data-plane
+boundary so accidental Service exposure cannot silently accept traffic outside
+the intended client networks.
+
+**Citus comparison**: Vanilla Citus does not ship an external pool with
+application-level CIDR enforcement or a matching overlay NetworkPolicy.
+
+Production evidence: the pool unit tests verify CIDR parsing, allow decisions,
+invalid-prefix rejection, and pre-upstream rejection for denied clients.
+`ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool against `postgres:17`,
+proves SQL traffic from `127.0.0.0/8` is allowed, restarts with
+`192.0.2.0/24`, proves the same client is denied, and requires
+`ai_blaise_citus_pool_rejected_connections_total` to record the rejection.
+`ci/ai-blaise/kind-production-smoke.sh` renders the Helm allowlist into the
+live pool deployment, proves allowed SQL traffic through the Service, upgrades
+the release to a deny-only CIDR, proves SQL traffic is blocked in Kubernetes,
+and verifies rejected-connection metrics from live pool pods. The Helm deploy
+contract also renders `pool-networkpolicy.yaml` for the same allowlist.
+
+**References**:
+
+- In-source: `FEATURE: Sec13` in `pool/src/proxy.rs`
+- Helm: `FEATURE: Sec13` in
+  `deploy/k8s/helm/citus-overlay/templates/pool-networkpolicy.yaml`
+- Executable: `cargo test -p ai_blaise_citus_pool`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
 ### Auth2: Tenant-Aware Claims
 
 **Overlay**: `companion/src/auth.rs`, `sidecar/auth`
@@ -4104,7 +4149,6 @@ run-operations-canonical`, depending on whether the row is backed by
 | Sec9 | SBOM and cosign attestation | `companion/src/ops_contracts.rs` and release gates | alpha | Vanilla Citus does not require ai-blaise release attestations. | `FEATURE: Sec9` |
 | Sec10 | pg_safeupdate guard | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_safeupdate policy. | `FEATURE: Sec10` |
 | Sec11 | CDC anonymization extension | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle anonymization policy. | `FEATURE: Sec11` |
-| Sec13 | CIDR access control | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define pool CIDR policy. | `FEATURE: Sec13` |
 | Sec14 | pgcrypto bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not document pgcrypto as overlay policy. | `FEATURE: Sec14` |
 | Sec15 | Encryption-at-rest with CMK | `companion/src/extension_catalog.rs` and Helm values | alpha | Vanilla Citus does not prescribe pgsodium-backed CMK controls. | `FEATURE: Sec15` |
 | Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` |

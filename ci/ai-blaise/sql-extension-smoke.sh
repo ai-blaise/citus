@@ -38,9 +38,24 @@ docker run \
   -d "${postgres_image}" \
   -c shared_preload_libraries=pg_stat_statements >/dev/null
 
+init_complete=0
+for _ in $(seq 1 120); do
+  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    init_complete=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${init_complete}" != "1" ]]; then
+  docker logs "${container}" >&2 || true
+  echo "postgres container did not finish init scripts" >&2
+  exit 1
+fi
+
 ready=0
 for _ in $(seq 1 60); do
-  if docker exec "${container}" pg_isready -U postgres >/dev/null 2>&1; then
+  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
     ready=1
     break
   fi

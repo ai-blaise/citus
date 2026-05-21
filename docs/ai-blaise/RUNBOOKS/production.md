@@ -117,12 +117,18 @@ digests.
 
 ## Hardening Controls
 
-These runtime and security controls are alpha intent, not active production
+Most runtime and security controls are alpha intent, not active production
 enforcement, until the Helm chart renders the corresponding runtime settings,
-ExternalSecret, TLS, NetworkPolicy, and release-attestation objects and the VM
-smoke verifies them. Production values keep those alpha controls disabled by
-default; enabling any of them requires measured evidence and a feature status
-promotion.
+ExternalSecret, TLS, and release-attestation objects and the VM smoke verifies
+them. Production values keep those alpha controls disabled by default; enabling
+any of them requires measured evidence and a feature status promotion.
+
+`FEATURE: Sec13` pool CIDR access control is production-ready for the pool data
+port: Helm renders `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST` into the pool
+deployment, renders a matching NetworkPolicy when an allowlist is configured,
+the pool rejects PostgreSQL clients outside the allowlist before opening an
+upstream connection, and the Docker/kind smokes verify both allowed and denied
+SQL traffic plus `ai_blaise_citus_pool_rejected_connections_total`.
 
 - `FEATURE: Sec7`: API keys and cloud credentials will be referenced by
   external secret names only after ExternalSecret rendering is implemented and
@@ -135,9 +141,6 @@ promotion.
   tests are wired.
 - `FEATURE: Sec9`: SBOM and cosign attestation records remain release-intent
   gates until the release workflow publishes and verifies them for each image.
-- `FEATURE: Sec13`: pool CIDR allowlists remain alpha intent until the chart
-  renders NetworkPolicy objects and the VM smoke verifies blocked and allowed
-  traffic.
 - `FEATURE: T6`: PG18 `io_uring` remains alpha intent until the operand image
   and kernel/runtime compatibility smoke prove it on the target node class.
 - `FEATURE: T7`: pool protocol pipelining remains alpha intent until the pool
