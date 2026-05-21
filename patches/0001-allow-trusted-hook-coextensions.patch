@@ -21,8 +21,8 @@ coextensions are safe for production only after a real Citus+TimescaleDB
 cohabitation smoke records the exact image digest, command log, and CI or VM run
 in the production-readiness audit.
 ---
- src/backend/distributed/shared_library_init.c | 111 +++++++++++++++++++++----
- 1 file changed, 96 insertions(+), 15 deletions(-)
+ src/backend/distributed/shared_library_init.c | 115 +++++++++++++++++++++----
+ 1 file changed, 100 insertions(+), 15 deletions(-)
 
 diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
 --- a/src/backend/distributed/shared_library_init.c
@@ -73,10 +73,11 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
  
  	ResizeStackToMaximumDepth();
  
-@@ -973,6 +969,106 @@ CreateRequiredDirectories(void)
+@@ -973,6 +969,110 @@ CreateRequiredDirectories(void)
  	}
  }
  
++
 +/*
 + * Register GUCs that are needed before Citus performs its preload hook checks.
 + */
@@ -96,6 +97,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE,
 +		NULL, NULL, NULL);
 +}
++
 +
 +static void
 +ErrorIfHooksAlreadyRegistered(void)
@@ -127,6 +129,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +							"coextensions.")));
 +}
 +
++
 +static bool
 +CitusHasAlreadyRegisteredHooks(void)
 +{
@@ -134,6 +137,7 @@ diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distrib
 +		   ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
 +		   ExplainOneQuery_hook != NULL;
 +}
++
 +
 +static bool
 +CitusHasTrustedHookCoextensions(void)

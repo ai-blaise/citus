@@ -972,6 +972,7 @@ CreateRequiredDirectories(void)
 	}
 }
 
+
 /*
  * Register GUCs that are needed before Citus performs its preload hook checks.
  */
@@ -991,6 +992,7 @@ RegisterCitusPreloadConfigVariables(void)
 		GUC_LIST_INPUT | GUC_NOT_IN_SAMPLE,
 		NULL, NULL, NULL);
 }
+
 
 static void
 ErrorIfHooksAlreadyRegistered(void)
@@ -1022,6 +1024,7 @@ ErrorIfHooksAlreadyRegistered(void)
 							"coextensions.")));
 }
 
+
 static bool
 CitusHasAlreadyRegisteredHooks(void)
 {
@@ -1029,6 +1032,7 @@ CitusHasAlreadyRegisteredHooks(void)
 		   ExecutorStart_hook != NULL || ExecutorRun_hook != NULL ||
 		   ExplainOneQuery_hook != NULL;
 }
+
 
 static bool
 CitusHasTrustedHookCoextensions(void)
