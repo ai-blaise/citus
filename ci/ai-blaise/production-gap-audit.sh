@@ -47,6 +47,51 @@ SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SLOP_WORKFLOW = ROOT / ".github/workflows/ci-slop-scan.yml"
 CUSTOM_CI_WORKFLOWS = sorted((ROOT / ".github/workflows").glob("ci-*.yml"))
 MAKEFILE = ROOT / "Makefile.ai-blaise"
+CUSTOM_CONTRACT_READMES = [
+    ROOT / path
+    for path in (
+        "companion/README.md",
+        "benchmarks/README.md",
+        "operator/README.md",
+        "operator/CRDS.md",
+        "pool/README.md",
+        "sidecar/README.md",
+        "e2e/README.md",
+        "tests/e2e/README.md",
+        "tools/README.md",
+        "deploy/k8s/README.md",
+        "images/README.ai-blaise.md",
+        "images/citus-pg-overlay/README.md",
+        "images/operator/README.md",
+        "images/pool/README.md",
+        "images/tools/README.md",
+        "sidecar/analytical/README.md",
+        "sidecar/auth/README.md",
+        "sidecar/backup/README.md",
+        "sidecar/cdc/README.md",
+        "sidecar/coldtier/README.md",
+        "sidecar/edge_functions/README.md",
+        "sidecar/graphql/README.md",
+        "sidecar/hlc/README.md",
+        "sidecar/mcp/README.md",
+        "sidecar/postgrest/README.md",
+        "sidecar/raft/README.md",
+        "sidecar/realtime/README.md",
+        "sidecar/repack/README.md",
+        "sidecar/schema_job/README.md",
+        "sidecar/shared/README.md",
+        "sidecar/storage/README.md",
+        "sidecar/txn_status/README.md",
+        "sidecar/vectorizer/README.md",
+        "tools/citus-admin/README.md",
+        "tools/citus-lsp/README.md",
+        "tools/citus-mcp/README.md",
+        "tools/citus-schema-designer/README.md",
+        "tools/citus-tui/README.md",
+        "tools/citus-watch/README.md",
+        "tools/citusctl/README.md",
+    )
+]
 
 SOURCE_ROOTS = [
     "companion",
@@ -357,6 +402,23 @@ for phrase in (
 ):
     if phrase not in releasing_compact:
         fail(f"RELEASING.md must preserve guardrail phrase: {phrase}")
+
+for path in CUSTOM_CONTRACT_READMES:
+    readme_compact = compact(read(path))
+    for phrase in (
+        "production boundary",
+        "status: production-ready",
+        "surfaces listed here are alpha",
+        "deterministic canonical reports and local runtime models are ci",
+        "artifacts, not production evidence",
+        "production_readiness_audit.md",
+        "production-gap-audit.sh",
+    ):
+        if phrase not in readme_compact:
+            fail(f"{path} must preserve component production-boundary phrase: {phrase}")
+
+if "benchmark targets, not production evidence" not in compact(read(ROOT / "docs/ai-blaise/BENCHMARKS.md")):
+    fail("BENCHMARKS.md must preserve benchmark-target not-production-evidence guardrail")
 
 for phrase in (
     "not a blanket production certification",

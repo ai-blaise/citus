@@ -65,6 +65,11 @@ more production-ready than the artifacts justified.
     production release without stating that `FEATURE: MR9` is still alpha and
     that the checklist is not production evidence until real failover, PITR,
     backup-restore, sidecar, and conflict-policy drill logs exist.
+19. Component READMEs and custom catalog/benchmark/image overview docs
+    described deterministic contracts, benchmark targets, and runtime models
+    without a shared production boundary. A reader could therefore mistake
+    local canonical reports or empty benchmark scaffolding for production
+    evidence on alpha features.
 
 ## Corrections
 
@@ -151,6 +156,13 @@ more production-ready than the artifacts justified.
   artifact restore, sidecar readiness, and conflict-policy evidence is measured
   against real runtime infrastructure. The production gap audit machine-checks
   that guardrail.
+- Custom component READMEs, CRD/catalog docs, benchmark docs, and image
+  overview docs now carry a shared production boundary: unless a feature is
+  explicitly `Status: production-ready` in `docs/ai-blaise/NEW_FEATURES.md`,
+  listed surfaces are alpha contracts and deterministic canonical reports,
+  benchmark targets, or local runtime models are CI artifacts or planning
+  scaffolding, not production evidence. The production gap audit
+  machine-checks that every custom boundary doc preserves the wording.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
@@ -175,6 +187,8 @@ Rule 10 completion for this branch requires local and VM verification of:
   SQL/admin traffic.
 - Every production-promoted SQL runtime smoke must be part of the GitHub image
   workflow, `gate-close`, and static production gap audit guards.
+- Every custom boundary doc must keep the shared production boundary for
+  deterministic contracts, benchmark targets, and local runtime models.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -230,7 +244,9 @@ direction: the V2 acceptance model must not be cited as production evidence,
 release-gate constants must remain documented as non-production evidence, and
 the SQL/Kubernetes smoke guards must keep proving real stdin, live Postgres,
 live TimescaleDB behavior, live primary/standby replication behavior, live pool
-SQL traffic, and live pod probe traffic.
+SQL traffic, and live pod probe traffic. It also rejects custom boundary docs
+that omit the shared production boundary for deterministic canonical reports,
+benchmark targets, and local runtime models.
 
 Production Helm values must also keep alpha sidecars disabled by default.
 `values-prod.yaml` can carry replica/resource intent for those components, but

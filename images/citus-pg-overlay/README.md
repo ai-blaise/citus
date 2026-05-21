@@ -1,5 +1,12 @@
 # citus-pg-overlay
 
+> Production boundary: unless a feature is explicitly `Status: production-ready`
+> in `docs/ai-blaise/NEW_FEATURES.md`, the surfaces listed here are alpha
+> contracts. Deterministic canonical reports and local runtime models are CI
+> artifacts, not production evidence; promotion requires live VM/container or
+> Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
+> and guarded by `ci/ai-blaise/production-gap-audit.sh`.
+
 CloudNativePG operand image contract for Citus, the companion SQL fallback, and
 the bundled extension policy. This directory is not production evidence that
 every binary package in the manifest is installed in a runnable operand image;
