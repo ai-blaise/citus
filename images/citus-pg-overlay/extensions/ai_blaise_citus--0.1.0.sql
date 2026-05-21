@@ -60,7 +60,7 @@ AS $$
         ('O2', 'local activity stats view', 'sql-runtime'),
         ('O3', 'replication lag view', 'sql-runtime'),
         ('R4', 'idle transaction detector', 'sql-runtime'),
-        ('Auth2', 'tenant-aware claims', 'runtime-contract'),
+        ('Auth2', 'tenant-aware claims', 'sql-runtime'),
         ('Sec1', 'RLS helpers', 'runtime-contract'),
         ('Sec2', 'JWT verification UDF', 'runtime-contract'),
         ('S6', 'placement generation helpers', 'runtime-contract'),
@@ -88,6 +88,65 @@ AS $$
         ('Sec13', 'CIDR access control', 'ops-contract'),
         ('T6', 'PG18 io_uring default', 'ops-contract'),
         ('T7', 'pipelined client protocol in pool', 'ops-contract')
+$$;
+
+-- FEATURE: Auth2
+CREATE FUNCTION companion_set_session_claims(
+    uid text,
+    claim_role text,
+    tenant_id text,
+    jwt_id text DEFAULT NULL,
+    is_local boolean DEFAULT false
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF uid IS NULL OR btrim(uid) = '' THEN
+        RAISE EXCEPTION 'uid claim must not be empty';
+    END IF;
+    IF claim_role IS NULL OR btrim(claim_role) = '' THEN
+        RAISE EXCEPTION 'role claim must not be empty';
+    END IF;
+    IF tenant_id IS NULL OR btrim(tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id claim must not be empty';
+    END IF;
+    IF jwt_id IS NOT NULL AND btrim(jwt_id) = '' THEN
+        RAISE EXCEPTION 'jwt_id claim must be null or non-empty';
+    END IF;
+
+    PERFORM set_config('ai_blaise.claim.uid', btrim(uid), is_local);
+    PERFORM set_config('ai_blaise.claim.role', btrim(claim_role), is_local);
+    PERFORM set_config('ai_blaise.claim.tenant_id', btrim(tenant_id), is_local);
+    PERFORM set_config(
+        'ai_blaise.claim.jwt_id',
+        COALESCE(NULLIF(btrim(jwt_id), ''), ''),
+        is_local
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_current_session_claims()
+RETURNS TABLE(uid text, role text, tenant_id text, jwt_id text)
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT
+        NULLIF(current_setting('ai_blaise.claim.uid', true), '') AS uid,
+        NULLIF(current_setting('ai_blaise.claim.role', true), '') AS role,
+        NULLIF(current_setting('ai_blaise.claim.tenant_id', true), '') AS tenant_id,
+        NULLIF(current_setting('ai_blaise.claim.jwt_id', true), '') AS jwt_id
+$$;
+
+CREATE FUNCTION companion_current_tenant_id()
+RETURNS text
+LANGUAGE sql
+STABLE
+PARALLEL SAFE
+AS $$
+    SELECT NULLIF(current_setting('ai_blaise.claim.tenant_id', true), '')
 $$;
 
 CREATE FUNCTION companion_internal.identifier_list(input text)

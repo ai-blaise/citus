@@ -206,7 +206,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Auth2",
         feature_name: "tenant-aware claims",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec1",

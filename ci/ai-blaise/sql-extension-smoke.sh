@@ -201,11 +201,40 @@ BEGIN
   IF (
     SELECT count(*)
     FROM companion_feature_status()
-    WHERE feature_id IN ('O1', 'O2', 'O3', 'R4')
+    WHERE feature_id IN ('Auth2', 'O1', 'O2', 'O3', 'R4')
       AND status = 'sql-runtime'
-  ) <> 4 THEN
-    RAISE EXCEPTION 'companion_feature_status must mark observability features as sql-runtime';
+  ) <> 5 THEN
+    RAISE EXCEPTION 'companion_feature_status must mark Auth2 and observability features as sql-runtime';
   END IF;
+
+  PERFORM companion_set_session_claims(
+    'user-123',
+    'authenticated',
+    'tenant-a',
+    'jti-123'
+  );
+  IF companion_current_tenant_id() <> 'tenant-a' THEN
+    RAISE EXCEPTION 'companion_current_tenant_id did not return tenant-a';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_current_session_claims()
+    WHERE uid = 'user-123'
+      AND role = 'authenticated'
+      AND tenant_id = 'tenant-a'
+      AND jwt_id = 'jti-123'
+  ) THEN
+    RAISE EXCEPTION 'companion_current_session_claims did not return expected Auth2 claims';
+  END IF;
+  BEGIN
+    PERFORM companion_set_session_claims('', 'authenticated', 'tenant-a');
+    RAISE EXCEPTION 'companion_set_session_claims must reject empty uid claim';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'uid claim must not be empty' THEN
+        RAISE;
+      END IF;
+  END;
 
   plan_sql := distribute_hypertable('timescale_smoke_metrics', 'metric_time', '1 day', 4);
   IF plan_sql NOT LIKE '%create_hypertable%' THEN

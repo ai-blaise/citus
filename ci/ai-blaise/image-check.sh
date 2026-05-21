@@ -256,6 +256,10 @@ grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state" 
 grep -Fq "CREATE VIEW companion_timescale_bridge_state" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE VIEW companion_pg_stat_statements_p95" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_idle_transactions" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_set_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_current_session_claims" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_current_tenant_id" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'Auth2', 'tenant-aware claims', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "FEATURE: TS18" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
@@ -270,6 +274,10 @@ grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.s
 grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PostgreSQL init process complete" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_set_session_claims" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_current_session_claims" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "companion_current_tenant_id" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "timescale_bridge_call_log" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_distribute_hypertable" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_retention_policy_distributed" ci/ai-blaise/sql-extension-smoke.sh
