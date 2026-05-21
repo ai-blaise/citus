@@ -9,15 +9,20 @@ image.
 
 - Target upstream Citus commit and ai-blaise release branch.
 - Current `patches/series` output.
-- Operand image digest with extension manifest and SBOM.
+- Operand image digest with extension manifest and SBOM after `FEATURE:
+  Bundle1` is promoted. While Bundle1 remains alpha, the operand-image contract
+  must not be used as production release evidence without a real operand image
+  build/initdb smoke.
 - Helm values for the canary namespace.
 - Rollback branch, backup checkpoint, and PITR timestamp.
 
 ## Canary Flow
 
 1. Fetch upstream Citus and re-run the patch series gate.
-2. Build the operand image and validate bundled, optional, and hard-blocked
-   extensions.
+2. If Bundle1 is promoted, run the promoted operand-image build/initdb smoke
+   for bundled, optional, and hard-blocked extension validation. While Bundle1
+   remains alpha, run the static image contract and SQL runtime smokes, but do
+   not treat them as production evidence for the full operand image.
 3. Render Helm with production values and apply it to the canary namespace.
 4. Run cohabitation, plan-cache, latency, branch, vectorizer, search, HTAP,
    multi-region, chaos, slop, feature-doc, license, and image gates.

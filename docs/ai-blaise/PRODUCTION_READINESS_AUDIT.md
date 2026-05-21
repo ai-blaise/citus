@@ -52,6 +52,10 @@ more production-ready than the artifacts justified.
     `ai-blaise/bootstrap-v2` branch after `main` became the release branch,
     so stale branch pushes could receive production-readiness signals that no
     longer matched the GitOps release target.
+16. Broader image, architecture, and upgrade docs still implied the Postgres
+    operand image was built or packaged as a release artifact even though the
+    detailed Bundle1 docs correctly kept it alpha pending a real operand image
+    build/initdb smoke.
 
 ## Corrections
 
@@ -121,6 +125,11 @@ more production-ready than the artifacts justified.
 - Custom CI push triggers now target only `main` and `ai-blaise/dev`; the
   deploy check and production gap audit reject any `ci-*` workflow that still
   targets the stale `ai-blaise/bootstrap-v2` branch.
+- The image overview, architecture, and upgrade runbook now carry the same
+  Bundle1 alpha boundary as the detailed bundle docs: static manifests and SQL
+  file smokes are not production evidence for the full operand image until a
+  real operand image build/initdb smoke exists. The production gap audit
+  machine-checks that wording and rejects stale operand-image overclaims.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime.
 - O2 and R4 production-ready wording now matches the implemented SQL runtime:
