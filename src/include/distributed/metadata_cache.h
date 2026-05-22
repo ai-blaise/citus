@@ -191,6 +191,8 @@ extern void CitusInvalidateRelcacheByShardId(int64 shardId);
 extern void InvalidateForeignKeyGraph(void);
 extern void FlushDistTableCache(void);
 extern void InvalidateMetadataSystemCache(void);
+extern uint64 CurrentPlacementGeneration(void);
+extern void BumpPlacementGeneration(void);
 extern List * CitusTableTypeIdList(CitusTableType citusTableType);
 extern Datum DistNodeMetadata(void);
 extern bool HasUniformHashDistribution(ShardInterval **shardIntervalArray,

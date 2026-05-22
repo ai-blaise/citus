@@ -13,4 +13,5 @@ default = []
 pg18 = ["dep:pgrx", "pgrx/pg18"]
 
 [dependencies]
+ai_blaise_citus_sidecar_shared = { path = "../sidecar/shared" }
 pgrx = { version = "0.18", default-features = false, optional = true }

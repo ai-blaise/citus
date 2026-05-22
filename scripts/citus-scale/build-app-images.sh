@@ -7,6 +7,12 @@ registry="${IMAGE_REGISTRY:-ghcr.io/ai-blaise}"
 tag="${TAG:-0.1.0}"
 dockerfile="${DOCKERFILE:-images/rust-runtime/Dockerfile}"
 push="${PUSH:-false}"
+digest_file="${DIGEST_FILE:-artifacts/ai-blaise-image-digests.tsv}"
+
+if [[ -n "${digest_file}" ]]; then
+  mkdir -p "$(dirname "${digest_file}")"
+  printf 'repository\timage\ttag\tdigest\tpackage\tbinary\tpushed\n' >"${digest_file}"
+fi
 
 images=(
   "citus-operator|ai_blaise_citus_operator|ai_blaise_citus_operator"
@@ -28,21 +34,55 @@ images=(
   "citus-sidecar-storage|ai_blaise_citus_sidecar_storage|ai_blaise_citus_sidecar_storage"
   "citus-sidecar-txn-status|ai_blaise_citus_sidecar_txn_status|ai_blaise_citus_sidecar_txn_status"
   "citus-sidecar-vectorizer|ai_blaise_citus_sidecar_vectorizer|ai_blaise_citus_sidecar_vectorizer"
-  "citusctl|ai_blaise_citusctl|ai_blaise_citusctl"
+  "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster"
 )
 
 for image in "${images[@]}"; do
-  IFS="|" read -r repository package binary <<< "${image}"
+  IFS="|" read -r repository package binary default_args <<< "${image}"
+  default_args="${default_args:-serve}"
   full_image="${registry}/${repository}:${tag}"
+  push_output=""
 
   docker build \
     --file "${dockerfile}" \
     --build-arg "PACKAGE=${package}" \
     --build-arg "BIN=${binary}" \
+    --build-arg "DEFAULT_ARGS=${default_args}" \
     --tag "${full_image}" \
     .
 
   if [[ "${push}" == "true" ]]; then
-    docker push "${full_image}"
+    push_output="$(docker push "${full_image}")"
+    printf '%s\n' "${push_output}"
+  fi
+
+  digest="$(
+    printf '%s\n' "${push_output}" |
+      awk '/digest: sha256:/ { for (i = 1; i <= NF; i++) if ($i ~ /^sha256:/) { print $i; exit } }'
+  )"
+  repo_digest="$(
+    docker image inspect \
+      --format '{{range .RepoDigests}}{{println .}}{{end}}' \
+      "${full_image}" 2>/dev/null |
+      awk -v prefix="${registry}/${repository}@" 'index($0, prefix) == 1 { print $0; exit }'
+  )"
+  if [[ -z "${digest}" && -n "${repo_digest}" ]]; then
+    digest="${repo_digest#*@}"
+  fi
+
+  if [[ "${push}" == "true" && ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+    echo "pushed image ${full_image} did not report an immutable repo digest" >&2
+    exit 1
+  fi
+
+  if [[ -n "${digest_file}" ]]; then
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "${repository}" \
+      "${full_image}" \
+      "${tag}" \
+      "${digest}" \
+      "${package}" \
+      "${binary}" \
+      "${push}" >>"${digest_file}"
   fi
 done

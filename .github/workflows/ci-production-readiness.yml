@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - ai-blaise/dev
-      - ai-blaise/bootstrap-v2
 
 jobs:
   audit:
@@ -15,3 +14,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check production-readiness audit guardrails
         run: bash ci/ai-blaise/production-readiness-check.sh
+      - name: Check production gap guardrails
+        run: bash ci/ai-blaise/production-gap-audit.sh

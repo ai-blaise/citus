@@ -51,12 +51,28 @@ trap cleanup EXIT
 docker run \
   --name "${container}" \
   -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
   -p "127.0.0.1:${postgres_port}:5432" \
   -d "${postgres_image}" >/dev/null
 
+postgres_init_complete=0
+for _ in $(seq 1 120); do
+  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    postgres_init_complete=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${postgres_init_complete}" != "1" ]]; then
+  docker logs "${container}" >&2 || true
+  echo "postgres container did not finish init scripts" >&2
+  exit 1
+fi
+
 postgres_ready=0
 for _ in $(seq 1 60); do
-  if docker exec "${container}" pg_isready -U postgres >/dev/null 2>&1; then
+  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
     postgres_ready=1
     break
   fi
@@ -72,6 +88,7 @@ fi
 AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
   AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
   AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
+  AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="127.0.0.0/8" \
   cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
 pool_pid="$!"
 
@@ -117,6 +134,120 @@ if [[ "${query_output}" != $'42\n42' ]]; then
   exit 1
 fi
 
+python3 - "${pool_port}" <<'PY'
+import socket
+import struct
+import sys
+
+pool_port = int(sys.argv[1])
+
+
+def pack_startup(parameters):
+    body = struct.pack("!I", 196608)
+    for key, value in parameters.items():
+        body += key.encode("ascii") + b"\x00" + value.encode("ascii") + b"\x00"
+    body += b"\x00"
+    return struct.pack("!I", len(body) + 4) + body
+
+
+def pack_simple_query(query):
+    body = query.encode("utf-8") + b"\x00"
+    return b"Q" + struct.pack("!I", len(body) + 4) + body
+
+
+def read_exact(sock, byte_count):
+    chunks = []
+    remaining = byte_count
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise RuntimeError("unexpected EOF from PostgreSQL server")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def read_message(sock):
+    message_type = read_exact(sock, 1)
+    length = struct.unpack("!I", read_exact(sock, 4))[0]
+    payload = read_exact(sock, length - 4)
+    return message_type, payload
+
+
+def error_message(payload):
+    parts = []
+    for field in payload.split(b"\x00"):
+        if len(field) > 1:
+            parts.append(field[1:].decode("utf-8", errors="replace"))
+    return "; ".join(parts) or payload.decode("utf-8", errors="replace")
+
+
+def data_row(payload):
+    column_count = struct.unpack("!H", payload[:2])[0]
+    offset = 2
+    values = []
+    for _ in range(column_count):
+        value_length = struct.unpack("!i", payload[offset : offset + 4])[0]
+        offset += 4
+        if value_length == -1:
+            values.append(None)
+            continue
+        value = payload[offset : offset + value_length]
+        offset += value_length
+        values.append(value.decode("utf-8", errors="strict"))
+    return values
+
+
+with socket.create_connection(("127.0.0.1", pool_port), timeout=10) as sock:
+    sock.sendall(
+        pack_startup(
+            {
+                "user": "postgres",
+                "database": "postgres",
+                "application_name": "ai_blaise_pipeline_smoke",
+            }
+        )
+    )
+
+    while True:
+        message_type, payload = read_message(sock)
+        if message_type == b"R":
+            auth_code = struct.unpack("!I", payload[:4])[0]
+            if auth_code != 0:
+                raise RuntimeError(f"expected trust auth code 0, got {auth_code}")
+        elif message_type == b"E":
+            raise RuntimeError(f"startup failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            break
+
+    # Send both query frames before reading either result. This proves the pool
+    # preserves PostgreSQL simple-query pipelining instead of relying on psql's
+    # request/response pacing.
+    sock.sendall(
+        pack_simple_query("SELECT 'pipeline_one'::text")
+        + pack_simple_query("SELECT 'pipeline_two'::text")
+    )
+
+    rows = []
+    ready_count = 0
+    while ready_count < 2:
+        message_type, payload = read_message(sock)
+        if message_type == b"D":
+            rows.append(data_row(payload))
+        elif message_type == b"E":
+            raise RuntimeError(f"pipelined query failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            ready_count += 1
+
+    expected = [["pipeline_one"], ["pipeline_two"]]
+    if rows != expected:
+        raise RuntimeError(f"unexpected pipelined rows: {rows!r}")
+
+    sock.sendall(b"X" + struct.pack("!I", 4))
+
+print("raw PostgreSQL pipelined simple-query smoke passed through pool proxy")
+PY
+
 metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
 if ! printf '%s\n' "${metrics}" | awk '
   /^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { upstream_ready = 1 }
@@ -125,6 +256,68 @@ if ! printf '%s\n' "${metrics}" | awk '
 '; then
   cat "${pool_log}" >&2
   echo "pool metrics did not show upstream readiness and proxied PostgreSQL traffic" >&2
+  printf '%s\n' "${metrics}" >&2
+  exit 1
+fi
+
+kill "${pool_pid}" >/dev/null 2>&1 || true
+wait "${pool_pid}" >/dev/null 2>&1 || true
+pool_pid=""
+: >"${pool_log}"
+
+AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
+  AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
+  AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
+  AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="192.0.2.0/24" \
+  cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
+pool_pid="$!"
+
+pool_ready=0
+for _ in $(seq 1 120); do
+  if ! kill -0 "${pool_pid}" >/dev/null 2>&1; then
+    cat "${pool_log}" >&2
+    echo "pool proxy exited before CIDR deny readiness" >&2
+    exit 1
+  fi
+  if curl -fsS "http://127.0.0.1:${admin_port}/readyz" 2>/dev/null |
+    grep -Fq '"upstream_ready":true'; then
+    pool_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${pool_ready}" != "1" ]]; then
+  cat "${pool_log}" >&2
+  echo "pool proxy did not report upstream-ready readiness for CIDR deny smoke" >&2
+  exit 1
+fi
+
+denied_stdout="$(mktemp -t ai-blaise-pool-cidr-deny.XXXXXX.out)"
+denied_stderr="$(mktemp -t ai-blaise-pool-cidr-deny.XXXXXX.err)"
+if docker run --rm \
+  --network host \
+  -e PGPASSWORD=postgres \
+  -e PGCONNECT_TIMEOUT=5 \
+  "${postgres_image}" \
+  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqc 'SELECT 1' \
+  >"${denied_stdout}" 2>"${denied_stderr}"; then
+  cat "${pool_log}" >&2
+  cat "${denied_stdout}" >&2
+  cat "${denied_stderr}" >&2
+  echo "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" >&2
+  rm -f "${denied_stdout}" "${denied_stderr}"
+  exit 1
+fi
+rm -f "${denied_stdout}" "${denied_stderr}"
+
+metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
+if ! printf '%s\n' "${metrics}" | awk '
+  /^ai_blaise_citus_pool_rejected_connections_total / && $2 >= 1 { rejected = 1 }
+  END { exit rejected ? 0 : 1 }
+'; then
+  cat "${pool_log}" >&2
+  echo "pool metrics did not show CIDR-denied PostgreSQL traffic" >&2
   printf '%s\n' "${metrics}" >&2
   exit 1
 fi

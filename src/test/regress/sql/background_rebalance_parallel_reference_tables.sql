@@ -173,7 +173,7 @@ COPY (
     JOIN pg_dist_background_task task ON task.task_id = D.task_id
     JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
     WHERE D.job_id in (:job_id)
-    ORDER BY dependency
+    ORDER BY dependency, D.task_id, D.depends_on
 ) TO STDOUT;
 
 
@@ -230,7 +230,7 @@ COPY (
     JOIN pg_dist_background_task task ON task.task_id = D.task_id
     JOIN pg_dist_background_task dependency ON dependency.task_id = D.depends_on
     WHERE D.job_id in (:job_id)
-    ORDER BY dependency
+    ORDER BY dependency, D.task_id, D.depends_on
 ) TO STDOUT;
 
 SELECT

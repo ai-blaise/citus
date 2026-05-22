@@ -85,6 +85,7 @@
 bool ExplainDistributedQueries = true;
 bool ExplainAllTasks = false;
 int ExplainAnalyzeSortMethod = EXPLAIN_ANALYZE_SORT_BY_TIME;
+ExplainOneQuery_hook_type PreviousExplainOneQueryHook = NULL;
 extern MemoryContext SubPlanExplainAnalyzeContext;
 
 /*
@@ -1611,6 +1612,23 @@ CitusExplainOneQuery(Query *query, int cursorOptions, IntoClause *into,
 					 ExplainState *es, const char *queryString, ParamListInfo params,
 					 QueryEnvironment *queryEnv)
 {
+	/*
+	 * FEATURE: TS6
+	 *
+	 * For statements outside Citus distributed planning, preserve a trusted
+	 * coextension EXPLAIN hook captured before Citus loaded. Distributed
+	 * statements remain on Citus' EXPLAIN path so worker task output is not
+	 * bypassed.
+	 */
+	if (PreviousExplainOneQueryHook != NULL &&
+		(cursorOptions & CURSOR_OPT_FORCE_DISTRIBUTED) == 0 &&
+		!NeedsDistributedPlanning(query))
+	{
+		PreviousExplainOneQueryHook(query, cursorOptions, into, es, queryString, params,
+									queryEnv);
+		return;
+	}
+
 	/* save the flags of current EXPLAIN command */
 	CurrentDistributedQueryExplainOptions.costs = es->costs;
 	CurrentDistributedQueryExplainOptions.buffers = es->buffers;

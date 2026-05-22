@@ -4,6 +4,7 @@ pub mod advanced_planner;
 pub mod auth;
 pub mod citus_timescale;
 pub mod db_doctor;
+pub mod domain_contracts;
 pub mod extension_catalog;
 pub mod feature_status;
 pub mod geo_distributed;
@@ -11,6 +12,7 @@ pub mod graph_bridge;
 pub mod index_advisor;
 pub mod jsonschema_bridge;
 pub mod ledger;
+pub mod log_view;
 pub mod lsp_metadata;
 pub mod migration;
 pub mod observability;
@@ -21,6 +23,7 @@ pub mod schema_jobs;
 pub mod search_bridge;
 pub mod tenants;
 pub mod toolkit_distributed;
+pub mod trace_context;
 pub mod vector;
 pub mod webhooks;
 
@@ -38,6 +41,9 @@ pub use citus_timescale::{
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
     DoctorSeverity, DoctorViolation,
+};
+pub use domain_contracts::{
+    canonical_domain_contracts_report, DomainContractError, DomainContractExecutionReport,
 };
 pub use extension_catalog::{
     canonical_extension_catalog_execution_report, v2_extension_contracts,
@@ -62,13 +68,17 @@ pub use ledger::{
     HmacAlgorithm, LedgerChain, LedgerChainEntry, LedgerError, LedgerSealPlan, LedgerSqlPlan,
     LedgerTransferPlan,
 };
+pub use log_view::{
+    canonical_log_view_plans, render_all_views, JsonPath, LogFieldProjection, LogViewError,
+    LogViewPlan, DEFAULT_RAW_TABLE, DEFAULT_VIEW_SCHEMA,
+};
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
 pub use migration::{MigrationError, MigrationOperation, MigrationPlan, MigrationSqlPlan};
 pub use observability::{
-    DistributedStatPlan, IdleTransactionAction, IdleTransactionReaperPlan, LatencyPercentile,
-    ObservabilityError, OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
+    IdleTransactionDetectorPlan, LatencyPercentile, LocalActivityStatPlan, ObservabilityError,
+    OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
 };
 pub use ops_contracts::{
     canonical_operations_readiness_contract, canonical_operations_readiness_report,
@@ -80,10 +90,23 @@ pub use plan_freeze::{
     PlanRegressionSample,
 };
 pub use router_assist::{
-    LocalPlacementCheck, PlacementGenerationQuery, RouterAssistError, ShardForValuePlan,
+    InvalidationHint, LocalPlacementCheck, PlacementGenerationQuery, PlacementGenerationSample,
+    PlacementGenerationSubscriber, RouterAssistError, RouterAssistSqlPlan, ShardForValuePlan,
     ShardRoutingStrategy,
 };
-pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
+pub use schema_jobs::{
+    controller::{
+        PhaseAcknowledgement, PhaseCheckpoint, PhaseTransitionDecision, PhaseTransitionPlan,
+        SchemaJobController, SchemaJobControllerError, TransitionGate,
+    },
+    rollback::{RollbackError, RollbackPlan, RollbackStep},
+    verify_two_version_invariant_sql,
+    worker_lease::{
+        WorkerLease, WorkerLeaseError, WorkerLeaseRegistry, WorkerLeaseSqlPlan, WorkerLeaseStatus,
+    },
+    SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState, COMPANION_INTERNAL_SCHEMA,
+    TWO_VERSION_INVARIANT_MAX_VERSIONS,
+};
 pub use search_bridge::{
     HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
     SearchIndexDistributedPlan, SearchSqlPlan,
@@ -91,6 +114,9 @@ pub use search_bridge::{
 pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
 pub use toolkit_distributed::{
     ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,
+};
+pub use trace_context::{
+    render_projection_sql, CompanionTraceContextError, CompanionTraceContextPlan,
 };
 pub use vector::{
     ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,

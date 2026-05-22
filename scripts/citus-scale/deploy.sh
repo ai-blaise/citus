@@ -2,37 +2,28 @@
 set -euo pipefail
 
 # FEATURE: D8
+# FEATURE: O6
+#
+# After the 2026-05-22 chart fold into ai-blaise/command-center, the deploy
+# wrapper that used to render the in-tree Helm chart is no longer applicable
+# in this repository. The chart lives at:
+#
+#   https://github.com/ai-blaise/command-center/tree/main/helm/charts/citus-cluster
+#
+# To render or install:
+#
+#   helm template citus-cluster \
+#     <command-center-checkout>/helm/charts/citus-cluster \
+#     --values <command-center-checkout>/helm/charts/citus-cluster/values-prod.yaml \
+#     --set global.operatorImageDigest=sha256:... \
+#     --set global.poolImageDigest=sha256:...
+#
+# Argo CD takes over via gitops/apps/13-citus-cluster.yaml in command-center.
 
-release="${RELEASE_NAME:-ai-blaise-citus}"
-namespace="${NAMESPACE:-ai-blaise-citus}"
-chart_dir="${CHART_DIR:-deploy/k8s/helm/citus-overlay}"
-values_file="${VALUES_FILE:-${chart_dir}/values.yaml}"
-mode="${MODE:-template}"
-
-if [[ ! -s "${chart_dir}/Chart.yaml" ]]; then
-  echo "missing chart: ${chart_dir}/Chart.yaml" >&2
-  exit 1
-fi
-
-if [[ ! -s "${values_file}" ]]; then
-  echo "missing values file: ${values_file}" >&2
-  exit 1
-fi
-
-case "${mode}" in
-  template)
-    helm template "${release}" "${chart_dir}" \
-      --namespace "${namespace}" \
-      --values "${values_file}"
-    ;;
-  install)
-    helm upgrade --install "${release}" "${chart_dir}" \
-      --namespace "${namespace}" \
-      --create-namespace \
-      --values "${values_file}"
-    ;;
-  *)
-    echo "MODE must be template or install" >&2
-    exit 1
-    ;;
-esac
+cat <<EOF >&2
+ai-blaise/citus deploy wrapper retired on 2026-05-22: chart folded into
+ai-blaise/command-center/helm/charts/citus-cluster/. Use the command-center
+chart directly with Helm or via Argo CD against
+gitops/apps/13-citus-cluster.yaml in that repo.
+EOF
+exit 64

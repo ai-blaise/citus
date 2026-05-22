@@ -50,6 +50,8 @@ pub struct V2ReleaseGateAcceptance {
 }
 
 impl V2ReleaseGateAcceptance {
+    // Canonical V2 gate shape and thresholds; this is not measured production evidence
+    // until each gate is backed by live harness output.
     pub fn canonical() -> Self {
         Self {
             cohabit: CohabitGate {
@@ -99,16 +101,36 @@ impl V2ReleaseGateAcceptance {
             },
             performance: HarnessGate {
                 scenarios: vec![
-                    HarnessScenario::new("tpcc", true),
-                    HarnessScenario::new("sysbench", true),
-                    HarnessScenario::new("timescale-ingest", true),
+                    HarnessScenario::with_script("tpcc", true, "benchmarks/tpcc/run.sh"),
+                    HarnessScenario::with_script(
+                        "sysbench",
+                        true,
+                        "benchmarks/sysbench/run-suite.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "timescale-ingest",
+                        true,
+                        "benchmarks/timescale-ingest/ingest.py",
+                    ),
                 ],
             },
             chaos: HarnessGate {
                 scenarios: vec![
-                    HarnessScenario::new("random-kill", true),
-                    HarnessScenario::new("network-partition", true),
-                    HarnessScenario::new("disk-full", true),
+                    HarnessScenario::with_script(
+                        "random-kill",
+                        true,
+                        "benchmarks/chaos/scenarios/kill-coordinator.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "network-partition",
+                        true,
+                        "benchmarks/chaos/scenarios/network-partition.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "disk-full",
+                        true,
+                        "benchmarks/chaos/scenarios/disk-full.sh",
+                    ),
                 ],
             },
             upstream_merge: UpstreamMergeGate {
@@ -368,13 +390,19 @@ impl HarnessGate {
 pub struct HarnessScenario {
     pub name: String,
     pub green: bool,
+    /// Path to the runnable harness script that backs this scenario, relative
+    /// to the repo root. Gates 10 and 11 remain alpha until measured runs of
+    /// these scripts are recorded in
+    /// `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+    pub script: Option<String>,
 }
 
 impl HarnessScenario {
-    fn new(name: impl Into<String>, green: bool) -> Self {
+    fn with_script(name: impl Into<String>, green: bool, script: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             green,
+            script: Some(script.into()),
         }
     }
 }
@@ -521,6 +549,34 @@ mod tests {
         assert_eq!(report.performance_harnesses_green, 3);
         assert_eq!(report.chaos_harnesses_green, 3);
         assert_eq!(report.upstream_ref, UPSTREAM_RELEASE_REF);
+    }
+
+    #[test]
+    fn performance_and_chaos_scenarios_reference_harness_scripts() {
+        // Gates 10 and 11 are alpha until measured runs land; the model keeps
+        // the harness script path in the scenario so the executable evidence
+        // is discoverable from the gate definition.
+        let acceptance = V2ReleaseGateAcceptance::canonical();
+
+        for scenario in &acceptance.performance.scenarios {
+            let script = scenario.script.as_deref().unwrap_or_default();
+            assert!(
+                script.starts_with("benchmarks/"),
+                "performance scenario '{}' missing benchmarks/ script reference (got '{}')",
+                scenario.name,
+                script,
+            );
+        }
+
+        for scenario in &acceptance.chaos.scenarios {
+            let script = scenario.script.as_deref().unwrap_or_default();
+            assert!(
+                script.starts_with("benchmarks/chaos/"),
+                "chaos scenario '{}' missing benchmarks/chaos/ script reference (got '{}')",
+                scenario.name,
+                script,
+            );
+        }
     }
 
     #[test]

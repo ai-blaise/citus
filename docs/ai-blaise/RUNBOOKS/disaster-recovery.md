@@ -6,6 +6,12 @@ Use this drill for region-loss readiness before every production release and
 after any change to `Region`, `SurvivalGoal`, `Branch`, `Backup`, pool routing,
 or `pgactive` conflict policy contracts.
 
+This runbook is a release prerequisite and operational checklist, not
+production evidence by itself. `FEATURE: MR9` remains alpha until a live
+multi-region failover drill, PITR restore, backup artifact restore, sidecar
+readiness check, and conflict-policy report are executed against real runtime
+infrastructure and recorded with measured evidence.
+
 ## Inputs
 
 - Target cluster and release version.
@@ -43,3 +49,6 @@ or `pgactive` conflict policy contracts.
 - Reference-table conflicts are either absent or classified by policy.
 - Backup restore produces a read-only branch with verified PITR timestamp.
 - The incident record links metrics, commands, manifests, and approvals.
+- These exit criteria are required release evidence only after they are backed
+  by real drill logs; completing the document checklist alone does not promote
+  any disaster-recovery feature out of alpha.

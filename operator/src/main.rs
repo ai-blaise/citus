@@ -32,17 +32,17 @@
 use ai_blaise_citus_operator::controllers;
 use ai_blaise_citus_operator::{
     BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
-    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterSpec, CitusTopology, CompressionPolicy,
-    ConflictClass, ConflictPolicySpec, ConflictResolution, ContinuousAggregateSpec,
-    EmbeddingProvider, FederationConnection, FederationSpec, FederationType, FunctionEvent,
-    FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger, HypertableReconcilePlan,
-    HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType, PlacementPolicy,
-    PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
+    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
+    CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec, ConflictResolution,
+    ContinuousAggregateSpec, EmbeddingProvider, FederationConnection, FederationSpec,
+    FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger,
+    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
+    PlacementPolicy, PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
     ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexSpec, SearchScorer,
-    ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType,
-    SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec, UnsatisfiablePlacementAction,
-    VectorDestinationSpec, VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec,
-    WebhookEvent, WebhookRetryPolicy, WebhookSpec,
+    ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType,
+    SidecarSpec, SidecarType, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec,
+    UnsatisfiablePlacementAction, VectorDestinationSpec, VectorizerScheduleMode,
+    VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent, WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -67,6 +67,7 @@ fn main() {
     match args.as_slice() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
+        [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -103,7 +104,30 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+}
+
+fn run_reconcile_plans() {
+    let report = canonical_reconcile_plans_report().unwrap_or_else(|error| {
+        eprintln!("operator: reconcile plans execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "cluster_name\tcnpg_instances\tcluster_deployments\ttimescale_enabled\tcoordinator_less\tshard_apply_steps\tshard_topology_constraints\tshard_replication_factor\tshard_hard_constraint"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.cluster_name,
+        report.cnpg_instances,
+        report.cluster_deployments,
+        report.timescale_enabled,
+        report.coordinator_less,
+        report.shard_apply_steps,
+        report.shard_topology_constraints,
+        report.shard_replication_factor,
+        report.shard_hard_constraint,
+    );
 }
 
 /// Spawn the probe server on a dedicated thread (blocking std net) while a
@@ -231,6 +255,40 @@ fn canonical_operator_execution_report() -> Result<OperatorExecutionReport, Box<
         webhook_events: webhook.events.len(),
         search_columns: search_index.columns.len(),
         sidecar_replicas: sidecar.replicas,
+    })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilePlansReport {
+    cluster_name: String,
+    cnpg_instances: u32,
+    cluster_deployments: usize,
+    timescale_enabled: bool,
+    coordinator_less: bool,
+    shard_apply_steps: usize,
+    shard_topology_constraints: usize,
+    shard_replication_factor: u32,
+    shard_hard_constraint: bool,
+}
+
+fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Error>> {
+    let cluster_spec = canonical_cluster_spec();
+    let cluster_plan = CitusClusterReconcilePlan::from_spec("ai-blaise-citus", &cluster_spec)?;
+
+    let shard_group_spec = canonical_shard_group_spec();
+    let shard_plan = ShardGroupReconcilePlan::try_from(&shard_group_spec)?;
+    let shard_apply_plan = shard_plan.apply_plan();
+
+    Ok(ReconcilePlansReport {
+        cluster_name: cluster_plan.cluster_name.clone(),
+        cnpg_instances: cluster_plan.total_postgres_instances(),
+        cluster_deployments: cluster_plan.total_deployments(),
+        timescale_enabled: cluster_plan.timescale_enabled,
+        coordinator_less: cluster_plan.coordinator_less,
+        shard_apply_steps: shard_apply_plan.steps.len(),
+        shard_topology_constraints: shard_plan.topology_constraint_count(),
+        shard_replication_factor: shard_plan.replication_factor,
+        shard_hard_constraint: shard_plan.has_hard_constraint(),
     })
 }
 
@@ -519,6 +577,26 @@ mod tests {
                 webhook_events: 2,
                 search_columns: 2,
                 sidecar_replicas: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_reconcile_plans_report_covers_cluster_and_shard_group() {
+        let report = canonical_reconcile_plans_report().expect("canonical reconcile plans report");
+
+        assert_eq!(
+            report,
+            ReconcilePlansReport {
+                cluster_name: "ai-blaise-citus".to_string(),
+                cnpg_instances: 4,
+                cluster_deployments: 4,
+                timescale_enabled: true,
+                coordinator_less: false,
+                shard_apply_steps: 5,
+                shard_topology_constraints: 1,
+                shard_replication_factor: 3,
+                shard_hard_constraint: true,
             }
         );
     }

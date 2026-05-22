@@ -1,5 +1,12 @@
 # tools
 
+> Production boundary: unless a feature is explicitly `Status: production-ready`
+> in `docs/ai-blaise/NEW_FEATURES.md`, the surfaces listed here are alpha
+> contracts. Deterministic canonical reports and local runtime models are CI
+> artifacts, not production evidence; promotion requires live VM/container or
+> Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
+> and guarded by `ci/ai-blaise/production-gap-audit.sh`.
+
 Developer and operator tools:
 
 - `citusctl`
@@ -10,17 +17,26 @@ Developer and operator tools:
 - `citus-mcp`
 - `citus-watch`
 
-`citus-lsp` now has the initial Rust diagnostic contract for distributed SQL
-editing: Citus colocation checks, distribution-column safety, tenant-filter
-hints, Timescale hypertable bridge diagnostics, and quick-fix planning.
+`citusctl` now has a deterministic canonical command runner covering dev,
+apply, inspect, time-travel, and WAL replay planning contracts.
+`cargo run -p ai_blaise_citusctl -- run-canonical` emits the summary used by
+CI.
 
-`citus-watch` now has the initial Rust dashboard contract for the unified live
-view over companion metadata, Prometheus metrics, and pool-side signals.
+`citus-lsp` now has a file-backed diagnostic CLI for supported distributed SQL
+migration statements: Citus colocation checks, distribution-column safety,
+tenant-filter hints, Timescale hypertable bridge diagnostics, and quick-fix
+planning. `ci/ai-blaise/citus-lsp-smoke.sh` guards the promoted CLI surface;
+JSON-RPC editor transport and full PostgreSQL grammar coverage remain alpha.
+
+`citus-watch` now has the initial Rust dashboard contract for the unified
+operator view over companion metadata, Prometheus metrics, and pool-side
+signals.
 `cargo run -p ai_blaise_citus_watch -- run-canonical` emits the deterministic
 watch dashboard summary used by CI.
 
 `citus-schema-designer` now has the initial Rust visualization contract for
-distribution, hypertable, search-index, webhook, and live shard-map overlays.
+distribution, hypertable, search-index, webhook, and operator shard-map
+overlays.
 `cargo run -p ai_blaise_citus_schema_designer -- run-canonical` emits the
 deterministic overlay-layer summary used by CI.
 

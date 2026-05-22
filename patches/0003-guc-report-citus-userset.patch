@@ -1,0 +1,62 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Thu, 21 May 2026 00:00:00 +0000
+Subject: [PATCH] Report citus.* USERSET GUCs to clients
+
+FEATURE: T2
+
+Citus exposes many USERSET GUCs whose values affect query planning and
+execution (router fast-path, local-execution, propagate_set_commands,
+shard_count, etc.). When a session-pooler such as ai-blaise/citus-pool
+multiplexes client backends across PostgreSQL backends, the pool can
+only preserve transaction-pooling semantics if it observes SET commands
+for those GUCs through ParameterStatus (S) packets.
+
+Without GUC_REPORT, a SET citus.enable_router_execution = off on one
+client session is invisible to the pool layer, so a subsequent client
+attached to the same backend can inherit the wrong planner mode.
+
+Extend the existing OverridePostgresConfigProperties() loop -- which
+already toggles GUC_REPORT for search_path -- to mark every citus.*
+USERSET GUC with GUC_REPORT. PGC_INTERNAL and superuser-only contexts
+retain their default flags because they cannot be reset by a regular
+session.
+
+This is a one-place, upstream-PR-friendly change: it does not modify
+the individual DefineCustom* call sites, so the patch is a small diff
+to a single helper function. The upstream-PR draft is tracked in
+docs/ai-blaise/UPSTREAM_SYNC.md.
+---
+ src/backend/distributed/shared_library_init.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index 646151be5..f1a25d7bc 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -3000,6 +3000,22 @@ OverridePostgresConfigProperties(void)
+ 		{
+ 			var->flags |= GUC_REPORT;
+ 		}
++
++		/*
++		 * FEATURE: T2
++		 *
++		 * Mark every citus.* USERSET GUC with GUC_REPORT so a session pooler
++		 * in front of Citus can observe SET commands via the PostgreSQL
++		 * ParameterStatus (S) protocol packet. Without this, transaction-
++		 * pooling routers cannot preserve planner-affecting GUC state across
++		 * multiplexed client sessions and may execute a follow-up client's
++		 * query under stale router or execution settings.
++		 */
++		if (var->context == PGC_USERSET &&
++			strncmp(var->name, "citus.", strlen("citus.")) == 0)
++		{
++			var->flags |= GUC_REPORT;
++		}
+ 	}
+ }
+ 
+-- 
+2.39.5
+

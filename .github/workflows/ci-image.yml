@@ -6,7 +6,6 @@ on:
     branches:
       - main
       - ai-blaise/dev
-      - ai-blaise/bootstrap-v2
 
 jobs:
   check:
@@ -15,5 +14,40 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check image extension contract
         run: bash ci/ai-blaise/image-check.sh
-      - name: Smoke SQL companion extension
+      - name: Smoke app image digest manifest
+        run: bash ci/ai-blaise/app-image-digest-manifest-smoke.sh
+      - name: Smoke SQL companion extension (PG17 + PG18 matrix)
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
+      - name: Smoke Timescale bridge against real TimescaleDB
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh
+      - name: Smoke real Timescale and Citus cohabitation
+        env:
+          TIMESCALE_COHABITATION_MAKE_JOBS: "2"
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-cohabitation-smoke.sh
+      - name: Smoke observability replication views
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh
+
+  build-overlay-image:
+    # PG version matrix: build the citus-pg-overlay image for each supported
+    # PostgreSQL major to verify the Dockerfile build-args parameterize cleanly.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_major: ["17", "18"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build overlay image for PG${{ matrix.pg_major }}
+        run: |
+          docker build \
+            --build-arg PG_MAJOR=${{ matrix.pg_major }} \
+            --build-arg BASE_IMAGE=postgres:${{ matrix.pg_major }}-bookworm \
+            -t ai-blaise-citus-overlay:pg${{ matrix.pg_major }} \
+            images/citus-pg-overlay
+      - name: Verify pg-major label
+        run: |
+          observed="$(docker inspect -f '{{ index .Config.Labels "ai-blaise.citus.pg-major" }}' ai-blaise-citus-overlay:pg${{ matrix.pg_major }})"
+          if [[ "$observed" != "${{ matrix.pg_major }}" ]]; then
+            echo "label mismatch: expected ${{ matrix.pg_major }}, got $observed" >&2
+            exit 1
+          fi

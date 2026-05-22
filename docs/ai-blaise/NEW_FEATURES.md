@@ -20,7 +20,10 @@ their deterministic TSV summaries.
 plan, including the upstream-merge dry-run against `release-14.0`.
 `ci/ai-blaise/production-readiness-check.sh` guards the register against
 production-readiness overclaiming by verifying source/doc coverage, status
-semantics, and the whole-repo audit record.
+semantics, and the whole-repo audit record. `ci/ai-blaise/production-gap-audit.sh`
+adds the stricter production path guard: V2 acceptance models and contract
+runners must remain visible as prerequisites, not production evidence for
+alpha functionality.
 
 `operator/src/main.rs` and `e2e/src/operator_catalog.rs` are the pure-Rust
 acceptance models for the V2 operator catalog. The operator runner validates
@@ -43,7 +46,8 @@ with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
 `pool/src/main.rs` executes a real PostgreSQL TCP proxy in `serve` mode, with
 upstream-aware admin readiness on a separate port; `ci/ai-blaise/pool-proxy-smoke.sh`
-verifies live SQL through that data port, and the binary still emits the
+verifies live SQL, CIDR allow/deny behavior, and pipelined PostgreSQL
+simple-query frames through that data port. The binary still emits the
 deterministic pool runtime and shard-map summary for `FEATURE: Auth3`,
 `FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`, `FEATURE: T1`,
 `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`,
@@ -55,6 +59,9 @@ integration-target, and hard-blocked extension contracts for
 `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: WF1`, and `FEATURE: F2`; the
 companion catalog also emits a deterministic TSV summary through
 `companion/src/bin/companion_contracts.rs`.
+`images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` installs the
+`FEATURE: Auth2` SQL session-claim helper surface and `ci/ai-blaise/sql-extension-smoke.sh`
+proves those helpers against a real `postgres:17` container.
 `images/rust-runtime/Dockerfile` and
 `scripts/citus-scale/build-app-images.sh` build the deployable Rust operator,
 pool, sidecar, and tool images for `FEATURE: D13`; those binaries run the
@@ -112,6 +119,14 @@ runner for `FEATURE: S9`.
 `sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
 tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
 `FEATURE: MCP3`.
+`tools/citus-mcp/src/lib.rs` also executes the production-ready read-only MCP
+database runtime for `FEATURE: MCP4`, using `AI_BLAISE_MCP_DATABASE_URL`, the
+maintained PostgreSQL client with native TLS support, read-only transactions,
+statement timeouts, bounded JSON result materialization, tenant schema
+validation, and destructive-tool denial.
+`sidecar/mcp/src/main.rs` runs the sidecar MCP stdio and HTTP JSON-RPC policy
+bridges for `FEATURE: MCP1`, `FEATURE: MCP2`, `FEATURE: MCP3`, and
+`FEATURE: D11`.
 `sidecar/postgrest/src/lib.rs` validates auto-REST route, distributed view,
 RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
 `FEATURE: API5`, and `FEATURE: API6`.
@@ -148,6 +163,8 @@ The tool overlays expose deterministic canonical runners for their library
 contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 `tools/citus-schema-designer/src/main.rs`, `tools/citus-tui/src/main.rs`, and
 `tools/citus-watch/src/main.rs`.
+`ci/ai-blaise/citusctl-smoke.sh` exercises the real `citusctl` binary for the
+`FEATURE: D2` plan-id guard.
 
 ## Operand Image
 
@@ -188,7 +205,7 @@ federation extension policy.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool settings-bucket contract and stable GUC
+**Summary**: Defines the pool settings-bucket contract and versioned GUC
 fingerprint for sharing worker connections across sessions with identical
 tracked GUC state.
 
@@ -203,10 +220,14 @@ pooler.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T1` in `pool/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Benchmark: `benchmarks/sysbench/run-suite.sh` (TPS / p95 per workload)
+- Benchmark: `benchmarks/tpcc/run.sh` (tpmC, p99 latency, error rate)
 
 ### T2: Plan Cache Placement-Generation Invalidation
 
-**Overlay**: `pool/src/shard_map.rs`
+**Overlay**: `pool/src/shard_map.rs`, `companion/src/router_assist.rs`,
+`patches/0003-guc-report-citus-userset.patch`,
+`patches/0005-placement-generation-counter.patch`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -214,19 +235,46 @@ pooler.
 
 **Summary**: Tracks shard placement generations and cached query fingerprints
 so cached plans can be invalidated only when the placements they depend on
-change.
+change. The Citus quilt patches add the in-process placement-generation
+counter (`pg_catalog.citus_placement_generation()`) and tag every
+USERSET `citus.*` GUC with `GUC_REPORT` so a transaction pooler sees
+planner-affecting `SET` commands through ParameterStatus packets.
 
 **Motivation**: Rebalance should not wipe the entire plan cache when only a
-small subset of shard placements moved.
+small subset of shard placements moved, and transaction pooling must not
+silently inherit stale router/execution GUC state across multiplexed client
+sessions.
 
 **Citus comparison**: Vanilla Citus has plan invalidation behavior around shard
 movement but does not ship the ai-blaise pool's generation-aware cache model.
+Vanilla Citus also does not flag its USERSET GUCs with `GUC_REPORT`, which
+makes correct transaction pooling impossible without these patches.
+
+Executable evidence: `cargo test -p ai_blaise_citus_companion --lib
+router_assist` runs the placement-generation subscriber contract end to end
+(initial/unchanged/advanced/reset transitions, catalog SELECT shape,
+sample validation). `cargo test -p ai_blaise_citus_pool --lib shard_map`
+runs the pool-side plan-cache generation contract. The C-level counter is
+upstream-PR candidate; full Citus-build evidence lands once the
+`kind-smoke` overlay rebuilds the operand image with the quilt patches
+applied.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+- In-source: `FEATURE: T2` in `companion/src/router_assist.rs`
+- In-source: `FEATURE: T2` in
+  `src/backend/distributed/metadata/metadata_cache.c` (via
+  `patches/0005-placement-generation-counter.patch`)
+- In-source: `FEATURE: T2` in
+  `src/backend/distributed/shared_library_init.c` (via
+  `patches/0003-guc-report-citus-userset.patch`)
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo test -p ai_blaise_citus_companion --lib router_assist`
+- Executable: `cargo test -p ai_blaise_citus_pool --lib shard_map`
+- Patches: `patches/0003-guc-report-citus-userset.patch`,
+  `patches/0005-placement-generation-counter.patch`
 
 ### T3: Fast-Path Single-Shard Router
 
@@ -277,17 +325,35 @@ parallel-commit transaction-status sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
+- Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
+  PostgreSQL-core logical commit clock the parallel-commit path depends on for
+  monotonic shard-finalize ordering. Runtime gate stays alpha until the
+  txn_status sidecar lands; the patch is the upstream-quality diff that makes
+  the gate compilable. Tracked under FEATURE: PGC1.
+- Executable: `patches/postgres/0002-per-subtrans-commit-ts.patch` lets the
+  coordinator attribute divergent per-shard commit timestamps inside a single
+  umbrella transaction. Tracked under FEATURE: PGC2.
 
 ### T8: Toolkit Two-Step Aggregate Pushdown
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Defines worker partial and coordinator finalize SQL plans for
-Toolkit two-step aggregates.
+**Summary**: Provides an installable SQL Toolkit aggregate plan registry that
+renders worker partial and coordinator finalize SQL for two-step aggregate
+families.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records
+`companion_toolkit_aggregate_plans`, renders worker partial and coordinator
+final SQL, and verifies unsupported aggregates fail closed. Actual
+TimescaleDB Toolkit aggregate execution, planner hooks, worker pushdown
+execution, and distributed result merging remain alpha.
 
 **Motivation**: Toolkit aggregates should execute shard-local partials before
 coordinator finalization so time-series rollups do not collapse back to a
@@ -300,6 +366,10 @@ does not ship a Toolkit-specific two-step aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T8` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: T8` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### T9: Mirroring For Canary Traffic
 
@@ -347,21 +417,30 @@ pool starts classifying real SQL.
 ### T15: Transaction Pipelining In Pool
 
 **Overlay**: `pool/src/runtime.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines pool protocol pipelining limits for in-flight work and
-transaction pipelining, and keeps the production `serve` data plane as a real
-byte-transparent PostgreSQL TCP proxy while routing policy becomes
-shard-aware.
+**Summary**: Proves the pool `serve` data plane preserves pipelined PostgreSQL
+simple-query frames as a byte-transparent TCP proxy, while the broader
+transaction-batching, shard-aware routing, and `FEATURE: T7` pipeline
+contract remain alpha.
 
 **Motivation**: Pool throughput work needs an explicit backpressure contract
-before pipelining reaches the data path.
+and a measured wire-protocol baseline before transaction-level pipelining
+reaches shard-aware routing.
 
 **Citus comparison**: Vanilla Citus does not provide an external pool
 pipelining contract.
+
+Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool
+against a `postgres:17` container, opens a raw PostgreSQL client through the
+pool data port, sends two simple-query frames without waiting for the first
+result, verifies ordered `pipeline_one` and `pipeline_two` rows from the real
+backend, and keeps the existing live SQL plus pool admin metrics checks. The
+Makefile `pool-proxy-smoke` target sets `REQUIRE_DOCKER=1`, and `gate-close`
+depends on that target, so missing Docker cannot silently skip this evidence.
 
 **References**:
 
@@ -369,6 +448,12 @@ pipelining contract.
 - In-source: `FEATURE: T15` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T7` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+- Benchmark: `benchmarks/tpcc/run.sh`, `benchmarks/sysbench/run-suite.sh`
+  (V2 gate 10 performance acceptance; alpha until full runs land in
+  `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`)
 
 ## TimescaleDB Integration
 
@@ -412,6 +497,8 @@ partitions, but it has no distributed-hypertable orchestration.
   and `e2e/src/timescale_on_citus.rs`
 - SQL runtime: `FEATURE: TS18` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Benchmark: `benchmarks/timescale-ingest/ingest.py` (rows/s, compression
+  ratio, queryable lag; alpha until full runs land)
 
 ### TS2: Distributed Compression Policy
 
@@ -533,18 +620,20 @@ not consult TimescaleDB dimension slices.
 - `patches/0001-allow-trusted-hook-coextensions.patch`
 - `patches/0002-preserve-trusted-hook-chain-state.patch`
 
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Allows Citus to load after preexisting PostgreSQL hooks when the
 operator explicitly configures trusted cohabiting extensions, then preserves
-the captured planner, executor, and non-distributed EXPLAIN hook chain.
+the captured planner, executor, and non-distributed EXPLAIN hook chain. The
+TS6 source changes are now integrated into the fork, while the patch files
+remain as rebase/reference artifacts for upstream review.
 
 **Motivation**: Citus's upstream guard rejects any preexisting planner,
-utility, executor, or explain hook. ai-blaise/citus needs a controlled path for
-validated cohabitation, starting with TimescaleDB.
+utility, executor, or explain hook. ai-blaise/citus needs a controlled,
+operator-approved path for cohabiting extensions, starting with TimescaleDB.
 
 **SQL surface / API**:
 
@@ -552,13 +641,26 @@ validated cohabitation, starting with TimescaleDB.
 citus.cohabit_extensions = 'timescaledb'
 ```
 
+The production allowlist currently recognizes only `timescaledb`; unsupported
+names do not satisfy the trust check and Citus keeps its upstream first-hook
+guard.
+
 **Citus comparison**: Vanilla Citus errors if these hooks are already set at
 load time. With TS6 enabled, ai-blaise/citus remains the outer Citus hook while
 delegating to trusted preexisting hooks where the Citus path can safely do so.
 
+Production evidence: `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds a
+real `timescale/timescaledb:latest-pg17` image with this Citus fork installed,
+starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
+`citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
+and `ai_blaise_citus` in the same server. The VM run in the production audit
+records the Git SHA, image identity, and command path, and the smoke is part of
+`make -f Makefile.ai-blaise gate-close`.
+
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
+- Executable: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
 - In-source marker after patch application:
   `FEATURE: TS6` in
   `src/backend/distributed/shared_library_init.c`,
@@ -591,22 +693,32 @@ Timescale-aware distributed hypertables.
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
   (`HypertableApplyPlan` creates `ai_blaise_citus`, checks
-  `companion_feature_status()`, verifies Timescale/Citus cohabitation, then
-  applies ordered companion SQL)
+  `companion_feature_status()`, validates the configured Timescale/Citus
+  cohabitation precondition, then applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
   and canonical SQL emitter `e2e/src/bin/timescale_apply_plan.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TS8: LSP Rules For Hypertable Invariants
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds edit-time diagnostics for creating Timescale hypertables on
-distributed tables without the companion bridge, exposed through the canonical
-`citus-lsp` diagnostic emitter.
+distributed tables without the companion bridge, exposed through the
+file-backed `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`
+CLI and the canonical diagnostic emitter.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
+verifies the distributed-hypertable invariant diagnostic, then verifies that
+`apply_distribute_hypertable(...)` suppresses that warning. Broader JSON-RPC
+language-server protocol integration, editor transport, workspace indexing,
+automatic file rewrites, and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: The required Timescale integration is subtle enough that users
 need IDE feedback before invalid SQL reaches a migration or operator reconcile.
@@ -624,14 +736,22 @@ hypertable invariants.
 ### TS9: Doctor Rules For Cohabitation
 
 **Overlay**: `companion/src/db_doctor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds companion DB-doctor rules for Timescale/Citus cohabitation,
-non-colocated joins, missing distribution columns, hypertable bridge state,
-and chunk interval drift.
+**Summary**: Provides installable SQL DB-doctor rule registration and violation
+reporting for cohabitation and distributed-schema preflight checks.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.get_violations(...)`
+records `companion_db_doctor_rules`, emits missing-schema violations through
+`companion_db_doctor_violations`, and verifies unsupported doctor rules fail
+closed. Full pglinter rule execution, non-colocated-join SQL analysis,
+Timescale catalog inspection, automatic remediation, and operator integration
+remain alpha.
 
 **Motivation**: Cohabiting extensions need a SQL-visible preflight and lint
 surface so accidental violations are caught before migrations mutate schema.
@@ -643,6 +763,10 @@ Timescale-aware cohabitation doctor rules.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: TS9` in `companion/src/db_doctor.rs`
+- SQL runtime: `FEATURE: TS9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS12: Distributed Reorder Policy
 
@@ -672,7 +796,7 @@ policies across shards.
 ### TS18: Executable Timescale Bridge State
 
 **Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`, `citus`
@@ -687,23 +811,53 @@ of only returning SQL text that references missing internal routines.
 **Citus comparison**: Vanilla Citus does not expose a TimescaleDB bridge state
 catalog or apply functions for Timescale policy fanout.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, creates the bridge-state
+catalog, exercises public apply entrypoints where plain PostgreSQL can safely
+emulate dependency calls, requires durable `companion_timescale_bridge_state`
+rows for all six bridge feature ids, and verifies that compression/CAGG apply
+paths fail closed when TimescaleDB dependency functions are absent.
+`ci/ai-blaise/timescale-bridge-smoke.sh` then installs the same extension into
+a real `timescale/timescaledb:latest-pg17` container, stubs only the Citus
+distribution entrypoint, and verifies real TimescaleDB hypertable,
+compression, retention, reorder, continuous aggregate, and bridge-state
+behavior. `ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous
+stub gap by building this Citus fork into a real TimescaleDB PG17 image,
+loading `timescaledb,citus` with `citus.cohabit_extensions=timescaledb`,
+creating real `citus`, `timescaledb`, and `ai_blaise_citus` extensions,
+requiring real `create_distributed_table` rows in `pg_dist_partition`, and
+then executing the TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live
+cohabiting server without defining any Citus stub.
+
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - SQL extension: `FEATURE: TS18` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/timescale-bridge-smoke.sh`
+- CI: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
 
 ### TS13: Distributed time_bucket_gapfill
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds SQL-plan contracts for shard-local gapfill with coordinator
-interpolate/locf finalization.
+**Summary**: Provides an installable SQL gapfill aggregate plan helper that
+records worker partial and coordinator `locf(interpolate(...))` finalization
+SQL.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records a TS13
+`companion_toolkit_aggregate_plans` row for `time_bucket_gapfill`, renders
+gapfill/finalizer SQL, and verifies missing `bucket_width` fails closed. Real
+TimescaleDB gapfill execution, Toolkit state merging, planner integration,
+and distributed query execution remain alpha.
 
 **Motivation**: Time-series dashboards need gapfill across shards without
 moving raw samples to the coordinator.
@@ -715,17 +869,32 @@ gapfill bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS13` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS14: Distributed Metric Toolkit Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for counter, gauge, and heartbeat
-Toolkit aggregates.
+**Summary**: Provides installable SQL plan registry support for counter,
+gauge, and heartbeat Toolkit aggregate worker partials and coordinator
+rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records a TS14
+`counter_agg` plan in `companion_toolkit_aggregate_plans`, renders worker
+partial SQL, and renders a
+`rollup(partial_state)` coordinator finalizer. Real Toolkit metric aggregate
+execution, worker/coordinator function availability checks, planner pushdown,
+and distributed result merging remain alpha.
 
 **Motivation**: Metric rollups should use Toolkit's partial/final model while
 preserving Citus shard locality.
@@ -737,17 +906,31 @@ aggregate orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS14` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS15: Distributed Approximate Toolkit Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for percentile and frequency Toolkit
-aggregate rollups.
+**Summary**: Provides installable SQL plan registry support for percentile and
+frequency Toolkit approximate aggregate worker partials and coordinator
+rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS15
+`percentile_agg` plan registration in `companion_toolkit_aggregate_plans` with
+deterministic worker/coordinator SQL.
+Real Toolkit approximate aggregate execution, sketch merge accuracy,
+planner pushdown, and distributed result merging remain alpha.
 
 **Motivation**: Approximate analytics should keep sketches shard-local until
 the final coordinator merge.
@@ -759,17 +942,30 @@ Toolkit-specific approximate aggregate catalog.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS15` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS15` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS16: Distributed Toolkit Downsamplers
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for ASAP smoothing and LTTB
-downsampling.
+**Summary**: Provides installable SQL plan registry support for ASAP smoothing
+and LTTB downsampler worker partials and coordinator finalizers.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS16
+`asap_smooth` plan registration in `companion_toolkit_aggregate_plans` and
+verifies downsamplers without a `time_column` fail closed. Real Toolkit
+downsampler execution, sampling-quality validation, planner pushdown, and
+distributed result merging remain alpha.
 
 **Motivation**: Downsampling needs to occur close to shard data before
 coordinator rendering.
@@ -781,17 +977,30 @@ downsampling orchestration.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS16` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS16` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TS17: Distributed Toolkit State Aggregates
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Adds distributed contracts for candlestick, state, and range
-Toolkit aggregates.
+**Summary**: Provides installable SQL plan registry support for candlestick,
+state, and range Toolkit aggregate worker partials and coordinator rollups.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_toolkit_aggregate_plan(...)` records TS17
+`state_agg` plan registration in `companion_toolkit_aggregate_plans` with
+deterministic worker/coordinator SQL.
+Real Toolkit state aggregate execution, state/range merge semantics, planner
+pushdown, and distributed result merging remain alpha.
 
 **Motivation**: Finance, state-machine, and range analytics need the same
 worker-partial/coordinator-final pattern as other Toolkit aggregates.
@@ -803,20 +1012,34 @@ surface.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS17` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: TS17` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## AI / Vector
 
 ### A1: pgai-Compatible Vectorizer DSL
 
 **Overlay**: `companion/src/vector.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgvector`, `timescaledb`
 
-**Summary**: Adds a Rust companion contract that renders a pgai-compatible
-`ai.create_vectorizer(...)` SQL plan with loading, chunking, embedding,
-destination, scheduling, queue, and usage-log setup.
+**Summary**: Provides an installable SQL vectorizer registry that validates a
+pgai-compatible vectorizer definition, creates a shard-local queue table, and
+records tenant token usage.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.register_vectorizer(...)`
+renders pgai-compatible `ai.create_vectorizer(...)` SQL, records
+`companion_vectorizer_definitions`, creates a queue table, enqueues a document,
+records `companion_vectorizer_usage_log`, and verifies missing source columns
+and invalid chunk overlap fail closed. Actual pgai worker execution, embedding
+provider calls, vector index creation, per-worker scheduling, and operator
+reconciliation remain alpha.
 
 **Motivation**: pgai's vectorizer DSL is the right user-facing shape, but its
 archived Python worker is not a good runtime floor for this fork.
@@ -827,6 +1050,10 @@ archived Python worker is not a good runtime floor for this fork.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A1` in `companion/src/vector.rs`
+- SQL runtime: `FEATURE: A1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### A2: Vectorizer Worker
 
@@ -870,6 +1097,7 @@ tenant budget or dispatching requests.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A3` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A4: Per-Tenant Token Budgets
 
@@ -891,6 +1119,7 @@ are wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A5: Vectorizer Usage Accounting
 
@@ -904,7 +1133,7 @@ are wired in.
 micro-cost accounting, emitted by the canonical vectorizer worker run.
 
 **Motivation**: Cost dashboards and token budgets require a durable accounting
-shape before provider calls run in production.
+shape before provider calls are enabled for tenant workloads.
 
 **Citus comparison**: Vanilla Citus does not account for embedding provider
 usage.
@@ -936,6 +1165,7 @@ workers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A6` in `sidecar/vectorizer/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
 
 ### A8: Vector Dimension Via CRD
 
@@ -958,20 +1188,40 @@ fan embedding jobs across Citus workers safely.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A8` in `operator/src/crds/vectorizer.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Topology
 
 ### S2: Topology-Aware Placement
 
-**Overlay**: `operator/src/crds/shard_group.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the `ShardGroup` placement policy surface used to keep
-replicated shard placements spread across topology domains such as Kubernetes
-zones.
+**Summary**: Defines the `ShardGroup` placement policy surface and the
+`ShardGroupReconcilePlan` plan-builder that renders the SQL apply plan
+(`set_shard_count`, `set_shard_replication_factor`, `create_distributed_table`,
+optional `update_distributed_table_colocation`, and a `pg_dist_shard`
+post-condition guard) plus Kubernetes-style topology-spread constraints. The
+`CitusClusterReconcilePlan` plan-builder renders the CloudNativePG cluster
+manifest, pool Deployment intent, and one Deployment intent per declared
+sidecar so the operator-owned reconcile contract is executable end-to-end.
+
+Production evidence: Local and VM proof runs `cargo test -p
+ai_blaise_citus_operator` (61 unit tests including reconcile-plan coverage for
+coordinator-worker, coordinator-less, custom-sidecar, and colocation-free
+shard-group cases) and `cargo run -p ai_blaise_citus_operator --
+run-reconcile-plans`, which emits the canonical reconcile-plan TSV row
+`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. The matching SQL apply
+plan and CloudNativePG cluster manifest are produced from the canonical
+`CitusClusterSpec` and `ShardGroupSpec` without external Kubernetes
+dependencies. Live in-cluster reconciliation (a Kubernetes controller loop
+that watches the CRDs, applies the manifests, and updates `.status`) remains
+gated behind the alpha `operator.controllerRbac.enabled` profile because the
+operator runtime currently exposes only health/readiness/metrics and
+plan-builder helpers.
 
 **Motivation**: Placement decisions need an operator-owned policy before the
 fork can prove zone-aware replication and survival-goal behavior.
@@ -982,8 +1232,13 @@ Kubernetes-native CRD for topology spread constraints.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`
+- In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`,
+  `operator/src/reconcile/shard_group.rs`,
+  `operator/src/reconcile/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans`
+- CI: `cargo test -p ai_blaise_citus_operator`
 
 ### S4: Coordinator-Less Topology Mode
 
@@ -1007,6 +1262,7 @@ not ship ai-blaise's pool/operator topology mode.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S5: Raft Per Shard Group
 
@@ -1033,24 +1289,40 @@ consensus logic into Postgres backends.
 ### S6: Per-Shard Placement Generation
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines companion-side placement generation and local-placement
-query contracts used by plan-cache invalidation and router fast paths.
+**Summary**: Provides installable SQL placement-generation helpers and
+local-placement checks used by plan-cache invalidation and router fast paths.
 
-**Motivation**: Pool and companion routing need stable helper APIs before
+**Motivation**: Pool and companion routing need versioned helper APIs before
 placement-generation invalidation can move beyond the pool model.
 
 **Citus comparison**: Vanilla Citus tracks shard placements but does not
 expose these helper contracts as companion APIs.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S6` as `sql-runtime`, calls
+`companion_internal.bump_placement_generation(102008, 'worker-a')` twice,
+verifies generation advancement through `companion_placement_generation(...)`,
+verifies unknown shards return generation zero, checks
+`companion_local_placement_matches(...)` for matching and non-matching workers,
+and verifies shard zero fails closed. This status covers the local SQL
+placement-generation state and local-placement helper surface only; actual
+Citus metadata synchronization, pool cache invalidation, rebalance hooks,
+planner invalidation, and operator-driven placement changes remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S6` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S6` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S9: Closed-Timestamp Follower Reads
 
@@ -1096,6 +1368,7 @@ ship a Kubernetes tenant CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S10` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S11: Survival Goals
 
@@ -1117,17 +1390,18 @@ failure domain goal for topology-aware reconciliation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### S13: Range-Based Dynamic Sharding
 
 **Overlay**: `companion/src/router_assist.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Adds hash and range routing plan shapes so companion and pool code
-can reason about non-hash shard assignment through one API.
+**Summary**: Adds installable SQL hash and numeric range routing helpers so
+companion and pool code can reason about target shard indexes through one API.
 
 **Motivation**: Dynamic sharding needs a router contract before planner and
 operator work can safely mix hash and range distribution.
@@ -1135,21 +1409,45 @@ operator work can safely mix hash and range distribution.
 **Citus comparison**: Vanilla Citus primarily exposes hash distribution
 contracts and does not ship this range-routing helper surface.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `S13` as `sql-runtime`, verifies
+`companion_hash_shard_index('tenant-a', 8)` is deterministic and bounded,
+verifies `companion_range_shard_index(25, 0, 100, 4)` maps to shard index `1`,
+and verifies zero-shard and out-of-bounds numeric range inputs fail closed.
+This status covers the local SQL hash and numeric range routing helpers only;
+actual dynamic shard creation, Citus router integration, operator rebalancing,
+pool data-plane routing, and distributed range metadata propagation remain
+alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S13` in `companion/src/router_assist.rs`
+- SQL runtime: `FEATURE: S13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### S14: Tenant Migration Online
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant move plans between workers with optional region
-affinity preservation.
+**Summary**: Provides installable SQL tenant move and quota helper state for
+online tenant migration planning.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.plan_tenant_move(...)`
+records `companion_tenant_moves`, `companion_internal.set_tenant_quota(...)`
+records `companion_tenant_quotas`, and verifies same-worker moves and zero
+connection quotas fail closed. Actual shard movement, pool draining, tenant
+traffic migration, copy/backfill workers, and operator reconciliation remain
+alpha.
 
 **Motivation**: Tenant moves must be represented as validated plans before the
 operator and companion coordinate online migration.
@@ -1161,6 +1459,10 @@ tenant-level online migration plan.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S14` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: S14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Resource Efficiency
 
@@ -1210,30 +1512,41 @@ scale-to-zero semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
-### R4: Idle-In-Transaction Reaper
+### R4: Idle-In-Transaction Detector
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines a guardrail plan and installable
+**Summary**: Defines a guardrail plan and installable detection-only
 `companion_idle_transactions(...)` SQL surface for sessions that sit idle in
 transaction beyond a configured limit.
 
 **Motivation**: Distributed transactions can hold locks and snapshots across
-workers; stale idle transactions need a predictable mitigation contract.
+workers; stale idle transactions need predictable detection before any
+cancel/terminate policy can be promoted.
 
-**Citus comparison**: Vanilla Citus does not ship an idle-transaction reaper
+**Citus comparison**: Vanilla Citus does not ship an idle-transaction detector
 helper.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` opens a real
+PostgreSQL session, leaves it idle inside a transaction, and requires the
+installable `companion_idle_transactions('100 milliseconds'::interval)` SQL
+surface to detect that live backend from `pg_stat_activity`. The promoted
+runtime scope is detection only; it does not cancel or terminate sessions. VM
+verification for this promotion reran the smoke against a real `postgres:17`
+container.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R4` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### R5: Hot/Warm/Cold Tier Policy Job
 
@@ -1284,6 +1597,7 @@ does not provide a scheduled repack CRD.
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### R9: Cross-Tier Query Planner Input
 
@@ -1354,6 +1668,7 @@ policy objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C5: Replication Conflict Taxonomy
 
@@ -1376,6 +1691,90 @@ classification contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `patches/postgres/0001-logical-commit-clock.patch` and
+  `patches/postgres/0002-per-subtrans-commit-ts.patch` provide the PG-core
+  pieces the seven-class conflict resolver needs: monotonic commit timestamps
+  to break last-update-wins ties deterministically, and per-subtransaction
+  origin attribution so a forced delta apply keeps the remote node id instead
+  of the apply worker's. Tracked under FEATURE: PGC1 and FEATURE: PGC2.
+
+### PGC1: PostgreSQL Logical Commit Clock
+
+**Overlay**: `patches/postgres/0001-logical-commit-clock.patch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds a per-XLogCtl Lamport clock and an XLogReserveInsertHook so
+commit timestamps are monotonically increasing in commit-LSN order, with a
+per-backend remoteTransactionStopTimestamp that lets logical replication apply
+workers bump the local clock forward when a remote transaction carries a
+timestamp ahead of the local clock.
+
+**Motivation**: Multi-master and parallel-commit deployments cannot resolve
+conflicts deterministically when commit timestamps can move backwards inside a
+single node's WAL. The hook closes that gap by running under the WAL-insert
+lock so the commit time chosen by the hook is the same time that determines
+LSN order. FEATURE: T5 (parallel commit transaction status) and FEATURE: C5
+(replication conflict taxonomy) both depend on this clock.
+
+**Citus comparison**: Vanilla PostgreSQL records `xactStopTimestamp` per
+backend but does not enforce monotonic increase across the cluster; vanilla
+Citus inherits that behaviour. The patch is the canonical pgEdge/Spock
+contribution to pgsql-hackers, rebased to PostgreSQL 17.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- Upstream: `docs/ai-blaise/UPSTREAM_SYNC.md` (pgsql-hackers + pgEdge/spock
+  links)
+- In-source: `FEATURE: PGC1` in
+  `patches/postgres/0001-logical-commit-clock.patch`
+- In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
+  format and FEATURE markers. Runtime activation requires the custom-PG-compile
+  pipeline; the patch stays alpha-with-placeholder until that ships, where
+  alpha means not production-ready.
+
+### PGC2: PostgreSQL Per-Subtransaction Commit Timestamps
+
+**Overlay**: `patches/postgres/0002-per-subtrans-commit-ts.patch`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds `SubTransactionCommitTsEntry` so a single replication or
+parallel-commit transaction can record a per-subxid commit time and origin
+node id distinct from the umbrella transaction. The override is persisted via
+a new `COMMIT_TS_SUBTRANS_TS` (`0x20`) WAL record under the existing
+`RM_COMMIT_TS_ID` resource manager and replayed during recovery.
+
+**Motivation**: Spock's delta-apply path forces a row update in a
+subtransaction when last-update-wins would otherwise keep the local row; the
+forced row must keep the remote commit timestamp and origin so a downstream
+resolver can attribute the change correctly. FEATURE: T5 reuses the same
+override for shard-level finalize timestamps inside an umbrella commit, and
+FEATURE: C5 reuses it to attribute forced updates to the originating node.
+
+**Citus comparison**: Vanilla PostgreSQL keeps one commit timestamp per top
+xid; vanilla Citus does not extend that. The patch is the canonical
+pgEdge/Spock contribution to pgsql-hackers, rebased to PostgreSQL 17.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- Upstream: `docs/ai-blaise/UPSTREAM_SYNC.md` (pgsql-hackers + pgEdge/spock
+  links)
+- In-source: `FEATURE: PGC2` in
+  `patches/postgres/0002-per-subtrans-commit-ts.patch`
+- In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
+  format and FEATURE markers. Runtime activation requires the custom-PG-compile
+  pipeline; the patch stays alpha-with-placeholder until that ships, where
+  alpha means not production-ready.
 
 ### C6: CSI Snapshot Branching
 
@@ -1397,6 +1796,7 @@ copy-on-write implementations can be reconciled safely.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C6` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C7: Branch Suspend
 
@@ -1418,6 +1818,7 @@ or ad hoc suspend state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C7` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C8: Branch Promote
 
@@ -1439,6 +1840,7 @@ created and suspended the branch, so status and ownership stay consistent.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C8` in `operator/src/crds/branch.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C9: Migration Framework
 
@@ -1460,17 +1862,28 @@ that can coordinate validation, retries, and conflict handling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### C10: Online DDL State Machine
 
 **Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds the schema-job state machine for `DELETE_ONLY`,
-`WRITE_ONLY`, `BACKFILL`, and `PUBLIC` transitions.
+**Summary**: Provides an installable SQL schema-job state machine for
+`delete_only`, `write_only`, `backfill`, and `public` transitions with leased
+job records.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.schema_job_start(...)`
+records `companion_schema_jobs`, `companion_internal.schema_job_advance(...)`
+enforces valid forward transitions, and verifies invalid state transitions and
+zero leases fail closed. Actual DDL execution workers, dual-write triggers,
+backfill scheduling, lock orchestration, rollback, and operator reconciliation
+remain alpha.
 
 **Motivation**: Online schema changes need a validated state model before the
 operator and schema-job sidecar can coordinate DDL safely.
@@ -1483,7 +1896,10 @@ state machine.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C10` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: C10` in `sidecar/schema_job/src/lib.rs`
+- SQL runtime: `FEATURE: C10` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### C1: CDC Sidecar
 
@@ -1608,13 +2024,25 @@ Pub/Sub.
 ### M1: pgroll-Style Expand-Contract
 
 **Overlay**: `companion/src/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines companion SQL-plan contracts for expand/contract
-migrations with bounded lock timeout and backfill batch settings.
+**Summary**: Provides an installable SQL migration run registry and operation
+renderer for expand/contract migrations with bounded lock timeout and backfill
+batch settings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.migrate_start(...)`,
+`companion_internal.migration_add_column(...)`,
+`companion_internal.migrate_complete(...)`, and
+`companion_migration_operations` record a completed migration with rendered
+bounded expand DDL. The smoke verifies operations cannot run without an active
+migration. Actual distributed DDL execution, schema-job workers, online
+backfill, lock orchestration, rollback execution, and operator CRD
+reconciliation remain alpha.
 
 **Motivation**: Type changes, adds, drops, and renames need a reviewed
 migration unit before schema-job workers and operator CRDs execute them.
@@ -1626,17 +2054,33 @@ ship a pgroll-style expand/contract migration layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M1` in `companion/src/migration.rs`
+- SQL runtime: `FEATURE: M1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (walks Migration through DELETE_ONLY/WRITE_ONLY/BACKFILL/PUBLIC with checkpointed phase log)
 
 ### M2: gh-ost-Style Online DDL
 
 **Overlay**: `companion/src/schema_jobs.rs`, `sidecar/schema_job`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the schema-job operation/state model used by trigger and
-backfill based online DDL.
+**Summary**: Provides installable SQL online-DDL operation rendering for
+add-column, backfill, swap-column, and drop-column schema job steps.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.schema_job_add_operation(...)` records
+`companion_schema_job_operations`, renders add-column and backfill SQL, and
+`companion_internal.schema_job_render_plan(...)` returns the ordered operation
+plan. Actual online DDL execution, trigger dual-writes, backfill workers,
+cutover validation, rollback, and distributed-table orchestration remain
+alpha.
 
 **Motivation**: Online DDL needs explicit state transitions and lease
 validation before a sidecar or companion UDF can execute it.
@@ -1649,6 +2093,10 @@ gh-ost-style online DDL state machinery.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M2` in `companion/src/schema_jobs.rs`
 - In-source: `FEATURE: M2` in `sidecar/schema_job/src/lib.rs`
+- SQL runtime: `FEATURE: M2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M3: Migration CRD
 
@@ -1671,18 +2119,29 @@ operator-owned migration object.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### M5: LSP Refactor Quick-Fixes
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds typed quick-fix actions for missing Citus distribution
-columns and related colocation repairs, exposed through the canonical
-`citus-lsp` diagnostic emitter.
+columns and related colocation repairs, exposed through the file-backed
+`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI and
+the canonical diagnostic emitter.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`
+and verifies quick-fix action emission for missing distribution columns,
+non-colocated joins, missing tenant filters, missing search analyzers, and
+distributed hypertable bridge usage. Broader JSON-RPC language-server protocol
+integration, editor transport, workspace indexing, automatic file rewrites,
+and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: Migrations should fail early in the editor with a concrete
 fix plan before CI or the operator has to reject a schema change.
@@ -1700,13 +2159,23 @@ distributed schema authoring.
 ### M7: Pre-Flight Cohabit-Extension Check
 
 **Overlay**: `companion/src/db_doctor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the companion preflight contract for verifying required
-shared-preload coextensions before cohabiting migrations run.
+**Summary**: Provides installable SQL preflight checks for required
+`shared_preload_libraries` entries and trusted cohabiting extension order.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.assert_shared_preload_libraries(...)` and
+`companion_internal.assert_citus_cohabit_extension_order(...)` accept a
+Timescale-before-Citus preload list, reject missing Citus, and verify Citus
+loaded before trusted cohabiting extensions fails closed. Runtime hook-chain
+inspection, automatic server restart validation, operator remediation, and
+multi-extension policy negotiation remain alpha.
 
 **Motivation**: Operator and migration flows must refuse bad preload state
 before they install Timescale or other hook-using extension surfaces.
@@ -1718,6 +2187,10 @@ does not provide this controlled cohabitation preflight.
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - In-source: `FEATURE: M7` in `companion/src/db_doctor.rs`
+- SQL runtime: `FEATURE: M7` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M8: citusctl Plan / Apply
 
@@ -1740,6 +2213,7 @@ two-step plan/apply semantics.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### M9: Schema Visualization Output
 
@@ -1750,13 +2224,13 @@ two-step plan/apply semantics.
 **Bundled extension dep**: none
 
 **Summary**: Defines schema visualization data for distribution, hypertable,
-search-index, webhook, and live shard-placement overlays.
+search-index, webhook, and operator shard-placement overlays.
 
 **Motivation**: Distributed schema design needs visual output that shows shard
 and extension-specific state rather than only ordinary table relationships.
 
 **Citus comparison**: Vanilla Citus does not ship a visual schema designer or
-live shard-map overlay model.
+operator shard-map overlay model.
 
 **References**:
 
@@ -1767,13 +2241,22 @@ live shard-map overlay model.
 ### M11: Online Column-Type Migration
 
 **Overlay**: `companion/src/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the online type-change operation used by companion
-migration plans for type promotion without blocking table rewrites.
+**Summary**: Provides an installable SQL online type-change helper that records
+shadow-column DDL for companion migration plans.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.migration_online_type_change(...)` records shadow-column
+DDL in `companion_migration_operations`. The smoke verifies identical source
+and target types fail closed. Actual backfill workers, trigger-based dual
+writes, cutover, validation scans, rollback, and distributed table rewrite
+orchestration remain alpha.
 
 **Motivation**: Large distributed tables need type migrations that can expand,
 backfill, and contract without a long exclusive lock.
@@ -1785,6 +2268,102 @@ ship an online column-type migration contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M11` in `companion/src/migration.rs`
+- SQL runtime: `FEATURE: M11` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (simulates mid-BACKFILL worker failure, verifies rollback restores DELETE_ONLY semantics, cleans partial backfill rows)
+
+### M14: F1-Style Two-Version Invariant Controller
+
+**Overlay**: `companion/src/schema_jobs/`, `sidecar/schema_job/src/controller.rs`,
+`operator/src/reconcile/migration.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides the F1-style schema-change controller and the SQL
+surface that drives Migration CRs through the
+`delete_only -> write_only -> backfill -> public` phases while enforcing
+the two-version invariant. Adds `companion.schema_job_phase_log`,
+`companion.worker_schema_lease`, `companion_internal.schema_job_phase_log_insert`,
+`companion_internal.worker_schema_lease_upsert`,
+`companion_internal.schema_job_rollback_to`,
+`companion_internal.schema_job_cleanup_backfill`, and
+`companion_internal.schema_job_drop_added_column`.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/schema-job-f1-2vi-smoke.sh`, which installs `ai_blaise_citus`
+into a real PostgreSQL server and walks a Migration through all four
+phases, recording one phase-log row per transition, validating worker
+lease acknowledgements, simulating a worker failure mid-BACKFILL,
+triggering rollback and partial-backfill cleanup, and verifying every
+forward-progress phase honors the two-version invariant. Distributed
+backfill workers, kube-rs MigrationReconciler client, dual-write triggers,
+and live planner-hook enforcement of the WRITE_ONLY/DELETE_ONLY
+read/write invariants remain alpha.
+
+**Motivation**: Citus distributes DDL but does not guarantee a bounded
+number of in-flight schema versions or coordinate phase transitions
+across workers. The F1 controller closes that gap.
+
+**Citus comparison**: Vanilla Citus does not ship an F1-style controller,
+phase log, worker lease, or rollback planner.
+
+**References**:
+
+- Design: `docs/ai-blaise/ADR/0008-f1-style-schema-change.md`
+- Operator guide: `docs/ai-blaise/MIGRATIONS.md`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/mod.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/controller.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/worker_lease.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/rollback.rs`
+- In-source: `FEATURE: M14` in `sidecar/schema_job/src/controller.rs`
+- In-source: `FEATURE: M14` in `operator/src/reconcile/migration.rs`
+- SQL runtime: `FEATURE: M14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
+
+### M15: Continuous Two-Version Invariant Verifier
+
+**Overlay**: `companion/src/schema_jobs/mod.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_cron`
+
+**Summary**: Adds `companion_internal.verify_two_version_invariant()`,
+`companion.cluster_alarms`, and `companion_two_version_invariant_state`.
+Returns a JSON report with the number of in-flight schema versions and the
+list of jobs that exceed the limit; raises a critical
+`two_version_invariant_violation` alarm row when the invariant is
+breached. Designed to be scheduled by pg_cron every 60 seconds.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/schema-job-f1-2vi-smoke.sh`, which provokes a 3-version
+violation, calls the verifier, asserts the JSON report records one
+violation, and asserts a critical `companion.cluster_alarms` row exists.
+The pg_cron schedule and the pager-routed alert wire-up to PagerDuty/Slack
+remain alpha.
+
+**Motivation**: F1's two-version invariant is the operational signal that
+makes online schema change tractable. A continuous, in-database verifier
+catches drift the moment it appears.
+
+**Citus comparison**: Vanilla Citus does not track schema-version drift or
+emit invariant alarms.
+
+**References**:
+
+- Design: `docs/ai-blaise/ADR/0008-f1-style-schema-change.md`
+- Operator guide: `docs/ai-blaise/MIGRATIONS.md`
+- In-source: `FEATURE: M15` in `companion/src/schema_jobs/mod.rs`
+- SQL runtime: `FEATURE: M15` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
 
 ## Multi-Region
 
@@ -1808,6 +2387,7 @@ region CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR1` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR2: SurvivalGoal CRD
 
@@ -1829,6 +2409,7 @@ before it places shards.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR2` in `operator/src/crds/survival_goal.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR4: Tablespaces By Region
 
@@ -1851,6 +2432,7 @@ manage them as region objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### MR5: Pool GeoIP Routing
 
@@ -1895,6 +2477,7 @@ tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR8` in `operator/src/crds/region.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Backup / PITR
 
@@ -1943,6 +2526,7 @@ declarative schedule.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### B3: PITR Restore
 
@@ -2011,6 +2595,7 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B5` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### B6: Encrypted Backups
 
@@ -2035,6 +2620,7 @@ deployment-specific tooling.
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
 - In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Tenant Operations
 
@@ -2058,6 +2644,7 @@ rather than interpreting arbitrary schema names.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO1` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TO2: Tenant Quotas
 
@@ -2078,17 +2665,25 @@ runtime admission control is wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### TO3: Tenant Migration Online
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant move plans that carry source worker, target
-worker, and optional region affinity.
+**Summary**: Provides installable SQL tenant move planning with source worker,
+target worker, optional region affinity, and queued move state.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.plan_tenant_move(...)`
+records `companion_tenant_moves` and verifies same-worker tenant moves fail
+closed. Actual shard rebalancing, tenant traffic draining, data copy,
+cutover, and operator reconciliation remain alpha.
 
 **Motivation**: Tenant movement needs a typed plan that can be validated before
 rebalance, pool draining, and schema routing are coordinated.
@@ -2100,17 +2695,29 @@ tenant-level online move contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO3` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TO4: Tenant Archive
 
 **Overlay**: `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines tenant archive plans with destination URI and retention
-policy.
+**Summary**: Provides installable SQL tenant archive planning with destination
+URI, retention days, and queued archive state.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.plan_tenant_archive(...)` records
+`companion_tenant_archives` and verifies zero retention fails closed. Actual
+archive export, object-store writes, delete workflows, legal hold, and
+operator reconciliation remain alpha.
 
 **Motivation**: Tenant offboarding needs an auditable archive operation before
 data removal can be automated.
@@ -2122,17 +2729,29 @@ automation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO4` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### TO5: Tenant Region Affinity
 
 **Overlay**: `operator/src/crds/tenant.rs`, `companion/src/tenants.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records the preferred region for a tenant so placement and
-migration reconcilers can keep tenant data close to its users.
+**Summary**: Provides installable SQL tenant region-affinity metadata helpers
+for placement and migration planning.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.set_tenant_region_affinity(...)` records
+`companion_tenant_region_affinities` and verifies empty region affinity fails
+closed. Actual placement enforcement, shard movement, regional failover
+policy, scheduler integration, and operator reconciliation remain alpha.
 
 **Motivation**: Region affinity needs to be part of tenant intent, not hidden
 inside one-off placement annotations.
@@ -2144,19 +2763,34 @@ inside one-off placement annotations.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO5` in `operator/src/crds/tenant.rs`
 - In-source: `FEATURE: TO5` in `companion/src/tenants.rs`
+- SQL runtime: `FEATURE: TO5` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Search
 
 ### Search2: Distributed BM25 Index
 
 **Overlay**: `operator/src/crds/search_index.rs`, `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`
 
-**Summary**: Defines distributed search-index intent with text/vector column
-roles and BM25 or hybrid scoring.
+**Summary**: Provides an installable SQL search index registry that validates
+table, distribution-column, text-column, and optional vector-column metadata
+and renders worker-local full-text index DDL.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_search_index(...)` records
+`companion_search_worker_indexes`, renders deterministic GIN DDL, and verifies
+a missing distribution column fails closed. Actual pg_search BM25 index
+execution, worker index rollout, distributed DDL application, operator
+reconciliation, and shard-aware query fanout remain alpha.
 
 **Motivation**: Search indexes must be declared once and fanned out across
 workers without losing table ownership or scorer semantics.
@@ -2169,17 +2803,30 @@ index CRD.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search2` in `operator/src/crds/search_index.rs`
 - In-source: `FEATURE: Search2` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Search3: Hybrid BM25 + Vector Ranking
 
 **Overlay**: `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`, `pgvector`
 
-**Summary**: Defines the companion SQL-plan contract that combines BM25 and
-vector scores into one hybrid rank over distributed tables.
+**Summary**: Provides an installable SQL hybrid ranking helper over the
+companion search-document registry, combining PostgreSQL text rank with a
+stored vector-score signal.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.hybrid_rank(...)`
+returns ranked rows from `companion_search_documents` and verifies a missing
+vector column fails closed. Actual pgvector distance operators, ANN index
+selection, model embeddings, and distributed query planning remain alpha.
 
 **Motivation**: Hybrid search needs one coordinator-visible ranking contract
 while BM25 and vector indexes remain worker-local.
@@ -2190,6 +2837,10 @@ while BM25 and vector indexes remain worker-local.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search3` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Search7: Search Index CRD
 
@@ -2212,6 +2863,7 @@ objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### Search8: Search-Aware Cold Tier
 
@@ -2241,13 +2893,22 @@ mirrors.
 ### Search9: Search Reranker UDF Plan
 
 **Overlay**: `companion/src/search_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines provider/model/limit planning for reranking top hybrid
-search results.
+**Summary**: Provides an installable SQL rerank request registry that records
+provider/model intent for a relation of candidate search rows and emits the
+deterministic input query for later sidecar execution.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.rerank_search(...)`
+records `companion_search_rerank_requests`, renders deterministic rerank SQL,
+and verifies a missing rerank input relation fails closed. LLM/provider calls,
+model serving, sidecar rerank execution, and distributed result hydration
+remain alpha.
 
 **Motivation**: Reranking should be explicit and auditable before LLM-provider
 calls are wired into the search path.
@@ -2258,6 +2919,10 @@ calls are wired into the search path.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search9` in `companion/src/search_bridge.rs`
+- SQL runtime: `FEATURE: Search9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## HTAP
 
@@ -2389,7 +3054,7 @@ transaction boundaries.
 Snowflake, Trino, Spark, and Databricks, and reports canonical publication
 counts.
 
-**Motivation**: External analytical readers need a stable federation contract
+**Motivation**: External analytical readers need a versioned federation contract
 without learning Citus shard placement directly.
 
 **Citus comparison**: Vanilla Citus does not publish lakehouse catalogs for
@@ -2431,13 +3096,22 @@ analytical mirror.
 ### L9: Two-Step Aggregates Push To Workers
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb_toolkit`
 
-**Summary**: Defines the companion contract that keeps aggregate partials on
-workers and only sends mergeable states to the coordinator.
+**Summary**: Provides installable SQL worker-partial aggregate plan metadata so
+Toolkit aggregate plans keep partial states worker-local before coordinator
+finalization.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_internal.register_toolkit_aggregate_plan(...)`
+records `companion_toolkit_aggregate_plans`, renders worker partial SQL, and
+renders coordinator final SQL for mergeable partial states. Real Citus planner
+pushdown, worker-local execution, network reduction measurement, and HTAP pool
+routing remain alpha.
 
 **Motivation**: HTAP rollups need to reduce network and coordinator CPU by
 finalizing after worker partials.
@@ -2449,6 +3123,10 @@ not this explicit Toolkit/HTAP aggregate bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L9` in `companion/src/toolkit_distributed.rs`
+- SQL runtime: `FEATURE: L9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### L12: DuckDB Extension Catalog
 
@@ -2529,7 +3207,7 @@ starts serving table-backed endpoints.
 **Summary**: Binds REST routes to helper views with distribution column and
 shard-count metadata.
 
-**Motivation**: Auto-REST over distributed tables needs a stable view contract
+**Motivation**: Auto-REST over distributed tables needs a versioned view contract
 so requests route through Citus-aware helper views.
 
 **Citus comparison**: Vanilla Citus does not generate PostgREST helper views.
@@ -2538,6 +3216,7 @@ so requests route through Citus-aware helper views.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ### API3: GraphQL Sidecar
 
@@ -2564,13 +3243,22 @@ contract before exposing pg_graphql to tenants.
 ### API4: Distributed GraphQL Tables
 
 **Overlay**: `sidecar/graphql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
 
-**Summary**: Binds GraphQL types to distributed tables, distribution columns,
-and companion routing functions.
+**Summary**: Provides installable SQL GraphQL distributed graph metadata that
+binds a named graph to already-colocated vertex and edge tables.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_graphql_distributed_graph(...)` records
+`companion_graphql_distributed_graphs` only after graph colocation metadata is
+present, and verifies GraphQL graph registration requires graph colocation.
+GraphQL server integration, auth policies, GraphQL query planning, and
+operator integration remain alpha.
 
 **Motivation**: GraphQL queries over distributed tables need explicit routing
 metadata instead of relying on generic single-node table assumptions.
@@ -2583,6 +3271,10 @@ for distributed tables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API4` in `sidecar/graphql/src/lib.rs`
 - In-source: `FEATURE: API4` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: API4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### API5: RLS-Aware Auto API
 
@@ -2606,6 +3298,7 @@ policy.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
 - In-source: `FEATURE: API5` in `sidecar/graphql/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ### API6: Auto OpenAPI Document
 
@@ -2627,6 +3320,7 @@ OpenAPI endpoint.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 
 ## Realtime
 
@@ -2789,6 +3483,7 @@ sidecar runtimes can share the same desired state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### EF4: Database Callback Over UDS
 
@@ -2885,13 +3580,13 @@ paths without repeatedly hitting the auth sidecar.
 ### Sec1: RLS Helpers
 
 **Overlay**: `companion/src/auth.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the tenant RLS policy plan used by auth SQL surfaces and
-sidecar policy checks.
+**Summary**: Provides installable SQL tenant RLS helper predicates that map
+the active `Auth2` session tenant claim onto table tenant columns.
 
 **Motivation**: Tenant-safe auto-API and pool integration need one validated
 mapping from session claims to tenant columns.
@@ -2899,63 +3594,111 @@ mapping from session claims to tenant columns.
 **Citus comparison**: Vanilla Citus supports PostgreSQL RLS but does not ship
 tenant-aware helper UDFs.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec1` as `sql-runtime`, creates a real
+PostgreSQL row-level security policy over `rls_smoke_orders` using
+`companion_tenant_id_matches(tenant_id)`, switches into a non-superuser role,
+verifies tenant-a and tenant-b sessions each see only their own rows, verifies
+`WITH CHECK` rejects a cross-tenant insert, and verifies
+`companion_require_tenant_id()` fails closed without a tenant claim. This
+status covers the installable predicate helpers only; automatic policy
+generation, pool authentication, and auto-API integration remain alpha until
+independently proven. Sec2 JWT verification has its own evidence boundary and
+does not expand the Sec1 RLS-helper claim.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec1` in `companion/src/auth.rs`
+- SQL runtime: `FEATURE: Sec1` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec2: JWT Verification UDF
 
 **Overlay**: `companion/src/auth.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines issuer, audience, and JWKS secret binding for SQL-visible
-JWT verification.
+**Summary**: Provides an installable SQL HS256 JWT verifier that returns
+Auth2-compatible claims after signature and registered-claim validation.
 
 **Motivation**: Auth sidecars and SQL helpers need the same verified claim
 contract to avoid split-brain authorization behavior.
 
 **Citus comparison**: Vanilla Citus does not provide JWT verification helpers.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec2` as `sql-runtime`, constructs a
+signed HS256 JWT inside PostgreSQL, verifies it through
+`companion_verify_jwt_hs256(...)`, checks issuer, array audience, expiration,
+not-before, subject, role, tenant, and JWT ID claims, and feeds the verified
+claims into the Auth2 session helper surface. The same smoke verifies bad
+signatures, wrong audiences, expired tokens, and missing tenant claims fail
+closed. This status covers the local SQL HS256 verifier only; JWKS/RSA/ECDSA
+key discovery, Auth1 token issuance, pool authentication, token-cache
+behavior, key rotation, and external secret resolution remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec2` in `companion/src/auth.rs`
+- SQL runtime: `FEATURE: Sec2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec5: Immutable Ledger
 
 **Overlay**: `companion/src/ledger.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: `pgledger`
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines append-only transfer planning and hash-chain validation
-for the companion ledger surface.
+**Summary**: Provides an installable append-only ledger table and transfer
+function with SHA-256 hash-chain validation.
 
 **Motivation**: Audit-heavy tenant operations need a tamper-evident record
 before automated migrations, tenant moves, and privileged actions execute.
 
 **Citus comparison**: Vanilla Citus does not ship an immutable ledger surface.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec5` as `sql-runtime`, appends two
+ledger transfers with `companion_internal.ledger_transfer(...)`, verifies the
+second transfer advances the hash chain, verifies `companion_ledger_chain_valid()`,
+rejects a transfer with a missing previous hash, and verifies direct
+`UPDATE` against `companion_internal.ledger_entries` fails with the
+append-only trigger. This status covers the local SQL ledger runtime only;
+multi-party accounting workflows, external ledger backends, tenant workflow
+authorization, and migration/operator integration remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec5` in `companion/src/ledger.rs`
+- SQL runtime: `FEATURE: Sec5` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec6: HMAC Tamper-Evidence On Ledger
 
 **Overlay**: `companion/src/ledger.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: `pgledger`, `pgcrypto`
+**Bundled extension dep**: `pgcrypto`
 
-**Summary**: Defines the `companion_ledger_seal` plan contract that seals a
-ledger transfer with an external secret reference and HMAC algorithm.
+**Summary**: Provides an installable `companion_ledger_seal` function that
+records append-only HMAC seals for ledger transfer hashes.
 
 **Motivation**: Ledger rows need a separable integrity seal so compromised
 database writes are detectable against an out-of-band secret.
@@ -2963,10 +3706,25 @@ database writes are detectable against an out-of-band secret.
 **Citus comparison**: Vanilla Citus does not provide HMAC-sealed ledger
 entries.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`pgcrypto` and `ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Sec6` as `sql-runtime`, seals a ledger
+entry through `companion_ledger_seal('tr_001', 'ledger-secret',
+'hmac-sha256')`, verifies the seal is visible through `companion_ledger_entries`,
+verifies direct `DELETE` against `companion_internal.ledger_seals` fails with
+the append-only trigger, and verifies unsupported HMAC algorithms fail closed.
+This status covers the local SQL HMAC sealing runtime only; external secret
+resolution, key rotation, hardware-backed signing, and privileged workflow
+integration remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec6` in `companion/src/ledger.rs`
+- SQL runtime: `FEATURE: Sec6` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Sec12: Per-Tenant Resource Quotas
 
@@ -2990,27 +3748,88 @@ can be isolated reliably.
 - In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
-### Auth2: Tenant-Aware Claims
+### Sec13: Pool CIDR Access Control
 
-**Overlay**: `companion/src/auth.rs`, `sidecar/auth`
-**Status**: alpha
+**Overlay**: `pool/src/proxy.rs`, `ai-blaise/command-center: helm/charts/citus-cluster`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the session-claim shape carrying `uid`, `role`,
-`tenant_id`, and optional JWT ID.
+**Summary**: Enforces a comma-separated client CIDR allowlist on the pool
+PostgreSQL data port through `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST`, renders
+that allowlist from Helm values, emits rejected-connection metrics, and renders
+a matching Kubernetes `NetworkPolicy` for clusters with NetworkPolicy-capable
+CNI enforcement.
 
-**Motivation**: Pool, sidecar, and SQL helper code must agree on tenant claim
-names before RLS enforcement is wired through.
+**Motivation**: Production pool deployments need a fail-closed data-plane
+boundary so accidental Service exposure cannot silently accept traffic outside
+the intended client networks.
+
+**Citus comparison**: Vanilla Citus does not ship an external pool with
+application-level CIDR enforcement or a matching overlay NetworkPolicy.
+
+Production evidence: the pool unit tests verify CIDR parsing, allow decisions,
+invalid-prefix rejection, and pre-upstream rejection for denied clients.
+`ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool against `postgres:17`,
+proves SQL traffic from `127.0.0.0/8` is allowed, restarts with
+`192.0.2.0/24`, proves the same client is denied, and requires
+`ai_blaise_citus_pool_rejected_connections_total` to record the rejection.
+`ci/ai-blaise/kind-production-smoke.sh` renders the Helm allowlist into the
+live pool deployment, proves allowed SQL traffic through the Service, upgrades
+the release to a deny-only CIDR, proves SQL traffic is blocked in Kubernetes,
+triggers application-level rejection through a port-forward to the live pool
+data port, and verifies rejected-connection metrics from live pool pods. The
+Helm deploy contract also renders `pool-networkpolicy.yaml` for the same
+allowlist.
+
+**References**:
+
+- In-source: `FEATURE: Sec13` in `pool/src/proxy.rs`
+- Helm: `FEATURE: Sec13` in
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/pool-networkpolicy.yaml`
+- Executable: `cargo test -p ai_blaise_citus_pool`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
+### Auth2: Tenant-Aware Claims
+
+**Overlay**: `companion/src/auth.rs`, `sidecar/auth`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides installable SQL session-claim helpers that set and read
+`uid`, `role`, `tenant_id`, and optional JWT ID through ai-blaise custom GUCs.
+
+**Motivation**: Pool, sidecar, and SQL helper code need one live claim surface
+before JWT verification and token-cache behavior can build on the same names.
 
 **Citus comparison**: Vanilla Citus does not model application tenant claims.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `Auth2` as `sql-runtime`, calls
+`companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
+'jti-123')`, verifies `companion_current_session_claims()` and
+`companion_current_tenant_id()` return the same values, and verifies empty
+`uid` claims are rejected. Auth1 JWT issuance and Auth3 token caching remain
+alpha until their own runtime evidence exists; Sec2 JWT verification has a
+separate SQL-runtime evidence boundary.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth2` in `companion/src/auth.rs`
 - In-source: `FEATURE: Auth2` in `sidecar/auth/src/lib.rs`
+- SQL runtime: `FEATURE: Auth2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Auth4: OAuth2 / OIDC Provider Contracts
 
@@ -3032,6 +3851,7 @@ Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth4` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ### Auth5: MFA Policy Contracts
 
@@ -3053,42 +3873,59 @@ issuance can enforce step-up authentication.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth5` in `sidecar/auth/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
 
 ## Plan Management
 
 ### PM3: Plan Freeze Companion Module
 
 **Overlay**: `companion/src/plan_freeze.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_hint_plan`, `sr_plan`
 
-**Summary**: Defines companion SQL-plan contracts for freezing a stable plan,
-binding it to a hint set, and auto-promoting it after enough stable
-executions.
+**Summary**: Provides an installable SQL plan-freeze registry that stores
+query hashes, plan XML, hint-set names, and promotion thresholds.
 
 **Motivation**: Planner changes in a distributed database need an explicit
-escape hatch for stable production queries before a regression reaches users.
+escape hatch for latency-sensitive tenant queries before a regression reaches
+users.
 
 **Citus comparison**: Vanilla Citus does not ship a plan-freeze companion
 module or auto-promotion policy.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `PM3` as `sql-runtime`, calls
+`companion_internal.plan_freeze('query-hash-1', '<Plan><Node /></Plan>',
+'orders_hint')`, attaches promotion thresholds with
+`companion_internal.plan_auto_promote(...)`, verifies the frozen plan is
+visible through `companion_plan_freezes`, and verifies an empty query hash
+fails closed. This status covers the local SQL plan-freeze registry and
+promotion-policy state only; actual planner enforcement, hint injection,
+pg_hint_plan/sr_plan integration, auto-promotion workers, distributed plan
+capture, and plan XML validation remain alpha.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs`
+- SQL runtime: `FEATURE: PM3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### PM4: Plan Regression Detection
 
 **Overlay**: `companion/src/plan_freeze.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_hint_plan`, `sr_plan`
 
-**Summary**: Adds latency and cost regression policy evaluation for frozen and
-candidate plans.
+**Summary**: Adds installable SQL latency and cost regression policy
+evaluation for frozen-plan candidates.
 
 **Motivation**: Auto-promoted plans need a measurable guardrail that flags
 candidate regressions before they replace a known-good plan.
@@ -3096,24 +3933,49 @@ candidate regressions before they replace a known-good plan.
 **Citus comparison**: Vanilla Citus exposes plans and costs, but it does not
 ship this persistent regression detector.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container, requires
+`companion_feature_status()` to mark `PM4` as `sql-runtime`, attaches a
+regression policy through `companion_internal.plan_regression_guard(...)`,
+verifies `companion_plan_regression_violates(...)` flags a latency regression,
+verifies an allowed candidate does not violate policy, verifies regression
+samples are recorded, and verifies a missing frozen plan fails closed. This
+status covers the local SQL regression-policy evaluator and sample log only;
+automatic production-plan replacement, query capture, pg_hint_plan/sr_plan
+enforcement, workload baselining, and distributed planner integration remain
+alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs`
+- SQL runtime: `FEATURE: PM4` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Index Advisor
 
 ### IA3: Companion Advisor
 
 **Overlay**: `companion/src/index_advisor.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `hypopg`, `pg_qualstats`
 
-**Summary**: Defines ranked index-advisor output that emits
-`CREATE INDEX CONCURRENTLY` scripts from what-if cost deltas and predicate
-counts.
+**Summary**: Provides an installable SQL index-advisor candidate registry and
+ranking view that emits `CREATE INDEX CONCURRENTLY` scripts from cost deltas
+and predicate counts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.index_advisor_record_candidate(...)` records a ranked
+candidate, `companion_index_advisor_ranked(...)` emits `CREATE INDEX
+CONCURRENTLY` SQL, and verifies non-improving candidates fail closed. HypoPG and
+pg_qualstats workload mining, automatic index creation, distributed index
+rollout, and write-amplification governance remain alpha.
 
 **Motivation**: Operators need reviewable index suggestions that rank real
 workload benefit before applying changes to distributed tables.
@@ -3125,6 +3987,10 @@ index advisor.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: IA3` in `companion/src/index_advisor.rs`
+- SQL runtime: `FEATURE: IA3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Webhooks
 
@@ -3149,17 +4015,28 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### WH2: Companion Webhook Helpers
 
 **Overlay**: `companion/src/webhooks.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines companion webhook registration and trigger-install SQL
-plans for `INSERT`, `UPDATE`, and `DELETE` events.
+**Summary**: Provides installable SQL webhook registration and trigger queue
+helpers for `INSERT`, `UPDATE`, and `DELETE` events.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.webhook_register(...)`,
+`companion_internal.install_webhook_trigger(...)`, and
+`companion_webhook_events` register a webhook, install a table trigger, and
+verifies INSERT and UPDATE rows are enqueued. The smoke also verifies non-http
+webhook URLs fail closed. Outbound HTTP delivery, retry workers,
+dead-letter queues, secret resolution, and operator webhook CRDs remain alpha.
 
 **Motivation**: Declarative webhook CRDs need a companion SQL surface that
 turns table/event/url configuration into queue-backed triggers.
@@ -3171,6 +4048,10 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH2` in `companion/src/webhooks.rs`
+- SQL runtime: `FEATURE: WH2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### WH3: Reliable Delivery
 
@@ -3254,8 +4135,8 @@ URLs.
 
 **Summary**: Carries tenant-column ACL binding for object metadata rows.
 
-**Motivation**: Storage ACLs must line up with tenant RLS rather than live only
-in object-store policy.
+**Motivation**: Storage ACLs must line up with tenant RLS rather than existing
+only in object-store policy.
 
 **Citus comparison**: Vanilla Citus does not manage storage ACLs.
 
@@ -3299,9 +4180,32 @@ policy.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the Model Context Protocol tool request contract for
-cluster inspection and guarded operations, plus a runnable canonical sidecar
-session emitter.
+**Summary**: Provides the `tools/citus-mcp` line-delimited JSON-RPC stdio
+server and the `sidecar/mcp` `serve-stdio` policy bridge for `initialize`,
+`tools/list`, and validation-only guarded `tools/call` requests, including
+deployed exhaustive-profile sidecar `POST /mcp` traffic.
+
+Executable alpha evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which launch
+`cargo run -q -p ai_blaise_citus_mcp -- serve-stdio` and
+`cargo run -q -p ai_blaise_citus_sidecar_mcp -- serve-stdio`, send real
+JSON-RPC stdin requests, verify MCP initialize capabilities, verify the tool
+list contains shard/query/rebalance/archive validation tools, validate a
+tenant-scoped `query_with_timeout` request, reject a cross-schema
+tenant-scoped query, reject a destructive `tenant_archive` call while safe mode
+is required, and reject a tenant-scoped query missing tenant scope.
+`ci/ai-blaise/mcp-sidecar-http-smoke.sh` also launches
+`cargo run -q -p ai_blaise_citus_sidecar_mcp -- serve` and verifies
+`GET /readyz`, `GET /metrics`, and HTTP `POST /mcp` JSON-RPC behavior. The
+Kubernetes production smoke sends `POST /mcp` through a port-forward to the
+deployed exhaustive-profile MCP sidecar pod and verifies the same initialize,
+tenant query validation, cross-schema denial, and destructive-denial behavior.
+MCP4 covers read-only database execution for `tools/citus-mcp`;
+authentication, mutating database execution, Kubernetes tool execution, and
+production sidecar enablement remain alpha. Production values keep the MCP
+sidecar disabled until the sidecar runtime contract is implemented and
+live-gated.
 
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
@@ -3315,6 +4219,10 @@ direct database or Kubernetes access.
 - In-source: `FEATURE: MCP1` in `sidecar/mcp/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
 
 ### MCP2: Safe-Mode Tools
 
@@ -3324,8 +4232,22 @@ direct database or Kubernetes access.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds safe-mode validation that denies destructive MCP tools by
-default.
+**Summary**: Adds validation-only safe-mode checks that deny destructive MCP
+tool requests by default.
+
+Executable alpha evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which call the real tool and
+sidecar stdio servers through JSON-RPC using `serve-stdio` and verify a
+destructive `tenant_archive` tool call returns `isError: true` with the
+safe-mode denial message while non-destructive tenant-scoped validation calls
+are accepted. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
+`ci/ai-blaise/kind-production-smoke.sh` verify the same denial through the
+sidecar HTTP `serve` path and the deployed Kubernetes sidecar. Disabling safe
+mode for mutating production operations remains alpha. MCP4 covers read-only
+database execution for `tools/citus-mcp`; authentication, mutating database
+execution, Kubernetes tool execution, and production sidecar enablement remain
+alpha.
 
 **Motivation**: Agent operations should be inspect-first and dry-run-biased
 unless explicitly allowed.
@@ -3339,6 +4261,10 @@ unless explicitly allowed.
 - In-source: `FEATURE: MCP2` in `sidecar/mcp/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
 
 ### MCP3: Tenant-Scoped Tools
 
@@ -3349,10 +4275,26 @@ unless explicitly allowed.
 **Bundled extension dep**: none
 
 **Summary**: Adds tenant scope and allowed-schema validation to MCP tool
-requests.
+requests, including fail-closed rejection for obvious cross-schema SQL/table
+references.
+
+Executable alpha evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which send real JSON-RPC stdio
+`tools/call` requests through the tool and sidecar `serve-stdio` processes
+with `tenant_id` and `allowed_schemas`, verify accepted responses include the
+tenant scope, verify a tenant-scoped query without tenant scope is rejected,
+and verify `tenant_b` SQL is rejected when only `tenant_a` is allowed.
+`ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
+`ci/ai-blaise/kind-production-smoke.sh` verify the same tenant-scope checks
+through the sidecar HTTP `serve` path and the deployed Kubernetes sidecar.
+Real database authorization, per-user auth, and sidecar session isolation
+remain alpha. MCP4 covers read-only database execution for `tools/citus-mcp`;
+authentication, mutating database execution, Kubernetes tool execution, and
+production sidecar enablement remain alpha.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
-multi-tenant production usage.
+multi-tenant operator usage.
 
 **Citus comparison**: Vanilla Citus has no tenant-scoped AI-agent tool layer.
 
@@ -3363,6 +4305,56 @@ multi-tenant production usage.
 - In-source: `FEATURE: MCP3` in `sidecar/mcp/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+
+### MCP4: Read-Only Database Tool Execution
+
+**Overlay**: `tools/citus-mcp`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Executes the read-only MCP database tool subset from the real
+`tools/citus-mcp` stdio server when `AI_BLAISE_MCP_DATABASE_URL` is set.
+
+Production evidence: `ci/ai-blaise/mcp-db-smoke.sh` launches a real
+`postgres:17` container, creates tenant-scoped data plus a `pg_dist_shard`
+catalog fixture, starts `cargo run -q -p ai_blaise_citus_mcp -- serve-stdio`
+with `AI_BLAISE_MCP_DATABASE_URL`, and drives JSON-RPC over stdin/stdout. The
+smoke proves `query_with_timeout` returns live rows from `tenant_a.orders`,
+`run_explain` returns a database-generated plan, `list_shards` reads catalog
+rows including shard `102008` for `tenant_a.orders`, a `tenant_b` query is
+denied before database execution with `schema tenant_b is outside
+allowed_schemas`, and `tenant_archive` remains denied with `safe mode denied a
+destructive tool`. The implementation uses the maintained PostgreSQL Rust
+client with native TLS support rather than a toy protocol parser, wraps each
+execution in `BEGIN READ ONLY`, applies `SET LOCAL statement_timeout`, limits
+materialized rows with `AI_BLAISE_MCP_MAX_ROWS` capped at 1000 rows, caps
+caller-supplied query timeouts at 300000 ms, rejects `EXPLAIN ANALYZE` so
+`run_explain` cannot execute the explained statement, and returns JSON rows
+through the MCP text response.
+
+**Current boundary**: This production-ready claim is intentionally narrow:
+read-only query, explain, catalog, replication-status, and index-inventory
+execution through `tools/citus-mcp`. Authentication, mutating database
+execution, Kubernetes tool execution, and production sidecar enablement remain
+alpha and must stay disabled until separately implemented and live-gated.
+
+**Motivation**: Agent-visible database reads need real execution evidence
+without granting mutation or Kubernetes authority.
+
+**Citus comparison**: Vanilla Citus does not ship MCP database tool execution.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: MCP4` in `tools/citus-mcp/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- serve-stdio`
+- CI: `ci/ai-blaise/mcp-db-smoke.sh`
 
 ## Operations / DX
 
@@ -3387,16 +4379,21 @@ ai-blaise single-command local cluster contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D1` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ### D2: citusctl apply
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Requires an explicit plan ID before apply-mode CLI execution.
+**Summary**: Requires an explicit plan ID before apply-mode CLI execution and
+fails closed when `citusctl apply` is invoked without one. This status applies
+only to the real CLI parser/guard behavior; mutating cluster apply execution,
+manifest reconciliation, migrations, backup restore, PITR, WAL replay, and dev
+cluster lifecycle remain alpha until separately live-proven.
 
 **Motivation**: Mutating operations should only run from a reviewed plan so
 operator and CI behavior stay auditable.
@@ -3404,10 +4401,21 @@ operator and CI behavior stay auditable.
 **Citus comparison**: Vanilla Citus does not ship this plan-gated apply
 workflow.
 
+Production evidence: `ci/ai-blaise/citusctl-smoke.sh` runs the real
+`ai_blaise_citusctl` binary locally, on the VM, and in the GitHub Actions
+`tools` workflow. The smoke requires `citusctl apply` without a plan ID to fail
+with `citusctl: plan_id must not be empty`, then verifies `plan inspect
+cluster`, `plan apply ...`, and `apply plan-123 apply ...` emit the expected
+non-mutating plan summaries and execute-step counts. Broader citusctl dev
+cluster lifecycle, full plan/apply execution, migrations, backups, PITR, WAL
+replay, and operator mutation workflows remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D2` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- CI: `ci/ai-blaise/citusctl-smoke.sh`
 
 ### D3: citus-tui Interactive Shell
 
@@ -3437,14 +4445,25 @@ administration shell.
 ### D4: citus-lsp IDE Diagnostics
 
 **Overlay**: `tools/citus-lsp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds the initial Citus-aware LSP analyzer contract for
 non-colocated joins, unsafe distribution-column alters, missing tenant filters,
-missing search analyzers, and a runnable canonical diagnostic emitter.
+missing search analyzers, and the file-backed
+`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
+file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
+verifies missing distribution column, non-colocated join,
+distribution-column alter, hypertable invariant, missing tenant filter, and
+missing search analyzer diagnostics, and verifies fail-closed behavior for bad
+metadata or missing metadata. Broader JSON-RPC language-server protocol
+integration, editor transport, workspace indexing, automatic file rewrites,
+and full PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: Developers need edit-time errors for distributed SQL rules
 rather than discovering them during deploy-time reconciliation.
@@ -3492,9 +4511,9 @@ workflows, with mutating actions requiring exact confirmations.
 **Summary**: Defines the initial contract for the DrawDB-based visual schema
 designer's Citus overlays.
 
-**Motivation**: Schema designers need a stable model for distribution,
+**Motivation**: Schema designers need a versioned model for distribution,
 hypertable, search, webhook, and shard-placement layers before the UI reads
-live CRD or companion state.
+operator CRD or companion state.
 
 **Citus comparison**: Vanilla Citus does not include a visual schema designer.
 
@@ -3513,7 +4532,7 @@ live CRD or companion state.
 **Bundled extension dep**: none
 
 **Summary**: Defines the dashboard data-source and panel contract for the
-`citus-watch` live view.
+`citus-watch` operator view.
 
 **Motivation**: Operators need a single terminal dashboard that can read
 companion metadata, Prometheus metrics, and pool signals without hand-built
@@ -3527,6 +4546,88 @@ queries.
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### D7: Helm One-Line Install
+
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides a production-safe direct Helm install surface for the
+ai-blaise overlay. The chart defaults in `values.yaml` require immutable
+operator/pool image digests and keep alpha sidecars, tools, and alpha
+runtime/security intent disabled. They also omit controller-grade operator
+RBAC while the operator production runtime only serves probes/metrics.
+Non-production image-matrix coverage moved to the explicit
+`values-exhaustive.yaml` profile, while `values-dev.yaml` remains the small
+developer profile.
+
+**Motivation**: A direct `helm upgrade --install` command should fail closed
+unless production image identity is supplied, and it must not install the
+exhaustive alpha profile by accident.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise overlay chart
+or its production default profile.
+
+Production evidence: `ci/ai-blaise/deploy-check.sh` renders the default chart
+and rejects missing immutable digests, alpha sidecar deployments, alpha tools,
+and alpha runtime/security intent in the default profile. The same check keeps
+`values-exhaustive.yaml` as the only direct Helm profile with all alpha
+sidecars enabled. `ci/ai-blaise/kind-production-smoke.sh` now installs the
+default chart profile with direct Helm against a live kind cluster, verifies
+operator/pool replicas, rejects alpha workload deployments and controller-grade
+operator RBAC, and runs live SQL plus operator admin traffic through the
+installed release.
+
+**References**:
+
+- In-source: `FEATURE: D7` in `companion/src/ops_contracts.rs`
+- Helm chart: `ai-blaise/command-center: helm/charts/citus-cluster`
+- CI: `ci/ai-blaise/deploy-check.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
+### D8: Infrastructure Deploy Wrapper
+
+**Overlay**: `scripts/citus-scale/deploy.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides the production-safe human deploy wrapper for rendering
+and installing the Helm overlay. The wrapper defaults to `values-prod.yaml`,
+accepts release image tags and immutable operator/pool digests, refuses
+non-production installs unless `ALLOW_ALPHA_INSTALL=1` is set explicitly, and
+requires `ALLOW_MUTABLE_IMAGE_TAGS=1` before production rendering can bypass
+digest pinning for local smoke images.
+
+**Motivation**: Operators need one deploy entrypoint whose default behavior
+matches GitOps and production values, so a direct install cannot accidentally
+deploy the exhaustive alpha profile.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy
+wrapper or its production-profile guardrails.
+
+Production evidence: `ci/ai-blaise/kind-production-smoke.sh` runs
+`scripts/citus-scale/deploy.sh` with `DEPLOY_PROFILE=prod` and `MODE=install`
+against a live kind cluster, verifies the resulting `values-prod.yaml` release
+has only operator/pool/PostgreSQL workloads, runs live SQL and pool admin
+traffic through the installed release, rejects controller-grade operator RBAC
+in the production profile, and proves the wrapper install path is part of
+`make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
+statically rejects regressions that remove the production default,
+digest-inputs, mutable-tag escape hatch, controller RBAC boundary, or
+non-production install refusal.
+
+**References**:
+
+- In-source: `FEATURE: D8` in `scripts/citus-scale/deploy.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
+- Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Gate: `make -f Makefile.ai-blaise gate-close`
+
 ### D13: Production Runtime Image Matrix
 
 **Overlay**: `images/rust-runtime`, `scripts/citus-scale`
@@ -3536,13 +4637,17 @@ queries.
 **Bundled extension dep**: none
 
 **Summary**: Builds real Rust application images for the operator, pool,
-sidecars, and `citusctl`, with the deployed services defaulting to the
-long-running `serve` command. The pool image separates PostgreSQL TCP traffic
-from admin probes and requires a configured upstream before readiness. The
-Kubernetes production smoke also verifies live operator and sidecar health,
-readiness, and metrics over port-forwarded pod traffic before accepting the
-deployment, and aggregates pool request metrics across replicas after the SQL
-smoke so service load balancing cannot hide a cold pool pod.
+sidecars, and `citusctl`, with deployed services defaulting to the long-running
+`serve` command and the `citusctl` tool image defaulting to `plan inspect
+cluster`. The pool image separates PostgreSQL TCP traffic from admin probes and
+requires a configured upstream before readiness. The Kubernetes production smoke
+also verifies live operator and sidecar health, readiness, and metrics over
+port-forwarded pod traffic before accepting the deployment, runs the built
+`citusctl` image as a Job, and aggregates pool request metrics across replicas
+after the SQL smoke so service load balancing cannot hide a cold pool pod.
+Controller-grade operator RBAC remains an alpha chart contract enabled only by
+the exhaustive profile until the operator runs real Kubernetes watches and
+reconciliation.
 
 **Motivation**: Production Kubernetes verification must exercise the actual
 app containers and PostgreSQL traffic path rather than synthetic responder
@@ -3551,11 +4656,32 @@ images.
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
 
-Production evidence: PR #3 and merge commit `537711d89` passed the VM
-kind production smoke using the real Rust image matrix, live operator and
-sidecar `/healthz`, `/readyz`, and `/metrics` probes, real PostgreSQL traffic
-through the pool service, and per-pod pool request metric aggregation. GitHub
-Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
+Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
+passed local and VM verification of the kind production smoke using the real
+Rust image matrix, live operator and sidecar `/healthz`, `/readyz`, and
+`/metrics` probes, real PostgreSQL traffic through the pool service, per-pod
+pool request metric aggregation, and a separate `values-prod.yaml` profile
+with alpha workloads disabled. Production values now require immutable
+operator and pool image digests for release rendering; kind disables that
+requirement only for locally loaded smoke images, so the smoke proves runtime
+behavior but not release image-pinning evidence. Release image builds write
+`artifacts/ai-blaise-image-digests.tsv` and fail if pushed images do not report
+immutable repo digests. The deploy workflow and `gate-close` run
+`ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
+the Makefile smoke targets set `REQUIRE_DOCKER=1` so missing Docker fails the
+release gate instead of silently skipping live evidence. `gate-close` also runs
+the image/deploy contract checks directly, with `REQUIRE_HELM=1` for rendered
+chart checks so missing Helm fails the release gate instead of silently skipping
+render evidence. The deploy wrapper install path is now live-gated by the
+`values-prod.yaml` phase of the kind smoke through `MODE=install`, while the
+optional tools Deployment remains dev-only and is not production evidence. The
+kind smoke also runs the built `citusctl` image and
+requires the `plan inspect cluster` output so tool images are executed, not
+merely built or loaded. The
+`ai-blaise/command-center: gitops/apps/13-citus-cluster.yaml` targets the `main` release branch and
+`values-prod.yaml` for GitOps deployment with namespace creation and pruning
+enabled; the Argo application is a GitOps render contract, not live controller
+evidence.
 
 **References**:
 
@@ -3565,6 +4691,8 @@ Actions for PR #3 completed with 158 successful checks and 4 skipped checks.
   `images/rust-runtime/Dockerfile`
 - Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `.github/workflows/ci-deploy.yml`
+- Gate: `make -f Makefile.ai-blaise gate-close`
 - CI: `ci/ai-blaise/image-check.sh`
 
 ### WF2: WAL Replay Debugger Command
@@ -3587,6 +4715,7 @@ replay and restore commands can share preflight and audit behavior.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WF2` in `tools/citusctl/src/lib.rs`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 
 ## Federation
 
@@ -3611,19 +4740,28 @@ not ship a federation CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ## Graph
 
 ### G2: Distributed Graph Bridge
 
 **Overlay**: `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `age`
 
-**Summary**: Defines Apache AGE graph distribution plans over colocated Citus
-vertex and edge tables.
+**Summary**: Provides installable SQL graph colocation metadata that records
+validated vertex-table, edge-table, vertex-key, and colocation-group bindings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.ensure_graph_colocation(...)` records
+`companion_graph_colocations` and verifies missing vertex keys fail closed.
+Apache AGE graph execution, distributed graph traversal, and shard fanout
+remain alpha.
 
 **Motivation**: Graph queries need shard-local subgraphs before Cypher traffic
 can safely run over distributed datasets.
@@ -3635,17 +4773,29 @@ distributed-graph bridge.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G2` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: G2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### G3: Graph Colocation Policy
 
 **Overlay**: `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `age`
 
-**Summary**: Captures the required vertex/edge colocation policy for
-distributed graph tables.
+**Summary**: Provides an installable SQL graph colocation policy registry for
+the vertex/edge placement metadata that graph and GraphQL bridge helpers share.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.ensure_graph_colocation(...)` records
+`companion_graph_colocations` and verifies missing vertex keys fail closed.
+Distributed graph placement enforcement, AGE catalog integration, traversal
+routing, and operator reconciliation remain alpha.
 
 **Motivation**: Traversals are only efficient when vertices and edges share
 placement by tenant or graph key.
@@ -3657,19 +4807,32 @@ policy layer.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: G3` in `companion/src/graph_bridge.rs`
+- SQL runtime: `FEATURE: G3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## JSON Schema
 
 ### JS2: Distributed JSON Schema Validation
 
 **Overlay**: `companion/src/jsonschema_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_jsonschema`
 
-**Summary**: Defines schema registration and shard-trigger fanout for JSON
-Schema validation on distributed tables.
+**Summary**: Provides an installable SQL JSON schema registry and shard
+validator with object-type and required-field checks.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.register_json_schema(...)` plus
+`companion_internal.validate_jsonschema_shard(...)` report valid shard state,
+and verifies non-object schemas fail closed. Full pg_jsonschema compatibility,
+JSON Schema draft coverage, distributed validation workers, and operator
+integration remain alpha.
 
 **Motivation**: JSON validation must run on every shard, not only where a
 coordinator migration happened to install a trigger.
@@ -3681,17 +4844,30 @@ pg_jsonschema trigger fanout.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: JS2` in `companion/src/jsonschema_bridge.rs`
+- SQL runtime: `FEATURE: JS2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M13: JSON Schema Validation On Insert
 
 **Overlay**: `companion/src/jsonschema_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_jsonschema`
 
-**Summary**: Defines insert/update trigger timing for JSON Schema validation
-on distributed tables.
+**Summary**: Provides an installable SQL JSON schema trigger helper that
+installs table-level insert/update validation against registered schemas.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.install_jsonschema_trigger(...)` records
+`companion_jsonschema_triggers`, accepts valid JSON documents, and verifies
+documents missing required fields fail closed. Online migration orchestration,
+backfill validation, trigger rollout orchestration, and operator integration
+remain alpha.
 
 **Motivation**: Migration and schema contracts need fail-fast JSON validation
 before malformed tenant data is accepted.
@@ -3703,19 +4879,32 @@ helpers.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M13` in `companion/src/jsonschema_bridge.rs`
+- SQL runtime: `FEATURE: M13` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Geo
 
 ### Geo2: Geo-Aware Citus Distribution
 
 **Overlay**: `companion/src/geo_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgis`
 
-**Summary**: Defines geohash-derived distribution planning for PostGIS-backed
-tables.
+**Summary**: Provides an installable SQL geo bucket and distribution metadata
+helper that adds a deterministic bucket column and records geo distribution
+settings.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies `companion_geo_bucket(...)`,
+`companion_internal.add_geohash_column(...)`, and
+`companion_geo_distributions` work together, and verifies out-of-range latitude
+fails closed. PostGIS geometry parsing, true geohash/S2/H3 indexes, distance
+operators, and distributed spatial query planning remain alpha.
 
 **Motivation**: Location-heavy workloads need spatially meaningful shard keys
 so nearby data can be routed and rebalanced coherently.
@@ -3727,17 +4916,30 @@ not create geo-aware distribution keys.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo2` in `companion/src/geo_distributed.rs`
+- SQL runtime: `FEATURE: Geo2` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### Geo3: Geo Shard Pruning Planner Input
 
 **Overlay**: `companion/src/geo_distributed.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgis`
 
-**Summary**: Defines bbox/grid planner input used to prune shards for spatial
-queries.
+**Summary**: Provides an installable SQL geo pruning metadata helper that
+records table, geometry-column, and precision policy for later spatial-pruning
+execution.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies
+`companion_internal.enable_geo_shard_pruning(...)` records
+`companion_geo_pruning_policies` and verifies out-of-range precision fails
+closed. PostGIS planner hooks, shard exclusion, spatial selectivity
+statistics, and operator integration remain alpha.
 
 **Motivation**: Spatial queries should avoid scanning shards whose geohash
 grid cells cannot intersect the requested bounding box.
@@ -3749,13 +4951,17 @@ metadata.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Geo3` in `companion/src/geo_distributed.rs`
+- SQL runtime: `FEATURE: Geo3` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ## Observability
 
 ### O1: Query Percentile Views
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_stat_statements`
@@ -3770,39 +4976,60 @@ building one-off SQL at each installation.
 **Citus comparison**: Vanilla Citus exposes distributed execution stats but
 does not ship this percentile view contract.
 
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` starts a real
+PostgreSQL 17 container with `shared_preload_libraries=pg_stat_statements`,
+creates both `pg_stat_statements` and `ai_blaise_citus`, seeds a tracked SQL
+statement, and requires the installable `companion_pg_stat_statements_p95`
+view to report nonnegative percentile latency for that live statement. VM
+verification for this promotion reran that smoke against `postgres:17`.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O1` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
-### O2: Distributed Stats View
+### O2: Local Activity Stats View
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Adds the distributed stats contract and installable
-`companion_pg_stat_distributed` SQL view for local node activity rollups.
+**Summary**: Adds the local activity stats contract and installable
+`companion_pg_stat_local_activity` SQL view for local node activity rollups.
+The legacy `companion_pg_stat_distributed` view remains as a compatibility
+alias for the same local-node data.
 
-**Motivation**: Operators need one view of coordinator and worker behavior to
-debug distributed plans.
+**Motivation**: Operators need a per-node view that can be installed on
+coordinators and workers before a later multi-node aggregation layer is
+promoted.
 
 **Citus comparison**: Vanilla Citus exposes many stats views, but not this
-single companion-owned rollup contract.
+single companion-owned local activity rollup contract.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into a real `postgres:17` container and requires
+`companion_pg_stat_local_activity` and its compatibility alias
+`companion_pg_stat_distributed` to report the local database node.
+`ci/ai-blaise/observability-replication-smoke.sh` then starts a real
+PostgreSQL primary, installs the extension, and requires the view to report
+active local activity with nonnegative idle and wait counters.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O2` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/observability-replication-smoke.sh`
 
 ### O3: Distributed Replication Lag View
 
 **Overlay**: `companion/src/observability.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -3816,11 +5043,18 @@ surface for lag budgets before HA gates can assert readiness.
 **Citus comparison**: Vanilla Citus does not provide an ai-blaise regional lag
 view contract.
 
+Production evidence: `ci/ai-blaise/observability-replication-smoke.sh` starts
+a real `postgres:17` primary and streaming standby on a Docker network, creates
+a replication role, performs `pg_basebackup`, waits for the standby to enter
+recovery, and requires the installable `companion_pg_dist_replication_lag`
+view to report a streaming standby row with nonnegative lag bytes.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O3` in `companion/src/observability.rs`
 - SQL extension: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/observability-replication-smoke.sh`
 
 ### O4: Sidecar Health And Metrics Contract
 
@@ -3840,11 +5074,12 @@ they can safely participate in Kubernetes rollout, drain, and chaos gates.
 **Citus comparison**: Vanilla Citus does not ship out-of-process Rust sidecars
 or a sidecar health contract.
 
-Production evidence: PR #3 and merge commit `537711d89` passed the VM
-kind production smoke that port-forwarded into the live operator and every
-deployed sidecar and verified `/healthz`, `/readyz`, and `/metrics` from the
-actual pods. Production values still keep alpha feature sidecars disabled by
-default; this status applies only to the shared probe/metrics runtime.
+Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
+passed local and VM verification of the kind production smoke that
+port-forwarded into the live operator and every deployed sidecar and verified
+`/healthz`, `/readyz`, and `/metrics` from the actual pods. Production values
+still keep alpha feature sidecars disabled by default; this status applies
+only to the shared probe/metrics runtime.
 
 **References**:
 
@@ -3853,7 +5088,7 @@ default; this status applies only to the shared probe/metrics runtime.
 - In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
 - Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
-### O5: OpenTelemetry Traces And Sidecar Deployment Contract
+### O5: Sidecar Deployment Contract
 
 **Overlay**: `operator/src/crds/sidecar.rs`
 **Status**: alpha
@@ -3863,10 +5098,12 @@ default; this status applies only to the shared probe/metrics runtime.
 
 **Summary**: Defines the operator-facing sidecar deployment contract for
 replicas, resources, and type-specific configuration across the V2 sidecar
-surface.
+surface. The current implementation does not emit or export OpenTelemetry
+traces; trace propagation remains unimplemented until real runtime code,
+collector wiring, and measured VM/Kubernetes evidence are added.
 
-**Motivation**: Traces and rollout behavior are only useful if every sidecar is
-declared and reconciled through a consistent resource contract.
+**Motivation**: Rollout behavior is only useful if every sidecar is declared
+and reconciled through a consistent resource contract.
 
 **Citus comparison**: Vanilla Citus does not ship out-of-process sidecar
 deployment objects.
@@ -3875,11 +5112,12 @@ deployment objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 
 ### O6: Grafana Dashboards As ConfigMaps
 
-**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
-**Status**: alpha
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-dashboards.yaml`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3894,16 +5132,29 @@ of hand-maintained JSON pasted into each cluster.
 **Citus comparison**: Vanilla Citus does not ship ai-blaise dashboard
 ConfigMaps.
 
+Production evidence: the kind production smoke in
+`ci/ai-blaise/kind-production-smoke.sh` installs the default `values.yaml`,
+`values-prod.yaml`, and explicit exhaustive Helm profiles into a real kind
+cluster, then requires the live
+`configmap/ai-blaise-citus-dashboards` resource to contain both dashboard JSON
+payloads plus the emitted `ai_blaise_sidecar_ready` metric and the guarded pool
+error-rate expression. `ci/ai-blaise/deploy-check.sh` parses the embedded
+Grafana JSON, requires the exact dashboard files, panel titles, and PromQL
+target expressions, renders the production profiles with Helm, and rejects
+unguarded pool request-rate division.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O6` in
-  `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-dashboards.yaml`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
 
 ### O10: Alert Rules For Top Pains
 
-**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
-**Status**: alpha
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-prometheusrules.yaml`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3916,11 +5167,26 @@ for the failure modes most likely to hurt users first.
 
 **Citus comparison**: Vanilla Citus does not ship these ai-blaise alert rules.
 
+Production evidence: the kind production smoke in
+`ci/ai-blaise/kind-production-smoke.sh` installs the monitoring CRDs into a
+real kind cluster before Helm install, applies the default `values.yaml`,
+`values-prod.yaml`, and explicit exhaustive chart profiles, then requires the
+live
+`prometheusrules.monitoring.coreos.com/ai-blaise-citus-alerts` resource to
+contain the replication-lag, sidecar-readiness, vectorizer-backlog, and
+pool-error-rate alerts. The live check also requires the pool error-rate alert
+to use the guarded request-rate denominator and a positive-traffic predicate.
+`ci/ai-blaise/deploy-check.sh` renders the same production profiles with Helm,
+statically guards the alert names, and rejects unguarded pool request-rate
+division.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O10` in
-  `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-prometheusrules.yaml`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+- CI: `ci/ai-blaise/deploy-check.sh`
 
 ### O13: citus-watch TUI
 
@@ -3931,13 +5197,13 @@ for the failure modes most likely to hurt users first.
 **Bundled extension dep**: none
 
 **Summary**: Defines the initial Rust contract for the `citus-watch` unified
-live view across cluster topology, shards, hypertables, EXPLAIN, rebalance,
-vectorizer backlog, search indexes, tenants, and branches.
+operator view across cluster topology, shards, hypertables, EXPLAIN,
+rebalance, vectorizer backlog, search indexes, tenants, and branches.
 
-**Motivation**: Live operations need a compact, terminal-native view that
+**Motivation**: Runtime operations need a compact, terminal-native view that
 tracks the same companion and metrics surfaces used by dashboards and alerts.
 
-**Citus comparison**: Vanilla Citus does not ship a dedicated live
+**Citus comparison**: Vanilla Citus does not ship a dedicated runtime
 operations TUI.
 
 **References**:
@@ -3946,89 +5212,2109 @@ operations TUI.
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### O14: W3C Trace-Context Propagation
+
+**Overlay**: `sidecar/shared/src/otel.rs`, `pool/src/trace_tap.rs`,
+`companion/src/trace_context.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Threads a W3C `traceparent` end-to-end from pool to companion
+to sidecars. The shared `otel` module exposes a `TraceContext` extract /
+inject trait with three carriers — `HeaderMap` (HTTP), `MetadataMap` (gRPC),
+and `SetLocalBuilder` (PostgreSQL `SET LOCAL`). The pool proxy taps the
+PostgreSQL startup envelope for an embedded traceparent in three places
+(custom `traceparent` startup parameter, `options=-c trace.parent=`, and a
+backwards-compatible `application_name` wire format) and records counters
+for tapped versus absent connections without modifying the byte stream.
+Companion's `trace_context` plan documents the canonical pgrx functions
+`companion.current_traceparent`, `companion.current_tracestate`, and
+`companion.project_traceparent_from_application_name`, which let
+companion-side spans chain to the inbound trace via the
+`current_setting('trace.parent', true)` GUC.
+
+**Motivation**: Distributed-database observability needs a single
+trace-id that survives the libpq wire so per-sidecar spans, companion
+spans, and operator spans can be correlated in Jaeger or Tempo without
+sampling drift.
+
+**Citus comparison**: Vanilla Citus does not propagate W3C trace-context
+through libpq.
+
+Production evidence: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
+real `postgres:17` container, runs the pool proxy against it, sends a
+traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
+log line reports the exact traceparent and that
+`ai_blaise_citus_pool_traceparent_tapped_total` increments. A follow-up
+connection without a traceparent increments
+`ai_blaise_citus_pool_traceparent_absent_total`. With `REQUIRE_KIND=1` the
+script additionally boots a 3-node kind cluster with Jaeger and asserts the
+trace lands at Jaeger.
+
+**References**:
+
+- Design: `docs/ai-blaise/OBSERVABILITY.md`
+- In-source: `FEATURE: O14` in `sidecar/shared/src/otel.rs`
+- In-source: `FEATURE: O14` in `pool/src/proxy.rs`
+- In-source: `FEATURE: O14` in `pool/src/trace_tap.rs`
+- In-source: `FEATURE: O14` in `companion/src/trace_context.rs`
+- CI: `ci/ai-blaise/otel-trace-propagation-smoke.sh`
+
+### O15: Per-Sidecar Structured-Log Schema
+
+**Overlay**: `sidecar/shared/src/log_schema.rs`, `companion/src/log_view.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Declares the canonical JSON log shape for every ai-blaise
+sidecar: nine common fields (timestamp, level, sidecar, message,
+traceparent, tenant_id, request_id, version, error, fields) plus typed
+per-sidecar extensions under `fields`. Companion's `log_view` module
+renders 17 deterministic `CREATE OR REPLACE VIEW` statements, one per
+sidecar, that project the JSON column from `companion.sidecar_log_raw`
+into typed SQL columns; Vector or fluent-bit feed that raw table from
+sidecar stdout.
+
+**Motivation**: Operator tooling, the citus-watch TUI, and the Grafana
+dashboards in `ai-blaise/command-center` all need a typed contract for log
+ingestion. Without it the per-sidecar shape drifts and downstream consumers
+cannot plan against the JSON column.
+
+**Citus comparison**: Vanilla Citus emits unstructured Postgres log lines;
+no per-sidecar JSON schema exists.
+
+Production evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
+validate every canonical schema, prove no extension field shadows a common
+field, and confirm the schema catalog covers all 17 sidecars. Companion's
+`log_view` tests render the deterministic SQL bundle and assert per-sidecar
+projections cast each extension field to its declared SQL type.
+
+**References**:
+
+- Design: `docs/ai-blaise/OBSERVABILITY.md`
+- In-source: `FEATURE: O15` in `sidecar/shared/src/lib.rs`
+- In-source: `FEATURE: O15` in `sidecar/shared/src/log_schema.rs`
+- In-source: `FEATURE: O15` in `companion/src/log_view.rs`
+- Acceptance: `cargo test -p ai_blaise_citus_companion --lib log_view`
+
+## Extension Catalog SQL Runtime
+
+### A7: pgvector Cohabitation Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgvector`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pgvector cohabitation contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not pin a bundled vector-extension
+catalog contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: A7` in `companion/src/extension_catalog.rs`
+
+### A12: vchord Alternate Vector Index Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `vchord`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the vchord alternate vector-index contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not track optional vector-index
+alternatives in a catalog runtime.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: A12` in `companion/src/extension_catalog.rs`
+
+### C11: pgl_ddl_deploy Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgl_ddl_deploy`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the DDL replication extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle cross-region DDL
+replication policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C11` in `companion/src/extension_catalog.rs`
+
+### C12: Replication-Slot Failover Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_failover_slots`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the logical replication slot failover contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require logical slot failover
+packaging.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C12` in `companion/src/extension_catalog.rs`
+
+### C13: Subscription Failover Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_subscription_pg_failover`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the logical subscription failover contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package subscription failover
+contracts.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: C13` in `companion/src/extension_catalog.rs`
+
+### EF6: UDF Substrate Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `plrust`, `plv8`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the JavaScript and Rust in-database UDF substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle plv8/plrust as a platform
+contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: EF6` in `companion/src/extension_catalog.rs`
+
+### F2: Foreign Data Wrapper Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `oracle_fdw`, `mysql_fdw`, `mongo_fdw`, `tds_fdw`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the foreign data wrapper bundle contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle the overlay FDW catalog
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: F2` in `companion/src/extension_catalog.rs`
+
+### F5: Outbound HTTP Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsql-http`, `pg_net`, `omnigres`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+outbound HTTP extension and integration-target policy.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgsql-http or pg_net
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: F5` in `companion/src/extension_catalog.rs`
+
+### G1: Apache AGE Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `age`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the Apache AGE graph substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require Apache AGE in every
+operand image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: G1` in `companion/src/extension_catalog.rs`
+
+### Geo1: PostGIS Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgis`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the PostGIS geospatial substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require PostGIS in every operand
+image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Geo1` in `companion/src/extension_catalog.rs`
+
+### IA1: HypoPG Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `hypopg`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the hypothetical-index advisor input contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle hypothetical-index advisor
+inputs.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: IA1` in `companion/src/extension_catalog.rs`
+
+### IA2: pg_qualstats Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_qualstats`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the predicate-statistics advisor input contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle predicate-stat advisor
+inputs.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: IA2` in `companion/src/extension_catalog.rs`
+
+### JS1: pg_jsonschema Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_jsonschema`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the JSON Schema substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require JSON Schema validation
+support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: JS1` in `companion/src/extension_catalog.rs`
+
+### L11: pg_parquet Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_parquet`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the Parquet helper extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package Parquet helpers as part of
+its image.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: L11` in `companion/src/extension_catalog.rs`
+
+### M6: DDL Replication Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgl_ddl_deploy`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the DDL replication contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle pgl_ddl_deploy policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M6` in `companion/src/extension_catalog.rs`
+
+### M10: Track Settings Drift Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_track_settings`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the settings drift tracking extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_track_settings.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M10` in `companion/src/extension_catalog.rs`
+
+### M12: UUIDv7 Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_uuidv7`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the monotonic UUID helper contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle monotonic UUID helpers.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: M12` in `companion/src/extension_catalog.rs`
+
+### MR7: pgactive Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgactive`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the cross-region active-active reference extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgactive conflict-policy
+gates.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: MR7` in `companion/src/extension_catalog.rs`
+
+### O7: Wait-Event Sampling Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_wait_sampling`, `pgsentinel`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+wait-event sampling extension contracts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_wait_sampling or
+pgsentinel.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O7` in `companion/src/extension_catalog.rs`
+
+### O8: OS Metrics Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgnodemx`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the SQL-visible OS metrics extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pgnodemx.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O8` in `companion/src/extension_catalog.rs`
+
+### O9: Kernel Stats Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_stat_kcache`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the kernel statistics extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_stat_kcache.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O9` in `companion/src/extension_catalog.rs`
+
+### O11: pg_stat_monitor Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_stat_monitor`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pg_stat_monitor alternative statement histogram contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pg_stat_monitor.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O11` in `companion/src/extension_catalog.rs`
+
+### O12: pg_show_plans Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_show_plans`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the plan-inspection extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require plan-inspection
+packaging.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: O12` in `companion/src/extension_catalog.rs`
+
+### PM1: pg_hint_plan Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_hint_plan`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the hint-plan backend contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package hint-plan policy as an
+overlay contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: PM1` in `companion/src/extension_catalog.rs`
+
+### PM2: sr_plan Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `sr_plan`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the saved-plan backend contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle saved-plan backends.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: PM2` in `companion/src/extension_catalog.rs`
+
+### R6: Queue Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgmq`, `pgque`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the bloat-free queue substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pgque/pgmq as queue
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: R6` in `companion/src/extension_catalog.rs`
+
+### R11: pg_warm Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_warm`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the replica cold-start cache warming contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require pg_warm in operand images.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: R11` in `companion/src/extension_catalog.rs`
+
+### Search1: pg_search Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the BM25 search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require BM25 search support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search1` in `companion/src/extension_catalog.rs`
+
+### Search4: RUM Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `rum`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the RUM search index substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require RUM search indexes.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search4` in `companion/src/extension_catalog.rs`
+
+### Search5: pg_trgm Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_trgm`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the trigram search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require trigram search support.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search5` in `companion/src/extension_catalog.rs`
+
+### Search6: citext Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `citext`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the case-insensitive text search substrate contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require citext search semantics.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Search6` in `companion/src/extension_catalog.rs`
+
+### Sec3: Audit Extension Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgaudit`, `pgauditlogtofile`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the SQL and file audit extension contracts.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require this audit bundle.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec3` in `companion/src/extension_catalog.rs`
+
+### Sec4: pgsodium Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsodium`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the libsodium crypto extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle libsodium crypto policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec4` in `companion/src/extension_catalog.rs`
+
+### Sec10: pg_safeupdate Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_safeupdate`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the safe-update guard extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not package pg_safeupdate policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec10` in `companion/src/extension_catalog.rs`
+
+### Sec11: Anonymization Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `anon`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the CDC anonymization extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle anonymization policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec11` in `companion/src/extension_catalog.rs`
+
+### Sec14: pgcrypto Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgcrypto`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the core crypto primitive extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not document pgcrypto as overlay
+policy.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec14` in `companion/src/extension_catalog.rs`
+
+### Sec15: CMK Encryption Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsodium`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the pgsodium-backed CMK encryption-at-rest extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe pgsodium-backed CMK
+controls.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: Sec15` in `companion/src/extension_catalog.rs`
+
+### WF1: pg_walinspect Catalog Runtime
+
+**Overlay**: `companion/src/extension_catalog.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_walinspect`
+
+**Summary**: Provides an installable SQL extension catalog runtime entry for
+the WAL inspection forensic workflow extension contract.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
+real PostgreSQL server and verifies the installable SQL extension catalog
+runtime through `companion_internal.seed_extension_catalog`,
+`companion_extension_catalog`, `companion_extension_feature_coverage`,
+`companion_extension_required`, `companion_required_preload_libraries`, and
+that hard-blocked extensions fail closed. Actual binary extension
+installation, full operand image build, initdb extension creation, and operator
+package reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this WAL inspection
+workflow as an overlay contract.
+
+**References**:
+
+- SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- In-source: `FEATURE: WF1` in `companion/src/extension_catalog.rs`
+
+## V2 Contract Surface Headings
+
+The former V2 addendum rows below now have standalone alpha feature headings.
+Each heading names the executable contract evidence and keeps the runtime
+boundary explicit. These are catalog-complete contract surfaces, not production
+claims for the full feature behavior.
+
+### A9: Secret Binding Via External Secrets
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the vector-provider secret-reference contract that keeps
+API keys outside literal values and points operators at External Secrets.
+
+**Current boundary**: The executable operations runner validates the expected
+secret-control shape, while live External Secrets reconciliation and provider
+credential rotation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define vector-provider secret
+binding.
+
+**References**:
+
+- In-source: `FEATURE: A9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### A10: Streaming Chat Completion UDF
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the required policy inputs for a tenant-budgeted
+streaming chat completion SQL surface.
+
+**Current boundary**: The advanced-planner runner proves the contract metadata
+is present and valid; no provider call path, streaming SRF, or billing
+enforcement is production-ready yet.
+
+**Citus comparison**: Vanilla Citus does not define streaming LLM SQL
+surfaces.
+
+**References**:
+
+- In-source: `FEATURE: A10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### A11: Semantic Catalog Text-To-SQL
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the catalog and tenant-scope inputs needed before a
+semantic text-to-SQL planner can be wired to real metadata.
+
+**Current boundary**: The contract runner verifies shape and coverage only;
+semantic retrieval, SQL generation, authorization, and query execution remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not include a tenant-scoped semantic
+catalog.
+
+**References**:
+
+- In-source: `FEATURE: A11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### D9: Canary Upgrade Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/upgrade.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks the canary-upgrade rehearsal artifact as a required
+operations contract.
+
+**Current boundary**: The operations runner verifies the runbook contract, but
+an automated canary cluster upgrade with rollback evidence is still alpha.
+
+**Citus comparison**: Vanilla Citus does not include this canary upgrade
+runbook.
+
+**References**:
+
+- In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### D10: Release Hardening Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/production.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the release-readiness review path, security controls, and
+operational handoff checklist as a contract surface.
+
+**Current boundary**: The companion runner validates the runbook reference;
+live release certification, owner signoff, and rollback drills remain alpha.
+
+**Citus comparison**: Vanilla Citus does not include these ai-blaise hardening
+gates.
+
+**References**:
+
+- In-source: `FEATURE: D10` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### D11: MCP Developer Workflow
+
+**Overlay**: `tools/citus-mcp`, `sidecar/mcp`, and `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the validation-only MCP workflow contract for exposing
+Citus-oriented developer operation requests to agent tooling.
+
+Executable alpha evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/mcp-stdio-smoke.sh` and
+`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which drive the real
+`tools/citus-mcp` and `sidecar/mcp` `serve-stdio` processes with JSON-RPC
+initialize, tool-list, safe tenant query validation, cross-schema denial,
+destructive-denial, and
+missing-tenant-scope requests. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
+`ci/ai-blaise/kind-production-smoke.sh` verify the sidecar `serve` HTTP
+JSON-RPC path, including deployed Kubernetes `POST /mcp` traffic. The
+operations runner still records the broader workflow contract. MCP4 covers
+read-only database execution for `tools/citus-mcp`; authentication, mutating
+database execution, Kubernetes tool execution, and production sidecar
+enablement remain alpha. Authenticated multi-user MCP deployment, policy
+isolation beyond request validation, and live database/Kubernetes mutations
+also remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
+
+**References**:
+
+- In-source: `FEATURE: D11` in `tools/citus-mcp/src/lib.rs`
+- In-source: `FEATURE: D11` in `tools/citus-mcp/src/main.rs`
+- In-source: `FEATURE: D11` in `sidecar/mcp/src/lib.rs`
+- In-source: `FEATURE: D11` in `sidecar/mcp/src/main.rs`
+- In-source: `FEATURE: D11` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
+- CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
+- CI: `ci/ai-blaise/kind-production-smoke.sh`
+
+### Edge1: Bounded-Staleness Edge Replicas
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the decision-record gate for edge read replicas with a
+bounded-staleness contract.
+
+**Current boundary**: The advanced-planner runner validates the research guard;
+edge replica provisioning, freshness measurement, and failover behavior remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not model edge POP read replicas.
+
+**References**:
+
+- In-source: `FEATURE: Edge1` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### Edge2: libsql Read-Tier Research Guard
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Keeps the libsql-shaped read-tier concept behind an explicit
+research decision record.
+
+**Current boundary**: The contract runner proves the guard exists; no libsql
+read-tier integration, replication adapter, or workload isolation is
+production-ready.
+
+**Citus comparison**: Vanilla Citus does not include a libsql-shaped research
+gate.
+
+**References**:
+
+- In-source: `FEATURE: Edge2` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### F3: Iceberg Federation To Warehouses
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines catalog and warehouse inputs for an Iceberg federation
+bridge.
+
+**Current boundary**: The advanced-planner contract covers input validation;
+Iceberg catalog connectivity, snapshot planning, and warehouse reads remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not define Iceberg warehouse
+federation.
+
+**References**:
+
+- In-source: `FEATURE: F3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### F4: postgres_fdw Credential Rotation
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgres_fdw`
+
+**Summary**: Records the server and secret-reference inputs needed for a safe
+FDW credential rotation path.
+
+**Current boundary**: Contract validation is executable; actual credential
+rollover, connection draining, and foreign server reconciliation remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe FDW secret rotation.
+
+**References**:
+
+- In-source: `FEATURE: F4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### L7: Citus Columnar Analytical Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Captures the table and columnar-policy inputs for routing
+analytical work toward columnar storage.
+
+**Current boundary**: The contract runner validates planner intent only; live
+columnar conversion, cost model selection, and workload routing remain alpha.
+
+**Citus comparison**: Vanilla Citus has columnar storage but not this overlay
+tiering contract.
+
+**References**:
+
+- In-source: `FEATURE: L7` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### L10: Cross-Tier Query Planner
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the hot, warm, and cold tier inputs expected by the HTAP
+planner contract.
+
+**Current boundary**: Deterministic contract execution proves the declared
+tiers; physical tier selection and query rewrites remain alpha.
+
+**Citus comparison**: Vanilla Citus does not combine hot, warm, and cold tiers
+through this overlay planner.
+
+**References**:
+
+- In-source: `FEATURE: L10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### M4: Schema Drift Detection
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Models the observed-schema and desired-schema inputs for drift
+reconciliation.
+
+**Current boundary**: The runner verifies the contract surface; live schema
+diffing, remediation planning, and operator apply behavior remain alpha.
+
+**Citus comparison**: Vanilla Citus does not reconcile declarative schema
+drift.
+
+**References**:
+
+- In-source: `FEATURE: M4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR3: Regional Row Placement
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines region-prefix and distribution-key inputs for regional row
+placement policy.
+
+**Current boundary**: Contract validation is executable; row placement
+enforcement, repartitioning, and regional admission control remain alpha.
+
+**Citus comparison**: Vanilla Citus does not encode region in key policy.
+
+**References**:
+
+- In-source: `FEATURE: MR3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR6: Closed-Timestamp Time Travel
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records timestamp and maximum-staleness inputs for a
+closed-timestamp read contract.
+
+**Current boundary**: The planner contract is covered by deterministic tests;
+MVCC timestamp routing, replica freshness, and stale-read execution remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not expose bounded-staleness time
+travel.
+
+**References**:
+
+- In-source: `FEATURE: MR6` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### MR9: Region Survival Runbook
+
+**Overlay**: `companion/src/ops_contracts.rs` and
+`docs/ai-blaise/RUNBOOKS/disaster-recovery.md`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the regional failover drill as a required operational
+artifact.
+
+**Current boundary**: The operations runner validates the runbook reference;
+live multi-region failover, PITR restore, and backup artifact restore remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not ship this regional DR runbook.
+
+**References**:
+
+- In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
+  `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
+  acceptance; alpha until full runs land)
+
+### R3: Columnstore-On-Worker Policy
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Defines table and age-threshold inputs for worker-local
+columnstore policy.
+
+**Current boundary**: Contract execution proves the policy shape; worker
+storage transitions and read-path verification remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define this worker tiering policy.
+
+**References**:
+
+- In-source: `FEATURE: R3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### R8: Non-Hypertable Cold Columnar Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Captures the table and tier inputs for cold columnar policy on
+non-hypertable relations.
+
+**Current boundary**: The contract runner validates intent; live cold-tier
+movement and query-path proof remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define this cold-tier policy.
+
+**References**:
+
+- In-source: `FEATURE: R8` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### R12: Per-Shard Temperature Ranking
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shard ID and temperature-score inputs for ranking data
+movement candidates.
+
+**Current boundary**: The contract is deterministic; collection of real heat
+signals and automatic tier movement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not maintain shard temperature scores
+for this overlay policy.
+
+**References**:
+
+- In-source: `FEATURE: R12` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### RT5: Phoenix-Channel-Compatible Realtime Client
+
+**Overlay**: `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the supabase-js/Phoenix-channel compatibility target for
+the realtime client surface.
+
+**Current boundary**: Operations evidence validates the compatibility contract;
+a live WebSocket protocol harness and client SDK matrix remain alpha.
+
+**Citus comparison**: Vanilla Citus does not provide realtime client
+compatibility gates.
+
+**References**:
+
+- In-source: `FEATURE: RT5` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### S1: Auto Shard Split
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines shard-group and split-threshold inputs for automated
+split intent.
+
+**Current boundary**: The contract runner validates the policy declaration;
+actual shard splitting, data movement, and rollback remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose declarative split intent.
+
+**References**:
+
+- In-source: `FEATURE: S1` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S3: Clone-Node Fast Scale-Out
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: none
+
+**Summary**: Records source-worker and target-worker inputs for a clone-node
+scale-out operation.
+
+**Current boundary**: Contract execution proves required inputs; live clone,
+catch-up, validation, and cutover workflows remain alpha.
+
+**Citus comparison**: Vanilla Citus exposes clone-node primitives but not this
+operator contract.
+
+**References**:
+
+- In-source: `FEATURE: S3` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S7: Cross-Region Replication Via pgactive
+
+**Overlay**: `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgactive`
+
+**Summary**: Captures the conflict-policy gate required before pgactive-backed
+cross-region replication can be enabled.
+
+**Current boundary**: Operations contract evidence is executable; live
+pgactive deployment, conflict resolution, and region-failover proof remain
+alpha.
+
+**Citus comparison**: Vanilla Citus does not bundle pgactive policy gates.
+
+**References**:
+
+- In-source: `FEATURE: S7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### S8: Locality-Prefixed PKs
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines region and tenant ID inputs for locality-prefixed primary
+key policy.
+
+**Current boundary**: The contract runner validates the planner surface; live
+key migration, foreign-key compatibility, and enforcement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define region-prefixed key
+policy.
+
+**References**:
+
+- In-source: `FEATURE: S8` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### S12: Tablespaces By Region
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records region and tablespace inputs for regional placement
+policy.
+
+**Current boundary**: Contract validation is complete; tablespace creation,
+operator reconciliation, and placement enforcement remain alpha.
+
+**Citus comparison**: Vanilla Citus does not reconcile region tablespace
+intent.
+
+**References**:
+
+- In-source: `FEATURE: S12` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### Sec7: External Secrets Integration
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the External Secrets reference-only security control for
+overlay credentials.
+
+**Current boundary**: The operations runner verifies the intended control; live
+External Secrets controller reconciliation and rotation evidence remain alpha.
+
+**Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
+
+**References**:
+
+- In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sec8: TLS Everywhere
+
+**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks TLS expectations for clients, Postgres backends, and
+sidecar-to-sidecar traffic.
+
+**Current boundary**: The security contract is executable; certificate
+issuance, mTLS enforcement, and live rotation tests remain alpha.
+
+**Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
+contract.
+
+**References**:
+
+- In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sec9: SBOM And Cosign Attestation
+
+**Overlay**: `companion/src/ops_contracts.rs` and release gates
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Captures the release-attestation requirement for SBOM and cosign
+metadata.
+
+**Current boundary**: The operations runner validates the control record;
+signed artifact publication, verification policy, and admission enforcement
+remain alpha.
+
+**Citus comparison**: Vanilla Citus does not require ai-blaise release
+attestations.
+
+**References**:
+
+- In-source: `FEATURE: Sec9` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+
+### Sto2: file_attachment Domain Type
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the file attachment storage domain and backing table
+contract.
+
+**Current boundary**: The advanced-planner runner validates the domain record;
+object storage wiring, retention policy, and authorization remain alpha.
+
+**Citus comparison**: Vanilla Citus does not include a storage domain type.
+
+**References**:
+
+- In-source: `FEATURE: Sto2` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T4: Hash-Table Planner Hot Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the minimum-partition lookup contract for a planner
+hash-table path.
+
+**Current boundary**: Contract execution proves the declaration; benchmarked
+planner hot-path replacement and regression budgets remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this overlay performance
+contract.
+
+**References**:
+
+- In-source: `FEATURE: T4` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T6: PG18 io_uring Default
+
+**Overlay**: `companion/src/ops_contracts.rs`, `images/citus-pg-overlay/Dockerfile`, `ci/ai-blaise/sql-extension-smoke.sh`, and Helm values
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Tracks the Postgres I/O method policy for the PG18 io_method
+contract, paired with the PG version matrix in the overlay image and smoke
+harness.
+
+**Current boundary**: The operations contract validates the expected toggle.
+The overlay Dockerfile now builds for PG17 and PG18 via `--build-arg PG_MAJOR`,
+and `ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL contract
+against both PG17 and PG18 base images on every PR, asserting `io_method`
+accepts its contract value without breaking Citus or any bundled extension.
+PG18 stays alpha until the full bundled-extension binary set has verified PG18
+builds (see `docs/ai-blaise/BUNDLED_EXTENSIONS.md` PG version matrix) and a
+real-kernel `io_method=io_uring` run is recorded under
+`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+
+**Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy or
+emit a multi-PG-major operand image from a single overlay contract.
+
+**References**:
+
+- In-source: `FEATURE: T6` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `make -f Makefile.ai-blaise sql-extension-smoke` (runs PG17 and PG18 matrix)
+- Executable: `make -f Makefile.ai-blaise build-image-matrix` (builds PG17 and PG18 overlay images)
+
+### T7: Pipelined Client Protocol In Pool
+
+**Overlay**: `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`,
+and `companion/src/ops_contracts.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Keeps the broader transaction-batching and shard-aware pipeline
+contract visible alongside the measured `T15` simple-query proxy evidence.
+
+**Current boundary**: The pool canonical runner and operations runner validate
+the contract shape; only the byte-transparent simple-query data-plane baseline
+is production-ready under `T15`.
+
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise pool pipeline.
+
+**References**:
+
+- In-source: `FEATURE: T7` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T7` in `pool/src/proxy.rs`
+- In-source: `FEATURE: T7` in `pool/src/main.rs`
+- In-source: `FEATURE: T7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+
+### T10: Bulk Protocol Fetch Path
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the maximum batch-row contract for bulk protocol fetches.
+
+**Current boundary**: The advanced-planner runner validates the configured
+budget; protocol implementation, backpressure, and cross-worker fetch tests
+remain alpha.
+
+**Citus comparison**: Vanilla Citus has no ai-blaise bulk-fetch contract.
+
+**References**:
+
+- In-source: `FEATURE: T10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T11: DistSQL Physical Pushdown
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Records the worker-task budget for a DistSQL physical pushdown
+contract.
+
+**Current boundary**: The planner contract is executable; physical plan
+rewrites and worker execution remain alpha.
+
+**Citus comparison**: Vanilla Citus does not expose this DistSQL contract.
+
+**References**:
+
+- In-source: `FEATURE: T11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T13: Distributed Cursors
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the open-shard budget for distributed cursor state.
+
+**Current boundary**: Contract validation is deterministic; cursor lifecycle,
+worker cleanup, and error recovery remain alpha.
+
+**Citus comparison**: Vanilla Citus does not coordinate multi-shard cursor
+state this way.
+
+**References**:
+
+- In-source: `FEATURE: T13` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### T14: Distributed Savepoints
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the open-shard budget for distributed savepoint state.
+
+**Current boundary**: The contract runner validates state shape; savepoint
+propagation, rollback, and worker cleanup remain alpha.
+
+**Citus comparison**: Vanilla Citus does not coordinate savepoints through
+this contract.
+
+**References**:
+
+- In-source: `FEATURE: T14` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### TS10: Hierarchical CAGGs Distributed
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Captures source and target continuous aggregate inputs for
+hierarchical CAGG fanout.
+
+**Current boundary**: The planner contract validates required inputs; real
+hierarchical refresh planning and worker fanout remain alpha.
+
+**Citus comparison**: Vanilla Citus does not fan out hierarchical CAGGs across
+workers.
+
+**References**:
+
+- In-source: `FEATURE: TS10` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
+### TS11: Bloom Filters On segmentby
+
+**Overlay**: `companion/src/advanced_planner.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: Defines table and `segmentby` inputs for a bloom-filter fanout
+contract.
+
+**Current boundary**: Contract execution validates the surface; bloom filter
+construction, refresh integration, and Timescale worker fanout remain alpha.
+
+**Citus comparison**: Vanilla Citus does not define Timescale segmentby bloom
+fanout.
+
+**References**:
+
+- In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+
 ## V2 Completion Register Addendum
 
-The entries below close the V2 catalog surfaces that are implemented as
-contracts in the companion, deployment, pool, MCP, image, and runbook overlays.
-Each row records the vanilla Citus comparison and the grepable source marker.
-The broad companion contract rows are executable through
-`cargo run -p ai_blaise_citus_companion --bin companion_contracts --
-run-advanced-planner-canonical` or
-`cargo run -p ai_blaise_citus_companion --bin companion_contracts --
-run-operations-canonical`, depending on whether the row is backed by
-`companion/src/advanced_planner.rs` or `companion/src/ops_contracts.rs`.
+No rows remain. The former V2 addendum rows were promoted to alpha feature
+headings with deterministic executable evidence so the feature register has no
+source-only catalog surface left.
 
-| ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference |
-|---|---|---|---|---|---|
-| A7 | pgvector cohabitation | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not pin a bundled vector-extension contract. | `FEATURE: A7` |
-| A9 | Secret binding via External Secrets | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define vector-provider secret binding. | `FEATURE: A9` |
-| A10 | Streaming chat completion UDF | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define streaming LLM SQL surfaces. | `FEATURE: A10` |
-| A11 | Semantic catalog text-to-SQL | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a tenant-scoped semantic catalog. | `FEATURE: A11` |
-| A12 | vchord alternate vector index | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not track optional vector-index alternatives. | `FEATURE: A12` |
-| C11 | DDL replication via pgl_ddl_deploy | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle cross-region DDL replication policy. | `FEATURE: C11` |
-| C12 | Replication-slot failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require logical slot failover packaging. | `FEATURE: C12` |
-| C13 | Subscription failover | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package subscription failover contracts. | `FEATURE: C13` |
-| D7 | Helm one-line install | `companion/src/ops_contracts.rs` and `deploy/k8s/helm/citus-overlay` | alpha | Vanilla Citus does not ship this overlay chart. | `FEATURE: D7` |
-| D8 | Infrastructure deploy wrapper | `companion/src/ops_contracts.rs` and `scripts/citus-scale/deploy.sh` | alpha | Vanilla Citus does not ship the ai-blaise deploy wrapper. | `FEATURE: D8` |
-| D9 | Canary upgrade runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/upgrade.md` | alpha | Vanilla Citus does not include this canary upgrade runbook. | `FEATURE: D9` |
-| D10 | Production hardening runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/production.md` | alpha | Vanilla Citus does not include these hardening gates. | `FEATURE: D10` |
-| D11 | MCP developer workflow | `tools/citus-mcp/src/lib.rs`, `tools/citus-mcp/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not expose MCP workflows for agents. | `FEATURE: D11` |
-| EF6 | In-database JavaScript and Rust UDF substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle plv8/plrust as a platform contract. | `FEATURE: EF6` |
-| Edge1 | Bounded-staleness edge replicas | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not model edge POP read replicas. | `FEATURE: Edge1` |
-| Edge2 | libsql read-tier research guard | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a libsql-shaped research gate. | `FEATURE: Edge2` |
-| F3 | Iceberg federation to warehouses | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Iceberg warehouse federation. | `FEATURE: F3` |
-| F4 | postgres_fdw credential rotation | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not prescribe FDW secret rotation. | `FEATURE: F4` |
-| F5 | Outbound HTTP extensions | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgsql-http or pg_net policy. | `FEATURE: F5` |
-| Geo1 | PostGIS bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require PostGIS in every operand image. | `FEATURE: Geo1` |
-| IA2 | pg_qualstats bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle predicate-stat advisor inputs. | `FEATURE: IA2` |
-| L7 | Citus columnar analytical path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has columnar storage but not this tiering contract. | `FEATURE: L7` |
-| L10 | Cross-tier query planner | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not combine hot, warm, and cold tiers. | `FEATURE: L10` |
-| L11 | pg_parquet bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package Parquet helpers as part of its image. | `FEATURE: L11` |
-| M4 | Schema drift detection | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile declarative schema drift. | `FEATURE: M4` |
-| M6 | DDL replication | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle pgl_ddl_deploy policy. | `FEATURE: M6` |
-| M10 | Track settings drift | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_track_settings. | `FEATURE: M10` |
-| M12 | UUIDv7 primary keys | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle monotonic UUID helpers. | `FEATURE: M12` |
-| MR3 | Locality-prefixed primary keys | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not encode region in key policy. | `FEATURE: MR3` |
-| MR6 | Closed-timestamp time travel | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose bounded-staleness time travel. | `FEATURE: MR6` |
-| MR7 | Cross-region active-active references | `companion/src/extension_catalog.rs` and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not package pgactive conflict-policy gates. | `FEATURE: MR7` |
-| MR9 | Region survival runbook | `companion/src/ops_contracts.rs` and `docs/ai-blaise/RUNBOOKS/disaster-recovery.md` | alpha | Vanilla Citus does not ship this regional DR runbook. | `FEATURE: MR9` |
-| O7 | Wait-event sampling | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_wait_sampling/pgsentinel. | `FEATURE: O7` |
-| O8 | OS metrics via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pgnodemx. | `FEATURE: O8` |
-| O9 | Kernel stats via SQL | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_stat_kcache. | `FEATURE: O9` |
-| O11 | pg_stat_monitor alternative | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_stat_monitor. | `FEATURE: O11` |
-| O12 | pg_show_plans live plans | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require live plan inspection. | `FEATURE: O12` |
-| PM2 | sr_plan bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle saved-plan backends. | `FEATURE: PM2` |
-| R3 | Columnstore-on-worker policy | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this worker tiering policy. | `FEATURE: R3` |
-| R6 | Bloat-free queue substrate | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pgque/pgmq as queue policy. | `FEATURE: R6` |
-| R8 | Non-hypertable cold columnar path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define this cold-tier policy. | `FEATURE: R8` |
-| R11 | pg_warm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require pg_warm in operand images. | `FEATURE: R11` |
-| R12 | Per-shard temperature ranking | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not maintain shard temperature scores. | `FEATURE: R12` |
-| RT5 | Phoenix-channel-compatible realtime client | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not provide realtime client compatibility gates. | `FEATURE: RT5` |
-| S1 | Auto shard split | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose declarative split intent. | `FEATURE: S1` |
-| S3 | Clone-node fast scale-out | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus exposes clone-node primitives but not this operator contract. | `FEATURE: S3` |
-| S7 | Cross-region replication via pgactive | `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not bundle pgactive policy gates. | `FEATURE: S7` |
-| S8 | Locality-prefixed PKs | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define region-prefixed key policy. | `FEATURE: S8` |
-| S12 | Tablespaces by region | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not reconcile region tablespace intent. | `FEATURE: S12` |
-| Search4 | RUM index bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require RUM search indexes. | `FEATURE: Search4` |
-| Search5 | pg_trgm bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require trigram search support. | `FEATURE: Search5` |
-| Search6 | citext bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require citext search semantics. | `FEATURE: Search6` |
-| Sec3 | pgaudit and file audit | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not require this audit bundle. | `FEATURE: Sec3` |
-| Sec4 | pgsodium crypto | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle libsodium crypto policy. | `FEATURE: Sec4` |
-| Sec7 | External Secrets integration | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not prescribe External Secrets refs. | `FEATURE: Sec7` |
-| Sec8 | TLS everywhere | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not enforce this full overlay TLS contract. | `FEATURE: Sec8` |
-| Sec9 | SBOM and cosign attestation | `companion/src/ops_contracts.rs` and release gates | alpha | Vanilla Citus does not require ai-blaise release attestations. | `FEATURE: Sec9` |
-| Sec10 | pg_safeupdate guard | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not package pg_safeupdate policy. | `FEATURE: Sec10` |
-| Sec11 | CDC anonymization extension | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not bundle anonymization policy. | `FEATURE: Sec11` |
-| Sec13 | CIDR access control | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not define pool CIDR policy. | `FEATURE: Sec13` |
-| Sec14 | pgcrypto bundled | `companion/src/extension_catalog.rs` and `images/citus-pg-overlay` | alpha | Vanilla Citus does not document pgcrypto as overlay policy. | `FEATURE: Sec14` |
-| Sec15 | Encryption-at-rest with CMK | `companion/src/extension_catalog.rs` and Helm values | alpha | Vanilla Citus does not prescribe pgsodium-backed CMK controls. | `FEATURE: Sec15` |
-| Sto2 | file_attachment domain type | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not include a storage domain type. | `FEATURE: Sto2` |
-| T4 | Hash-table planner hot path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this overlay performance contract. | `FEATURE: T4` |
-| T6 | PG18 io_uring default | `companion/src/ops_contracts.rs` and Helm values | alpha | Vanilla Citus does not set ai-blaise PG18 I/O policy. | `FEATURE: T6` |
-| T7 | Pipelined client protocol in pool | `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`, and `companion/src/ops_contracts.rs` | alpha | Vanilla Citus does not ship the ai-blaise pool pipeline. | `FEATURE: T7` |
-| T10 | Bulk protocol fetch path | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus has no ai-blaise bulk-fetch contract. | `FEATURE: T10` |
-| T11 | DistSQL physical pushdown | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not expose this DistSQL contract. | `FEATURE: T11` |
-| T13 | Distributed cursors | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate multi-shard cursor state this way. | `FEATURE: T13` |
-| T14 | Distributed savepoints | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not coordinate savepoints through this contract. | `FEATURE: T14` |
-| TS10 | Hierarchical CAGGs distributed | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not fan out hierarchical CAGGs across workers. | `FEATURE: TS10` |
-| TS11 | Bloom filters on segmentby | `companion/src/advanced_planner.rs` | alpha | Vanilla Citus does not define Timescale segmentby bloom fanout. | `FEATURE: TS11` |
+| ID | Feature | Overlay | Status | Vanilla Citus comparison | Reference | Evidence |
+|---|---|---|---|---|---|---|

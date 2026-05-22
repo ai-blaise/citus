@@ -4,6 +4,7 @@ pub mod execution;
 pub mod proxy;
 pub mod runtime;
 pub mod shard_map;
+pub mod trace_tap;
 
 pub use execution::{
     canonical_pool_execution_report, canonical_pool_runtime_contract, PoolExecutionError,
@@ -11,7 +12,7 @@ pub use execution::{
 };
 pub use proxy::{
     handle_admin_request, handle_proxy_connection, run_pool_service, run_pool_service_from_env,
-    AdminRequest, PoolProxyConfig, PoolProxyError, PoolProxyState,
+    AdminRequest, ClientCidrAllowlist, PoolProxyConfig, PoolProxyError, PoolProxyState,
 };
 pub use runtime::{
     FastPathRouterPolicy, GeoRoutingPolicy, GeoRoutingRule, HtapRoutingPolicy, MirrorTrafficPolicy,
@@ -22,4 +23,7 @@ pub use runtime::{
 pub use shard_map::{
     CachedPlan, CachedPlanGeneration, Placement, PlacementGeneration, PlanCache, ShardMap,
     ShardMapError, ShardRoute,
+};
+pub use trace_tap::{
+    render_tap_log, tap_startup_message, StartupTraceTap, STARTUP_TAP_MIN_TIMEOUT,
 };

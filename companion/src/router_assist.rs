@@ -1,5 +1,6 @@
 // FEATURE: S6
 // FEATURE: S13
+// FEATURE: T2
 
 use std::error::Error;
 use std::fmt;
@@ -13,6 +14,156 @@ impl PlacementGenerationQuery {
     pub fn validate(&self) -> Result<(), RouterAssistError> {
         validate_shard_id(self.shard_id)
     }
+
+    /// Render the SQL command that reads the placement-generation counter
+    /// from the coordinator. The SELECT returns a single bigint row.
+    ///
+    /// FEATURE: T2 -- companion-side subscriber for partial plan-cache
+    /// invalidation, paired with patches/0005-placement-generation-counter.patch.
+    pub fn to_sql_plan(&self) -> Result<RouterAssistSqlPlan, RouterAssistError> {
+        self.validate()?;
+        RouterAssistSqlPlan::new(
+            "T2",
+            vec!["SELECT pg_catalog.citus_placement_generation();".to_string()],
+        )
+    }
+}
+
+/// SQL command envelope mirroring PlanFreezeSqlPlan: a single feature id and an
+/// ordered list of SQL statements the executor must run on the coordinator.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RouterAssistSqlPlan {
+    pub feature_id: &'static str,
+    pub commands: Vec<String>,
+}
+
+impl RouterAssistSqlPlan {
+    fn new(feature_id: &'static str, commands: Vec<String>) -> Result<Self, RouterAssistError> {
+        if commands.is_empty() || commands.iter().any(|command| command.trim().is_empty()) {
+            return Err(RouterAssistError::MissingRequiredField("commands"));
+        }
+        Ok(Self {
+            feature_id,
+            commands,
+        })
+    }
+
+    pub fn script(&self) -> String {
+        self.commands.join(
+            "
+",
+        )
+    }
+}
+
+/// One observation of the coordinator's placement-generation counter, parsed
+/// out of the row returned by [`PlacementGenerationQuery::to_sql_plan`].
+///
+/// FEATURE: T2
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+pub struct PlacementGenerationSample {
+    pub generation: u64,
+}
+
+impl PlacementGenerationSample {
+    /// Parse a bigint row value into a sample. The catalog UDF returns the
+    /// counter as `int8`, which arrives over the wire either as a numeric
+    /// string or an `i64`. Both are accepted; negative or overflowing values
+    /// are rejected because the source counter is `uint64`.
+    pub fn from_catalog_value(value: i64) -> Result<Self, RouterAssistError> {
+        if value < 0 {
+            return Err(RouterAssistError::InvalidGenerationSample);
+        }
+        Ok(Self {
+            generation: value as u64,
+        })
+    }
+}
+
+/// Companion-side state that watches the placement-generation counter and
+/// emits partial-invalidation hints to the pool's shard-map subscriber path.
+///
+/// The subscriber is intentionally additive: relcache invalidations from
+/// Citus still drive correctness; the counter lets the pool avoid dropping
+/// every cached plan when only a handful of placements moved.
+///
+/// FEATURE: T2
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PlacementGenerationSubscriber {
+    last_observed: Option<PlacementGenerationSample>,
+}
+
+impl PlacementGenerationSubscriber {
+    pub fn new() -> Self {
+        Self {
+            last_observed: None,
+        }
+    }
+
+    /// Returns the most recently recorded sample, if any.
+    pub fn last_observed(&self) -> Option<PlacementGenerationSample> {
+        self.last_observed
+    }
+
+    /// Record a fresh sample. Returns an [`InvalidationHint`] describing the
+    /// transition; the pool consumes the hint to decide between
+    /// `Invalidate::Partial`, `Invalidate::Full`, or `Invalidate::None`.
+    pub fn observe(
+        &mut self,
+        sample: PlacementGenerationSample,
+    ) -> Result<InvalidationHint, RouterAssistError> {
+        let hint = match self.last_observed {
+            None => InvalidationHint::Initial(sample),
+            Some(previous) if previous == sample => InvalidationHint::Unchanged(sample),
+            Some(previous) if sample.generation > previous.generation => {
+                InvalidationHint::Advanced {
+                    previous,
+                    current: sample,
+                }
+            }
+            Some(previous) => {
+                // The counter is process-local on the coordinator; a strictly
+                // lower value means the coordinator restarted and the cache
+                // must be dropped wholesale.
+                InvalidationHint::Reset {
+                    previous,
+                    current: sample,
+                }
+            }
+        };
+        self.last_observed = Some(sample);
+        Ok(hint)
+    }
+}
+
+impl Default for PlacementGenerationSubscriber {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Outcome of a single placement-generation observation.
+///
+/// FEATURE: T2
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum InvalidationHint {
+    /// First sample after subscriber boot; the pool seeds its cache and emits
+    /// no invalidation.
+    Initial(PlacementGenerationSample),
+    /// Counter unchanged; no work to do.
+    Unchanged(PlacementGenerationSample),
+    /// Counter advanced; the pool can run a partial invalidation, dropping
+    /// only the plans whose generation snapshot is older than `current`.
+    Advanced {
+        previous: PlacementGenerationSample,
+        current: PlacementGenerationSample,
+    },
+    /// Counter went backwards, meaning the coordinator restarted; the pool
+    /// must drop the entire plan cache.
+    Reset {
+        previous: PlacementGenerationSample,
+        current: PlacementGenerationSample,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -79,6 +230,7 @@ impl LocalPlacementCheck {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RouterAssistError {
+    InvalidGenerationSample,
     InvalidShardCount,
     InvalidShardId,
     MissingRequiredField(&'static str),
@@ -87,6 +239,10 @@ pub enum RouterAssistError {
 impl fmt::Display for RouterAssistError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidGenerationSample => write!(
+                formatter,
+                "placement_generation sample must be a non-negative bigint"
+            ),
             Self::InvalidShardCount => write!(formatter, "shard_count must be greater than zero"),
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
             Self::MissingRequiredField(field) => {
@@ -158,6 +314,71 @@ mod tests {
         assert_eq!(
             check.validate(),
             Err(RouterAssistError::MissingRequiredField("worker_name"))
+        );
+    }
+
+    #[test]
+    fn placement_generation_query_emits_catalog_select() {
+        let plan = PlacementGenerationQuery { shard_id: 1 }
+            .to_sql_plan()
+            .unwrap();
+        assert_eq!(plan.feature_id, "T2");
+        assert_eq!(
+            plan.script(),
+            "SELECT pg_catalog.citus_placement_generation();"
+        );
+    }
+
+    #[test]
+    fn placement_generation_query_rejects_zero_shard_id() {
+        let result = PlacementGenerationQuery { shard_id: 0 }.to_sql_plan();
+        assert_eq!(result.err(), Some(RouterAssistError::InvalidShardId));
+    }
+
+    #[test]
+    fn placement_generation_sample_rejects_negative_bigint() {
+        assert_eq!(
+            PlacementGenerationSample::from_catalog_value(-1).err(),
+            Some(RouterAssistError::InvalidGenerationSample)
+        );
+    }
+
+    #[test]
+    fn placement_generation_subscriber_emits_initial_then_advanced() {
+        let mut subscriber = PlacementGenerationSubscriber::new();
+        let initial = PlacementGenerationSample::from_catalog_value(7).unwrap();
+        assert_eq!(
+            subscriber.observe(initial).unwrap(),
+            InvalidationHint::Initial(initial)
+        );
+
+        let next = PlacementGenerationSample::from_catalog_value(9).unwrap();
+        assert_eq!(
+            subscriber.observe(next).unwrap(),
+            InvalidationHint::Advanced {
+                previous: initial,
+                current: next,
+            }
+        );
+
+        assert_eq!(
+            subscriber.observe(next).unwrap(),
+            InvalidationHint::Unchanged(next)
+        );
+    }
+
+    #[test]
+    fn placement_generation_subscriber_detects_coordinator_restart() {
+        let mut subscriber = PlacementGenerationSubscriber::new();
+        let high = PlacementGenerationSample::from_catalog_value(42).unwrap();
+        subscriber.observe(high).unwrap();
+        let low = PlacementGenerationSample::from_catalog_value(3).unwrap();
+        assert_eq!(
+            subscriber.observe(low).unwrap(),
+            InvalidationHint::Reset {
+                previous: high,
+                current: low,
+            }
         );
     }
 }

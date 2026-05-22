@@ -41,7 +41,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "TS9",
         feature_name: "doctor rules for cohabitation",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS12",
@@ -51,137 +51,137 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "TS13",
         feature_name: "distributed time_bucket_gapfill",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS14",
         feature_name: "distributed metric toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS15",
         feature_name: "distributed approximate toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS16",
         feature_name: "distributed downsampler toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TS17",
         feature_name: "distributed state toolkit aggregates",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "A1",
         feature_name: "pgai-compatible vectorizer DSL",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search2",
         feature_name: "distributed BM25 search index",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search3",
         feature_name: "hybrid BM25 and vector ranking",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Search9",
         feature_name: "reranker UDF plan",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "G2",
         feature_name: "distributed graph bridge",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "G3",
         feature_name: "graph colocation policy",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "API4",
         feature_name: "GraphQL distributed graph metadata",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "JS2",
         feature_name: "distributed JSON Schema validation",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M13",
         feature_name: "JSON Schema validation triggers",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Geo2",
         feature_name: "geo-aware distribution",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Geo3",
         feature_name: "geo shard pruning",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "T8",
         feature_name: "toolkit two-step aggregate pushdown",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "L9",
         feature_name: "worker partial aggregate pushdown",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M7",
         feature_name: "pre-flight cohabit-extension check",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "PM3",
         feature_name: "plan freeze companion module",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "PM4",
         feature_name: "plan regression detection",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "IA3",
         feature_name: "companion index advisor",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec5",
         feature_name: "immutable ledger",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec6",
         feature_name: "ledger HMAC tamper evidence",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M1",
         feature_name: "pgroll-style expand-contract migrations",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M11",
         feature_name: "online column-type migration",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "WH2",
         feature_name: "companion webhook helpers",
-        status: "sql-plan",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "O1",
@@ -190,7 +190,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "O2",
-        feature_name: "distributed stats view",
+        feature_name: "local activity stats view",
         status: "runtime-contract",
     },
     FeatureStatus {
@@ -200,13 +200,13 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "R4",
-        feature_name: "idle transaction reaper",
+        feature_name: "idle transaction detector",
         status: "runtime-contract",
     },
     FeatureStatus {
         feature_id: "Auth2",
         feature_name: "tenant-aware claims",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "Sec1",
@@ -216,47 +216,47 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     FeatureStatus {
         feature_id: "Sec2",
         feature_name: "JWT verification UDF",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S6",
         feature_name: "placement generation helpers",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S13",
         feature_name: "range routing helpers",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "C10",
         feature_name: "online schema job state machine",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "M2",
         feature_name: "gh-ost-style online DDL",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "S14",
         feature_name: "tenant migration online",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO3",
         feature_name: "tenant migration online",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO4",
         feature_name: "tenant archive",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "TO5",
         feature_name: "tenant region affinity",
-        status: "runtime-contract",
+        status: "sql-runtime",
     },
     FeatureStatus {
         feature_id: "D4",
@@ -267,51 +267,6 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
         feature_id: "M5",
         feature_name: "LSP migration quick-fix metadata",
         status: "sql-plan",
-    },
-    FeatureStatus {
-        feature_id: "A7",
-        feature_name: "pgvector cohabitation",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "Search1",
-        feature_name: "pg_search bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "G1",
-        feature_name: "Apache AGE bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "JS1",
-        feature_name: "pg_jsonschema bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "PM1",
-        feature_name: "pg_hint_plan bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "IA1",
-        feature_name: "hypopg bundled",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "O7",
-        feature_name: "wait-event sampling",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "Sec3",
-        feature_name: "pgaudit and file audit",
-        status: "image-contract",
-    },
-    FeatureStatus {
-        feature_id: "WF1",
-        feature_name: "WAL inspection from SQL",
-        status: "image-contract",
     },
     FeatureStatus {
         feature_id: "D7",
@@ -330,7 +285,7 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
     },
     FeatureStatus {
         feature_id: "D10",
-        feature_name: "production hardening runbook",
+        feature_name: "release hardening runbook",
         status: "ops-contract",
     },
     FeatureStatus {
@@ -387,6 +342,196 @@ pub const COMPANION_FEATURE_STATUSES: &[FeatureStatus] = &[
         feature_id: "T7",
         feature_name: "pipelined client protocol in pool",
         status: "ops-contract",
+    },
+    FeatureStatus {
+        feature_id: "A7",
+        feature_name: "pgvector cohabitation",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "A12",
+        feature_name: "vchord alternate vector index",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C11",
+        feature_name: "DDL replication via pgl_ddl_deploy",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C12",
+        feature_name: "replication-slot failover",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "C13",
+        feature_name: "subscription failover",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "EF6",
+        feature_name: "in-database JavaScript and Rust UDF substrate",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "F2",
+        feature_name: "foreign data wrapper bundle",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "F5",
+        feature_name: "outbound HTTP extensions",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "G1",
+        feature_name: "Apache AGE bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Geo1",
+        feature_name: "PostGIS bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "IA1",
+        feature_name: "HypoPG bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "IA2",
+        feature_name: "pg_qualstats bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "JS1",
+        feature_name: "pg_jsonschema bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "L11",
+        feature_name: "pg_parquet bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M6",
+        feature_name: "DDL replication",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M10",
+        feature_name: "track settings drift",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "M12",
+        feature_name: "UUIDv7 primary keys",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "MR7",
+        feature_name: "cross-region active-active references",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O7",
+        feature_name: "wait-event sampling",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O8",
+        feature_name: "OS metrics via SQL",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O9",
+        feature_name: "kernel stats via SQL",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O11",
+        feature_name: "pg_stat_monitor alternative",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "O12",
+        feature_name: "pg_show_plans plan-inspection contract",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "PM1",
+        feature_name: "pg_hint_plan bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "PM2",
+        feature_name: "sr_plan bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "R6",
+        feature_name: "bloat-free queue substrate",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "R11",
+        feature_name: "pg_warm bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search1",
+        feature_name: "pg_search bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search4",
+        feature_name: "RUM index bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search5",
+        feature_name: "pg_trgm bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Search6",
+        feature_name: "citext bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec3",
+        feature_name: "pgaudit and file audit",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec4",
+        feature_name: "pgsodium crypto",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec10",
+        feature_name: "pg_safeupdate guard",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec11",
+        feature_name: "CDC anonymization extension",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec14",
+        feature_name: "pgcrypto bundled",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "Sec15",
+        feature_name: "encryption-at-rest with CMK",
+        status: "extension-catalog-runtime",
+    },
+    FeatureStatus {
+        feature_id: "WF1",
+        feature_name: "pg_walinspect forensic workflow",
+        status: "extension-catalog-runtime",
     },
 ];
 
