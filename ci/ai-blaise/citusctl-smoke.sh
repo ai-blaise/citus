@@ -52,11 +52,11 @@ expect_output \
 expect_output \
   "plan apply manifest" \
   "citusctl apply destructive=true requires_plan_id=true steps=3" \
-  plan apply deploy/k8s/helm/citus-overlay/values-prod.yaml
+  plan apply external/citus-cluster/values-prod.yaml
 
 expect_output \
   "apply plan id manifest" \
   "citusctl apply destructive=true requires_plan_id=true steps=5" \
-  apply plan-123 apply deploy/k8s/helm/citus-overlay/values-prod.yaml
+  apply plan-123 apply external/citus-cluster/values-prod.yaml
 
 echo "ai_blaise_citusctl plan-id smoke passed"

@@ -66,7 +66,7 @@ the K8s API; CNPG performs the actual streaming-replica promotion.
   `sidecar/raft` group converges via lease renewal.
 - Negative: CNPG releases on its own cadence. Major-version bumps may
   require coordinated changes in our operand image. Mitigation: the
-  CNPG API version is pinned in `deploy/k8s/`, and the upstream-sync
+  CNPG API version is pinned in `ai-blaise/command-center (helm/charts/citus-cluster + deploy/citus-cluster)`, and the upstream-sync
   workflow extends to CNPG.
 - Risks: a future CNPG release could remove a hook we depend on.
   Mitigation: depend only on the documented `Cluster` CR surface; no

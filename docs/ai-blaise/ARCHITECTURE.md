@@ -12,7 +12,7 @@ The fork combines upstream Citus with ai-blaise overlay components.
 | `pool/` | Shard-aware pgcat fork |
 | `operator/` | Rust CRD contract models, apply-plan builders, and probe runtime |
 | `e2e/` | Executable critical-path acceptance contracts |
-| `deploy/k8s/` | ai-blaise Helm chart and CRDs |
+| `ai-blaise/command-center (helm/charts/citus-cluster + deploy/citus-cluster)` | ai-blaise Helm chart and CRDs |
 | `tools/` | CLI, TUI, LSP, admin UI, schema designer, watch, and MCP |
 
 ## Critical Path
