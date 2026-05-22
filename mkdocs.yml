@@ -38,6 +38,7 @@ nav:
   - Upstream sync: ai-blaise/UPSTREAM_SYNC.md
   - Releasing: ai-blaise/RELEASING.md
   - End-to-end: ai-blaise/E2E.md
+  - Observability: ai-blaise/OBSERVABILITY.md
   - Production readiness audit: ai-blaise/PRODUCTION_READINESS_AUDIT.md
   - ADRs:
       - "0001 Fork Citus, do not rewrite": ai-blaise/ADR/0001-fork-not-rewrite.md
