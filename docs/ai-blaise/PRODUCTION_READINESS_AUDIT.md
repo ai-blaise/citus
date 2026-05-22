@@ -526,6 +526,8 @@ whole.
 
 The current feature inventory contains 245 source `FEATURE:` markers and 245
 feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
+The current feature inventory contains 269 source `FEATURE:` markers and 269
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the

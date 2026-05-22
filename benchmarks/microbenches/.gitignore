@@ -1,0 +1,2 @@
+# Aggregate report outputs are produced at runtime; never tracked.
+results-*.json

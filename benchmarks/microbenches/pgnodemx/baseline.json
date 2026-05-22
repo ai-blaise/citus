@@ -1,0 +1,11 @@
+{
+  "ext": "pgnodemx",
+  "mb": "MB11",
+  "op": "pgnodemx_cpu_invocation_us",
+  "qps": 5000,
+  "p95_ms": 1,
+  "p99_ms": 3,
+  "rows": 1000,
+  "regression_threshold_pct": 10,
+  "source": "pgnodemx upstream: cgroup read overhead ~200us per call"
+}

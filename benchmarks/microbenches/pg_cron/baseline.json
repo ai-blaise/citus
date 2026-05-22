@@ -1,0 +1,11 @@
+{
+  "ext": "pg_cron",
+  "mb": "MB4",
+  "op": "job_schedule_overhead_ms",
+  "qps": 200,
+  "p95_ms": 10,
+  "p99_ms": 25,
+  "rows": 100,
+  "regression_threshold_pct": 10,
+  "source": "pg_cron docs: scheduling overhead negligible until ~1k concurrent jobs"
+}

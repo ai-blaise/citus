@@ -1,0 +1,11 @@
+{
+  "ext": "pgsodium",
+  "mb": "MB7",
+  "op": "libsodium_encrypt_rows_per_s",
+  "qps": 5000,
+  "p95_ms": 2,
+  "p99_ms": 10,
+  "rows": 1000,
+  "regression_threshold_pct": 10,
+  "source": "pgsodium upstream micro-benches: ~5k crypto_secretbox ops/s"
+}

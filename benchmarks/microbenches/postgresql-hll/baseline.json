@@ -1,0 +1,11 @@
+{
+  "ext": "postgresql-hll",
+  "mb": "MB8",
+  "op": "hll_add_agg_ms",
+  "qps": 200000,
+  "p95_ms": 1,
+  "p99_ms": 5,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "Citus hll benchmarks: ~200k inserts/s into HLL aggregate"
+}

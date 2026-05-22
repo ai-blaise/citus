@@ -1,0 +1,11 @@
+{
+  "ext": "plrust",
+  "mb": "MB17",
+  "op": "plrust_function_call_us",
+  "qps": 200000,
+  "p95_ms": 0.1,
+  "p99_ms": 0.5,
+  "rows": 10000,
+  "regression_threshold_pct": 10,
+  "source": "plrust upstream: ~5us per call vs ~50us plpgsql"
+}

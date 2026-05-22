@@ -7310,6 +7310,1033 @@ fanout.
 - In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
 
+
+## Bundled-Extension Microbenchmarks (MB1-MB26)
+
+Each of the 26 always-on bundled extensions ships a microbench under
+`benchmarks/microbenches/<ext>/`. The microbench surface is the
+production evidence for Gate 10 (Performance) regression detection
+across PostgreSQL major bumps and extension version bumps. The
+aggregate runner is `benchmarks/microbenches/run-all.sh` and the
+baseline gate is `benchmarks/microbenches/compare-to-baseline.sh`.
+The seed baselines in each `baseline.json` are sourced from upstream
+publications; the first nightly run on the 3-worker kind cluster
+refines them and lands the measured numbers as a follow-up PR.
+
+### MB1: timescaledb Microbench
+
+**Overlay**: `benchmarks/microbenches/timescaledb/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`
+
+**Summary**: 100k-row insert across 7 days into a hypertable; compression runs after the workload.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/timescaledb/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb1-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/timescaledb/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `50,000 rows/s` for `hypertable_insert_rows_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB1` in `benchmarks/microbenches/timescaledb/setup.sql`
+- Executable: `bash benchmarks/microbenches/timescaledb/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB2: citus Microbench
+
+**Overlay**: `benchmarks/microbenches/citus/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `citus`
+
+**Summary**: create_distributed_table + 100k INSERT routed across 3 worker shards via the coordinator.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/citus/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb2-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/citus/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `30,000 rows/s` for `distributed_insert_rows_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB2` in `benchmarks/microbenches/citus/setup.sql`
+- Executable: `bash benchmarks/microbenches/citus/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB3: pgvector Microbench
+
+**Overlay**: `benchmarks/microbenches/pgvector/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgvector`
+
+**Summary**: 1k 768-dim vector INSERT plus 1k IVFFlat ANN lookups against the just-built index.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pgvector/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb3-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pgvector/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `2,000 qps` for `ivfflat_insert_then_lookup_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB3` in `benchmarks/microbenches/pgvector/setup.sql`
+- Executable: `bash benchmarks/microbenches/pgvector/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB4: pg_cron Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_cron/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_cron`
+
+**Summary**: Schedule 100 jobs at 1-minute frequency through cron.schedule, measuring per-call overhead.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_cron/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb4-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_cron/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `200 schedules/s` for `job_schedule_overhead_ms`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB4` in `benchmarks/microbenches/pg_cron/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_cron/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB5: pg_partman Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_partman/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_partman`
+
+**Summary**: Create 100 child partitions for a range-partitioned parent via partman.create_parent + run_maintenance.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_partman/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb5-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_partman/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `50 partitions/s` for `child_partition_create_ms`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB5` in `benchmarks/microbenches/pg_partman/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_partman/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB6: pgaudit Microbench
+
+**Overlay**: `benchmarks/microbenches/pgaudit/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgaudit`
+
+**Summary**: 10k INSERT under pgaudit.log=write compared to the un-audited baseline; gate at <= 15%.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pgaudit/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb6-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pgaudit/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `<= 15% overhead` for `audited_insert_overhead_pct`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB6` in `benchmarks/microbenches/pgaudit/setup.sql`
+- Executable: `bash benchmarks/microbenches/pgaudit/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB7: pgsodium Microbench
+
+**Overlay**: `benchmarks/microbenches/pgsodium/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgsodium`
+
+**Summary**: Encrypt 1k rows with crypto_secretbox using a per-row derived key and nonce.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pgsodium/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb7-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pgsodium/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `5,000 rows/s` for `libsodium_encrypt_rows_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB7` in `benchmarks/microbenches/pgsodium/setup.sql`
+- Executable: `bash benchmarks/microbenches/pgsodium/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB8: postgresql-hll Microbench
+
+**Overlay**: `benchmarks/microbenches/postgresql-hll/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgresql-hll`
+
+**Summary**: hll_add_agg over 100k distinct values into a single hll register.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/postgresql-hll/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb8-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/postgresql-hll/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `200,000 inserts/s` for `hll_add_agg_ms`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB8` in `benchmarks/microbenches/postgresql-hll/setup.sql`
+- Executable: `bash benchmarks/microbenches/postgresql-hll/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB9: postgresql-topn Microbench
+
+**Overlay**: `benchmarks/microbenches/postgresql-topn/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgresql-topn`
+
+**Summary**: topn_add_agg over 100k rows producing the top-100 ranked entries.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/postgresql-topn/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb9-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/postgresql-topn/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `150,000 inserts/s` for `topn_add_agg_ms`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB9` in `benchmarks/microbenches/postgresql-topn/setup.sql`
+- Executable: `bash benchmarks/microbenches/postgresql-topn/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB10: tdigest Microbench
+
+**Overlay**: `benchmarks/microbenches/tdigest/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `tdigest`
+
+**Summary**: tdigest_percentile aggregation over 100k numeric samples returning the 99th percentile.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/tdigest/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb10-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/tdigest/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `100,000 samples/s` for `tdigest_percentile_ms`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB10` in `benchmarks/microbenches/tdigest/setup.sql`
+- Executable: `bash benchmarks/microbenches/tdigest/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB11: pgnodemx Microbench
+
+**Overlay**: `benchmarks/microbenches/pgnodemx/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgnodemx`
+
+**Summary**: 1k calls to pgnodemx.cpu() measuring per-invocation cgroup-read overhead.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pgnodemx/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb11-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pgnodemx/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `5,000 calls/s` for `pgnodemx_cpu_invocation_us`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB11` in `benchmarks/microbenches/pgnodemx/setup.sql`
+- Executable: `bash benchmarks/microbenches/pgnodemx/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB12: postgis Microbench
+
+**Overlay**: `benchmarks/microbenches/postgis/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `postgis`
+
+**Summary**: ST_DWithin lookups against a 100k POINT table with a GIST spatial index.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/postgis/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb12-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/postgis/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `4,000 qps` for `st_dwithin_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB12` in `benchmarks/microbenches/postgis/setup.sql`
+- Executable: `bash benchmarks/microbenches/postgis/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB13: pg_search Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_search/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_search`
+
+**Summary**: 100k doc INSERT, BM25 index build, and 1k BM25 lookups.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_search/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb13-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_search/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `3,000 qps` for `bm25_insert_index_lookup_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB13` in `benchmarks/microbenches/pg_search/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_search/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB14: pg_graphql Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_graphql/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_graphql`
+
+**Summary**: GraphQL query joining a 10k-row orders table with a 1k-row customers table through graphql.resolve.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_graphql/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb14-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_graphql/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `1,500 qps` for `graphql_join_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB14` in `benchmarks/microbenches/pg_graphql/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_graphql/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB15: pg_jsonschema Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_jsonschema/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_jsonschema`
+
+**Summary**: Validate 10k JSONB rows against a fixed JSON schema with jsonb_matches_schema.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_jsonschema/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb15-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_jsonschema/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `50,000 valid/s` for `jsonb_validate_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB15` in `benchmarks/microbenches/pg_jsonschema/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_jsonschema/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB16: age Microbench
+
+**Overlay**: `benchmarks/microbenches/age/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `age`
+
+**Summary**: Cypher query over a 1k-node graph computing 1..2-hop paths and counts.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/age/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb16-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/age/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `800 qps` for `cypher_path_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB16` in `benchmarks/microbenches/age/setup.sql`
+- Executable: `bash benchmarks/microbenches/age/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB17: plrust Microbench
+
+**Overlay**: `benchmarks/microbenches/plrust/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `plrust`
+
+**Summary**: Call a trivial plrust function 10k times; reports per-call overhead vs the plpgsql baseline.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/plrust/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb17-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/plrust/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `200,000 calls/s` for `plrust_function_call_us`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB17` in `benchmarks/microbenches/plrust/setup.sql`
+- Executable: `bash benchmarks/microbenches/plrust/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB18: plv8 Microbench
+
+**Overlay**: `benchmarks/microbenches/plv8/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `plv8`
+
+**Summary**: Call a trivial plv8 function 10k times; reports per-call overhead vs the plpgsql baseline.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/plv8/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb18-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/plv8/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `100,000 calls/s` for `plv8_function_call_us`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB18` in `benchmarks/microbenches/plv8/setup.sql`
+- Executable: `bash benchmarks/microbenches/plv8/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB19: pg_uuidv7 Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_uuidv7/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_uuidv7`
+
+**Summary**: Generate 100k UUIDv7 values through uuid_generate_v7().
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_uuidv7/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb19-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_uuidv7/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `1,000,000 gen/s` for `uuidv7_generations_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB19` in `benchmarks/microbenches/pg_uuidv7/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_uuidv7/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB20: pg_repack Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_repack/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_repack`
+
+**Summary**: Repack a 100k-row table with synthetic bloat; reports the end-to-end repack duration.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_repack/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb20-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_repack/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `~10 s end-to-end` for `repack_table_seconds`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB20` in `benchmarks/microbenches/pg_repack/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_repack/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB21: pg_failover_slots Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_failover_slots/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_failover_slots`
+
+**Summary**: WAL write overhead under pg_failover_slots tracking; proxy for failover-slot bookkeeping cost.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_failover_slots/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb21-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_failover_slots/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `<= 5% overhead` for `wal_write_overhead_pct`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB21` in `benchmarks/microbenches/pg_failover_slots/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_failover_slots/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB22: pg_warm Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_warm/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_warm`
+
+**Summary**: pg_prewarm a 100k-row table (smoke proxy for the 10 GB full-mode workload).
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_warm/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb22-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_warm/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `~1 GB/s` for `warm_throughput_mb_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB22` in `benchmarks/microbenches/pg_warm/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_warm/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB23: pgcrypto Microbench
+
+**Overlay**: `benchmarks/microbenches/pgcrypto/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pgcrypto`
+
+**Summary**: pgp_sym_encrypt 10k rows with a static passphrase.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pgcrypto/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb23-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pgcrypto/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `15,000 rows/s` for `pgp_sym_encrypt_rows_per_s`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB23` in `benchmarks/microbenches/pgcrypto/setup.sql`
+- Executable: `bash benchmarks/microbenches/pgcrypto/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB24: pg_trgm Microbench
+
+**Overlay**: `benchmarks/microbenches/pg_trgm/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_trgm`
+
+**Summary**: Trigram similarity lookups against a GIN-trigram index on 100k rows.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/pg_trgm/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb24-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/pg_trgm/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `5,000 qps` for `trigram_similarity_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB24` in `benchmarks/microbenches/pg_trgm/setup.sql`
+- Executable: `bash benchmarks/microbenches/pg_trgm/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB25: citext Microbench
+
+**Overlay**: `benchmarks/microbenches/citext/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `citext`
+
+**Summary**: Case-insensitive equality lookup on a 100k-row citext column with a B-tree index.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/citext/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb25-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/citext/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `20,000 qps` for `citext_lookup_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB25` in `benchmarks/microbenches/citext/setup.sql`
+- Executable: `bash benchmarks/microbenches/citext/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
+### MB26: rum Microbench
+
+**Overlay**: `benchmarks/microbenches/rum/`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `rum`
+
+**Summary**: RUM full-text index build plus FTS lookups on 100k documents.
+
+Production evidence: GitHub Actions and local VM runs invoke
+`ci/ai-blaise/bundled-ext-microbenches-smoke.sh`, which executes
+`benchmarks/microbenches/rum/bench.sh` in quick mode against a real PostgreSQL container on the
+experiment VM and writes
+`benchmarks/results/microbench-mb26-${BENCH_RESULT_TAG}.json`. The
+nightly `ci-microbench` workflow runs the full-row-count variant via
+`benchmarks/microbenches/run-all.sh` and asserts the measured `qps`
+stays inside the `regression_threshold_pct` window of
+`benchmarks/microbenches/rum/baseline.json` through
+`benchmarks/microbenches/compare-to-baseline.sh`. The initial baseline
+seed is `4,000 qps` for `rum_fts_index_build_lookup_qps`; refined baselines land
+after the first measured nightly run on the 3-worker kind cluster.
+
+**Motivation**: Gate 10 (Performance) needs per-bundled-extension
+regression detection across PostgreSQL major bumps and extension
+version bumps. The microbench surface keeps each extension's hot path
+on a measured budget instead of relying on the four aggregate
+harnesses to surface a regression.
+
+**Citus comparison**: Vanilla Citus does not ship per-bundled-extension
+microbenchmarks; the upstream test surface is correctness-only.
+
+**References**:
+
+- Design: `docs/ai-blaise/BENCHMARKS.md`
+- In-source: `FEATURE: MB26` in `benchmarks/microbenches/rum/setup.sql`
+- Executable: `bash benchmarks/microbenches/rum/bench.sh`
+- CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
+
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature

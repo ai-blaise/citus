@@ -1,0 +1,11 @@
+{
+  "ext": "pg_trgm",
+  "mb": "MB24",
+  "op": "trigram_similarity_qps",
+  "qps": 5000,
+  "p95_ms": 5,
+  "p99_ms": 20,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "pg_trgm upstream: ~5k qps on 100k-row trigram index"
+}

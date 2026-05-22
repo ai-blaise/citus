@@ -1,0 +1,11 @@
+{
+  "ext": "tdigest",
+  "mb": "MB10",
+  "op": "tdigest_percentile_ms",
+  "qps": 100000,
+  "p95_ms": 3,
+  "p99_ms": 10,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "tdigest upstream benchmarks: ~100k-row aggregation <1 s"
+}

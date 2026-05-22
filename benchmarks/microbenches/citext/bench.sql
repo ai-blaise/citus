@@ -1,0 +1,2 @@
+SELECT count(*) FROM mb25_users
+WHERE email = 'C4CA4238A0B923820DCC509A6F75849B@example.com';

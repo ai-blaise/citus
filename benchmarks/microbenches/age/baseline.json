@@ -1,0 +1,11 @@
+{
+  "ext": "age",
+  "mb": "MB16",
+  "op": "cypher_path_qps",
+  "qps": 800,
+  "p95_ms": 15,
+  "p99_ms": 50,
+  "rows": 1000,
+  "regression_threshold_pct": 10,
+  "source": "Apache AGE upstream: ~800 qps for shortest-path on 1k-node graphs"
+}

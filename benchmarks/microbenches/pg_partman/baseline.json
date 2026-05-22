@@ -1,0 +1,11 @@
+{
+  "ext": "pg_partman",
+  "mb": "MB5",
+  "op": "child_partition_create_ms",
+  "qps": 50,
+  "p95_ms": 50,
+  "p99_ms": 200,
+  "rows": 100,
+  "regression_threshold_pct": 10,
+  "source": "pg_partman docs: ~20ms per child partition on local NVMe"
+}

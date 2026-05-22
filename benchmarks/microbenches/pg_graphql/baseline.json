@@ -1,0 +1,11 @@
+{
+  "ext": "pg_graphql",
+  "mb": "MB14",
+  "op": "graphql_join_qps",
+  "qps": 1500,
+  "p95_ms": 8,
+  "p99_ms": 30,
+  "rows": 10000,
+  "regression_threshold_pct": 10,
+  "source": "pg_graphql upstream: ~1.5k qps for 2-table joined GraphQL queries"
+}

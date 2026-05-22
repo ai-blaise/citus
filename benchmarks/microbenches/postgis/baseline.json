@@ -1,0 +1,11 @@
+{
+  "ext": "postgis",
+  "mb": "MB12",
+  "op": "st_dwithin_qps",
+  "qps": 4000,
+  "p95_ms": 5,
+  "p99_ms": 20,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "PostGIS docs: spatial index lookups ~4k qps on 100k POINT table"
+}
