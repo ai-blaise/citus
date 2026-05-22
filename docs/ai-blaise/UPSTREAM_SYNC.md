@@ -13,14 +13,51 @@ release stabilizes, it should be extended to open a PR on
 - refreshed patch applicability output
 - any patch rebases needed to keep `patches/series` clean
 
-## Pending upstream PRs
+## Pending Citus upstream PRs (`citusdata/citus`)
 
 These quilt patches are upstream-PR candidates -- small, single-purpose, and
 designed to apply cleanly against `citusdata/citus` `release-14.0`. Each entry
-records the target branch, the rationale, and the gate that must turn green
-before the PR opens.
+records the patch path, the matched upstream-PR URL (`pending submission` if no
+PR has opened yet), maintainer status, and the gate that must turn green before
+the PR opens.
 
-### 0003-guc-report-citus-userset.patch -- citus.* USERSET GUCs report to clients
+| # | Patch | Upstream PR | Maintainer status | Our fork PR | Gating notes |
+|---|---|---|---|---|---|
+| 0001 | `patches/0001-allow-trusted-hook-coextensions.patch` | pending submission | not submitted | landed in fork PR1 | gates on `make -f Makefile.ai-blaise patches-check` plus the `timescale-cohabitation-smoke` run that exercises a real Citus+TimescaleDB cohabit boot |
+| 0002 | `patches/0002-preserve-trusted-hook-chain-state.patch` | pending submission | not submitted | landed in fork PR1 | gates on `timescale-cohabitation-smoke` covering planner, executor, and explain hook chains under a trusted coextension |
+| 0003 | `patches/0003-guc-report-citus-userset.patch` | pending submission | draft prepared (one-place diff to `OverridePostgresConfigProperties()`) | landed in fork PR50 | gates on `patches-check` plus a `kind-production-smoke` run that demonstrates a pooler receiving `ParameterStatus` for `citus.enable_router_execution` |
+| 0004 | hashtable on planner hotpath | pending submission | in flight (draft not yet pushed) | not yet landed in fork | gates on a microbenchmark showing reduction in planner-hotpath linear scans on `pg_dist_partition` lookups |
+| 0005 | `patches/0005-placement-generation-counter.patch` | pending submission | draft prepared | landed in fork PR50 | gates on companion-side subscriber tests (`cargo test -p ai_blaise_citus_companion --lib router_assist`) plus a real Citus build that exercises the counter through a rebalance |
+| 0006 | fast-path router skip coord rt | pending submission | in flight | not yet landed in fork | gates on `bench-fast-path-router` harness showing a measurable reduction in coordinator round-trips for single-shard router queries |
+| 0007 | citus clock cohabit pg_cron | pending submission | in flight | not yet landed in fork | gates on a cohabit-smoke run that boots Citus + `pg_cron` without `citus_clock` registration conflicts |
+| 0008 | cohabit-extensions detection API | pending submission | in flight | not yet landed in fork | gates on companion-side detection harness covering TimescaleDB, `pg_cron`, and `pg_partman` |
+| 0009 | distSQL physical plan distribution | pending submission | in flight (large scope; will require multiple sub-PRs) | not yet landed in fork | gates on `companion-advanced-planner` canonical row plus an end-to-end physical-plan distribution smoke |
+| 0010 | distributed cursors | pending submission | in flight | not yet landed in fork | gates on a cursor-correctness smoke that fetches across coordinator failover |
+| 0011 | distributed savepoints | pending submission | in flight | not yet landed in fork | gates on a savepoint-correctness smoke covering nested-transaction rollback across shards |
+
+Patches 0001-0002 are landed-in-fork but not yet submitted upstream because the
+trusted-coextension contract is a deployment-layer feature that Citus
+maintainers have historically declined to absorb. Patches 0003 and 0005 are
+the next two candidates we expect to submit; their draft mailbox diffs are
+already mailbox-header-clean and have on-disk `patches/series` entries.
+
+Patches 0004 and 0006-0011 are roster entries -- they describe planned upstream
+contributions that have a tracked design but no `patches/*.patch` artifact yet.
+Each will land in the fork first (per the cadence below) and then be submitted
+upstream after the runtime gate flips from `alpha` to `production-ready` in
+`docs/ai-blaise/NEW_FEATURES.md`.
+
+### Citus upstream submission cadence
+
+The submission cadence is: open the upstream PR only after the patch passes
+both ai-blaise CI and `kind-production-smoke`, and only after the corresponding
+`NEW_FEATURES.md` entry has flipped from `alpha` to `production-ready`. The
+two gating runs are recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
+under the same FEATURE id.
+
+### Per-patch details
+
+#### 0003-guc-report-citus-userset.patch -- citus.* USERSET GUCs report to clients
 
 - **Target branch**: `release-14.0` (and `main` once accepted)
 - **Type**: behavior fix
@@ -35,7 +72,7 @@ before the PR opens.
   a kind-smoke run that demonstrates a pooler receiving ParameterStatus for
   `citus.enable_router_execution`.
 
-### 0005-placement-generation-counter.patch -- pg_dist_placement generation counter
+#### 0005-placement-generation-counter.patch -- pg_dist_placement generation counter
 
 - **Target branch**: `release-14.0`
 - **Type**: new internal API
@@ -48,11 +85,7 @@ before the PR opens.
   (`cargo test -p ai_blaise_citus_companion --lib router_assist`) plus a real
   Citus build that exercises the counter through a rebalance.
 
-The submission cadence is: open the upstream PR only after the patch passes
-both ai-blaise CI and `kind-smoke`, and only after the corresponding
-`NEW_FEATURES.md` entry has flipped from `alpha` to `production-ready`.
-
-## PostgreSQL core quilt patches (`patches/postgres/`)
+## Pending pgsql-hackers PRs (`postgres/postgres`, via pgEdge/Spock contribution path)
 
 These patches target PostgreSQL core, not Citus. They are applied at the
 PG-build layer (see `images/citus-pg-overlay/Dockerfile` and its
@@ -61,14 +94,23 @@ in their own series file (`patches/postgres/series`) so the citus quilt and
 the postgres-core quilt rebase independently.
 
 The upstream contributor in both cases is pgEdge via the Spock multi-master
-replication extension. The diffs we ship are the canonical pgEdge/Spock
-contributions to pgsql-hackers, rebased to PostgreSQL 17 by Spock upstream
-and re-wrapped here with mailbox headers and `FEATURE:` markers.
+replication extension. The diffs shipped here are the canonical pgEdge/Spock
+contributions to pgsql-hackers, rebased to PostgreSQL 17 by Spock upstream and
+re-wrapped here with mailbox headers and `FEATURE:` markers. The pgsql-hackers
+threads owned by Spock are the canonical submission record; the fork tracks
+them by the Spock patch identifier in the upstream column below.
 
-| Patch | Upstream | Status |
-|---|---|---|
-| `0001-logical-commit-clock.patch` | pgEdge/spock `patches/17/pg17-025-logical_commit_clock.diff` | alpha; runtime gate stays alpha until the custom-PG-compile pipeline lands |
-| `0002-per-subtrans-commit-ts.patch` | pgEdge/spock `patches/17/pg17-030-per-subtrans-commit-ts.diff` | alpha; runtime gate stays alpha until the custom-PG-compile pipeline lands |
+| # | Patch | Spock upstream | pgsql-hackers thread | Status | Our fork PR |
+|---|---|---|---|---|---|
+| PG-0001 | `patches/postgres/0001-logical-commit-clock.patch` | pgEdge/spock `patches/17/pg17-025-logical_commit_clock.diff` | tracked via Spock's `XLogReserveInsertHook` proposal trail on pgsql-hackers (search `XLogReserveInsertHook logical commit clock`) | landed in fork PR48; alpha runtime gate (runtime flips once custom-PG-compile pipeline lands) | PR48 |
+| PG-0002 | `patches/postgres/0002-per-subtrans-commit-ts.patch` | pgEdge/spock `patches/17/pg17-030-per-subtrans-commit-ts.diff` | tracked via Spock's `SubTransactionCommitTsEntry` proposal trail on pgsql-hackers | landed in fork PR48; alpha runtime gate (same custom-PG pipeline dependency) | PR48 |
+
+Both PG-core diffs ship today as alpha because the custom-PG-compile pipeline
+that links them into the runtime image is not yet wired into
+`images/citus-pg-overlay/Dockerfile`. The runtime gate for FEATURE: PGC1 and
+FEATURE: PGC2 stays alpha until that pipeline lands and a real
+PostgreSQL+patches build records its image identity in
+`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 
 References:
 
