@@ -1,10 +1,21 @@
 # syntax=docker/dockerfile:1
 # FEATURE: Bundle1 Search1 G1 JS1 PM1 IA1 WF1 F2 PGC1 PGC2
+#
+# PG version matrix: this Dockerfile is build-arg parameterized so the same
+# overlay contract emits a PG17 or PG18 operand image. The Makefile targets
+# `build-image-pg17` and `build-image-pg18` (and the `image-contract` CI
+# matrix) drive both. Operators choose a major via Helm `postgresMajor` and
+# match it against the image tag they pull.
+#
+#   PG17:  docker build --build-arg PG_MAJOR=17 --build-arg BASE_IMAGE=postgres:17-bookworm .
+#   PG18:  docker build --build-arg PG_MAJOR=18 --build-arg BASE_IMAGE=postgres:18-bookworm .
 
-ARG BASE_IMAGE=postgres:18-bookworm
+ARG PG_MAJOR=17
+ARG BASE_IMAGE=postgres:${PG_MAJOR}-bookworm
 FROM ${BASE_IMAGE}
 
-ARG PG_MAJOR=18
+# Re-declare ARG after FROM so the build stage can interpolate it.
+ARG PG_MAJOR
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION=0.1.0
 
 LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \

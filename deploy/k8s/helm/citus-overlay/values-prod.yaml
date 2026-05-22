@@ -20,6 +20,7 @@ pool:
     cidrAllowlist: []
 
 postgres:
+  postgresMajor: 17
   ioMethod: ""
 
 sidecars:

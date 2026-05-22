@@ -1,6 +1,6 @@
 # ai-blaise overlay targets. Upstream Makefile remains untouched.
 
-.PHONY: patches-check upstream-merge-dry build-companion test-companion run-companion-advanced-planner-canonical run-companion-extension-catalog-canonical run-companion-operations-canonical build-operator test-operator run-operator-canonical build-pool test-pool run-pool-canonical build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer run-vectorizer-canonical build-sidecar-cdc test-sidecar-cdc run-cdc-canonical run-cdc-runtime-canonical build-sidecar-realtime test-sidecar-realtime run-realtime-canonical run-realtime-runtime-canonical build-sidecar-storage test-sidecar-storage run-storage-canonical run-storage-runtime-canonical build-sidecar-backup test-sidecar-backup run-backup-canonical run-backup-runtime-canonical build-sidecar-edge-functions test-sidecar-edge-functions run-edge-functions-canonical run-edge-functions-runtime-canonical build-sidecar-analytical test-sidecar-analytical run-analytical-canonical run-analytical-runtime-canonical build-sidecar-coldtier test-sidecar-coldtier run-coldtier-canonical run-coldtier-runtime-canonical build-sidecar-auth test-sidecar-auth run-auth-canonical build-sidecar-postgrest test-sidecar-postgrest run-postgrest-canonical build-sidecar-graphql test-sidecar-graphql run-graphql-canonical build-sidecar-mcp test-sidecar-mcp run-mcp-canonical mcp-sidecar-stdio-smoke mcp-sidecar-http-smoke build-sidecar-hlc test-sidecar-hlc run-hlc-canonical build-sidecar-raft test-sidecar-raft run-raft-canonical build-sidecar-repack test-sidecar-repack run-repack-canonical build-sidecar-schema-job test-sidecar-schema-job run-schema-job-canonical build-sidecar-txn-status test-sidecar-txn-status run-txn-status-canonical build-e2e-model test-e2e-model emit-timescale-apply-plan run-release-gates-canonical build-tools-mcp test-tools-mcp run-tools-mcp-canonical mcp-stdio-smoke mcp-db-smoke citusctl-smoke build-lsp test-lsp analyze-lsp-canonical citus-lsp-smoke build-watch test-watch run-watch-canonical build-schema-designer test-schema-designer run-schema-designer-canonical build-tui test-tui run-tui-canonical build-admin test-admin run-admin-canonical kind-smoke kind-production-smoke sql-extension-smoke timescale-bridge-smoke timescale-cohabitation-smoke observability-replication-smoke app-image-digest-manifest-smoke deploy-check image-check pool-proxy-smoke features-doc-check production-readiness-check production-gap-audit slop-scan v2-closure-check v2-acceptance-check license-check gate-close
+.PHONY: build-image-pg17 build-image-pg18 build-image-matrix patches-check upstream-merge-dry build-companion test-companion run-companion-advanced-planner-canonical run-companion-extension-catalog-canonical run-companion-operations-canonical build-operator test-operator run-operator-canonical build-pool test-pool run-pool-canonical build-sidecar-shared test-sidecar-shared probe-sidecar-shared build-sidecar-vectorizer test-sidecar-vectorizer run-vectorizer-canonical build-sidecar-cdc test-sidecar-cdc run-cdc-canonical run-cdc-runtime-canonical build-sidecar-realtime test-sidecar-realtime run-realtime-canonical run-realtime-runtime-canonical build-sidecar-storage test-sidecar-storage run-storage-canonical run-storage-runtime-canonical build-sidecar-backup test-sidecar-backup run-backup-canonical run-backup-runtime-canonical build-sidecar-edge-functions test-sidecar-edge-functions run-edge-functions-canonical run-edge-functions-runtime-canonical build-sidecar-analytical test-sidecar-analytical run-analytical-canonical run-analytical-runtime-canonical build-sidecar-coldtier test-sidecar-coldtier run-coldtier-canonical run-coldtier-runtime-canonical build-sidecar-auth test-sidecar-auth run-auth-canonical build-sidecar-postgrest test-sidecar-postgrest run-postgrest-canonical build-sidecar-graphql test-sidecar-graphql run-graphql-canonical build-sidecar-mcp test-sidecar-mcp run-mcp-canonical mcp-sidecar-stdio-smoke mcp-sidecar-http-smoke build-sidecar-hlc test-sidecar-hlc run-hlc-canonical build-sidecar-raft test-sidecar-raft run-raft-canonical build-sidecar-repack test-sidecar-repack run-repack-canonical build-sidecar-schema-job test-sidecar-schema-job run-schema-job-canonical build-sidecar-txn-status test-sidecar-txn-status run-txn-status-canonical build-e2e-model test-e2e-model emit-timescale-apply-plan run-release-gates-canonical build-tools-mcp test-tools-mcp run-tools-mcp-canonical mcp-stdio-smoke mcp-db-smoke citusctl-smoke build-lsp test-lsp analyze-lsp-canonical citus-lsp-smoke build-watch test-watch run-watch-canonical build-schema-designer test-schema-designer run-schema-designer-canonical build-tui test-tui run-tui-canonical build-admin test-admin run-admin-canonical kind-smoke kind-production-smoke sql-extension-smoke timescale-bridge-smoke timescale-cohabitation-smoke observability-replication-smoke app-image-digest-manifest-smoke deploy-check image-check pool-proxy-smoke features-doc-check production-readiness-check production-gap-audit slop-scan v2-closure-check v2-acceptance-check license-check gate-close
 
 patches-check:
 	@ci/ai-blaise/patches-check.sh
@@ -337,6 +337,26 @@ deploy-check:
 
 image-check:
 	@bash ci/ai-blaise/image-check.sh
+
+# PG version matrix: ai-blaise/citus operand image emits a PG17 and PG18
+# variant from the same Dockerfile, gated by PG_MAJOR / BASE_IMAGE build args.
+# Operators select a major via Helm `postgresMajor`; default is PG17 for
+# stability while PG18 is still alpha (see docs/ai-blaise/NEW_FEATURES.md T6).
+build-image-pg17:
+	@docker build \
+	  --build-arg PG_MAJOR=17 \
+	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  -t ai-blaise-citus-overlay:pg17 \
+	  images/citus-pg-overlay
+
+build-image-pg18:
+	@docker build \
+	  --build-arg PG_MAJOR=18 \
+	  --build-arg BASE_IMAGE=postgres:18-bookworm \
+	  -t ai-blaise-citus-overlay:pg18 \
+	  images/citus-pg-overlay
+
+build-image-matrix: build-image-pg17 build-image-pg18
 
 features-doc-check:
 	@ci/ai-blaise/features-doc-check.sh
