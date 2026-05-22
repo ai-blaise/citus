@@ -21,3 +21,7 @@ jobs:
         run: cargo test -p ai_blaise_citus_operator
       - name: Run canonical operator contract
         run: cargo run -q -p ai_blaise_citus_operator -- run-canonical
+      - name: Run canonical conversion-webhook contract
+        run: cargo run -q -p ai_blaise_citus_operator -- run-conversion-canonical
+      - name: CRD conversion-webhook smoke
+        run: bash ci/ai-blaise/crd-conversion-webhook-smoke.sh
