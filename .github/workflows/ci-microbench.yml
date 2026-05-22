@@ -1,0 +1,70 @@
+name: ci-microbench
+
+# Nightly full-row-count microbench run for the 26 always-on bundled
+# extensions. PR smoke is handled by the bench-smoke workflow via
+# ci/ai-blaise/bundled-ext-microbenches-smoke.sh.
+
+on:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+  pull_request:
+    paths:
+      - "benchmarks/microbenches/**"
+      - "ci/ai-blaise/bundled-ext-microbenches-smoke.sh"
+      - ".github/workflows/ci-microbench.yml"
+  schedule:
+    # Nightly at 03:14 UTC. Sized to land before the V2 release-gate
+    # aggregate snapshot at 04:00 UTC.
+    - cron: "14 3 * * *"
+  workflow_dispatch:
+    inputs:
+      bench_quick:
+        description: "BENCH_QUICK (0=full, 1=quick smoke)"
+        required: false
+        default: "0"
+      result_tag:
+        description: "BENCH_RESULT_TAG (e.g. release, ad-hoc)"
+        required: false
+        default: "release"
+
+permissions:
+  contents: read
+
+jobs:
+  microbench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run microbench smoke (quick mode)
+        # Even on the nightly run we exercise quick mode first so the smoke
+        # path stays exercised and we get a fast signal before the full run.
+        env:
+          BENCH_QUICK: "1"
+          BENCH_RESULT_TAG: "quick"
+        run: bash ci/ai-blaise/bundled-ext-microbenches-smoke.sh
+      - name: Run microbench aggregate (full mode)
+        env:
+          BENCH_QUICK: ${{ github.event.inputs.bench_quick || '0' }}
+          BENCH_RESULT_TAG: ${{ github.event.inputs.result_tag || 'release' }}
+        run: bash benchmarks/microbenches/run-all.sh
+      - name: Compare to baseline
+        env:
+          BENCH_QUICK: ${{ github.event.inputs.bench_quick || '0' }}
+          BENCH_RESULT_TAG: ${{ github.event.inputs.result_tag || 'release' }}
+        run: bash benchmarks/microbenches/compare-to-baseline.sh
+      - name: Upload aggregate report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microbench-results
+          path: |
+            benchmarks/microbenches/results-*.json
+            benchmarks/results/microbench-*.json
+          retention-days: 30

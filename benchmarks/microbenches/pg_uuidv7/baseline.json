@@ -1,0 +1,11 @@
+{
+  "ext": "pg_uuidv7",
+  "mb": "MB19",
+  "op": "uuidv7_generations_per_s",
+  "qps": 1000000,
+  "p95_ms": 0.001,
+  "p99_ms": 0.01,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "pg_uuidv7 upstream: ~1M generations/s"
+}

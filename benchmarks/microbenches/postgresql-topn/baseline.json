@@ -1,0 +1,11 @@
+{
+  "ext": "postgresql-topn",
+  "mb": "MB9",
+  "op": "topn_add_agg_ms",
+  "qps": 150000,
+  "p95_ms": 2,
+  "p99_ms": 8,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "Citus topn benchmarks: 100k-row aggregation under 1 s"
+}

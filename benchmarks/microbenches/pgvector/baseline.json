@@ -1,0 +1,11 @@
+{
+  "ext": "pgvector",
+  "mb": "MB3",
+  "op": "ivfflat_insert_then_lookup_qps",
+  "qps": 2000,
+  "p95_ms": 5,
+  "p99_ms": 15,
+  "rows": 1000,
+  "regression_threshold_pct": 10,
+  "source": "pgvector benchmarks: IVFFlat 768-dim lookup ~2k qps single connection"
+}

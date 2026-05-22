@@ -1,0 +1,11 @@
+{
+  "ext": "pg_repack",
+  "mb": "MB20",
+  "op": "repack_table_seconds",
+  "qps": 1,
+  "p95_ms": 10000,
+  "p99_ms": 15000,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "pg_repack upstream: 100k-row table repack ~10 s on local NVMe"
+}

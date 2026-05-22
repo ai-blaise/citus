@@ -1,0 +1,11 @@
+{
+  "ext": "pg_search",
+  "mb": "MB13",
+  "op": "bm25_insert_index_lookup_qps",
+  "qps": 3000,
+  "p95_ms": 5,
+  "p99_ms": 20,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "ParadeDB benchmarks: BM25 lookup ~3k qps on 100k docs"
+}

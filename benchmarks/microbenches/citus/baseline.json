@@ -1,0 +1,11 @@
+{
+  "ext": "citus",
+  "mb": "MB2",
+  "op": "distributed_insert_rows_per_s",
+  "qps": 30000,
+  "p95_ms": 25,
+  "p99_ms": 80,
+  "rows": 100000,
+  "regression_threshold_pct": 10,
+  "source": "Citus docs: distributed INSERT throughput on a 3-worker cluster"
+}
