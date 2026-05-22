@@ -112,8 +112,8 @@ A PITR has three valid targets. Pick one before running any command.
 1. Render a new `CitusCluster` manifest with `spec.restore`:
 
    ```bash
-   helm template ai-blaise-citus-pitr deploy/k8s/helm/citus-overlay \
-     -f deploy/k8s/helm/citus-overlay/values-prod.yaml \
+   helm template ai-blaise-citus-pitr ai-blaise/command-center: helm/charts/citus-cluster \
+     -f ai-blaise/command-center: helm/charts/citus-cluster/values-prod.yaml \
      --set "restore.source_archive_uri=$BACKUP_ARCHIVE_URI" \
      --set "restore.target_time=<RFC3339>" \
      --set "global.requireImageDigest=true" \

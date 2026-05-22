@@ -3656,7 +3656,7 @@ can be isolated reliably.
 
 ### Sec13: Pool CIDR Access Control
 
-**Overlay**: `pool/src/proxy.rs`, `deploy/k8s/helm/citus-overlay`
+**Overlay**: `pool/src/proxy.rs`, `ai-blaise/command-center: helm/charts/citus-cluster`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -3693,7 +3693,7 @@ allowlist.
 
 - In-source: `FEATURE: Sec13` in `pool/src/proxy.rs`
 - Helm: `FEATURE: Sec13` in
-  `deploy/k8s/helm/citus-overlay/templates/pool-networkpolicy.yaml`
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/pool-networkpolicy.yaml`
 - Executable: `cargo test -p ai_blaise_citus_pool`
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 - CI: `ci/ai-blaise/kind-production-smoke.sh`
@@ -4454,7 +4454,7 @@ queries.
 
 ### D7: Helm One-Line Install
 
-**Overlay**: `deploy/k8s/helm/citus-overlay`
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -4489,7 +4489,7 @@ installed release.
 **References**:
 
 - In-source: `FEATURE: D7` in `companion/src/ops_contracts.rs`
-- Helm chart: `deploy/k8s/helm/citus-overlay`
+- Helm chart: `ai-blaise/command-center: helm/charts/citus-cluster`
 - CI: `ci/ai-blaise/deploy-check.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
 - Gate: `make -f Makefile.ai-blaise gate-close`
@@ -4584,7 +4584,7 @@ optional tools Deployment remains dev-only and is not production evidence. The
 kind smoke also runs the built `citusctl` image and
 requires the `plan inspect cluster` output so tool images are executed, not
 merely built or loaded. The
-`deploy/k8s/argo/app.yaml` targets the `main` release branch and
+`ai-blaise/command-center: gitops/apps/13-citus-cluster.yaml` targets the `main` release branch and
 `values-prod.yaml` for GitOps deployment with namespace creation and pruning
 enabled; the Argo application is a GitOps render contract, not live controller
 evidence.
@@ -5022,7 +5022,7 @@ deployment objects.
 
 ### O6: Grafana Dashboards As ConfigMaps
 
-**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-dashboards.yaml`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -5053,13 +5053,13 @@ unguarded pool request-rate division.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O6` in
-  `deploy/k8s/helm/citus-overlay/templates/observability-dashboards.yaml`
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-dashboards.yaml`
 - CI: `ci/ai-blaise/kind-production-smoke.sh`
 - CI: `ci/ai-blaise/deploy-check.sh`
 
 ### O10: Alert Rules For Top Pains
 
-**Overlay**: `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+**Overlay**: `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-prometheusrules.yaml`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -5090,7 +5090,7 @@ division.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O10` in
-  `deploy/k8s/helm/citus-overlay/templates/observability-prometheusrules.yaml`
+  `ai-blaise/command-center: helm/charts/citus-cluster/templates/observability-prometheusrules.yaml`
 - CI: `ci/ai-blaise/kind-production-smoke.sh`
 - CI: `ci/ai-blaise/deploy-check.sh`
 
