@@ -1,14 +1,28 @@
 //! Shared sidecar primitives.
 
 // FEATURE: O4
+// FEATURE: O14
+// FEATURE: O15
 
 pub mod contracts;
+pub mod log_schema;
+pub mod otel;
 pub mod runtime;
 
 pub use contracts::{
     AnalyticalMirrorContract, AuthIssuerContract, BackupRestoreContract, CdcSink,
     CdcStreamContract, DeliveryRetryPolicy, RealtimeContract, RepackContract,
     RepackExecutionStrategy, SidecarContractError, SidecarRuntimeContracts, StorageContract,
+};
+pub use log_schema::{
+    canonical_sidecar_log_schemas, LogField, LogFieldKind, LogRecord, LogSchema, LogSchemaError,
+    LogSeverity, SidecarLogSchema,
+};
+pub use otel::{
+    parse_application_name, ApplicationNameFields, HeaderMap, MetadataMap, SetLocalBuilder,
+    TraceContext, TraceContextError, TraceParent, TraceState, APP_NAME_APPLICATION_KEY,
+    APP_NAME_TRACEPARENT_KEY, APP_NAME_TRACESTATE_KEY, PG_TRACE_PARENT_GUC, TRACEPARENT_HEADER,
+    TRACEPARENT_MAX_LEN, TRACESTATE_HEADER,
 };
 pub use runtime::{
     listen_addr_from_env, run_probe_server, serve_tcp_forever, HttpMethod, HttpProbeRequest,

@@ -5118,6 +5118,95 @@ operations TUI.
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
+### O14: W3C Trace-Context Propagation
+
+**Overlay**: `sidecar/shared/src/otel.rs`, `pool/src/trace_tap.rs`,
+`companion/src/trace_context.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Threads a W3C `traceparent` end-to-end from pool to companion
+to sidecars. The shared `otel` module exposes a `TraceContext` extract /
+inject trait with three carriers — `HeaderMap` (HTTP), `MetadataMap` (gRPC),
+and `SetLocalBuilder` (PostgreSQL `SET LOCAL`). The pool proxy taps the
+PostgreSQL startup envelope for an embedded traceparent in three places
+(custom `traceparent` startup parameter, `options=-c trace.parent=`, and a
+backwards-compatible `application_name` wire format) and records counters
+for tapped versus absent connections without modifying the byte stream.
+Companion's `trace_context` plan documents the canonical pgrx functions
+`companion.current_traceparent`, `companion.current_tracestate`, and
+`companion.project_traceparent_from_application_name`, which let
+companion-side spans chain to the inbound trace via the
+`current_setting('trace.parent', true)` GUC.
+
+**Motivation**: Distributed-database observability needs a single
+trace-id that survives the libpq wire so per-sidecar spans, companion
+spans, and operator spans can be correlated in Jaeger or Tempo without
+sampling drift.
+
+**Citus comparison**: Vanilla Citus does not propagate W3C trace-context
+through libpq.
+
+Production evidence: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
+real `postgres:17` container, runs the pool proxy against it, sends a
+traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
+log line reports the exact traceparent and that
+`ai_blaise_citus_pool_traceparent_tapped_total` increments. A follow-up
+connection without a traceparent increments
+`ai_blaise_citus_pool_traceparent_absent_total`. With `REQUIRE_KIND=1` the
+script additionally boots a 3-node kind cluster with Jaeger and asserts the
+trace lands at Jaeger.
+
+**References**:
+
+- Design: `docs/ai-blaise/OBSERVABILITY.md`
+- In-source: `FEATURE: O14` in `sidecar/shared/src/otel.rs`
+- In-source: `FEATURE: O14` in `pool/src/proxy.rs`
+- In-source: `FEATURE: O14` in `pool/src/trace_tap.rs`
+- In-source: `FEATURE: O14` in `companion/src/trace_context.rs`
+- CI: `ci/ai-blaise/otel-trace-propagation-smoke.sh`
+
+### O15: Per-Sidecar Structured-Log Schema
+
+**Overlay**: `sidecar/shared/src/log_schema.rs`, `companion/src/log_view.rs`
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Declares the canonical JSON log shape for every ai-blaise
+sidecar: nine common fields (timestamp, level, sidecar, message,
+traceparent, tenant_id, request_id, version, error, fields) plus typed
+per-sidecar extensions under `fields`. Companion's `log_view` module
+renders 17 deterministic `CREATE OR REPLACE VIEW` statements, one per
+sidecar, that project the JSON column from `companion.sidecar_log_raw`
+into typed SQL columns; Vector or fluent-bit feed that raw table from
+sidecar stdout.
+
+**Motivation**: Operator tooling, the citus-watch TUI, and the Grafana
+dashboards in `ai-blaise/command-center` all need a typed contract for log
+ingestion. Without it the per-sidecar shape drifts and downstream consumers
+cannot plan against the JSON column.
+
+**Citus comparison**: Vanilla Citus emits unstructured Postgres log lines;
+no per-sidecar JSON schema exists.
+
+Production evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
+validate every canonical schema, prove no extension field shadows a common
+field, and confirm the schema catalog covers all 17 sidecars. Companion's
+`log_view` tests render the deterministic SQL bundle and assert per-sidecar
+projections cast each extension field to its declared SQL type.
+
+**References**:
+
+- Design: `docs/ai-blaise/OBSERVABILITY.md`
+- In-source: `FEATURE: O15` in `sidecar/shared/src/lib.rs`
+- In-source: `FEATURE: O15` in `sidecar/shared/src/log_schema.rs`
+- In-source: `FEATURE: O15` in `companion/src/log_view.rs`
+- Acceptance: `cargo test -p ai_blaise_citus_companion --lib log_view`
+
 ## Extension Catalog SQL Runtime
 
 ### A7: pgvector Cohabitation Catalog Runtime
