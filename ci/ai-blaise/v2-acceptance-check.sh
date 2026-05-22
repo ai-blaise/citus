@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected=$'15\t15\t3\tfalse\t45\t4500\t800\t1000\t4000\t180\t100\t2000\t3\t3\t3\trelease-14.0'
+expected=$'16\t16\t3\tfalse\t45\t4500\t800\t1000\t4000\t180\t100\t2000\t3\t3\t6\t6\trelease-14.0'
 output="$(cargo run -q -p ai_blaise_citus_e2e --bin release_gate_report)"
 
 if ! printf '%s\n' "${output}" | grep -Fqx "${expected}"; then

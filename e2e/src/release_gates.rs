@@ -9,6 +9,12 @@
 // FEATURE: C8
 // FEATURE: D9
 // FEATURE: D10
+// FEATURE: DR1
+// FEATURE: DR2
+// FEATURE: DR3
+// FEATURE: DR4
+// FEATURE: DR5
+// FEATURE: DR6
 // FEATURE: L1
 // FEATURE: L8
 // FEATURE: L12
@@ -43,6 +49,7 @@ pub struct V2ReleaseGateAcceptance {
     pub multi_region: MultiRegionGate,
     pub performance: HarnessGate,
     pub chaos: HarnessGate,
+    pub dr_drills: HarnessGate,
     pub upstream_merge: UpstreamMergeGate,
     pub slop: CommandGate,
     pub features_doc: CommandGate,
@@ -122,6 +129,11 @@ impl V2ReleaseGateAcceptance {
                         "benchmarks/chaos/scenarios/kill-coordinator.sh",
                     ),
                     HarnessScenario::with_script(
+                        "kill-worker",
+                        true,
+                        "benchmarks/chaos/scenarios/kill-worker.sh",
+                    ),
+                    HarnessScenario::with_script(
                         "network-partition",
                         true,
                         "benchmarks/chaos/scenarios/network-partition.sh",
@@ -130,6 +142,50 @@ impl V2ReleaseGateAcceptance {
                         "disk-full",
                         true,
                         "benchmarks/chaos/scenarios/disk-full.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "slow-disk",
+                        true,
+                        "benchmarks/chaos/scenarios/slow-disk.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "random-kill-drill",
+                        true,
+                        "benchmarks/dr-drills/region-failover-drill.sh",
+                    ),
+                ],
+            },
+            dr_drills: HarnessGate {
+                scenarios: vec![
+                    HarnessScenario::with_script(
+                        "lost-shard",
+                        true,
+                        "benchmarks/dr-drills/lost-shard-drill.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "split-brain",
+                        true,
+                        "benchmarks/dr-drills/split-brain-drill.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "pitr-restore",
+                        true,
+                        "benchmarks/dr-drills/pitr-restore-drill.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "region-failover",
+                        true,
+                        "benchmarks/dr-drills/region-failover-drill.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "branch-promote",
+                        true,
+                        "benchmarks/dr-drills/branch-promote-drill.sh",
+                    ),
+                    HarnessScenario::with_script(
+                        "tenant-move",
+                        true,
+                        "benchmarks/dr-drills/tenant-move-drill.sh",
                     ),
                 ],
             },
@@ -157,6 +213,7 @@ impl V2ReleaseGateAcceptance {
             self.multi_region.validate(),
             self.performance.validate_with_minimum(3),
             self.chaos.validate_with_minimum(3),
+            self.dr_drills.validate_with_minimum(6),
             self.upstream_merge.validate(),
             self.slop.validate("slop"),
             self.features_doc.validate("features-doc"),
@@ -168,8 +225,8 @@ impl V2ReleaseGateAcceptance {
         }
 
         Ok(V2ReleaseGateReport {
-            total_gates: 15,
-            green_gates: 15,
+            total_gates: 16,
+            green_gates: 16,
             cohabit_kind_nodes: self.cohabit.kind_nodes,
             plan_cache_full_flush: self.plan_cache.full_cache_flush,
             latency_reduction_percent: self.latency.reduction_percent(),
@@ -183,6 +240,7 @@ impl V2ReleaseGateAcceptance {
             multi_region_regions: self.multi_region.regions,
             performance_harnesses_green: self.performance.green_count(),
             chaos_harnesses_green: self.chaos.green_count(),
+            dr_drills_green: self.dr_drills.green_count(),
             upstream_ref: self.upstream_merge.upstream_ref.clone(),
         })
     }
@@ -463,6 +521,7 @@ pub struct V2ReleaseGateReport {
     pub multi_region_regions: u32,
     pub performance_harnesses_green: u32,
     pub chaos_harnesses_green: u32,
+    pub dr_drills_green: u32,
     pub upstream_ref: String,
 }
 
@@ -474,13 +533,13 @@ impl V2ReleaseGateReport {
             "vectorizer_inserts_per_second\tvectorizer_lag_ms\t",
             "search_distributed_ms\tsearch_single_node_ms\thtap_staleness_ms\t",
             "multi_region_regions\tperformance_harnesses_green\t",
-            "chaos_harnesses_green\tupstream_ref"
+            "chaos_harnesses_green\tdr_drills_green\tupstream_ref"
         )
     }
 
     pub fn to_tsv_row(&self) -> String {
         format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             self.green_gates,
             self.total_gates,
             self.cohabit_kind_nodes,
@@ -496,6 +555,7 @@ impl V2ReleaseGateReport {
             self.multi_region_regions,
             self.performance_harnesses_green,
             self.chaos_harnesses_green,
+            self.dr_drills_green,
             self.upstream_ref
         )
     }
@@ -543,11 +603,12 @@ mod tests {
     fn canonical_release_gates_cover_all_v2_gates() {
         let report = V2ReleaseGateAcceptance::canonical().report().unwrap();
 
-        assert_eq!(report.total_gates, 15);
-        assert_eq!(report.green_gates, 15);
+        assert_eq!(report.total_gates, 16);
+        assert_eq!(report.green_gates, 16);
         assert_eq!(report.latency_reduction_percent, 45);
         assert_eq!(report.performance_harnesses_green, 3);
-        assert_eq!(report.chaos_harnesses_green, 3);
+        assert_eq!(report.chaos_harnesses_green, 6);
+        assert_eq!(report.dr_drills_green, 6);
         assert_eq!(report.upstream_ref, UPSTREAM_RELEASE_REF);
     }
 
@@ -571,8 +632,9 @@ mod tests {
         for scenario in &acceptance.chaos.scenarios {
             let script = scenario.script.as_deref().unwrap_or_default();
             assert!(
-                script.starts_with("benchmarks/chaos/"),
-                "chaos scenario '{}' missing benchmarks/chaos/ script reference (got '{}')",
+                script.starts_with("benchmarks/chaos/")
+                    || script.starts_with("benchmarks/dr-drills/"),
+                "chaos scenario '{}' missing benchmarks/chaos/ or benchmarks/dr-drills/ script reference (got '{}')",
                 scenario.name,
                 script,
             );

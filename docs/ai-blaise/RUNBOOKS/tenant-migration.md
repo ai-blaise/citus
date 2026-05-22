@@ -264,3 +264,24 @@ The move is reversible until step 5 (`tenant_move_cutover`) succeeds.
 - agentmemory pattern: `CITUS-TENANT-MIGRATION-<tenant>-<UTC>` recorded
   against `:3911` with the baseline counters, the cutover timestamp,
   and the post-move counters.
+
+## Automated drill
+
+`FEATURE: DR6`
+
+Patches a Tenant CR's `targetSchema`, waits for the TenantMove reconciler to drive Prepare -> Shadow -> Cutover -> Cleanup, and asserts `Tenant.status.phase=Steady` with the new schema. Reports the move time as `rto_s`; no rows are dropped on the destination (`rpo_s = 0`).
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-tenant-move
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/tenant-move-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.

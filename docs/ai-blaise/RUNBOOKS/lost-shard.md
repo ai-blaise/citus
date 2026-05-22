@@ -224,3 +224,24 @@ placement in `SHARD_STATE_TO_DELETE`:
 - agentmemory pattern: `CITUS-LOST-SHARD-<shardid>-<UTC>` recorded
   against `:3911` with the resolved placement and the raft decision
   TSV row attached as evidence.
+
+## Automated drill
+
+`FEATURE: DR1`
+
+Drives the runbook recovery procedure: identifies a worker, forces its placement inactive, and calls `citus_move_shard_placement` with `transfer_mode := 'block_writes'` to promote the surviving placement. Records RTO (fault to healthy placement), RPO (probe-row delta; 0 on a successful drill), and the count of errors observed during the fault window.
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-lost-shard
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/lost-shard-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.

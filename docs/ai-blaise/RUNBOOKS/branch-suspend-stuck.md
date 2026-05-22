@@ -228,3 +228,24 @@ If clearing blockers caused a deletion of in-flight work:
 - agentmemory pattern: `CITUS-BRANCH-SUSPEND-STUCK-<branch>-<UTC>`
   recorded against `:3911` with the matched blocker cause and the
   cleared `suspendBlockers` snapshot.
+
+## Automated drill
+
+`FEATURE: DR5`
+
+Creates a Branch CR, drives the suspend -> resume -> promote-to-primary cycle, and asserts the branch reaches each target phase inside the RTO budget. Reports the suspend/resume p50 as `rto_s`.
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-branch-promote
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/branch-promote-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.
