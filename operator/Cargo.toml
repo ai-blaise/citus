@@ -8,3 +8,15 @@ repository.workspace = true
 [dependencies]
 ai_blaise_citus_companion = { path = "../companion" }
 ai_blaise_citus_sidecar_shared = { path = "../sidecar/shared" }
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros", "signal", "sync", "time", "net"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
+kube = { version = "0.96", default-features = false, features = ["runtime", "client", "rustls-tls", "derive"] }
+kube-runtime = { version = "0.96", default-features = false }
+k8s-openapi = { version = "0.23", default-features = false, features = ["v1_30", "schemars"] }
+futures = "0.3"

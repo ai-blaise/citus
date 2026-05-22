@@ -29,6 +29,7 @@
 // FEATURE: TS7
 // FEATURE: WH1
 
+use ai_blaise_citus_operator::controllers;
 use ai_blaise_citus_operator::{
     BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
     BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterSpec, CitusTopology, CompressionPolicy,
@@ -47,6 +48,7 @@ use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::error::Error;
 use std::process;
+use std::thread;
 
 const CANONICAL_OPERATOR_CRDS: usize = 17;
 const V2_OPERATOR_CATALOG_GATES: usize = 13;
@@ -58,7 +60,7 @@ fn main() {
         return;
     }
     if args == ["serve"] {
-        run_server("operator", "0.0.0.0:8080");
+        run_serve("operator", "0.0.0.0:8080");
         return;
     }
 
@@ -104,11 +106,44 @@ fn print_usage() {
     println!("usage: operator [serve|run-canonical]");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
-        process::exit(1);
-    }
+/// Spawn the probe server on a dedicated thread (blocking std net) while a
+/// tokio runtime drives every kube-rs controller concurrently. The probe
+/// server is the readiness signal the operator deployment uses; the
+/// controllers reconcile CRDs against the live API server.
+fn run_serve(component: &'static str, default_addr: &'static str) {
+    let component_owned = component.to_string();
+    let default_owned = default_addr.to_string();
+    let probe = thread::spawn(move || {
+        if let Err(error) = run_probe_server(&component_owned, &default_owned) {
+            eprintln!("{component_owned}: probe server failed: {error}");
+            process::exit(1);
+        }
+    });
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|error| {
+            eprintln!("{component}: tokio runtime failed: {error}");
+            process::exit(1);
+        });
+
+    runtime.block_on(async move {
+        match kube::Client::try_default().await {
+            Ok(client) => {
+                if let Err(error) = controllers::serve_all(client).await {
+                    eprintln!("{component}: controllers exited: {error}");
+                    process::exit(1);
+                }
+            }
+            Err(error) => {
+                // No in-cluster kube config: keep probes alive so the
+                // deployment surfaces NotReady rather than crash-looping.
+                tracing::warn!(?error, "kube client unavailable; running probe-only");
+                let _ = probe.join();
+            }
+        }
+    });
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

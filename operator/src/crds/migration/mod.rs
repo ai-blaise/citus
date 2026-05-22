@@ -1,8 +1,12 @@
 // FEATURE: C9
 // FEATURE: M3
 
+pub mod state_machine;
+
 use std::error::Error;
 use std::fmt;
+
+pub use state_machine::{transition, PhaseEvidence, StateMachineError};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MigrationSpec {
@@ -29,6 +33,28 @@ pub enum MigrationConflictAction {
     Skip,
     Replace,
     ManualReview,
+}
+
+/// gh-ost-style life-cycle phases driven by [`state_machine::transition`].
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum MigrationPhase {
+    DeleteOnly,
+    WriteOnly,
+    Backfill,
+    Public,
+    Complete,
+}
+
+impl MigrationPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DeleteOnly => "DeleteOnly",
+            Self::WriteOnly => "WriteOnly",
+            Self::Backfill => "Backfill",
+            Self::Public => "Public",
+            Self::Complete => "Complete",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -82,5 +108,18 @@ mod tests {
             spec.validate(),
             Err(MigrationSpecError::MissingRequiredField("yaml"))
         );
+    }
+
+    #[test]
+    fn migration_phase_as_str_round_trip() {
+        for phase in [
+            MigrationPhase::DeleteOnly,
+            MigrationPhase::WriteOnly,
+            MigrationPhase::Backfill,
+            MigrationPhase::Public,
+            MigrationPhase::Complete,
+        ] {
+            assert!(!phase.as_str().is_empty());
+        }
     }
 }

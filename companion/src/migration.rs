@@ -34,16 +34,45 @@ impl MigrationPlan {
 
     pub fn to_sql_plan(&self) -> Result<MigrationSqlPlan, MigrationError> {
         self.validate()?;
+        // Phase 1 of the gh-ost cut-over: open the migration ledger row,
+        // create the shadow table on every shard, and emit the requested
+        // schema operations against the shadow copy.
         let mut commands = vec![format!(
-            "SELECT companion_internal.migrate_start({}, {}, {}, {});",
-            sql_literal(&self.name),
-            sql_literal(&self.table),
-            self.lock_timeout_ms,
-            self.backfill_batch_size
+            "SELECT citus_admin.migrate_start({name}, {table}, {lock_timeout}, {batch_size});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table),
+            lock_timeout = self.lock_timeout_ms,
+            batch_size = self.backfill_batch_size
         )];
+        commands.push(format!(
+            "SELECT citus_admin.shadow_table_create({name}, {table});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table)
+        ));
         commands.extend(self.operations.iter().map(MigrationOperation::to_sql));
         commands.push(format!(
-            "SELECT companion_internal.migrate_complete({});",
+            "SELECT citus_admin.install_write_triggers({name}, {table});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table)
+        ));
+        commands.push(format!(
+            "SELECT citus_admin.backfill_run({name}, {table}, {batch_size});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table),
+            batch_size = self.backfill_batch_size
+        ));
+        commands.push(format!(
+            "SELECT citus_admin.row_diff_verify({name}, {table});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table)
+        ));
+        commands.push(format!(
+            "SELECT citus_admin.shadow_table_publish({name}, {table});",
+            name = sql_literal(&self.name),
+            table = sql_literal(&self.table)
+        ));
+        commands.push(format!(
+            "SELECT citus_admin.migrate_complete({});",
             sql_literal(&self.name)
         ));
         MigrationSqlPlan::new("M1", commands)
@@ -264,5 +293,33 @@ mod tests {
         };
 
         assert_eq!(operation.validate(), Err(MigrationError::NoTypeChange));
+    }
+
+    #[test]
+    fn gh_ost_phases_are_present_in_sql_plan() {
+        let plan = MigrationPlan {
+            name: "orders-total-bigint".to_string(),
+            table: "public.orders".to_string(),
+            operations: vec![MigrationOperation::AddColumn {
+                column: "total_cents_v2".to_string(),
+                sql_type: "bigint".to_string(),
+                default_expression: None,
+            }],
+            lock_timeout_ms: 500,
+            backfill_batch_size: 1000,
+        }
+        .to_sql_plan()
+        .expect("plan");
+        let script = plan.script();
+
+        // Every gh-ost phase emits a distinct citus_admin function so the
+        // operator state machine has a per-shard executor invariant.
+        assert!(script.contains("citus_admin.migrate_start"));
+        assert!(script.contains("citus_admin.shadow_table_create"));
+        assert!(script.contains("citus_admin.install_write_triggers"));
+        assert!(script.contains("citus_admin.backfill_run"));
+        assert!(script.contains("citus_admin.row_diff_verify"));
+        assert!(script.contains("citus_admin.shadow_table_publish"));
+        assert!(script.contains("citus_admin.migrate_complete"));
     }
 }
