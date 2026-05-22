@@ -524,8 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 259 source `FEATURE:` markers and 259
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 111 narrow headings
+The current feature inventory contains 256 source `FEATURE:` markers and 255
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 107 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
