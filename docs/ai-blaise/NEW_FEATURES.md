@@ -7562,6 +7562,153 @@ exist tend to ship at implicit v1 with no upgrade path.
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-conversion-canonical`
 - YAML bundle: `command-center/helm/charts/citus-cluster/crds/ai-blaise-citus-crds.yaml`
 
+### RQ1: Pinned Rust Toolchain
+
+**Overlay**: `rust-toolchain.toml`, `e2e/src/rust_quality.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Pins the workspace to Rust `1.95.0` with the `rustfmt`, `clippy`,
+`rust-src`, and `rust-analyzer` components so every contributor, CI runner,
+and release image builds against the same compiler.
+
+**Motivation**: Without a toolchain pin, CI runners and contributor laptops
+drift to different stable channels, which masks lint regressions and
+introduces hard-to-reproduce build failures. The 30-crate workspace plus
+nine `ai-blaise` CI workflows depend on a single deterministic toolchain.
+
+**Citus comparison**: Vanilla Citus does not ship Rust crates and does not
+pin a Rust toolchain.
+
+Production evidence: GitHub Actions workflow
+`.github/workflows/ci-rust-quality.yml` runs `rustup show` in a real CI
+container on every PR, which materializes the toolchain declared in
+`rust-toolchain.toml` and fails the build if the components are missing.
+`e2e/src/rust_quality.rs::tests::canonical_files_are_present` exercises the
+same file-presence contract from a Rust test that any contributor can run
+with `cargo test -p ai_blaise_citus_e2e --lib rust_quality`, and the same
+test executes on the VM and in CI containers.
+
+**References**:
+
+- In-source: `FEATURE: RQ1` in `e2e/src/rust_quality.rs`
+- Executable: `cargo test -p ai_blaise_citus_e2e --lib rust_quality`
+- CI: `.github/workflows/ci-rust-quality.yml`
+
+### RQ2: Strict Clippy Gate
+
+**Overlay**: `clippy.toml`, `.cargo/config.toml`, `rustfmt.toml`,
+`e2e/src/rust_quality.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Enables `clippy::all`, `clippy::pedantic`, and `clippy::nursery`
+workspace-wide through `.cargo/config.toml`, pins MSRV to `1.95.0` in
+`clippy.toml`, and runs `cargo clippy --workspace --all-targets -- -D warnings`
+as a required CI check. `rustfmt.toml` codifies a 100-column, 4-space,
+Unix-newline style for the same workspace.
+
+**Motivation**: Pedantic/nursery clippy catches subtle correctness and
+style regressions (manual `inspect_err`, `map_or` over `map().unwrap_or`,
+inlined `format!` args, raw-string hash hygiene, derivable `Default`, doc
+paragraph length) that vanilla `clippy::all` misses. Enforcing the gate on
+every PR keeps the 30-crate workspace from regressing back into ad-hoc style.
+
+**Citus comparison**: Vanilla Citus does not ship Rust crates and does not
+gate clippy.
+
+Production evidence: GitHub Actions workflow
+`.github/workflows/ci-rust-quality.yml` runs both
+`cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets
+-- -D warnings` as required gates in a real CI container on every PR.
+`e2e/src/rust_quality.rs::tests::canonical_shape_matches_constants`
+exercises the canonical lint policy from a Rust test that runs both on the
+VM and in the same CI container.
+
+**References**:
+
+- In-source: `FEATURE: RQ2` in `e2e/src/rust_quality.rs`
+- Executable: `cargo clippy --workspace --all-targets -- -D warnings`
+- CI: `.github/workflows/ci-rust-quality.yml`
+
+### RQ3: Dependency Security Advisories
+
+**Overlay**: `audit.toml`, `e2e/src/rust_quality.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Runs `cargo audit` against the RustSec advisory database on every
+PR. `audit.toml` documents accepted ignores with rationale; the default
+`ignore` list is empty so any new advisory fails the build until either a
+patched dependency is pinned in `Cargo.toml` or an ignore with a documented
+rationale is added.
+
+**Motivation**: Without a structured advisory gate, security regressions in
+transitive deps slip into release images. The workspace already pulls 253
+crates (per `Cargo.lock`) and the operator/pool/sidecars are network-exposed
+production surfaces.
+
+**Citus comparison**: Vanilla Citus does not ship Rust crates and does not
+gate `cargo audit`.
+
+Production evidence: GitHub Actions workflow
+`.github/workflows/ci-rust-quality.yml` installs `cargo-audit` and runs
+`cargo audit` in a real CI container on every PR. The current dependency
+graph passes with a single `RUSTSEC-2021-0127` warning for the unmaintained
+`serde_cbor` 0.11.2 pulled transitively by `pgrx` 0.18; the same advisory is
+ignored in `deny.toml` with a documented rationale.
+
+**References**:
+
+- In-source: `FEATURE: RQ3` in `e2e/src/rust_quality.rs`
+- Executable: `cargo audit`
+- CI: `.github/workflows/ci-rust-quality.yml`
+
+### RQ4: License-Compatibility Gate
+
+**Overlay**: `deny.toml`, `ci/ai-blaise/license-check.sh`,
+`e2e/src/rust_quality.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Runs `cargo deny check` against `deny.toml` on every PR. The
+allow-list mirrors `docs/ai-blaise/LICENSE_AUDIT.md` (MIT, Apache-2.0,
+BSD-2/3-Clause, ISC, Zlib, Unicode-3.0, BSL-1.0, Unlicense, AGPL-3.0-or-later)
+and the deny-list keeps GPL-2.0/GPL-3.0/LGPL-2.1/LGPL-3.0 out of the
+distributable surface. `ci/ai-blaise/license-check.sh` now invokes the same
+`cargo deny check` after its existing SPDX grep guard so local developers and
+CI enforce the same policy.
+
+**Motivation**: The workspace is AGPL-3.0-or-later. A GPL-only transitive dep
+would virally contaminate the distribution. cargo-deny replaces the previous
+grep-only scan with a real SPDX expression parser (so OR-licensed deps like
+`r-efi MIT OR Apache-2.0 OR LGPL-2.1-or-later` resolve correctly) and adds
+the bans/sources/advisories sections to the same gate.
+
+**Citus comparison**: Vanilla Citus does not ship Rust crates and does not
+gate license compatibility.
+
+Production evidence: GitHub Actions workflow
+`.github/workflows/ci-rust-quality.yml` installs `cargo-deny` and runs
+`cargo deny check` in a real CI container on every PR.
+`ci/ai-blaise/license-check.sh` now invokes the same command after the
+existing GPL-grep scanner so local invocations on the VM also fail on
+policy violations.
+
+**References**:
+
+- In-source: `FEATURE: RQ4` in `e2e/src/rust_quality.rs`
+- Executable: `cargo deny check`
+- CI: `.github/workflows/ci-rust-quality.yml`
+
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature

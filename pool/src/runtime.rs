@@ -69,8 +69,7 @@ impl SettingsBucketPolicy {
                 let value = settings
                     .iter()
                     .find(|setting| setting.name.eq_ignore_ascii_case(tracked_guc))
-                    .map(|setting| setting.value.as_str())
-                    .unwrap_or("<unset>");
+                    .map_or("<unset>", |setting| setting.value.as_str());
                 format!(
                     "{}={}",
                     tracked_guc.to_ascii_lowercase(),

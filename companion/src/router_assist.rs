@@ -74,9 +74,10 @@ impl PlacementGenerationSample {
         if value < 0 {
             return Err(RouterAssistError::InvalidGenerationSample);
         }
-        Ok(Self {
-            generation: value as u64,
-        })
+        // Negative values were rejected above, so the bit pattern is a valid u64.
+        #[allow(clippy::cast_sign_loss)]
+        let generation = value as u64;
+        Ok(Self { generation })
     }
 }
 
@@ -187,7 +188,10 @@ impl ShardForValuePlan {
 
     pub fn target_shard_index(&self) -> Result<u32, RouterAssistError> {
         self.validate()?;
-        Ok(self.value_hash.unsigned_abs() as u32 % self.shard_count)
+        // Result is taken modulo `shard_count` (u32) before truncation, so the
+        // u64 → u32 cast is safe.
+        #[allow(clippy::cast_possible_truncation)]
+        Ok((self.value_hash.unsigned_abs() % u64::from(self.shard_count)) as u32)
     }
 }
 

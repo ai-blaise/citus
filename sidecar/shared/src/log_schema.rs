@@ -16,6 +16,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fmt::Write as _;
 
 /// Severity levels mirror RFC 5424 / OpenTelemetry severity numbers but the
 /// emitted JSON uses the canonical short names below.
@@ -221,7 +222,7 @@ fn escape_json_string(value: &str) -> String {
             '\r' => output.push_str("\\r"),
             '\t' => output.push_str("\\t"),
             c if (c as u32) < 0x20 => {
-                output.push_str(&format!("\\u{:04x}", c as u32));
+                let _ = write!(output, "\\u{:04x}", c as u32);
             }
             c => output.push(c),
         }

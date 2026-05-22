@@ -92,10 +92,15 @@ impl LogViewPlan {
     pub fn from_schema(schema: &SidecarLogSchema) -> Result<Self, LogViewError> {
         schema.schema.validate().map_err(LogViewError::Schema)?;
 
+        // `common` and `extensions` are `&'static [LogField]` references; the
+        // explicit `.iter()` is required because the implicit `for` desugaring
+        // does not deref-coerce `&&[T]` into an iterator.
         let mut fields: Vec<LogFieldProjection> = Vec::new();
+        #[allow(clippy::explicit_iter_loop)]
         for field in schema.schema.common.iter() {
             fields.push(common_projection(field));
         }
+        #[allow(clippy::explicit_iter_loop)]
         for field in schema.schema.extensions.iter() {
             fields.push(extension_projection(field));
         }

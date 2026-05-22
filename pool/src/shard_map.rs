@@ -145,10 +145,9 @@ impl CachedPlanGeneration {
         self.generations.iter().all(|cached_generation| {
             shard_map
                 .generation_for_shards(&[cached_generation.shard_id])
-                .map(|current_generation| {
+                .is_ok_and(|current_generation| {
                     current_generation.generations == vec![cached_generation.clone()]
                 })
-                .unwrap_or(false)
         })
     }
 }

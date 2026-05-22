@@ -129,7 +129,7 @@ impl WorkerLeaseRegistry {
         if lease.job_name != self.job_name {
             return Err(WorkerLeaseError::JobNameMismatch {
                 expected: self.job_name.clone(),
-                observed: lease.job_name.clone(),
+                observed: lease.job_name,
             });
         }
         lease.validate()?;
@@ -278,13 +278,9 @@ impl Error for WorkerLeaseError {}
 impl From<SchemaJobError> for WorkerLeaseError {
     fn from(error: SchemaJobError) -> Self {
         match error {
-            SchemaJobError::MissingRequiredField(field) => {
-                WorkerLeaseError::MissingRequiredField(field)
-            }
-            SchemaJobError::InvalidLease => WorkerLeaseError::MissingRequiredField("lease"),
-            SchemaJobError::UnknownState(_) => {
-                WorkerLeaseError::MissingRequiredField("schema_version_id")
-            }
+            SchemaJobError::MissingRequiredField(field) => Self::MissingRequiredField(field),
+            SchemaJobError::InvalidLease => Self::MissingRequiredField("lease"),
+            SchemaJobError::UnknownState(_) => Self::MissingRequiredField("schema_version_id"),
         }
     }
 }

@@ -690,8 +690,7 @@ fn handle_valid_tool_request(name: &str, request: McpToolRequest) -> Result<Stri
             request
                 .tenant_scope
                 .as_ref()
-                .map(|scope| scope.tenant_id.as_str())
-                .unwrap_or("none"),
+                .map_or("none", |scope| scope.tenant_id.as_str()),
         )),
         Err(error) => Err(error.to_string()),
     }

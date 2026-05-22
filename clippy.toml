@@ -1,0 +1,4 @@
+msrv = "1.95.0"
+avoid-breaking-exported-api = true
+cognitive-complexity-threshold = 25
+type-complexity-threshold = 250

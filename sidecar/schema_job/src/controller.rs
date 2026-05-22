@@ -21,7 +21,7 @@
 use crate::SchemaJobSidecarError;
 use ai_blaise_citus_companion::{
     verify_two_version_invariant_sql, PhaseCheckpoint, PhaseTransitionDecision,
-    PhaseTransitionPlan, RollbackPlan, SchemaJobController, SchemaJobControllerError,
+    PhaseTransitionPlan, RollbackPlan, RollbackStep, SchemaJobController, SchemaJobControllerError,
     SchemaJobPlan, SchemaJobState, TransitionGate, WorkerLease, WorkerLeaseRegistry,
     WorkerLeaseStatus,
 };
@@ -136,7 +136,7 @@ pub fn tick(input: &ControllerTickInput) -> Result<ControllerTickReport, Control
             let rollback_target = rollback_target_for(input.plan.state)?;
             let rollback = RollbackPlan::new(&input.plan, rollback_target, input.now.clone())
                 .map_err(|err| ControllerError::Companion(err.to_string()))?;
-            sql.extend(rollback.steps.iter().map(|step| step.to_sql()));
+            sql.extend(rollback.steps.iter().map(RollbackStep::to_sql));
             ControllerTickDecision::Rollback {
                 expired_workers,
                 rollback,
@@ -209,7 +209,7 @@ impl From<SchemaJobControllerError> for ControllerError {
 
 impl From<ControllerError> for SchemaJobSidecarError {
     fn from(error: ControllerError) -> Self {
-        SchemaJobSidecarError::Companion(error.to_string())
+        Self::Companion(error.to_string())
     }
 }
 
@@ -223,9 +223,8 @@ pub struct WorkerStatusSnapshot {
 
 /// Build the snapshot vector for one tick.
 pub fn worker_status_snapshot(input: &ControllerTickInput) -> Vec<WorkerStatusSnapshot> {
-    let mut registry = match WorkerLeaseRegistry::new(&input.plan.name) {
-        Ok(reg) => reg,
-        Err(_) => return Vec::new(),
+    let Ok(mut registry) = WorkerLeaseRegistry::new(&input.plan.name) else {
+        return Vec::new();
     };
     registry.expect_phase(input.plan.state);
     for lease in &input.leases {

@@ -69,7 +69,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     let length = u32::from_be_bytes(header[0..4].try_into().unwrap()) as usize;
     let code = u32::from_be_bytes(header[4..8].try_into().unwrap());
 
-    if length < 8 || length > STARTUP_MESSAGE_MAX_BYTES {
+    if !(8..=STARTUP_MESSAGE_MAX_BYTES).contains(&length) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("PostgreSQL startup envelope reported {length} byte length"),
@@ -89,7 +89,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     // SSLRequest (80877103), GSSENCRequest (80877104), CancelRequest (80877102)
     // are special envelopes; they do not carry an application_name. The proxy
     // still replays them verbatim.
-    if matches!(code, 80877102 | 80877103 | 80877104) {
+    if matches!(code, 80_877_102..=80_877_104) {
         return Ok(StartupTraceTap {
             fields: ApplicationNameFields::default(),
             buffered_bytes,
@@ -100,8 +100,10 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     // The protocol version is the upper 16 bits major, lower 16 bits minor.
     // We accept anything from 2.0 onwards; the PostgreSQL community has used
     // 3.0 for two decades but the field is informational here.
+    // Bits beyond the upper 16 are masked off by the shift's destination width.
+    #[allow(clippy::cast_possible_truncation)]
     let major = (code >> 16) as u16;
-    if major < 2 || major > 4 {
+    if !(2..=4).contains(&major) {
         // Not a recognized startup envelope; return an empty parse but keep
         // the bytes so they can be forwarded.
         return Ok(StartupTraceTap {
@@ -134,11 +136,11 @@ fn derive_fields_from_parameters(params: &[(String, String)]) -> ApplicationName
     //      key=value;key=value wire format documented on
     //      ai_blaise_citus_sidecar_shared::parse_application_name. This is
     //      the legacy form for clients that cannot set custom GUCs.
-    let mut fields = ApplicationNameFields::default();
-
-    if let Some((_, value)) = params.iter().find(|(key, _)| key == "application_name") {
-        fields = parse_application_name(value);
-    }
+    let mut fields = params
+        .iter()
+        .find(|(key, _)| key == "application_name")
+        .map(|(_, value)| parse_application_name(value))
+        .unwrap_or_default();
 
     if let Some((_, options)) = params.iter().find(|(key, _)| key == "options") {
         if let Some(traceparent) = extract_options_traceparent(options) {
@@ -171,9 +173,8 @@ fn parse_libpq_startup_parameters(body: &[u8]) -> Vec<(String, String)> {
             Some(slice) if !slice.is_empty() => slice,
             _ => return params,
         };
-        let value = match iter.next() {
-            Some(slice) => slice,
-            None => return params,
+        let Some(value) = iter.next() else {
+            return params;
         };
         let (Ok(key), Ok(value)) = (std::str::from_utf8(key), std::str::from_utf8(value)) else {
             continue;
@@ -231,7 +232,7 @@ fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<(
                 ));
             }
             Ok(read) => filled += read,
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
             Err(error) => return Err(error),
         }
     }
@@ -274,7 +275,7 @@ mod tests {
 
     fn make_startup_packet_with_options(application_name: &str, options: Option<&str>) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&196608_u32.to_be_bytes());
+        body.extend_from_slice(&196_608_u32.to_be_bytes());
         body.extend_from_slice(b"user");
         body.push(0);
         body.extend_from_slice(b"postgres");
@@ -294,6 +295,8 @@ mod tests {
             body.push(0);
         }
         body.push(0);
+        // Test fixture packets stay well under u32::MAX in practice.
+        #[allow(clippy::cast_possible_truncation)]
         let length = (body.len() + 4) as u32;
         let mut packet = Vec::with_capacity(body.len() + 4);
         packet.extend_from_slice(&length.to_be_bytes());
@@ -347,7 +350,7 @@ mod tests {
     fn tap_passes_through_ssl_request_envelope_without_traceparent() {
         let mut packet = Vec::new();
         packet.extend_from_slice(&8_u32.to_be_bytes());
-        packet.extend_from_slice(&80877103_u32.to_be_bytes());
+        packet.extend_from_slice(&80_877_103_u32.to_be_bytes());
         let mut cursor = Cursor::new(packet.clone());
 
         let tap = tap_startup_message(&mut cursor).unwrap();
@@ -360,7 +363,7 @@ mod tests {
     fn tap_rejects_invalid_startup_length() {
         let mut packet = Vec::new();
         packet.extend_from_slice(&3_u32.to_be_bytes());
-        packet.extend_from_slice(&196608_u32.to_be_bytes());
+        packet.extend_from_slice(&196_608_u32.to_be_bytes());
         let mut cursor = Cursor::new(packet);
 
         let error = tap_startup_message(&mut cursor).unwrap_err();

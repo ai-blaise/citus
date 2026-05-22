@@ -170,7 +170,7 @@ impl SchemaJobController {
                 WorkerLeaseStatus::Acknowledged => acknowledged.push((*worker_id).to_string()),
                 WorkerLeaseStatus::Expired => expired.push((*worker_id).to_string()),
                 WorkerLeaseStatus::StalePhase { .. } | WorkerLeaseStatus::Missing => {
-                    delinquent.push((*worker_id).to_string())
+                    delinquent.push((*worker_id).to_string());
                 }
             }
         }

@@ -1,0 +1,9 @@
+# cargo-audit configuration for ai-blaise/citus.
+#
+# CI: .github/workflows/ci-rust-quality.yml gates this on every PR via
+# "cargo audit" against the canonical RustSec advisory database.
+#
+# Ignore entries must include a rationale comment with an issue link
+# or a planned remediation. Empty by default.
+[advisories]
+ignore = []

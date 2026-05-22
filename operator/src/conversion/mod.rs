@@ -115,7 +115,7 @@ impl Error for ConversionError {}
 /// JSON to/from these variants; that adapter lives alongside the admission
 /// webhook implementation and is wired in `operator/src/main.rs` when the
 /// `serve` subcommand is invoked.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ConversionPayload {
     CitusCluster(crate::crds::citus_cluster::v1alpha1::CitusClusterSpec),
     ShardGroup(crate::crds::shard_group::v1alpha1::ShardGroupSpec),
@@ -177,7 +177,7 @@ impl ConversionPayload {
 /// `ConversionReview` JSON into a `ConversionRequest`; this module keeps the
 /// pure conversion logic so tests can exercise it without spinning up a
 /// server.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConversionRequest {
     pub source_api_version: String,
     pub target_api_version: String,
@@ -188,7 +188,7 @@ pub struct ConversionRequest {
 /// Successful conversion result. The `payload` is in `target_api_version` form
 /// and ready for the operator (or the API server, when this travels back over
 /// the webhook channel) to consume.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConversionResponse {
     pub target_api_version: String,
     pub payload: ConversionPayload,

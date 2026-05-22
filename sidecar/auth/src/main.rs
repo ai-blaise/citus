@@ -49,14 +49,11 @@ fn main() {
             .sidecar
             .mfa
             .as_ref()
-            .map(|mfa| mfa.totp_enabled.to_string())
-            .unwrap_or_else(|| "false".to_string()),
-        report
-            .sidecar
-            .mfa
-            .as_ref()
-            .map(|mfa| mfa.webauthn_enabled.to_string())
-            .unwrap_or_else(|| "false".to_string()),
+            .map_or_else(|| "false".to_string(), |mfa| mfa.totp_enabled.to_string(),),
+        report.sidecar.mfa.as_ref().map_or_else(
+            || "false".to_string(),
+            |mfa| mfa.webauthn_enabled.to_string(),
+        ),
     );
 }
 

@@ -58,7 +58,7 @@ fn main() {
     match args.as_slice() {
         [] => run_advanced_planner_canonical(),
         [command] if command == "run-advanced-planner-canonical" => {
-            run_advanced_planner_canonical()
+            run_advanced_planner_canonical();
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();

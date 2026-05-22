@@ -88,10 +88,11 @@ impl CompanionTraceContextPlan {
     }
 }
 
-/// Apply the projection to a parsed `application_name` and render the
-/// resulting `SET LOCAL` statement. Returns `None` when the application name
-/// did not embed a traceparent; the companion pgrx function returns a noop
-/// in that case so PostgreSQL session settings stay clean.
+/// Apply the projection to a parsed `application_name` and render SQL.
+///
+/// Returns `None` when the application name did not embed a traceparent; the
+/// companion pgrx function returns a noop in that case so PostgreSQL session
+/// settings stay clean.
 pub fn render_projection_sql(application_name: &str) -> Option<String> {
     let fields: ApplicationNameFields = parse_application_name(application_name);
     let mut builder = SetLocalBuilder::new();

@@ -1,0 +1,15 @@
+# Stable rustfmt configuration for ai-blaise/citus.
+#
+# Toolchain is pinned to stable 1.95.0 via rust-toolchain.toml, so only
+# stable rustfmt options are enabled. The unstable options imports_granularity,
+# group_imports, and reorder_imports (granularity-aware) require nightly
+# rustfmt -- when we move the toolchain to a channel that ships them as
+# stable, re-enable them here.
+edition = "2021"
+max_width = 100
+hard_tabs = false
+tab_spaces = 4
+use_field_init_shorthand = true
+use_try_shorthand = true
+reorder_imports = true
+newline_style = "Unix"

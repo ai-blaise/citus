@@ -55,8 +55,7 @@ fn main() {
             .job
             .encryption
             .as_ref()
-            .map(|encryption| encryption.kms_key_ref.as_str())
-            .unwrap_or("none"),
+            .map_or("none", |encryption| encryption.kms_key_ref.as_str()),
     );
 }
 

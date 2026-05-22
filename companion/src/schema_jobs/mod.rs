@@ -98,11 +98,16 @@ impl SchemaJobPlan {
         matches!(
             (self.state, prev),
             (SchemaJobState::WriteOnly, SchemaJobState::DeleteOnly)
-                | (SchemaJobState::Backfill, SchemaJobState::WriteOnly)
-                | (SchemaJobState::Backfill, SchemaJobState::DeleteOnly)
-                | (SchemaJobState::Paused, SchemaJobState::DeleteOnly)
-                | (SchemaJobState::Paused, SchemaJobState::WriteOnly)
-                | (SchemaJobState::Paused, SchemaJobState::Backfill)
+                | (
+                    SchemaJobState::Backfill,
+                    SchemaJobState::WriteOnly | SchemaJobState::DeleteOnly,
+                )
+                | (
+                    SchemaJobState::Paused,
+                    SchemaJobState::DeleteOnly
+                        | SchemaJobState::WriteOnly
+                        | SchemaJobState::Backfill,
+                )
         )
     }
 

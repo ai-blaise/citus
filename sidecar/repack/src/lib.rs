@@ -51,11 +51,15 @@ impl RepackJobPlan {
             ],
         };
 
+        // Shard counts in the contract never approach u32::MAX, so the
+        // usize → u32 truncation is unreachable in practice.
+        #[allow(clippy::cast_possible_truncation)]
+        let shard_count = self.shard_targets.len() as u32;
         Ok(RepackCommandPlan {
             executable: executable.to_string(),
             args,
             lock_timeout_ms: self.lock_timeout_ms,
-            shard_count: self.shard_targets.len() as u32,
+            shard_count,
         })
     }
 }

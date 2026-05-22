@@ -36,19 +36,18 @@ impl CitusLspPlan {
                     columns,
                     distribution_column,
                     tenant_column,
-                } if self.rule_enabled(LspRule::MissingDistributionColumnQuickFix) => {
-                    if distribution_column
+                } if self.rule_enabled(LspRule::MissingDistributionColumnQuickFix)
+                    && distribution_column
                         .as_deref()
                         .unwrap_or("")
                         .trim()
-                        .is_empty()
-                    {
-                        diagnostics.push(missing_distribution_column_diagnostic(
-                            table,
-                            columns,
-                            tenant_column.as_deref(),
-                        )?);
-                    }
+                        .is_empty() =>
+                {
+                    diagnostics.push(missing_distribution_column_diagnostic(
+                        table,
+                        columns,
+                        tenant_column.as_deref(),
+                    )?);
                 }
                 SqlIntent::Join {
                     left_table,
@@ -89,8 +88,7 @@ impl CitusLspPlan {
                                 code: LspDiagnosticCode::DistributionColumnAlter,
                                 severity: DiagnosticSeverity::Error,
                                 message: format!(
-                                    "cannot {:?} distribution column {} on distributed table {}",
-                                    action, column, table
+                                    "cannot {action:?} distribution column {column} on distributed table {table}"
                                 ),
                                 quick_fix: None,
                             });
@@ -106,7 +104,7 @@ impl CitusLspPlan {
                         diagnostics.push(LspDiagnostic {
                             code: LspDiagnosticCode::HypertableInvariant,
                             severity: DiagnosticSeverity::Error,
-                            message: format!("hypertable {} must declare a time column", table),
+                            message: format!("hypertable {table} must declare a time column"),
                             quick_fix: None,
                         });
                     }
@@ -117,8 +115,7 @@ impl CitusLspPlan {
                             code: LspDiagnosticCode::HypertableInvariant,
                             severity: DiagnosticSeverity::Warning,
                             message: format!(
-                                "distributed hypertable {} must use the companion bridge",
-                                table
+                                "distributed hypertable {table} must use the companion bridge"
                             ),
                             quick_fix: time_column.as_ref().map(|time_column| LspQuickFix {
                                 title: "Use distributed hypertable bridge".to_string(),
@@ -141,8 +138,7 @@ impl CitusLspPlan {
                                     code: LspDiagnosticCode::MissingTenantFilter,
                                     severity: DiagnosticSeverity::Warning,
                                     message: format!(
-                                        "query on {} should filter tenant column {}",
-                                        table, tenant_column
+                                        "query on {table} should filter tenant column {tenant_column}"
                                     ),
                                     quick_fix: Some(LspQuickFix {
                                         title: "Add tenant filter".to_string(),
@@ -160,24 +156,23 @@ impl CitusLspPlan {
                     index_name,
                     table,
                     analyzer,
-                } if self.rule_enabled(LspRule::MissingSearchAnalyzer) => {
-                    if analyzer.as_deref().unwrap_or("").trim().is_empty() {
-                        diagnostics.push(LspDiagnostic {
-                            code: LspDiagnosticCode::MissingSearchAnalyzer,
-                            severity: DiagnosticSeverity::Warning,
-                            message: format!(
-                                "search index {} on {} should declare an analyzer",
-                                index_name, table
-                            ),
-                            quick_fix: Some(LspQuickFix {
-                                title: "Use default analyzer".to_string(),
-                                action: LspQuickFixAction::SetSearchAnalyzer {
-                                    index_name: index_name.clone(),
-                                    analyzer: "english".to_string(),
-                                },
-                            }),
-                        });
-                    }
+                } if self.rule_enabled(LspRule::MissingSearchAnalyzer)
+                    && analyzer.as_deref().unwrap_or("").trim().is_empty() =>
+                {
+                    diagnostics.push(LspDiagnostic {
+                        code: LspDiagnosticCode::MissingSearchAnalyzer,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "search index {index_name} on {table} should declare an analyzer"
+                        ),
+                        quick_fix: Some(LspQuickFix {
+                            title: "Use default analyzer".to_string(),
+                            action: LspQuickFixAction::SetSearchAnalyzer {
+                                index_name: index_name.clone(),
+                                analyzer: "english".to_string(),
+                            },
+                        }),
+                    });
                 }
                 _ => {}
             }
@@ -1061,7 +1056,7 @@ fn where_columns(statement: &str) -> Vec<String> {
     };
     let where_clause = &normalized[where_offset + " where ".len()..];
     let mut columns = Vec::new();
-    for predicate in where_clause.split(|ch| matches!(ch, '=' | '<' | '>' | ',' | ')' | '(')) {
+    for predicate in where_clause.split(['=', '<', '>', ',', ')', '(']) {
         let Some(identifier) = first_identifier(predicate) else {
             continue;
         };
@@ -1146,7 +1141,7 @@ fn missing_distribution_column_diagnostic(
     Ok(LspDiagnostic {
         code: LspDiagnosticCode::MissingDistributionColumn,
         severity: DiagnosticSeverity::Warning,
-        message: format!("table {} should declare a Citus distribution column", table),
+        message: format!("table {table} should declare a Citus distribution column"),
         quick_fix: Some(LspQuickFix {
             title: "Add distribution column".to_string(),
             action: LspQuickFixAction::AddDistributionColumn {

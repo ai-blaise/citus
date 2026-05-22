@@ -1,0 +1,66 @@
+# FEATURE: RQ1
+# FEATURE: RQ2
+# FEATURE: RQ3
+# FEATURE: RQ4
+#
+# Workspace-wide Rust quality gate: format / clippy / audit / deny.
+# Runs on every PR and on push to main + ai-blaise/dev.
+#
+# Notes:
+# - --all-features is intentionally NOT passed. The companion + e2e crates
+#   gate pgrx behind a pg18 feature that requires cargo-pgrx init pg18 on
+#   the runner, which the upstream pgrx test harness does not provide.
+#   --all-targets is enough to cover lib/bin/tests/examples/benches.
+# - rustup picks up rust-toolchain.toml at workspace root and installs
+#   the pinned 1.95.0 channel with clippy, rustfmt, rust-src,
+#   rust-analyzer.
+name: rust-quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Rust toolchain
+        run: rustup show
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Rust toolchain
+        run: rustup show
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: cargo audit
+        run: cargo audit
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin Rust toolchain
+        run: rustup show
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: cargo deny check
+        run: cargo deny check
