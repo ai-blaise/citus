@@ -15,6 +15,7 @@
 // FEATURE: MR4
 // FEATURE: MR8
 // FEATURE: O5
+// FEATURE: O14
 // FEATURE: R2
 // FEATURE: R7
 // FEATURE: S2
@@ -29,19 +30,18 @@
 // FEATURE: TS7
 // FEATURE: WH1
 
+use ai_blaise_citus_operator::fixtures::{
+    canonical_backup_spec, canonical_branch_spec, canonical_cluster_spec,
+    canonical_conflict_policy_spec, canonical_federation_spec, canonical_function_spec,
+    canonical_hypertable_spec, canonical_migration_spec, canonical_region_spec,
+    canonical_scheduled_repack_spec, canonical_search_index_spec, canonical_shard_group_spec,
+    canonical_sidecar_deployment_spec, canonical_survival_goal_spec, canonical_tenant_spec,
+    canonical_vectorizer_spec, canonical_webhook_spec,
+};
 use ai_blaise_citus_operator::{
-    BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
-    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
-    CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec, ConflictResolution,
-    ContinuousAggregateSpec, EmbeddingProvider, FederationConnection, FederationSpec,
-    FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger,
-    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
-    PlacementPolicy, PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
-    ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexSpec, SearchScorer,
-    ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType,
-    SidecarSpec, SidecarType, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec,
-    UnsatisfiablePlacementAction, VectorDestinationSpec, VectorizerScheduleMode,
-    VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent, WebhookRetryPolicy, WebhookSpec,
+    convert, registered_kind_count, CitusClusterReconcilePlan, ConversionPayload,
+    ConversionRequest, HypertableReconcilePlan, ShardGroupReconcilePlan, CRD_CATALOG,
+    STORAGE_VERSION, SUPPORTED_VERSIONS,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -66,6 +66,7 @@ fn main() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
+        [command] if command == "run-conversion-canonical" => run_conversion_canonical(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -102,7 +103,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-conversion-canonical]");
 }
 
 fn run_reconcile_plans() {
@@ -125,6 +126,26 @@ fn run_reconcile_plans() {
         report.shard_topology_constraints,
         report.shard_replication_factor,
         report.shard_hard_constraint,
+    );
+}
+
+fn run_conversion_canonical() {
+    let report = canonical_conversion_report().unwrap_or_else(|error| {
+        eprintln!("operator: conversion canonical run failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "kinds\tserved_versions\tstorage_version\tround_trips_passed\twebhook_path\twebhook_port"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        report.kinds,
+        report.served_versions,
+        report.storage_version,
+        report.round_trips_passed,
+        report.webhook_path,
+        report.webhook_port
     );
 }
 
@@ -257,264 +278,80 @@ fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Er
     })
 }
 
-fn canonical_cluster_spec() -> CitusClusterSpec {
-    CitusClusterSpec {
-        topology: CitusTopology::CoordinatorWorker,
-        image: "ghcr.io/ai-blaise/citus:pg18-v2".to_string(),
-        workers: 3,
-        coordinators: 1,
-        storage_class: Some("fast-ssd".to_string()),
-        timescale_enabled: true,
-        extensions: vec!["citus".to_string(), "timescaledb".to_string()],
-        pool: Some(PoolSpec {
-            replicas: 2,
-            geoip_db: Some("maxmind-city".to_string()),
-        }),
-        sidecars: vec![
-            SidecarSpec {
-                sidecar_type: SidecarType::Vectorizer,
-                replicas: 1,
-            },
-            SidecarSpec {
-                sidecar_type: SidecarType::Realtime,
-                replicas: 2,
-            },
-            SidecarSpec {
-                sidecar_type: SidecarType::Mcp,
-                replicas: 1,
-            },
-        ],
-    }
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ConversionCanonicalReport {
+    kinds: usize,
+    served_versions: usize,
+    storage_version: &'static str,
+    round_trips_passed: usize,
+    webhook_path: &'static str,
+    webhook_port: u16,
 }
 
-fn canonical_shard_group_spec() -> ShardGroupSpec {
-    ShardGroupSpec {
-        parent_table: "public.metrics".to_string(),
-        distribution_column: "tenant_id".to_string(),
-        num_shards: 32,
-        colocation_group: Some("metrics".to_string()),
-        replication_factor: 3,
-        placement_policy: vec![PlacementPolicy {
-            topology_key: "topology.kubernetes.io/zone".to_string(),
-            max_skew: 1,
-            when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
-        }],
+fn canonical_conversion_report() -> Result<ConversionCanonicalReport, Box<dyn Error>> {
+    let payloads = canonical_conversion_payloads();
+    assert_eq!(
+        payloads.len(),
+        CRD_CATALOG.len(),
+        "canonical payload set must cover every CRD"
+    );
+
+    let mut round_trips = 0;
+    for payload in &payloads {
+        for target in ["v1beta1", "v1alpha1"] {
+            let source = if target == "v1beta1" {
+                "v1alpha1"
+            } else {
+                "v1beta1"
+            };
+            let request = ConversionRequest {
+                source_api_version: source.to_string(),
+                target_api_version: target.to_string(),
+                kind: payload.kind_name().to_string(),
+                payload: payload.clone(),
+            };
+            let response = convert(&request)?;
+            if response.payload != *payload {
+                return Err(format!(
+                    "round-trip for {kind} {source}->{target} altered the payload",
+                    kind = payload.kind_name(),
+                )
+                .into());
+            }
+        }
+        round_trips += 1;
     }
+
+    Ok(ConversionCanonicalReport {
+        kinds: registered_kind_count(),
+        served_versions: SUPPORTED_VERSIONS.len(),
+        storage_version: STORAGE_VERSION,
+        round_trips_passed: round_trips,
+        webhook_path: ai_blaise_citus_operator::CONVERSION_WEBHOOK_PATH,
+        webhook_port: ai_blaise_citus_operator::CONVERSION_WEBHOOK_PORT,
+    })
 }
 
-fn canonical_hypertable_spec() -> HypertableSpec {
-    HypertableSpec {
-        table: "metrics".to_string(),
-        time_column: "ts".to_string(),
-        distribution_column: "tenant_id".to_string(),
-        chunk_time_interval: "1 day".to_string(),
-        num_shards: 32,
-        compression: Some(CompressionPolicy {
-            older_than: "7 days".to_string(),
-            segment_by: vec!["tenant_id".to_string()],
-            order_by: vec!["ts DESC".to_string()],
-            bloom_filters: vec!["region".to_string()],
-        }),
-        retention: Some(RetentionPolicy {
-            drop_after: "90 days".to_string(),
-        }),
-        continuous_aggregates: vec![ContinuousAggregateSpec {
-            name: "metrics_hourly".to_string(),
-            query: "SELECT 1".to_string(),
-            refresh_start: Some("7 days".to_string()),
-            refresh_end: Some("1 hour".to_string()),
-            schedule: Some("15 minutes".to_string()),
-            hierarchical_parent: None,
-        }],
-    }
-}
-
-fn canonical_branch_spec() -> BranchSpec {
-    BranchSpec {
-        source_cluster: "prod-us-east".to_string(),
-        branch_type: BranchType::CopyOnWrite,
-        storage: BranchStorageSpec {
-            size: "256Gi".to_string(),
-            storage_class: Some("fast-ssd".to_string()),
-            snapshot_class: Some("csi-snapshot".to_string()),
-        },
-        suspend: true,
-        retention_days: Some(7),
-    }
-}
-
-fn canonical_tenant_spec() -> TenantSpec {
-    TenantSpec {
-        name: "tenant-a".to_string(),
-        schema_name: "tenant_a".to_string(),
-        quotas: TenantQuotas {
-            max_connections: 64,
-            max_qps: 10_000,
-            max_storage_bytes: 1_099_511_627_776,
-        },
-        region_affinity: Some("us-east-1".to_string()),
-    }
-}
-
-fn canonical_region_spec() -> RegionSpec {
-    RegionSpec {
-        name: "us-east-1".to_string(),
-        kubernetes_zone: "us-east-1a".to_string(),
-        tablespace_name: "ts_us_east_1".to_string(),
-        leader_pinned: true,
-    }
-}
-
-fn canonical_survival_goal_spec() -> SurvivalGoalSpec {
-    SurvivalGoalSpec {
-        goal: SurvivalGoalType::RegionFailure,
-        regions: vec!["us-east-1".to_string(), "us-west-2".to_string()],
-        min_replicas: 2,
-    }
-}
-
-fn canonical_backup_spec() -> BackupSpec {
-    BackupSpec {
-        schedule: "0 */6 * * *".to_string(),
-        retention_days: 30,
-        target: BackupTarget {
-            provider: BackupProvider::S3,
-            bucket: "ai-blaise-citus-backups".to_string(),
-            prefix: "prod/us-east-1".to_string(),
-        },
-        encryption: Some(BackupEncryption {
-            kms_key_ref: "aws-kms-prod".to_string(),
-        }),
-    }
-}
-
-fn canonical_vectorizer_spec() -> VectorizerSpec {
-    VectorizerSpec {
-        source_table: "public.documents".to_string(),
-        source_column: "body".to_string(),
-        embedding_provider: EmbeddingProvider::OpenAi,
-        embedding_model: "text-embedding-3-large".to_string(),
-        destination: VectorDestinationSpec {
-            table: "public.document_embeddings".to_string(),
-            column: "embedding".to_string(),
-            dimensions: 3_072,
-        },
-        chunking: ChunkingSpec {
-            strategy: ChunkingStrategy::RecursiveText,
-            max_tokens: 800,
-            overlap_tokens: 80,
-        },
-        scheduling: VectorizerSchedulingSpec {
-            mode: VectorizerScheduleMode::Interval,
-            interval: Some("30 seconds".to_string()),
-            max_concurrency: 8,
-        },
-        secret_ref: "openai-embeddings".to_string(),
-    }
-}
-
-fn canonical_sidecar_deployment_spec() -> SidecarDeploymentSpec {
-    SidecarDeploymentSpec {
-        sidecar_type: SidecarDeploymentType::Realtime,
-        replicas: 2,
-        resources: ResourceRequirements {
-            cpu_millis: 250,
-            memory_mib: 512,
-        },
-        config_yaml: Some("subscriptions:\n  max_per_tenant: 1000".to_string()),
-    }
-}
-
-fn canonical_migration_spec() -> MigrationSpec {
-    MigrationSpec {
-        migration_type: MigrationType::Pgroll,
-        yaml: "operations:\n  - add_column:\n      table: users".to_string(),
-        on_conflict: MigrationConflictAction::ManualReview,
-    }
-}
-
-fn canonical_conflict_policy_spec() -> ConflictPolicySpec {
-    ConflictPolicySpec {
-        table: "public.reference_accounts".to_string(),
-        class: ConflictClass::UpdateUpdate,
-        resolution: ConflictResolution::LastWriteWins,
-        custom_function: None,
-    }
-}
-
-fn canonical_federation_spec() -> FederationSpec {
-    FederationSpec {
-        name: "warehouse".to_string(),
-        federation_type: FederationType::Snowflake,
-        connection: FederationConnection {
-            secret_ref: "snowflake-warehouse".to_string(),
-        },
-        foreign_schema_prefix: "snowflake_".to_string(),
-    }
-}
-
-fn canonical_search_index_spec() -> SearchIndexSpec {
-    SearchIndexSpec {
-        table: "public.documents".to_string(),
-        columns: vec![
-            SearchColumnSpec {
-                name: "body".to_string(),
-                kind: SearchColumnKind::Text,
-            },
-            SearchColumnSpec {
-                name: "embedding".to_string(),
-                kind: SearchColumnKind::Vector,
-            },
-        ],
-        scorer: SearchScorer::Bm25Vector,
-        analyzer: "english".to_string(),
-        distributed: true,
-    }
-}
-
-fn canonical_webhook_spec() -> WebhookSpec {
-    WebhookSpec {
-        table: "public.orders".to_string(),
-        events: vec![WebhookEvent::Insert, WebhookEvent::Update],
-        url: "https://example.com/orders".to_string(),
-        headers_secret_ref: Some("orders-webhook".to_string()),
-        retry_policy: WebhookRetryPolicy {
-            max_attempts: 5,
-            backoff: "exponential:1s:30s".to_string(),
-            dead_letter_table: Some("webhook_dead_letters".to_string()),
-        },
-        payload_template: Some("{\"table\":\"orders\"}".to_string()),
-    }
-}
-
-fn canonical_function_spec() -> FunctionSpec {
-    FunctionSpec {
-        name: "order-created".to_string(),
-        runtime: FunctionRuntime::Deno,
-        source: FunctionSource::GitRef {
-            repository: "https://github.com/ai-blaise/functions".to_string(),
-            reference: "main".to_string(),
-            path: "orders/index.ts".to_string(),
-        },
-        triggers: vec![
-            FunctionTrigger::Http {
-                path: "/orders".to_string(),
-            },
-            FunctionTrigger::Event {
-                table: "public.orders".to_string(),
-                event: FunctionEvent::Insert,
-            },
-        ],
-        env_secrets: vec!["orders-api-key".to_string()],
-    }
-}
-
-fn canonical_scheduled_repack_spec() -> ScheduledRepackSpec {
-    ScheduledRepackSpec {
-        target: "public.orders".to_string(),
-        schedule: "0 3 * * 0".to_string(),
-        strategy: RepackStrategy::PgRepack,
-    }
+fn canonical_conversion_payloads() -> Vec<ConversionPayload> {
+    vec![
+        ConversionPayload::CitusCluster(canonical_cluster_spec()),
+        ConversionPayload::ShardGroup(canonical_shard_group_spec()),
+        ConversionPayload::Hypertable(canonical_hypertable_spec()),
+        ConversionPayload::Branch(canonical_branch_spec()),
+        ConversionPayload::Vectorizer(canonical_vectorizer_spec()),
+        ConversionPayload::Sidecar(canonical_sidecar_deployment_spec()),
+        ConversionPayload::Migration(canonical_migration_spec()),
+        ConversionPayload::ConflictPolicy(canonical_conflict_policy_spec()),
+        ConversionPayload::Tenant(canonical_tenant_spec()),
+        ConversionPayload::Region(canonical_region_spec()),
+        ConversionPayload::SurvivalGoal(canonical_survival_goal_spec()),
+        ConversionPayload::Backup(canonical_backup_spec()),
+        ConversionPayload::Federation(canonical_federation_spec()),
+        ConversionPayload::SearchIndex(canonical_search_index_spec()),
+        ConversionPayload::Webhook(canonical_webhook_spec()),
+        ConversionPayload::Function(canonical_function_spec()),
+        ConversionPayload::ScheduledRepack(canonical_scheduled_repack_spec()),
+    ]
 }
 
 #[cfg(test)]
@@ -562,6 +399,23 @@ mod tests {
                 shard_topology_constraints: 1,
                 shard_replication_factor: 3,
                 shard_hard_constraint: true,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_conversion_report_round_trips_every_kind() {
+        let report = canonical_conversion_report().expect("canonical conversion report");
+
+        assert_eq!(
+            report,
+            ConversionCanonicalReport {
+                kinds: 17,
+                served_versions: 2,
+                storage_version: "v1alpha1",
+                round_trips_passed: 17,
+                webhook_path: "/convert",
+                webhook_port: 8443,
             }
         );
     }

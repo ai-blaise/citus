@@ -1,8 +1,15 @@
 //! ai-blaise Citus operator core.
 
+pub mod conversion;
 pub mod crds;
+pub mod fixtures;
 pub mod reconcile;
 
+pub use conversion::{
+    conversion_webhook_url, convert, registered_kind_count, storage_version, webhook_group,
+    ConversionError, ConversionPayload, ConversionRequest, ConversionResponse,
+    CONVERSION_WEBHOOK_PATH, CONVERSION_WEBHOOK_PORT, SUPPORTED_VERSIONS,
+};
 pub use crds::backup::{
     BackupEncryption, BackupProvider, BackupSpec, BackupSpecError, BackupTarget,
 };
@@ -45,6 +52,9 @@ pub use crds::vectorizer::{
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
+pub use crds::{
+    crd_for_kind, CrdKind, CrdMetadata, CRD_CATALOG, CRD_GROUP, SERVED_VERSIONS, STORAGE_VERSION,
+};
 pub use reconcile::citus_cluster::{
     CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan, CnpgClusterPlan,
     PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,

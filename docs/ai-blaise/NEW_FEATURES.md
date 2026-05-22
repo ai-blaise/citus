@@ -7216,6 +7216,47 @@ fanout.
 - In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
 
+
+### O14: CRD API Versioning And Conversion Webhooks
+
+**Overlay**: `operator/src/crds/`, `operator/src/conversion/`, `ci/ai-blaise/crd-conversion-webhook-smoke.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Ships every operator CRD with an explicit `v1alpha1` storage
+version plus a served-but-non-storage `v1beta1` placeholder, and registers a
+typed conversion handler per resource so a forward v1beta1 schema change is a
+flag flip on the CRD manifest rather than a forced upgrade for users. The
+Kubernetes API server is configured for `spec.conversion.strategy: Webhook`
+pointing at the operator's `/convert` endpoint; today every handler is an
+identity round-trip because v1beta1 re-exports the v1alpha1 types verbatim.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/crd-conversion-webhook-smoke.sh`, which executes
+`cargo run -p ai_blaise_citus_operator -- run-conversion-canonical`, diffs
+its TSV output against the contract pinned in `operator/src/main.rs`
+(17 kinds, 2 served versions, storage version v1alpha1, 17 round trips,
+webhook path /convert, webhook port 8443), reruns the conversion-handler
+tests, and asserts that each of the 17 CRD modules carries `mod.rs`,
+`v1alpha1.rs`, and `v1beta1.rs` next to a paired handler under
+`operator/src/conversion/`. The HTTPS adapter that wires `/convert` to the
+admission-webhook listener lands with the in-flight admission-webhooks PR.
+
+**Citus comparison**: Vanilla Citus does not ship Kubernetes CRDs at all, so
+it has no versioning surface to compare against. Citus operator forks that do
+exist tend to ship at implicit v1 with no upgrade path.
+
+**References**:
+
+- In-source: `FEATURE: O14` in `operator/src/main.rs` and
+  `ci/ai-blaise/crd-conversion-webhook-smoke.sh`
+- CI: `ci/ai-blaise/crd-conversion-webhook-smoke.sh`, GitHub Actions job
+  `operator/rust`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-conversion-canonical`
+- YAML bundle: `command-center/helm/charts/citus-cluster/crds/ai-blaise-citus-crds.yaml`
+
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature
