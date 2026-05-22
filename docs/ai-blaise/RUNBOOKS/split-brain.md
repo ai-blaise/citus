@@ -241,3 +241,24 @@ If the forced step-down corrupts state in the authoritative region:
 - agentmemory pattern: `CITUS-SPLIT-BRAIN-<region-pair>-<UTC>` recorded
   against `:3911` with the authoritative-region decision and signed-off
   operator IDs.
+
+## Automated drill
+
+`FEATURE: DR2`
+
+Simulates a coordinator/worker partition with a deny-all NetworkPolicy and asserts the minority side is fenced before the fencing budget expires. Reports fencing time as `rto_s` and guarantees no commits cross the partition (`rpo_s = 0`).
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-split-brain
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/split-brain-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.

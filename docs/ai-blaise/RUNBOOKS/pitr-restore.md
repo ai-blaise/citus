@@ -309,3 +309,24 @@ If validation fails on a restored cluster:
 - agentmemory pattern: `CITUS-PITR-RESTORE-<cluster>-<UTC>` recorded
   against `:3911` with the requested target timestamp, the chosen
   path (A/B/C), and the validation query results.
+
+## Automated drill
+
+`FEATURE: DR3`
+
+Walks the `sidecar/backup` archive-summary workflow, requests a PITR restore to a read-only branch, and waits for the new branch to reach `Ready`. Reports RTO (request to ready) and asserts the probe row committed before the target time is readable.
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-pitr-restore
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/pitr-restore-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.

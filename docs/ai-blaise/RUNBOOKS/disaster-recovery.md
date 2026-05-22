@@ -52,3 +52,24 @@ infrastructure and recorded with measured evidence.
 - These exit criteria are required release evidence only after they are backed
   by real drill logs; completing the document checklist alone does not promote
   any disaster-recovery feature out of alpha.
+
+## Automated drill
+
+`FEATURE: DR4`
+
+Kills every pod in the targeted region (--force) and waits for `SurvivalGoal=REGION_FAILURE` to promote leaders in the surviving region. Records p99 traffic-resumption time as `rto_s` and asserts zero commits are lost across the failover.
+
+```bash
+# Quick mode (1-minute cap; mock-when-missing fallback if no kind cluster):
+make -f Makefile.ai-blaise dr-drill-region-failover
+
+# Full mode against a live kind cluster:
+DR_DRILL_QUICK=0 DR_DRILL_NAMESPACE=ai-blaise-citus DR_DRILL_CLUSTER=primary \
+  bash benchmarks/dr-drills/region-failover-drill.sh
+```
+
+The drill writes a structured JSON report to
+`benchmarks/dr-drills/reports/<drill>-<timestamp>.json` with `rto_s`,
+`rpo_s`, `errors_during`, and `success`. The CI smoke runner
+`ci/ai-blaise/dr-drill-quick-mode-smoke.sh` runs every drill once and
+emits an `aggregate-<timestamp>.json` containing the per-drill rows.

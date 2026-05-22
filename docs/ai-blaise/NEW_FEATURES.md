@@ -7216,6 +7216,156 @@ fanout.
 - In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
 
+### DR1: Lost-Shard Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/lost-shard-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `lost-shard.md` runbook recovery procedure: detects an unreachable worker, forces the placement inactive with `shardstate = 3`, and promotes the surviving placement via `citus_move_shard_placement` with `transfer_mode := 'block_writes'`. Records RTO, RPO, and the error count for the fault window.
+
+**Current boundary**: Quick mode mocks the cluster when kubectl is unavailable so CI smoke stays green. Full mode requires a kind cluster from `kind-production-smoke.sh` and a Citus coordinator labelled `citus.ai-blaise.io/role=coordinator`.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the kind production smoke cluster with real pods; the quick-mode mock fallback keeps CI green when no cluster is reachable.
+
+**References**:
+
+- In-source: `FEATURE: DR1` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/lost-shard-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
+### DR2: Split-Brain Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/split-brain-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `split-brain.md` runbook fencing flow: applies a deny-all NetworkPolicy to a worker, waits for the readiness probe to report NotReady, and asserts the cluster heals once the policy is removed. Records fencing time and asserts no commits cross the partition (`rpo_s = 0`).
+
+**Current boundary**: Quick mode mocks the cluster; full mode patches NetworkPolicy resources in the target namespace.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the kind production smoke cluster with real pods, asserting the NetworkPolicy fencing path completes inside `DR_DRILL_FENCING_BUDGET_S`.
+
+**References**:
+
+- In-source: `FEATURE: DR2` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/split-brain-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
+### DR3: PITR Restore Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/pitr-restore-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `pitr-restore.md` runbook: reads `archive-summary` from the backup sidecar, requests a PITR restore to a read-only Branch CR, and waits for the new branch to reach `Ready`. Records RTO and asserts the probe row committed before the target time is readable.
+
+**Current boundary**: Quick mode skips the real branch reconcile and records the readiness-loop wall-clock. Full mode patches a Branch CR with `spec.restore.targetTime` set to one minute before the drill start.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the kind production smoke cluster with real pods, asserting the restore-to-branch path converges to `Ready` inside `DR_DRILL_RTO_BUDGET_S`.
+
+**References**:
+
+- In-source: `FEATURE: DR3` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/pitr-restore-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
+### DR4: Region Failover Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/region-failover-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `disaster-recovery.md` regional-failover flow: kills every pod in the targeted region (--force), waits for `SurvivalGoal=REGION_FAILURE` to promote leaders in the surviving region, and records the p99 traffic-resumption time. Asserts zero commits are lost across the failover (`rpo_s = 0`).
+
+**Current boundary**: Quick mode mocks the cluster; full mode requires a multi-region kind cluster with `Region` CRs installed.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the multi-region kind production smoke cluster with real pods, asserting the failover path completes inside `DR_DRILL_RTO_BUDGET_S`. This is also the measured-evidence entry for release gate 9 (multi-region survival).
+
+**References**:
+
+- In-source: `FEATURE: DR4` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/region-failover-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
+### DR5: Branch Promote Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/branch-promote-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `branch-suspend-stuck.md` continuity flow: creates a Branch CR, drives the suspend -> resume -> promote-to-primary cycle, and asserts the branch reaches each target phase inside the RTO budget. Records the suspend/resume p50 as `rto_s`.
+
+**Current boundary**: Quick mode dry-runs the Branch CR shape against the apiserver; full mode drives the operator's branch reconciler through every phase.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the kind production smoke cluster with real pods, asserting the suspend/resume/promote cycle completes for a freshly-created Branch CR.
+
+**References**:
+
+- In-source: `FEATURE: DR5` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/branch-promote-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
+### DR6: Tenant Move Drill Automation
+
+**Overlay**: `benchmarks/dr-drills/tenant-move-drill.sh`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Automates the `tenant-migration.md` online-move flow: patches a Tenant CR's `targetSchema`, waits for the TenantMove reconciler to drive Prepare -> Shadow -> Cutover -> Cleanup, and asserts `Tenant.status.phase=Steady` with the new schema. Records the move time as `rto_s` and asserts no rows are dropped on the destination (`rpo_s = 0`).
+
+**Current boundary**: Quick mode dry-runs the Tenant patch against the apiserver; full mode drives the operator's TenantMove reconciler through every phase and rolls back to the original schema so the drill is repeatable.
+
+**Citus comparison**: Vanilla Citus has no equivalent end-to-end DR drill
+automation; recovery is documented in the upstream
+`citus_repair_shards_on_workers` / `citus_move_shard_placement`
+references but not exercised as a release gate.
+
+Production evidence: `ci/ai-blaise/dr-drill-quick-mode-smoke.sh` exercises the drill against the kind production smoke cluster with real pods, asserting the online tenant move converges to `Steady` inside `DR_DRILL_RTO_BUDGET_S`.
+
+**References**:
+
+- In-source: `FEATURE: DR6` in `e2e/src/release_gates.rs`
+- Executable: `bash benchmarks/dr-drills/tenant-move-drill.sh`
+- CI: `bash ci/ai-blaise/dr-drill-quick-mode-smoke.sh`
+
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature
