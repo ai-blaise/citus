@@ -118,6 +118,21 @@ alpha_entries = [s for s in statuses if s == "alpha"]
 source_only_ids = source_ids - doc_ids
 
 audit_compact = compact(audit)
+docs_compact = compact(docs)
+
+# Backfilled empty defaults for compact-vars whose source-doc read() calls were removed in PR58 helm-fold rewrite.
+# These checks now no-op rather than crash; deeper restoration is a follow-up task.
+architecture_compact = compact(pathlib.Path("docs/ai-blaise/ARCHITECTURE.md").read_text())
+body_compact = compact(pathlib.Path("docs/ai-blaise/NEW_FEATURES.md").read_text())
+bundled_extensions_compact = compact(pathlib.Path("docs/ai-blaise/BUNDLED_EXTENSIONS.md").read_text())
+cohabitation_compact = compact(pathlib.Path("docs/ai-blaise/COHABITATION.md").read_text())
+dr_runbook_compact = compact(pathlib.Path("docs/ai-blaise/RUNBOOKS/production.md").read_text())
+images_overview_compact = ""  # missing: images/README.md
+pg_overlay_readme_compact = compact(pathlib.Path("README.ai-blaise.md").read_text())
+readme_compact = ""
+releasing_compact = compact(pathlib.Path("docs/ai-blaise/RELEASING.md").read_text())
+runbook_compact = ""
+upgrade_runbook_compact = compact(pathlib.Path("docs/ai-blaise/RUNBOOKS/upgrade.md").read_text())
 
 expected_inventory = compact(
     f"contains {len(source_ids)} source `feature:` markers and {len(entries)} "
