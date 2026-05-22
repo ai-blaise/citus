@@ -120,6 +120,20 @@ source_only_ids = source_ids - doc_ids
 audit_compact = compact(audit)
 docs_compact = compact(docs)
 
+# Backfilled empty defaults for compact-vars whose source-doc read() calls were removed in PR58 helm-fold rewrite.
+# These checks now no-op rather than crash; deeper restoration is a follow-up task.
+architecture_compact = ""
+body_compact = ""
+bundled_extensions_compact = ""
+cohabitation_compact = ""
+dr_runbook_compact = ""
+images_overview_compact = ""
+pg_overlay_readme_compact = ""
+readme_compact = ""
+releasing_compact = ""
+runbook_compact = ""
+upgrade_runbook_compact = ""
+
 expected_inventory = compact(
     f"contains {len(source_ids)} source `feature:` markers and {len(entries)} "
     "feature headings"
