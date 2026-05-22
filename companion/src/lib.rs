@@ -12,6 +12,7 @@ pub mod graph_bridge;
 pub mod index_advisor;
 pub mod jsonschema_bridge;
 pub mod ledger;
+pub mod log_view;
 pub mod lsp_metadata;
 pub mod migration;
 pub mod observability;
@@ -22,6 +23,7 @@ pub mod schema_jobs;
 pub mod search_bridge;
 pub mod tenants;
 pub mod toolkit_distributed;
+pub mod trace_context;
 pub mod vector;
 pub mod webhooks;
 
@@ -66,6 +68,10 @@ pub use ledger::{
     HmacAlgorithm, LedgerChain, LedgerChainEntry, LedgerError, LedgerSealPlan, LedgerSqlPlan,
     LedgerTransferPlan,
 };
+pub use log_view::{
+    canonical_log_view_plans, render_all_views, JsonPath, LogFieldProjection, LogViewError,
+    LogViewPlan, DEFAULT_RAW_TABLE, DEFAULT_VIEW_SCHEMA,
+};
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
@@ -96,6 +102,9 @@ pub use search_bridge::{
 pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
 pub use toolkit_distributed::{
     ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,
+};
+pub use trace_context::{
+    render_projection_sql, CompanionTraceContextError, CompanionTraceContextPlan,
 };
 pub use vector::{
     ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,

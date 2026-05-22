@@ -19,6 +19,7 @@ version = "0.1.0"
 name = "ai_blaise_citus_companion"
 version = "0.1.0"
 dependencies = [
+ "ai_blaise_citus_sidecar_shared",
  "pgrx",
 ]
 

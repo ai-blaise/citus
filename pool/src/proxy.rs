@@ -1,8 +1,10 @@
 // FEATURE: O4
+// FEATURE: O14
 // FEATURE: Sec13
 // FEATURE: T3
 // FEATURE: T7
 
+use crate::trace_tap;
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -196,6 +198,8 @@ pub struct PoolProxyState {
     io_errors: AtomicU64,
     client_to_upstream_bytes: AtomicU64,
     upstream_to_client_bytes: AtomicU64,
+    traceparent_tapped: AtomicU64,
+    traceparent_absent: AtomicU64,
 }
 
 impl PoolProxyState {
@@ -210,6 +214,8 @@ impl PoolProxyState {
             io_errors: AtomicU64::new(0),
             client_to_upstream_bytes: AtomicU64::new(0),
             upstream_to_client_bytes: AtomicU64::new(0),
+            traceparent_tapped: AtomicU64::new(0),
+            traceparent_absent: AtomicU64::new(0),
         }
     }
 
@@ -247,6 +253,22 @@ impl PoolProxyState {
     fn add_upstream_bytes(&self, bytes: u64) {
         self.upstream_to_client_bytes
             .fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn traceparent_tapped(&self) {
+        self.traceparent_tapped.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn traceparent_absent(&self) {
+        self.traceparent_absent.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn traceparent_tapped_count(&self) -> u64 {
+        self.traceparent_tapped.load(Ordering::Relaxed)
+    }
+
+    pub fn traceparent_absent_count(&self) -> u64 {
+        self.traceparent_absent.load(Ordering::Relaxed)
     }
 
     fn uptime_seconds(&self) -> u64 {
@@ -388,11 +410,38 @@ fn proxy_connection(
     client.set_nodelay(true)?;
     upstream.set_nodelay(true)?;
 
+    // Peek the PostgreSQL startup envelope so the trace_tap can extract a W3C
+    // traceparent embedded in the application_name parameter without
+    // modifying the byte stream. The buffered bytes are replayed to upstream
+    // ahead of the io::copy fan-out below so the proxy stays transparent to
+    // PostgreSQL.
+    let mut startup_reader = client.try_clone()?;
+    let prefix_bytes = match trace_tap::tap_startup_message(&mut startup_reader) {
+        Ok(tap) => {
+            if tap.traceparent().is_some() {
+                state.traceparent_tapped();
+            } else {
+                state.traceparent_absent();
+            }
+            eprintln!("ai-blaise pool {}", trace_tap::render_tap_log(&tap));
+            tap.buffered_bytes
+        }
+        Err(error) => {
+            state.io_error();
+            return Err(PoolProxyError::from(error));
+        }
+    };
+
     thread::scope(|scope| {
         let mut client_reader = client.try_clone()?;
         let mut upstream_writer = upstream.try_clone()?;
-        let upload =
-            scope.spawn(move || copy_and_shutdown(&mut client_reader, &mut upstream_writer));
+        let prefix_bytes = prefix_bytes;
+        let upload = scope.spawn(move || -> io::Result<u64> {
+            upstream_writer.write_all(&prefix_bytes)?;
+            let prefix_len = prefix_bytes.len() as u64;
+            let copied = copy_and_shutdown(&mut client_reader, &mut upstream_writer)?;
+            Ok(prefix_len + copied)
+        });
 
         let mut upstream_reader = upstream;
         let mut client_writer = client;
@@ -570,7 +619,13 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
          ai_blaise_citus_pool_client_to_upstream_bytes_total {}\n\
          # HELP ai_blaise_citus_pool_upstream_to_client_bytes_total Bytes copied from upstream PostgreSQL to clients.\n\
          # TYPE ai_blaise_citus_pool_upstream_to_client_bytes_total counter\n\
-         ai_blaise_citus_pool_upstream_to_client_bytes_total {}\n",
+         ai_blaise_citus_pool_upstream_to_client_bytes_total {}\n\
+         # HELP ai_blaise_citus_pool_traceparent_tapped_total Client connections whose startup envelope carried a W3C traceparent.\n\
+         # TYPE ai_blaise_citus_pool_traceparent_tapped_total counter\n\
+         ai_blaise_citus_pool_traceparent_tapped_total {}\n\
+         # HELP ai_blaise_citus_pool_traceparent_absent_total Client connections whose startup envelope did not carry a W3C traceparent.\n\
+         # TYPE ai_blaise_citus_pool_traceparent_absent_total counter\n\
+         ai_blaise_citus_pool_traceparent_absent_total {}\n",
         escape_prometheus_label(upstream_addr),
         upstream_ready,
         state.active_connections.load(Ordering::Relaxed),
@@ -580,6 +635,8 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
             + state.io_errors.load(Ordering::Relaxed),
         state.client_to_upstream_bytes.load(Ordering::Relaxed),
         state.upstream_to_client_bytes.load(Ordering::Relaxed),
+        state.traceparent_tapped.load(Ordering::Relaxed),
+        state.traceparent_absent.load(Ordering::Relaxed),
     )
 }
 
@@ -771,16 +828,41 @@ mod tests {
         );
     }
 
+    fn build_startup_packet(application_name: &str) -> Vec<u8> {
+        let mut body: Vec<u8> = Vec::new();
+        body.extend_from_slice(&196608_u32.to_be_bytes());
+        body.extend_from_slice(b"user");
+        body.push(0);
+        body.extend_from_slice(b"postgres");
+        body.push(0);
+        body.extend_from_slice(b"database");
+        body.push(0);
+        body.extend_from_slice(b"postgres");
+        body.push(0);
+        body.extend_from_slice(b"application_name");
+        body.push(0);
+        body.extend_from_slice(application_name.as_bytes());
+        body.push(0);
+        body.push(0);
+        let length = (body.len() + 4) as u32;
+        let mut packet = Vec::with_capacity(body.len() + 4);
+        packet.extend_from_slice(&length.to_be_bytes());
+        packet.extend_from_slice(&body);
+        packet
+    }
+
     #[test]
     fn proxy_forwards_bidirectional_tcp_bytes() {
+        let startup_packet = build_startup_packet("psql");
+        let expected_upstream = startup_packet.clone();
         let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
         let upstream_addr = upstream.local_addr().unwrap().to_string();
         let upstream_thread = thread::spawn(move || {
             let (mut stream, _) = upstream.accept().unwrap();
-            let mut buffer = [0_u8; 4];
-            stream.read_exact(&mut buffer).unwrap();
-            assert_eq!(&buffer, b"ping");
-            stream.write_all(b"pong").unwrap();
+            let mut received = vec![0_u8; expected_upstream.len()];
+            stream.read_exact(&mut received).unwrap();
+            assert_eq!(received, expected_upstream);
+            stream.write_all(b"AuthenticationOK").unwrap();
         });
 
         let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -792,15 +874,56 @@ mod tests {
             handle_proxy_connection(client, &upstream_addr, &allowlist, &state).unwrap();
             assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
             assert_eq!(state.completed_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.traceparent_absent_count(), 1);
+            assert_eq!(state.traceparent_tapped_count(), 0);
         });
 
         let mut client = TcpStream::connect(proxy_addr).unwrap();
-        client.write_all(b"ping").unwrap();
+        client.write_all(&startup_packet).unwrap();
         client.shutdown(Shutdown::Write).unwrap();
-        let mut response = [0_u8; 4];
+        let mut response = vec![0_u8; b"AuthenticationOK".len()];
         client.read_exact(&mut response).unwrap();
 
-        assert_eq!(&response, b"pong");
+        assert_eq!(&response, b"AuthenticationOK");
+        upstream_thread.join().unwrap();
+        proxy_thread.join().unwrap();
+    }
+
+    #[test]
+    fn proxy_records_traceparent_when_application_name_embeds_one() {
+        const TRACEPARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let application_name =
+            format!("application=ai_blaise_pipeline_smoke;traceparent={TRACEPARENT}");
+        let startup_packet = build_startup_packet(&application_name);
+        let expected_upstream = startup_packet.clone();
+        let upstream = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream.local_addr().unwrap().to_string();
+        let upstream_thread = thread::spawn(move || {
+            let (mut stream, _) = upstream.accept().unwrap();
+            let mut received = vec![0_u8; expected_upstream.len()];
+            stream.read_exact(&mut received).unwrap();
+            assert_eq!(received, expected_upstream);
+            stream.write_all(b"AuthenticationOK").unwrap();
+        });
+
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_thread = thread::spawn(move || {
+            let (client, _) = proxy_listener.accept().unwrap();
+            let state = PoolProxyState::new();
+            let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
+            handle_proxy_connection(client, &upstream_addr, &allowlist, &state).unwrap();
+            assert_eq!(state.traceparent_tapped_count(), 1);
+            assert_eq!(state.traceparent_absent_count(), 0);
+        });
+
+        let mut client = TcpStream::connect(proxy_addr).unwrap();
+        client.write_all(&startup_packet).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        let mut response = vec![0_u8; b"AuthenticationOK".len()];
+        client.read_exact(&mut response).unwrap();
+
+        assert_eq!(&response, b"AuthenticationOK");
         upstream_thread.join().unwrap();
         proxy_thread.join().unwrap();
     }

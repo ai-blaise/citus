@@ -181,6 +181,7 @@ impl SidecarRuntime {
 pub struct HttpProbeRequest {
     pub method: HttpMethod,
     pub path: String,
+    pub headers: crate::otel::HeaderMap,
 }
 
 impl HttpProbeRequest {
@@ -188,7 +189,31 @@ impl HttpProbeRequest {
         Self {
             method,
             path: path.into(),
+            headers: crate::otel::HeaderMap::new(),
         }
+    }
+
+    /// Construct a probe request with a populated header map. Used by HTTP
+    /// servers and tests that need to assert traceparent extraction.
+    pub fn with_headers(
+        method: HttpMethod,
+        path: impl Into<String>,
+        headers: crate::otel::HeaderMap,
+    ) -> Self {
+        Self {
+            method,
+            path: path.into(),
+            headers,
+        }
+    }
+
+    /// Extract a W3C traceparent (and optional tracestate) from the request
+    /// headers if present.
+    pub fn extract_trace_context(
+        &self,
+    ) -> Option<(crate::otel::TraceParent, crate::otel::TraceState)> {
+        use crate::otel::TraceContext;
+        self.headers.extract()
     }
 }
 
@@ -196,10 +221,8 @@ impl std::str::FromStr for HttpProbeRequest {
     type Err = SidecarRuntimeError;
 
     fn from_str(request: &str) -> Result<Self, Self::Err> {
-        let request_line = request
-            .lines()
-            .next()
-            .ok_or(SidecarRuntimeError::MalformedRequest)?;
+        let mut lines = request.lines();
+        let request_line = lines.next().ok_or(SidecarRuntimeError::MalformedRequest)?;
         let mut parts = request_line.split_whitespace();
         let method = parts.next().ok_or(SidecarRuntimeError::MalformedRequest)?;
         let path = parts.next().ok_or(SidecarRuntimeError::MalformedRequest)?;
@@ -208,7 +231,17 @@ impl std::str::FromStr for HttpProbeRequest {
             return Err(SidecarRuntimeError::MalformedRequest);
         }
 
-        Ok(Self::new(HttpMethod::from(method), path))
+        let mut headers = crate::otel::HeaderMap::new();
+        for header_line in lines {
+            if header_line.is_empty() {
+                break;
+            }
+            if let Some((name, value)) = header_line.split_once(':') {
+                headers.insert(name.trim(), value.trim());
+            }
+        }
+
+        Ok(Self::with_headers(HttpMethod::from(method), path, headers))
     }
 }
 
@@ -467,6 +500,24 @@ mod tests {
             .to_http_string()
             .starts_with("HTTP/1.1 503 Service Unavailable"));
         assert!(response.body.contains("queue lag budget exceeded"));
+    }
+
+    #[test]
+    fn http_probe_request_parses_traceparent_header() {
+        let raw = concat!(
+            "GET /healthz HTTP/1.1\r\n",
+            "Host: local\r\n",
+            "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\r\n",
+            "tracestate: vendor=opaque\r\n",
+            "\r\n",
+        );
+        let request: HttpProbeRequest = raw.parse().unwrap();
+        let (traceparent, state) = request.extract_trace_context().unwrap();
+        assert_eq!(
+            traceparent.to_header_value(),
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        );
+        assert_eq!(state.as_str(), "vendor=opaque");
     }
 
     #[test]
