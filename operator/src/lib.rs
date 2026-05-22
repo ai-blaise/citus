@@ -1,5 +1,6 @@
 //! ai-blaise Citus operator core.
 
+pub mod controllers;
 pub mod crds;
 pub mod reconcile;
 
@@ -25,7 +26,8 @@ pub use crds::hypertable::{
     RetentionPolicy,
 };
 pub use crds::migration::{
-    MigrationConflictAction, MigrationSpec, MigrationSpecError, MigrationType,
+    MigrationConflictAction, MigrationPhase, MigrationSpec, MigrationSpecError, MigrationType,
+    PhaseEvidence, StateMachineError,
 };
 pub use crds::region::{RegionSpec, RegionSpecError};
 pub use crds::scheduled_repack::{RepackStrategy, ScheduledRepackSpec, ScheduledRepackSpecError};

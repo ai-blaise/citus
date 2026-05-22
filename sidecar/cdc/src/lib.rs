@@ -1,4 +1,8 @@
-//! CDC sidecar contracts.
+//! CDC sidecar contracts and runtime.
+//!
+//! Contracts live in this module; the live runtime (logical-replication
+//! consumer, async-nats sink, axum probe server) is wired in [`replication`],
+//! [`nats_sink`], and [`runtime`].
 
 // FEATURE: C1
 // FEATURE: C2
@@ -7,6 +11,10 @@
 // FEATURE: C15
 // FEATURE: L8
 // FEATURE: WH3
+
+pub mod nats_sink;
+pub mod replication;
+pub mod runtime;
 
 use ai_blaise_citus_sidecar_shared::{
     CdcSink, CdcStreamContract, DeliveryRetryPolicy, SidecarContractError,
@@ -610,7 +618,7 @@ pub fn decode_wal2json_frame(
 
         let mut columns = Vec::with_capacity(column_names.len());
         let mut tenant_id = None;
-        for (name, value) in column_names.into_iter().zip(column_values.into_iter()) {
+        for (name, value) in column_names.into_iter().zip(column_values) {
             let value = json_scalar_to_string(value)?;
             if name == "tenant_id" {
                 tenant_id = value.clone();

@@ -224,9 +224,8 @@ fn proxy_connection(
     upstream_addr: &str,
     state: &PoolProxyState,
 ) -> Result<(), PoolProxyError> {
-    let upstream = connect_upstream(upstream_addr).map_err(|error| {
+    let upstream = connect_upstream(upstream_addr).inspect_err(|_error| {
         state.connect_error();
-        error
     })?;
 
     client.set_nodelay(true)?;

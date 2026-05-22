@@ -5,9 +5,9 @@
 // FEATURE: C15
 
 use ai_blaise_citus_sidecar_cdc::{
-    canonical_cdc_event, canonical_cdc_runtime_report, canonical_delivery_plan, CdcOperation,
+    canonical_cdc_event, canonical_cdc_runtime_report, canonical_delivery_plan, runtime::serve,
+    CdcOperation,
 };
-use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::process;
 
@@ -18,7 +18,7 @@ fn main() {
         return;
     }
     if args == ["serve"] {
-        run_server("cdc", "0.0.0.0:8080");
+        run_serve("0.0.0.0:8080");
         return;
     }
 
@@ -89,9 +89,16 @@ fn print_usage() {
     println!("runs deterministic canonical CDC delivery/runtime plans and emits TSV");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_serve(default_addr: &'static str) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|error| {
+            eprintln!("cdc: tokio runtime failed: {error}");
+            process::exit(1);
+        });
+    if let Err(error) = runtime.block_on(serve("cdc", default_addr)) {
+        eprintln!("cdc: serve failed: {error}");
         process::exit(1);
     }
 }
