@@ -145,7 +145,9 @@ JSON
   printf '%s\n' "${out}" >"${BENCH_RESULTS_ROOT}/tpcc-${BENCH_RESULT_TAG}.pgbench.log"
 
   local tps latency
-  tps="$(printf '%s\n' "${out}" | awk -F'[: ]+' '/tps =/ && /excluding/ {print $3; exit}')"
+  # pgbench 14+ phrases the summary as "tps = N (without initial connection time)";
+  # earlier majors used "tps = N (excluding connections establishing)". Match both.
+  tps="$(printf '%s\n' "${out}" | awk -F'[: ]+' '/tps =/ && (/without initial connection time/ || /excluding/) {print $3; exit}')"
   latency="$(printf '%s\n' "${out}" | awk -F'[: ]+' '/^latency average/ {print $4; exit}')"
   tps="${tps:-0}"
   latency="${latency:-0}"

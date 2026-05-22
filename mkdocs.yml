@@ -1,0 +1,87 @@
+site_name: ai-blaise/citus
+site_url: https://ai-blaise.github.io/citus/
+site_description: >-
+  ai-blaise/citus — Rust-first Postgres extension overlay that forks citusdata/citus
+  and ships the V2 release stack (cohabit Citus + TimescaleDB, distributed plan cache,
+  parallel commit, branching, vectorizer, BM25, HTAP, multi-region).
+repo_url: https://github.com/ai-blaise/citus
+repo_name: ai-blaise/citus
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    primary: indigo
+    accent: indigo
+  features:
+    - navigation.tabs
+    - navigation.expand
+    - navigation.sections
+    - navigation.top
+    - content.code.annotate
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Architecture: ai-blaise/ARCHITECTURE.md
+  - Fork strategy: ai-blaise/FORK_STRATEGY.md
+  - Cohabitation: ai-blaise/COHABITATION.md
+  - New features: ai-blaise/NEW_FEATURES.md
+  - Bundled extensions: ai-blaise/BUNDLED_EXTENSIONS.md
+  - Benchmarks: ai-blaise/BENCHMARKS.md
+  - Performance tuning: ai-blaise/PERFORMANCE_TUNING.md
+  - License audit: ai-blaise/LICENSE_AUDIT.md
+  - Upstream sync: ai-blaise/UPSTREAM_SYNC.md
+  - Releasing: ai-blaise/RELEASING.md
+  - End-to-end: ai-blaise/E2E.md
+  - Production readiness audit: ai-blaise/PRODUCTION_READINESS_AUDIT.md
+  - ADRs:
+      - "0001 Fork Citus, do not rewrite": ai-blaise/ADR/0001-fork-not-rewrite.md
+      - "0002 Overlay, not patch": ai-blaise/ADR/0002-overlay-not-patch.md
+      - "0003 Fork pgcat, not greenfield pool": ai-blaise/ADR/0003-pgcat-fork-not-greenfield.md
+      - "0004 Fork pg_lake for analytical": ai-blaise/ADR/0004-pg_lake-fork-for-analytical.md
+      - "0005 Rust + kube-rs, not Go": ai-blaise/ADR/0005-rust-kube-rs-not-go.md
+      - "0006 CNPG substrate, do not bypass": ai-blaise/ADR/0006-cnpg-substrate-not-bypass.md
+      - "0007 Raft per shard group": ai-blaise/ADR/0007-raft-per-shardgroup.md
+  - Runbooks:
+      - Production: ai-blaise/RUNBOOKS/production.md
+      - Disaster recovery: ai-blaise/RUNBOOKS/disaster-recovery.md
+      - PITR restore: ai-blaise/RUNBOOKS/pitr-restore.md
+      - Lost shard: ai-blaise/RUNBOOKS/lost-shard.md
+      - Split brain: ai-blaise/RUNBOOKS/split-brain.md
+      - Tenant migration: ai-blaise/RUNBOOKS/tenant-migration.md
+      - Branch suspend stuck: ai-blaise/RUNBOOKS/branch-suspend-stuck.md
+      - Rebalance stuck: ai-blaise/RUNBOOKS/rebalance-stuck.md
+      - Vectorizer backlog: ai-blaise/RUNBOOKS/vectorizer-backlog.md
+      - Upgrade: ai-blaise/RUNBOOKS/upgrade.md
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mike:
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ai-blaise/citus

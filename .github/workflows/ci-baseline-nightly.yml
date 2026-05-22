@@ -1,0 +1,94 @@
+name: baseline-nightly
+
+on:
+  schedule:
+    # 09:30 UTC nightly. GitHub-hosted runners only have 2 cores, so the
+    # baseline collected here is "constrained-host" — the same class as the
+    # experiment-playground VM that recorded benchmarks/baselines/. Real
+    # production-grade baselines come from a beefier self-hosted runner; this
+    # workflow exists so the harnesses, baseline schema, and the
+    # benchmarks/results pipeline stay continuously green.
+    - cron: "30 9 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+    paths:
+      - "benchmarks/**"
+      - "ci/ai-blaise/baseline-aggregate.py"
+      - ".github/workflows/ci-baseline-nightly.yml"
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      BENCH_QUICK: "0"
+      BENCH_DURATION_SECS: "60"
+      BENCH_CLIENTS: "8"
+      BENCH_SCALE: "2"
+      BENCH_TABLES: "4"
+      BENCH_TABLE_SIZE: "100000"
+      BENCH_PGHOST: "127.0.0.1"
+      BENCH_PGPORT: "5432"
+      BENCH_PGUSER: "postgres"
+      BENCH_PGPASSWORD: "postgres"
+      BENCH_PGDATABASE: "postgres"
+      BENCH_RESULT_TAG: "nightly-${{ github.run_id }}"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Install benchmark drivers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sysbench postgresql-client
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -c 'SELECT 1' && break
+            sleep 2
+          done
+      - name: Enable Timescale + prepare sysbench dataset
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d postgres -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+          # Full-mode run-suite.sh assumes a pre-loaded dataset.
+          sysbench oltp_common --db-driver=pgsql \
+            --pgsql-host=127.0.0.1 --pgsql-port=5432 \
+            --pgsql-user=postgres --pgsql-password=postgres \
+            --pgsql-db=postgres --tables=4 --table-size=100000 \
+            prepare
+      - name: Run TPC-C (pgbench TPC-B fallback)
+        run: bash benchmarks/tpcc/run.sh
+      - name: Run sysbench OLTP suite
+        run: bash benchmarks/sysbench/run-suite.sh
+      - name: Run Timescale ingest
+        run: python3 benchmarks/timescale-ingest/ingest.py
+      - name: Skip chaos in nightly (requires kubernetes)
+        run: echo "chaos requires a kind cluster; covered by ci-v2-acceptance"
+      - name: Materialize aggregate baseline JSON
+        run: python3 ci/ai-blaise/baseline-aggregate.py
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-baseline-${{ github.run_id }}
+          path: |
+            benchmarks/results/*.json
+            benchmarks/results/*.log
+          retention-days: 30

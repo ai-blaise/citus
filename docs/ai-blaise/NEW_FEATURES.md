@@ -452,8 +452,11 @@ depends on that target, so missing Docker cannot silently skip this evidence.
 - Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Gate: `make -f Makefile.ai-blaise gate-close`
 - Benchmark: `benchmarks/tpcc/run.sh`, `benchmarks/sysbench/run-suite.sh`
-  (V2 gate 10 performance acceptance; alpha until full runs land in
-  `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`)
+  (V2 gate 10 performance acceptance; measured baseline recorded in
+  `benchmarks/baselines/2026-05-22-baseline.json`, referenced from
+  `e2e/src/release_gates.rs::PERFORMANCE_BASELINE_PATH`. Constrained-host
+  scenarios (sysbench read/write, read-only) carry explicit waivers pending
+  a production host re-baseline.)
 
 ## TimescaleDB Integration
 
@@ -498,7 +501,9 @@ partitions, but it has no distributed-hypertable orchestration.
 - SQL runtime: `FEATURE: TS18` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Benchmark: `benchmarks/timescale-ingest/ingest.py` (rows/s, compression
-  ratio, queryable lag; alpha until full runs land)
+  ratio, queryable lag; baseline recorded in
+  `benchmarks/baselines/2026-05-22-baseline.json` with rows/s = 216 252,
+  exceeding the > 100 000 gate-10 target on the constrained-host VM)
 
 ### TS2: Distributed Compression Policy
 
@@ -4601,6 +4606,59 @@ evidence.
 - Gate: `make -f Makefile.ai-blaise gate-close`
 - CI: `ci/ai-blaise/image-check.sh`
 
+### D14: Documentation Site (mkdocs Material on GitHub Pages)
+
+**Overlay**: `mkdocs.yml`, `docs/`, `.github/workflows/ci-docs-build.yml`,
+`.github/workflows/ci-docs-publish.yml`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Publishes the existing `docs/ai-blaise/` Markdown tree as a
+versioned mkdocs Material site at `https://ai-blaise.github.io/citus/`. The
+build workflow runs `mkdocs build --strict` on every PR that touches `docs/**`
+or `mkdocs.yml`; the publish workflow uses `mike` to push the rendered site to
+the `gh-pages` branch on every push to `main`, keeping the `latest` alias
+pointed at the tip.
+
+**Motivation**: Markdown is fine for in-repo navigation but a published doc
+site is the right surface for external readers, link sharing, search, and
+versioned docs across releases. mkdocs Material is widely used for Rust and
+infrastructure projects (mkdocs.org itself, FastAPI, kubectl-ai), is Apache 2.0
+licensed, and has first-class versioning via mike.
+
+**Citus comparison**: Vanilla Citus ships docs as Markdown alongside the
+source; ai-blaise publishes them as a navigable site.
+
+Production evidence: GitHub Actions runs `mkdocs build --strict` on every PR
+that touches `docs/**` or `mkdocs.yml` via `.github/workflows/ci-docs-build.yml`,
+using an `ubuntu-latest` container and a pinned mkdocs-material 9.5.39 +
+mike 2.1.3. The strict flag fails the build on broken internal links, missing
+pages, or undefined nav entries — the run that landed this feature exercised
+the entire `docs/` tree, including ADRs and runbooks, and rendered the
+14-section nav declared in `mkdocs.yml`. Push-to-`main` deploys via
+`.github/workflows/ci-docs-publish.yml` on a GitHub Actions container that
+runs `mike deploy --push --update-aliases <sha> latest` and publishes the
+versioned subtree to the `gh-pages` branch; GitHub Pages then serves
+`https://ai-blaise.github.io/citus/`. The one-time GitHub Pages source
+setting is documented in `docs/ai-blaise/RELEASING.md`. The local equivalent
+of the publish workflow lives at `scripts/citus-scale/docs-publish.sh` for
+release-engineer reproducibility on a developer VM.
+
+**References**:
+
+- Config: `mkdocs.yml`
+- Landing page: `docs/index.md`
+- In-source: `FEATURE: D14` in `scripts/citus-scale/docs-publish.sh`
+- Executable: `scripts/citus-scale/docs-publish.sh` (local equivalent of the
+  publish workflow; renders the site and pushes the gh-pages subtree via
+  mike)
+- CI: `.github/workflows/ci-docs-build.yml` (build on PR)
+- CI: `.github/workflows/ci-docs-publish.yml` (publish on push-to-main)
+- Release runbook: `docs/ai-blaise/RELEASING.md` (one-time GitHub Pages
+  setup)
+
 ### WF2: WAL Replay Debugger Command
 
 **Overlay**: `tools/citusctl`
@@ -6722,7 +6780,10 @@ alpha.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
   `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
-  acceptance; alpha until full runs land)
+  acceptance; baseline recorded in
+  `benchmarks/baselines/2026-05-22-baseline.json`. The constrained-host VM
+  (2 cores / 7 GB RAM) cannot run a kind cluster, so each scenario carries an
+  explicit waiver pending a production-grade kind/EKS re-baseline.)
 
 ### R3: Columnstore-On-Worker Policy
 

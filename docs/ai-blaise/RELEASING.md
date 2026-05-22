@@ -36,3 +36,35 @@ Release artifacts must include:
 - updated `NEW_FEATURES.md`
 - updated `BENCHMARKS.md`
 - production-readiness audit evidence for every release-scope custom feature
+- a refreshed `benchmarks/baselines/<date>-baseline.json` recorded against the
+  release SHA (Gates 10 and 11 read this file via
+  `e2e/src/release_gates.rs::PERFORMANCE_BASELINE_PATH`)
+
+## Documentation site
+
+The published docs at `https://ai-blaise.github.io/citus/` are built by
+mkdocs Material from `docs/` and `mkdocs.yml`. The CI flow is:
+
+- `.github/workflows/ci-docs-build.yml` runs `mkdocs build --strict` on every
+  PR that touches `docs/**` or `mkdocs.yml` and uploads the rendered site as
+  an artifact.
+- `.github/workflows/ci-docs-publish.yml` runs on push to `main` and on
+  manual dispatch; it uses `mike` to publish a versioned subtree to the
+  `gh-pages` branch and updates the `latest` alias.
+
+### One-time GitHub Pages setup (manual)
+
+GitHub Pages source must be set to the `gh-pages` branch in repo settings.
+Until that switch is flipped, the `ci-docs-publish` workflow pushes the
+rendered site to `gh-pages` but the site at `ai-blaise.github.io/citus`
+returns a 404.
+
+1. Visit `Settings -> Pages` on `https://github.com/ai-blaise/citus`.
+2. Set "Build and deployment" -> Source = "Deploy from a branch".
+3. Set Branch = `gh-pages`, folder = `/ (root)`.
+4. Save.
+5. Verify `https://ai-blaise.github.io/citus/` resolves within a few minutes.
+
+The first push to `gh-pages` happens automatically when `main` next changes
+under `docs/` or `mkdocs.yml`. To force an initial publish, run the
+`docs-publish` workflow manually via the Actions tab (`workflow_dispatch`).
