@@ -904,6 +904,104 @@ run_pool_sql_smoke
 run_pool_cidr_deny_smoke
 run_citusctl_image_smoke
 
+# FEATURE: S2 — CitusCluster + ShardGroup CR plan-builder smoke. Applies a
+# canonical CitusCluster CR (1 coordinator + 2 workers) and a canonical
+# ShardGroup CR (32 shards, replication 3, zone-spread placement policy) to
+# the kind cluster, verifies the CRs round-trip through the API server, and
+# runs the operator's reconcile-plans plan-builder so we have executable
+# evidence that the same plan-builder used by the operator deployment image
+# emits the expected canonical TSV row for the canonical specs. A live
+# in-cluster Kubernetes controller loop (watch + .status update) remains
+# alpha because the production operator runtime exposes only
+# health/readiness/metrics and plan-builder helpers.
+run_reconcile_plan_cr_smoke() {
+  local citus_cluster_name="ai-blaise-citus-prod-smoke"
+  local shard_group_name="metrics-shards"
+
+  kubectl -n "${namespace}" delete cituscluster "${citus_cluster_name}" >/dev/null 2>&1 || true
+  kubectl -n "${namespace}" delete shardgroup "${shard_group_name}" >/dev/null 2>&1 || true
+
+  cat <<YAML | kubectl apply -n "${namespace}" -f -
+apiVersion: ai-blaise.com/v1alpha1
+kind: CitusCluster
+metadata:
+  name: ${citus_cluster_name}
+spec:
+  topology: CoordinatorWorker
+  image: ghcr.io/ai-blaise/citus:pg18-v2
+  workers: 2
+  coordinators: 1
+  storageClass: fast-ssd
+  timescaleEnabled: true
+  extensions:
+    - citus
+    - timescaledb
+  pool:
+    replicas: 2
+    geoipDb: maxmind-city
+  sidecars:
+    - sidecarType: Vectorizer
+      replicas: 1
+    - sidecarType: Mcp
+      replicas: 1
+---
+apiVersion: ai-blaise.com/v1alpha1
+kind: ShardGroup
+metadata:
+  name: ${shard_group_name}
+spec:
+  parentTable: public.metrics
+  distributionColumn: tenant_id
+  numShards: 32
+  colocationGroup: metrics
+  replicationFactor: 3
+  placementPolicy:
+    - topologyKey: topology.kubernetes.io/zone
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule
+YAML
+
+  local cluster_uid
+  cluster_uid="$(kubectl -n "${namespace}" get cituscluster "${citus_cluster_name}" -o jsonpath='{.metadata.uid}')"
+  if [[ -z "${cluster_uid}" ]]; then
+    echo "CitusCluster CR ${citus_cluster_name} did not round-trip through the API server" >&2
+    dump_k8s_diagnostics
+    return 1
+  fi
+
+  local shard_uid
+  shard_uid="$(kubectl -n "${namespace}" get shardgroup "${shard_group_name}" -o jsonpath='{.metadata.uid}')"
+  if [[ -z "${shard_uid}" ]]; then
+    echo "ShardGroup CR ${shard_group_name} did not round-trip through the API server" >&2
+    dump_k8s_diagnostics
+    return 1
+  fi
+
+  local reconcile_plans_output
+  if ! reconcile_plans_output="$(cargo run -q -p ai_blaise_citus_operator -- run-reconcile-plans 2>/dev/null)"; then
+    echo "operator run-reconcile-plans failed for canonical CitusCluster + ShardGroup specs" >&2
+    return 1
+  fi
+
+  local expected_tsv=$'ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue'
+  if ! printf '%s\n' "${reconcile_plans_output}" | grep -Fqx "${expected_tsv}"; then
+    echo "operator run-reconcile-plans did not emit expected canonical TSV row" >&2
+    printf '%s\n' "${reconcile_plans_output}" >&2
+    return 1
+  fi
+
+  kubectl -n "${namespace}" delete cituscluster "${citus_cluster_name}" >/dev/null 2>&1 || true
+  kubectl -n "${namespace}" delete shardgroup "${shard_group_name}" >/dev/null 2>&1 || true
+
+  echo "ai_blaise_citus CitusCluster + ShardGroup CR reconcile-plans smoke passed in kind/${cluster}/${namespace}"
+}
+
+if command -v cargo >/dev/null 2>&1; then
+  run_reconcile_plan_cr_smoke
+else
+  echo "cargo not available; skipping CitusCluster + ShardGroup CR reconcile-plans smoke" >&2
+fi
+
 kubectl -n "${namespace}" get deployment,pod,svc
 echo "ai_blaise_citus exhaustive image-matrix smoke passed in kind/${cluster}/${namespace}"
 

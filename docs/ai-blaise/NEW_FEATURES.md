@@ -1194,15 +1194,34 @@ fan embedding jobs across Citus workers safely.
 
 ### S2: Topology-Aware Placement
 
-**Overlay**: `operator/src/crds/shard_group.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the `ShardGroup` placement policy surface used to keep
-replicated shard placements spread across topology domains such as Kubernetes
-zones.
+**Summary**: Defines the `ShardGroup` placement policy surface and the
+`ShardGroupReconcilePlan` plan-builder that renders the SQL apply plan
+(`set_shard_count`, `set_shard_replication_factor`, `create_distributed_table`,
+optional `update_distributed_table_colocation`, and a `pg_dist_shard`
+post-condition guard) plus Kubernetes-style topology-spread constraints. The
+`CitusClusterReconcilePlan` plan-builder renders the CloudNativePG cluster
+manifest, pool Deployment intent, and one Deployment intent per declared
+sidecar so the operator-owned reconcile contract is executable end-to-end.
+
+Production evidence: Local and VM proof runs `cargo test -p
+ai_blaise_citus_operator` (61 unit tests including reconcile-plan coverage for
+coordinator-worker, coordinator-less, custom-sidecar, and colocation-free
+shard-group cases) and `cargo run -p ai_blaise_citus_operator --
+run-reconcile-plans`, which emits the canonical reconcile-plan TSV row
+`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. The matching SQL apply
+plan and CloudNativePG cluster manifest are produced from the canonical
+`CitusClusterSpec` and `ShardGroupSpec` without external Kubernetes
+dependencies. Live in-cluster reconciliation (a Kubernetes controller loop
+that watches the CRDs, applies the manifests, and updates `.status`) remains
+gated behind the alpha `operator.controllerRbac.enabled` profile because the
+operator runtime currently exposes only health/readiness/metrics and
+plan-builder helpers.
 
 **Motivation**: Placement decisions need an operator-owned policy before the
 fork can prove zone-aware replication and survival-goal behavior.
@@ -1213,9 +1232,13 @@ Kubernetes-native CRD for topology spread constraints.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`
+- In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`,
+  `operator/src/reconcile/shard_group.rs`,
+  `operator/src/reconcile/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans`
+- CI: `cargo test -p ai_blaise_citus_operator`
 
 ### S4: Coordinator-Less Topology Mode
 

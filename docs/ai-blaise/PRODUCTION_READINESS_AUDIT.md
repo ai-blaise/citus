@@ -524,8 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 243 source `FEATURE:` markers and 243
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 96 narrow headings
+The current feature inventory contains 241 source `FEATURE:` markers and 241
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 97 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -562,7 +562,19 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts, plus `MCP4` for the narrow `tools/citus-mcp` read-only
+extension contracts, plus `S2` for the operator-owned `ShardGroupReconcilePlan` and
+`CitusClusterReconcilePlan` plan-builders that render the canonical SQL apply
+plan (`set_shard_count`, `set_shard_replication_factor`,
+`create_distributed_table`, optional `update_distributed_table_colocation`,
+and a `pg_dist_shard` post-condition guard) plus Kubernetes-style
+topology-spread constraints and the CloudNativePG cluster manifest from the
+canonical `CitusClusterSpec` and `ShardGroupSpec` under `cargo test -p
+ai_blaise_citus_operator` and `cargo run -p ai_blaise_citus_operator --
+run-reconcile-plans`, while live in-cluster reconciliation (a Kubernetes
+controller loop that watches the CRDs and updates `.status`) remains gated
+behind the alpha `operator.controllerRbac.enabled` profile because the
+operator runtime currently exposes only health/readiness/metrics and
+plan-builder helpers, plus `MCP4` for the narrow `tools/citus-mcp` read-only
 database execution runtime against real PostgreSQL with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
 destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
@@ -575,7 +587,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 147
+other 144
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
