@@ -8,16 +8,16 @@ are consumed only through unmodified binaries or optional external services.
 Per-language transitive dependency tables live at the repo root and are
 generated from each language's lockfile:
 
-- [`ATTRIBUTIONS-Rust.md`](../../ATTRIBUTIONS-Rust.md) — every Rust crate in
-  the Cargo workspace, grouped by license. Generated from
-  `cargo metadata --format-version 1`.
-- [`ATTRIBUTIONS-Go.md`](../../ATTRIBUTIONS-Go.md) — every Go module under
-  `tools/citus-admin/` once the WhoDB fork lands. Generated from
-  `go list -m -json all`.
-- [`ATTRIBUTIONS-TypeScript.md`](../../ATTRIBUTIONS-TypeScript.md) — every
-  npm package under `tools/citus-schema-designer/` and `tools/citus-admin/`
-  once the DrawDB and WhoDB front-end forks land. Generated from
-  `package.json` + the lockfile.
+- [`ATTRIBUTIONS-Rust.md`](https://github.com/ai-blaise/citus/blob/main/ATTRIBUTIONS-Rust.md)
+  — every Rust crate in the Cargo workspace, grouped by license. Generated
+  from `cargo metadata --format-version 1`.
+- [`ATTRIBUTIONS-Go.md`](https://github.com/ai-blaise/citus/blob/main/ATTRIBUTIONS-Go.md)
+  — every Go module under `tools/citus-admin/` once the WhoDB fork lands.
+  Generated from `go list -m -json all`.
+- [`ATTRIBUTIONS-TypeScript.md`](https://github.com/ai-blaise/citus/blob/main/ATTRIBUTIONS-TypeScript.md)
+  — every npm package under `tools/citus-schema-designer/` and
+  `tools/citus-admin/` once the DrawDB and WhoDB front-end forks land.
+  Generated from `package.json` + the lockfile.
 
 `ci/ai-blaise/license-check.sh` enforces the presence of those three files,
 that they are linked from this audit, and that no Rust transitive dep

@@ -1,0 +1,57 @@
+name: docs-publish
+
+on:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/ci-docs-publish.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "mike version alias (e.g. v0.2.0, latest)"
+        required: false
+        default: "latest"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Only publish from main. ai-blaise/dev pushes trigger the build path via
+    # ci-docs-build, but we never push the dev branch to gh-pages.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install mkdocs-material + mike
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs-material==9.5.39 mike==2.1.3
+      - name: Configure git for mike
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Deploy versioned site to gh-pages
+        env:
+          MIKE_VERSION: ${{ github.event.inputs.version || 'latest' }}
+        run: |
+          # `mike deploy --push` writes the rendered site to a versioned subtree of
+          # the gh-pages branch, sets the latest alias, and pushes. GitHub Pages
+          # (configured with source = gh-pages branch via repo settings) then
+          # publishes https://ai-blaise.github.io/citus/.
+          mike deploy --push --update-aliases "${MIKE_VERSION}" latest
+          mike set-default --push latest

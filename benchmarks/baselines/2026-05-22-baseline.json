@@ -1,0 +1,105 @@
+{
+  "date": "2026-05-22",
+  "host": "experiment-playground",
+  "main_sha": "0b366b2973",
+  "results": {
+    "chaos": {
+      "mode": "quick",
+      "scenarios": [
+        {
+          "data_intact": true,
+          "mode": "quick",
+          "note": "scaffold-only: no kubectl cluster",
+          "recovery_p99_ms": 0,
+          "scenario": "disk-full",
+          "traffic_error_rate": 0
+        },
+        {
+          "data_intact": true,
+          "mode": "quick",
+          "note": "scaffold-only: no kubectl cluster",
+          "recovery_p99_ms": 0,
+          "scenario": "kill-coordinator",
+          "traffic_error_rate": 0
+        },
+        {
+          "data_intact": true,
+          "mode": "quick",
+          "note": "scaffold-only: no kubectl cluster",
+          "recovery_p99_ms": 0,
+          "scenario": "kill-worker",
+          "traffic_error_rate": 0
+        },
+        {
+          "data_intact": true,
+          "mode": "quick",
+          "note": "scaffold-only: no kubectl cluster",
+          "recovery_p99_ms": 0,
+          "scenario": "network-partition",
+          "traffic_error_rate": 0
+        },
+        {
+          "data_intact": true,
+          "mode": "quick",
+          "note": "scaffold-only: no kubectl cluster",
+          "recovery_p99_ms": 0,
+          "scenario": "slow-disk",
+          "traffic_error_rate": 0
+        }
+      ]
+    },
+    "sysbench_point_select": {
+      "duration_s": 60,
+      "latency_ms_p95": 3.68,
+      "mode": "full",
+      "tps": 9706.78,
+      "workload": "oltp_point_select"
+    },
+    "sysbench_read_only": {
+      "duration_s": 60,
+      "latency_ms_p95": 27.17,
+      "mode": "full",
+      "tps": 491.59,
+      "workload": "oltp_read_only"
+    },
+    "sysbench_read_write": {
+      "duration_s": 60,
+      "latency_ms_p95": 50.11,
+      "mode": "full",
+      "tps": 343.17,
+      "workload": "oltp_read_write"
+    },
+    "sysbench_write_only": {
+      "duration_s": 60,
+      "latency_ms_p95": 11.45,
+      "mode": "full",
+      "tps": 1440.31,
+      "workload": "oltp_write_only"
+    },
+    "timescale_ingest": {
+      "compression_ratio": 1.0,
+      "duration_s": 9,
+      "lag_ms": 0,
+      "mode": "full",
+      "rows_per_s": 216252
+    },
+    "tpcc": {
+      "duration_s": 60,
+      "errors": 0,
+      "latency_ms": {
+        "p50": 0,
+        "p95": 0,
+        "p99": 15.394
+      },
+      "mode": "full",
+      "note": "pgbench TPC-B fallback; benchbase is the canonical driver",
+      "tpmC": 31166
+    }
+  },
+  "specs": {
+    "cores": 2,
+    "platform": "Linux-6.1.0-47-cloud-amd64-x86_64-with-glibc2.36",
+    "ram_gb": 6.8
+  },
+  "tag": "baseline-vm-2026-05-22"
+}

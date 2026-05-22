@@ -57,6 +57,16 @@ lib*.pc
 # style related temporary outputs
 *.uncrustify
 .venv
+.venv-docs/
 
 # added output when modifying check_gucs_are_alphabetically_sorted.sh
 guc.out
+
+# mkdocs build output
+/site/
+
+# Cargo build output (workspace root)
+/target/
+
+# benchmark per-run results (canonical baselines live under benchmarks/baselines/)
+/benchmarks/results/

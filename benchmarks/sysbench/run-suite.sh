@@ -124,10 +124,20 @@ JSON
   fi
 
   local tps p95
-  tps="$(awk -F'[: ]+' '/transactions:/ {print $4; exit}' "${log}" || true)"
-  p95="$(awk -F'[: ]+' '/95th percentile:/ {print $3; exit}' "${log}" || true)"
+  # sysbench prints: "    transactions:    29523  (491.59 per sec.)" — the
+  # parenthesised value is the throughput. Strip the leading `(`.
+  tps="$(awk -F'[: ]+' '/transactions:/ {gsub(/[()]/, "", $4); print $4; exit}' "${log}" || true)"
+  # The 95th percentile line is "         95th percentile:                       27.17";
+  # awk on `[: ]+` puts the empty leading field as $1, then "95th" "percentile"
+  # number → the value lands in field 4, not field 3.
+  p95="$(awk -F'[: ]+' '/95th percentile:/ {print $4; exit}' "${log}" || true)"
+  # Default to 0 when the run errored before sysbench emitted a summary.
   tps="${tps:-0}"
   p95="${p95:-0}"
+  # JSON requires numeric values; the harness floats either to 0 or "0" so an
+  # empty parse remains valid JSON.
+  if ! [[ "${tps}" =~ ^[0-9.]+$ ]]; then tps=0; fi
+  if ! [[ "${p95}" =~ ^[0-9.]+$ ]]; then p95=0; fi
 
   cat >"${out}" <<JSON
 {
