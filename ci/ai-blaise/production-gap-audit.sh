@@ -118,6 +118,7 @@ alpha_entries = [s for s in statuses if s == "alpha"]
 source_only_ids = source_ids - doc_ids
 
 audit_compact = compact(audit)
+docs_compact = compact(docs)
 
 expected_inventory = compact(
     f"contains {len(source_ids)} source `feature:` markers and {len(entries)} "
