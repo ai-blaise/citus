@@ -216,7 +216,7 @@ pub trait EmbeddingProviderClient {
     ) -> Result<ProviderEmbeddingResult, VectorizerError>;
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DeterministicEmbeddingClient {
     pub dimensions: usize,
     pub cost_micros_per_token: u64,
@@ -232,6 +232,9 @@ impl EmbeddingProviderClient for DeterministicEmbeddingClient {
         }
         validate_required("input", &request.input)?;
 
+        // Provider-stub embedding values do not need full u64 precision; the
+        // canonical contract only checks ordering of the deterministic series.
+        #[allow(clippy::cast_precision_loss)]
         let embedding = (0..self.dimensions)
             .map(|index| (request.reserved_tokens as f32 + index as f32) / 1000.0)
             .collect();
@@ -296,8 +299,11 @@ impl VectorizerWorker {
             return Err(VectorizerError::EmptyBatch);
         }
         if jobs.len() > self.queue.batch_size as usize {
+            // jobs.len() exceeded the queue batch size (a u32 ceiling), so a
+            // u32 cap is correct for reporting; clamp to u32::MAX defensively.
+            let requested = u32::try_from(jobs.len()).unwrap_or(u32::MAX);
             return Err(VectorizerError::BatchTooLarge {
-                requested: jobs.len() as u32,
+                requested,
                 max: self.queue.batch_size,
             });
         }

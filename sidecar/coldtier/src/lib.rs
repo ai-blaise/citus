@@ -385,8 +385,7 @@ impl ColdTierRuntime {
             .sum::<u64>();
         self.state.search_indexes_materialized += search
             .as_ref()
-            .map(|materialization| materialization.index_uris.len() as u64)
-            .unwrap_or(0);
+            .map_or(0, |materialization| materialization.index_uris.len() as u64);
         self.state.planner_routes_refreshed += planner_routes.len() as u64;
         self.state.cold_tier_reads += planner_routes
             .iter()

@@ -1,0 +1,35 @@
+# Workspace-wide clippy lint policy.
+#
+# Enabled groups (warn): clippy::all, clippy::pedantic, clippy::nursery.
+# CI runs `cargo clippy --workspace --all-targets -- -D warnings` so any
+# emitted warning fails the build (.github/workflows/ci-rust-quality.yml).
+#
+# Allowed lints are the subset of pedantic + nursery lints that produce
+# noise without proportional value across a 30-crate Postgres-extension
+# workspace: must_use_candidate / missing_const_for_fn dominate the
+# nursery output volume on overlay crates whose surface is internal to
+# the binary; trivially_copy_pass_by_ref / needless_pass_by_value /
+# ref_option / match_same_arms / option_if_let_else / doc_markdown are
+# pedantic style choices we do not enforce; module_name_repetitions /
+# too_many_lines / missing_errors_doc / missing_panics_doc are the
+# pedantic lints the brief identified as low-value defaults.
+
+[target.'cfg(all())']
+rustflags = [
+  "-Wclippy::all",
+  "-Wclippy::pedantic",
+  "-Wclippy::nursery",
+  "-Aclippy::module_name_repetitions",
+  "-Aclippy::too_many_lines",
+  "-Aclippy::missing_errors_doc",
+  "-Aclippy::missing_panics_doc",
+  "-Aclippy::must_use_candidate",
+  "-Aclippy::missing_const_for_fn",
+  "-Aclippy::trivially_copy_pass_by_ref",
+  "-Aclippy::needless_pass_by_value",
+  "-Aclippy::ref_option",
+  "-Aclippy::match_same_arms",
+  "-Aclippy::option_if_let_else",
+  "-Aclippy::doc_markdown",
+  "-Aclippy::too_long_first_doc_paragraph",
+]

@@ -22,6 +22,7 @@ impl TuiSessionPlan {
         }
     }
 
+    #[must_use]
     pub fn with_safe_mode(mut self, safe_mode: bool) -> Self {
         self.safe_mode = safe_mode;
         self

@@ -102,3 +102,15 @@ if [[ -s "Cargo.lock" ]]; then
     fi
   fi
 fi
+
+# Cargo-deny structured license + advisory + bans check. Mirrors the
+# license-policy enforcement above but uses the full SPDX expression
+# parser (so OR-licensed deps like r-efi MIT OR Apache-2.0 OR
+# LGPL-2.1-or-later resolve correctly) and additionally enforces the
+# RustSec advisory database and the bans/sources sections of
+# deny.toml. Skipped when cargo-deny is not on PATH so local devs
+# without it still pass the GPL grep guard; CI always installs it via
+# .github/workflows/ci-rust-quality.yml.
+if command -v cargo-deny >/dev/null 2>&1; then
+  cargo deny check 2>&1
+fi

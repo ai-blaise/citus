@@ -429,9 +429,9 @@ impl CdcRuntime {
             deliveries.push(CdcRuntimeDelivery { event, delivery });
         }
 
-        self.state.last_received_lsn = frame.end_lsn.clone();
-        self.state.last_delivered_lsn = frame.end_lsn.clone();
-        self.state.acked_flush_lsn = frame.end_lsn.clone();
+        self.state.last_received_lsn.clone_from(&frame.end_lsn);
+        self.state.last_delivered_lsn.clone_from(&frame.end_lsn);
+        self.state.acked_flush_lsn.clone_from(&frame.end_lsn);
         self.state.delivered_events += deliveries.len() as u64;
         self.state.delivered_sink_writes += delivered_sink_writes;
 
@@ -610,10 +610,10 @@ pub fn decode_wal2json_frame(
 
         let mut columns = Vec::with_capacity(column_names.len());
         let mut tenant_id = None;
-        for (name, value) in column_names.into_iter().zip(column_values.into_iter()) {
+        for (name, value) in column_names.into_iter().zip(column_values) {
             let value = json_scalar_to_string(value)?;
             if name == "tenant_id" {
-                tenant_id = value.clone();
+                tenant_id.clone_from(&value);
             }
             columns.push(CdcColumnValue { name, value });
         }

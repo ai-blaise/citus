@@ -91,8 +91,13 @@ impl IndexCandidate {
         {
             return 0;
         }
-        (((self.estimated_cost_before - self.estimated_cost_after) * 100)
-            / self.estimated_cost_before) as u32
+        // The dividend is bounded by `estimated_cost_before * 100` and divided by
+        // `estimated_cost_before`, so the result is always in 0..=100 and fits in u32.
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            (((self.estimated_cost_before - self.estimated_cost_after) * 100)
+                / self.estimated_cost_before) as u32
+        }
     }
 }
 

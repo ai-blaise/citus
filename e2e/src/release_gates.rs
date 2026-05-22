@@ -439,7 +439,11 @@ impl LatencyGate {
 
     fn reduction_percent(&self) -> u32 {
         let saved = self.upstream_2pc_p95_us - self.parallel_commit_p95_us;
-        ((saved * 100) / self.upstream_2pc_p95_us) as u32
+        // saved <= upstream_2pc_p95_us, so the result is in 0..=100 and fits in u32.
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            ((saved * 100) / self.upstream_2pc_p95_us) as u32
+        }
     }
 }
 
@@ -553,7 +557,9 @@ pub struct HarnessGate {
 
 impl HarnessGate {
     fn validate_with_minimum(&self, minimum: usize) -> Result<(), V2ReleaseGateError> {
-        if self.scenarios.len() < minimum || self.green_count() != self.scenarios.len() as u32 {
+        if self.scenarios.len() < minimum
+            || u64::from(self.green_count()) != self.scenarios.len() as u64
+        {
             return Err(V2ReleaseGateError::GateFailed("harness"));
         }
         // Every scenario must record a baseline observation; missing
@@ -574,10 +580,15 @@ impl HarnessGate {
     }
 
     fn green_count(&self) -> u32 {
-        self.scenarios
+        // Scenario counts in the canonical release-gate spec stay well below
+        // u32::MAX, so the usize → u32 truncation is unreachable in practice.
+        #[allow(clippy::cast_possible_truncation)]
+        let count = self
+            .scenarios
             .iter()
             .filter(|scenario| scenario.green)
-            .count() as u32
+            .count() as u32;
+        count
     }
 }
 
@@ -663,6 +674,7 @@ impl BaselineEvidence {
         }
     }
 
+    #[must_use]
     pub fn with_waiver(mut self, reason: impl Into<String>) -> Self {
         self.waiver = Some(reason.into());
         self
@@ -882,7 +894,10 @@ mod tests {
         );
         assert_eq!(acceptance.chaos.baseline_path, PERFORMANCE_BASELINE_PATH);
         assert!(PERFORMANCE_BASELINE_PATH.starts_with("benchmarks/baselines/"));
-        assert!(PERFORMANCE_BASELINE_PATH.ends_with(".json"));
+        // Baseline filenames are committed source paths; we want exact-case match.
+        #[allow(clippy::case_sensitive_file_extension_comparisons)]
+        let json_suffix = PERFORMANCE_BASELINE_PATH.ends_with(".json");
+        assert!(json_suffix);
     }
 
     #[test]

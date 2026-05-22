@@ -524,8 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 253 source `FEATURE:` markers and 253
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 105 narrow headings
+The current feature inventory contains 259 source `FEATURE:` markers and 259
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 111 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -586,7 +586,15 @@ Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
 execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
-implemented and live-gated. The
+implemented and live-gated. Additionally `RQ1` (pinned Rust toolchain), `RQ2`
+(strict clippy gate), `RQ3` (cargo-audit dependency advisory gate), and `RQ4`
+(cargo-deny license compatibility gate) are `Status: production-ready` because
+the `.github/workflows/ci-rust-quality.yml` GitHub Actions workflow runs
+`rustup show`, `cargo fmt --all -- --check`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo audit`, and `cargo deny check` as
+required gates in a real CI container on every PR, and
+`ci/ai-blaise/license-check.sh` now invokes `cargo deny check` so the same
+policy fires on the VM. The
 other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the

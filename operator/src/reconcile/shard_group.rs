@@ -22,10 +22,11 @@ pub const CITUS_REPLICATION_FACTOR_GUC: &str = "citus.shard_replication_factor";
 /// created.
 pub const CITUS_SHARD_COUNT_GUC: &str = "citus.shard_count";
 
-/// Topology-spread constraint plan derived from a `ShardGroupSpec`. Each entry
-/// corresponds 1:1 with a Kubernetes `TopologySpreadConstraint` applied to the
-/// CNPG cluster's StatefulSet pods (and to any pool/sidecar Deployments that
-/// host the shard placements).
+/// Topology-spread constraint plan derived from a `ShardGroupSpec`.
+///
+/// Each entry corresponds 1:1 with a Kubernetes `TopologySpreadConstraint`
+/// applied to the CNPG cluster's StatefulSet pods (and to any pool/sidecar
+/// Deployments that host the shard placements).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct TopologySpreadConstraintPlan {
     pub topology_key: String,
@@ -242,7 +243,7 @@ fn update_colocation_sql(plan: &ShardGroupReconcilePlan, colocation_group: &str)
 
 fn verify_distributed_table_sql(plan: &ShardGroupReconcilePlan) -> String {
     format!(
-        r#"DO $ai_blaise_citus_shard_group$
+        r"DO $ai_blaise_citus_shard_group$
 DECLARE
     found_shard_count integer;
 BEGIN
@@ -259,7 +260,7 @@ BEGIN
             {expected}, found_shard_count;
     END IF;
 END
-$ai_blaise_citus_shard_group$;"#,
+$ai_blaise_citus_shard_group$;",
         table = sql_literal(&plan.parent_table),
         parent = plan.parent_table,
         expected = plan.num_shards,

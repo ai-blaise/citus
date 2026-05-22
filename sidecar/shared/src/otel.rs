@@ -34,6 +34,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::fmt::Write as _;
 
 /// Maximum number of bytes allowed in a single traceparent header. The W3C
 /// spec fixes the length at 55 ASCII characters for version `00`.
@@ -351,10 +352,11 @@ impl SetLocalBuilder {
             escape_sql_literal(traceparent)
         );
         if let Some(state) = &self.tracestate {
-            statement.push_str(&format!(
+            let _ = write!(
+                statement,
                 "; SET LOCAL trace.state = '{}'",
                 escape_sql_literal(state)
-            ));
+            );
         }
         Some(statement)
     }

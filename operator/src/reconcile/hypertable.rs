@@ -231,7 +231,7 @@ fn companion_status_guard_sql(sql_plans: &[CompanionSqlPlan]) -> String {
         .join(", ");
 
     format!(
-        r#"DO $ai_blaise_citus$
+        r"DO $ai_blaise_citus$
 DECLARE
     missing_feature text;
 BEGIN
@@ -252,13 +252,13 @@ BEGIN
         RAISE EXCEPTION 'companion_feature_status must report %', missing_feature;
     END IF;
 END
-$ai_blaise_citus$;"#
+$ai_blaise_citus$;"
     )
 }
 
 fn cohabitation_guard_sql() -> String {
     format!(
-        r#"DO $ai_blaise_citus$
+        r"DO $ai_blaise_citus$
 BEGIN
     IF NOT EXISTS (
         SELECT 1
@@ -271,7 +271,7 @@ BEGIN
         RAISE EXCEPTION 'citus.cohabit_extensions must include {TIMESCALEDB_EXTENSION}';
     END IF;
 END
-$ai_blaise_citus$;"#,
+$ai_blaise_citus$;",
         timescaledb = sql_literal(TIMESCALEDB_EXTENSION)
     )
 }

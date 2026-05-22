@@ -55,12 +55,8 @@ fn main() {
         report.metadata.size_bytes,
         method_name(&report.presigned_url.method),
         report.presigned_url.ttl_seconds,
-        antivirus
-            .map(|plan| plan.fail_closed.to_string())
-            .unwrap_or_else(|| "false".to_string()),
-        antivirus
-            .map(|plan| plan.scanner_endpoint.as_str())
-            .unwrap_or("none"),
+        antivirus.map_or_else(|| "false".to_string(), |plan| plan.fail_closed.to_string(),),
+        antivirus.map_or("none", |plan| plan.scanner_endpoint.as_str()),
     );
 }
 

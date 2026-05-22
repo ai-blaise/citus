@@ -33,6 +33,7 @@ impl SidecarRuntime {
         }
     }
 
+    #[must_use]
     pub fn with_in_flight_work(mut self, in_flight_work: u64) -> Self {
         self.drain.in_flight_work = in_flight_work;
         self

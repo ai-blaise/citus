@@ -217,8 +217,7 @@ fn sql_literal(value: &str) -> String {
 fn optional_sql_literal(value: &Option<String>) -> String {
     value
         .as_deref()
-        .map(sql_literal)
-        .unwrap_or_else(|| "NULL".to_string())
+        .map_or_else(|| "NULL".to_string(), sql_literal)
 }
 
 #[cfg(test)]

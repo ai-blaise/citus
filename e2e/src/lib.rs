@@ -3,6 +3,7 @@
 pub mod operator_catalog;
 pub mod release_gates;
 pub mod runtime_contracts;
+pub mod rust_quality;
 pub mod timescale_on_citus;
 
 pub use operator_catalog::{
@@ -15,6 +16,9 @@ pub use release_gates::{
 pub use runtime_contracts::{
     RuntimeContractGate, V2RuntimeContractAcceptance, V2RuntimeContractAcceptanceError,
     V2RuntimeContractPlan,
+};
+pub use rust_quality::{
+    RustQualityAcceptance, RustQualityAcceptanceError, RustQualityToolingPaths,
 };
 pub use timescale_on_citus::{
     AcceptanceGate, CohabitationPreloadConfig, TimescaleOnCitusAcceptance,

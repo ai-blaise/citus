@@ -44,11 +44,13 @@ impl ToolkitDistributedPlan {
         Ok(plan)
     }
 
+    #[must_use]
     pub fn with_time_column(mut self, time_column: impl Into<String>) -> Self {
         self.time_column = Some(time_column.into());
         self
     }
 
+    #[must_use]
     pub fn with_bucket_width(mut self, bucket_width: impl Into<String>) -> Self {
         self.bucket_width = Some(bucket_width.into());
         self

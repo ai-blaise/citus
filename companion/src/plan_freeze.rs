@@ -178,8 +178,8 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), PlanFreezeE
 }
 
 fn percent_regressed(baseline: u64, candidate: u64, max_percent: u32) -> bool {
-    let allowed = baseline as u128 * (100 + max_percent as u128);
-    candidate as u128 * 100 > allowed
+    let allowed = u128::from(baseline) * (100 + u128::from(max_percent));
+    u128::from(candidate) * 100 > allowed
 }
 
 fn sql_literal(value: &str) -> String {

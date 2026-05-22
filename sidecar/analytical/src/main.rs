@@ -60,17 +60,13 @@ fn main() {
         plan.pushdown.plan_id,
         plan.pushdown
             .limit
-            .map(|limit| limit.to_string())
-            .unwrap_or_else(|| "none".to_string()),
-        snapshot
-            .map(|commit| commit.snapshot_id.as_str())
-            .unwrap_or("none"),
+            .map_or_else(|| "none".to_string(), |limit| limit.to_string()),
+        snapshot.map_or("none", |commit| commit.snapshot_id.as_str()),
         catalog.name,
         federation_target_name(&catalog.target),
         plan.motherduck
             .as_ref()
-            .map(|connector| connector.database.as_str())
-            .unwrap_or("none"),
+            .map_or("none", |connector| connector.database.as_str()),
     );
 }
 
@@ -83,8 +79,7 @@ fn run_runtime_canonical() {
     let snapshot_id = report
         .snapshot_commit
         .as_ref()
-        .map(|snapshot| snapshot.snapshot_id.as_str())
-        .unwrap_or("none");
+        .map_or("none", |snapshot| snapshot.snapshot_id.as_str());
     let federated_catalogs = report
         .federated_catalogs
         .iter()
@@ -115,8 +110,7 @@ fn run_runtime_canonical() {
         report
             .read
             .limit
-            .map(|limit| limit.to_string())
-            .unwrap_or_else(|| "none".to_string()),
+            .map_or_else(|| "none".to_string(), |limit| limit.to_string()),
         report.read.estimated_rows,
         snapshot_id,
         federated_catalogs,

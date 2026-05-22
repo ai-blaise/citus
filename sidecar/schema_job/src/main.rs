@@ -51,9 +51,7 @@ fn main() {
         report.worker.backfill.throttle_ms,
         report.worker.safety.max_lock_ms,
         report.worker.safety.allow_blocking_cutover,
-        shadow
-            .map(|plan| plan.shadow_table.as_str())
-            .unwrap_or("none"),
+        shadow.map_or("none", |plan| plan.shadow_table.as_str()),
     );
 }
 

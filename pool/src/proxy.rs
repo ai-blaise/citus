@@ -63,7 +63,7 @@ impl PoolProxyConfig {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct ClientCidrAllowlist {
     entries: Vec<CidrBlock>,
 }
@@ -93,14 +93,6 @@ impl ClientCidrAllowlist {
             .map(|entry| entry.source.as_str())
             .collect::<Vec<_>>()
             .join(",")
-    }
-}
-
-impl Default for ClientCidrAllowlist {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
     }
 }
 
@@ -402,9 +394,8 @@ fn proxy_connection(
     upstream_addr: &str,
     state: &PoolProxyState,
 ) -> Result<(), PoolProxyError> {
-    let upstream = connect_upstream(upstream_addr).map_err(|error| {
+    let upstream = connect_upstream(upstream_addr).inspect_err(|_| {
         state.connect_error();
-        error
     })?;
 
     client.set_nodelay(true)?;
@@ -496,13 +487,14 @@ fn serve_admin(
         let mut stream = stream?;
         let mut buffer = [0_u8; 8192];
         let read_len = stream.read(&mut buffer)?;
-        let response = AdminRequest::parse(&buffer[..read_len])
-            .map(|request| handle_admin_request(&request, &state, &upstream_addr))
-            .unwrap_or_else(|error| AdminResponse {
+        let response = AdminRequest::parse(&buffer[..read_len]).map_or_else(
+            |error| AdminResponse {
                 status_code: 400,
                 content_type: "application/json",
                 body: format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            });
+            },
+            |request| handle_admin_request(&request, &state, &upstream_addr),
+        );
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())
@@ -830,7 +822,7 @@ mod tests {
 
     fn build_startup_packet(application_name: &str) -> Vec<u8> {
         let mut body: Vec<u8> = Vec::new();
-        body.extend_from_slice(&196608_u32.to_be_bytes());
+        body.extend_from_slice(&196_608_u32.to_be_bytes());
         body.extend_from_slice(b"user");
         body.push(0);
         body.extend_from_slice(b"postgres");
@@ -844,6 +836,8 @@ mod tests {
         body.extend_from_slice(application_name.as_bytes());
         body.push(0);
         body.push(0);
+        // Test fixture packets stay well under u32::MAX in practice.
+        #[allow(clippy::cast_possible_truncation)]
         let length = (body.len() + 4) as u32;
         let mut packet = Vec::with_capacity(body.len() + 4);
         packet.extend_from_slice(&length.to_be_bytes());

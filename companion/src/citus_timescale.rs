@@ -7,6 +7,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fmt::Write as _;
 
 pub const FEATURE_DISTRIBUTE_HYPERTABLE: &str = "TS1";
 pub const FEATURE_TIME_RANGE_SHARD_PRUNER: &str = "TS5";
@@ -252,12 +253,14 @@ impl AddContinuousAggregateDistributedPlan {
             validate_required("refresh_start", refresh_start)?;
             validate_required("refresh_end", refresh_end)?;
             validate_required("schedule", schedule)?;
-            command.push_str(&format!(
+            write!(
+                command,
                 ", refresh_start => {}, refresh_end => {}, schedule => {}",
                 sql_literal(refresh_start),
                 sql_literal(refresh_end),
                 sql_literal(schedule)
-            ));
+            )
+            .expect("writing to String cannot fail");
         }
 
         command.push_str(");");

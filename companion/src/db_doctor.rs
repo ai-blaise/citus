@@ -172,8 +172,7 @@ impl DbDoctorReport {
             .collect::<Vec<_>>()
             .join(",");
         Ok(format!(
-            "{{\"version\":\"2.1.0\",\"runs\":[{{\"tool\":{{\"driver\":{{\"name\":\"ai-blaise-db-doctor\"}}}},\"results\":[{}]}}]}}",
-            results
+            "{{\"version\":\"2.1.0\",\"runs\":[{{\"tool\":{{\"driver\":{{\"name\":\"ai-blaise-db-doctor\"}}}},\"results\":[{results}]}}]}}"
         ))
     }
 }

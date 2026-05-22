@@ -22,10 +22,11 @@ pub const POOL_DEPLOYMENT_NAME_SUFFIX: &str = "-pool";
 /// citus + timescaledb shared libraries load in the correct order.
 pub const POSTGRES_SHARED_PRELOAD_LIBRARIES: &[&str] = &["citus", "timescaledb"];
 
-/// Resolved cluster topology fingerprint suitable for status reporting. This
-/// is a flattened view of the CRD-side `CitusTopology` plus the derived node
-/// counts, so downstream controllers can reason about the cluster without
-/// re-reading the original spec.
+/// Resolved cluster topology fingerprint suitable for status reporting.
+///
+/// This is a flattened view of the CRD-side `CitusTopology` plus the derived
+/// node counts, so downstream controllers can reason about the cluster
+/// without re-reading the original spec.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ClusterTopologyPlan {
     pub topology: CitusTopology,
@@ -221,7 +222,7 @@ impl CitusClusterReconcilePlan {
     /// pool and every sidecar. The CNPG `Cluster` resource is counted
     /// separately because CNPG owns the underlying StatefulSet/Pods.
     pub fn total_deployments(&self) -> usize {
-        let pool = if self.pool.is_some() { 1 } else { 0 };
+        let pool = usize::from(self.pool.is_some());
         pool + self.sidecars.len()
     }
 
