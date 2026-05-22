@@ -94,7 +94,19 @@ pub use router_assist::{
     PlacementGenerationSubscriber, RouterAssistError, RouterAssistSqlPlan, ShardForValuePlan,
     ShardRoutingStrategy,
 };
-pub use schema_jobs::{SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState};
+pub use schema_jobs::{
+    controller::{
+        PhaseAcknowledgement, PhaseCheckpoint, PhaseTransitionDecision, PhaseTransitionPlan,
+        SchemaJobController, SchemaJobControllerError, TransitionGate,
+    },
+    rollback::{RollbackError, RollbackPlan, RollbackStep},
+    verify_two_version_invariant_sql,
+    worker_lease::{
+        WorkerLease, WorkerLeaseError, WorkerLeaseRegistry, WorkerLeaseSqlPlan, WorkerLeaseStatus,
+    },
+    SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState, COMPANION_INTERNAL_SCHEMA,
+    TWO_VERSION_INVARIANT_MAX_VERSIONS,
+};
 pub use search_bridge::{
     HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
     SearchIndexDistributedPlan, SearchSqlPlan,
