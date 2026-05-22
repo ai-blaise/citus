@@ -2057,7 +2057,9 @@ ship a pgroll-style expand/contract migration layer.
 - SQL runtime: `FEATURE: M1` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (walks Migration through DELETE_ONLY/WRITE_ONLY/BACKFILL/PUBLIC with checkpointed phase log)
 
 ### M2: gh-ost-Style Online DDL
 
@@ -2269,7 +2271,99 @@ ship an online column-type migration contract.
 - SQL runtime: `FEATURE: M11` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (simulates mid-BACKFILL worker failure, verifies rollback restores DELETE_ONLY semantics, cleans partial backfill rows)
+
+### M14: F1-Style Two-Version Invariant Controller
+
+**Overlay**: `companion/src/schema_jobs/`, `sidecar/schema_job/src/controller.rs`,
+`operator/src/reconcile/migration.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Provides the F1-style schema-change controller and the SQL
+surface that drives Migration CRs through the
+`delete_only -> write_only -> backfill -> public` phases while enforcing
+the two-version invariant. Adds `companion.schema_job_phase_log`,
+`companion.worker_schema_lease`, `companion_internal.schema_job_phase_log_insert`,
+`companion_internal.worker_schema_lease_upsert`,
+`companion_internal.schema_job_rollback_to`,
+`companion_internal.schema_job_cleanup_backfill`, and
+`companion_internal.schema_job_drop_added_column`.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/schema-job-f1-2vi-smoke.sh`, which installs `ai_blaise_citus`
+into a real PostgreSQL server and walks a Migration through all four
+phases, recording one phase-log row per transition, validating worker
+lease acknowledgements, simulating a worker failure mid-BACKFILL,
+triggering rollback and partial-backfill cleanup, and verifying every
+forward-progress phase honors the two-version invariant. Distributed
+backfill workers, kube-rs MigrationReconciler client, dual-write triggers,
+and live planner-hook enforcement of the WRITE_ONLY/DELETE_ONLY
+read/write invariants remain alpha.
+
+**Motivation**: Citus distributes DDL but does not guarantee a bounded
+number of in-flight schema versions or coordinate phase transitions
+across workers. The F1 controller closes that gap.
+
+**Citus comparison**: Vanilla Citus does not ship an F1-style controller,
+phase log, worker lease, or rollback planner.
+
+**References**:
+
+- Design: `docs/ai-blaise/ADR/0008-f1-style-schema-change.md`
+- Operator guide: `docs/ai-blaise/MIGRATIONS.md`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/mod.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/controller.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/worker_lease.rs`
+- In-source: `FEATURE: M14` in `companion/src/schema_jobs/rollback.rs`
+- In-source: `FEATURE: M14` in `sidecar/schema_job/src/controller.rs`
+- In-source: `FEATURE: M14` in `operator/src/reconcile/migration.rs`
+- SQL runtime: `FEATURE: M14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
+
+### M15: Continuous Two-Version Invariant Verifier
+
+**Overlay**: `companion/src/schema_jobs/mod.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_cron`
+
+**Summary**: Adds `companion_internal.verify_two_version_invariant()`,
+`companion.cluster_alarms`, and `companion_two_version_invariant_state`.
+Returns a JSON report with the number of in-flight schema versions and the
+list of jobs that exceed the limit; raises a critical
+`two_version_invariant_violation` alarm row when the invariant is
+breached. Designed to be scheduled by pg_cron every 60 seconds.
+
+Production evidence: Local, VM, and GitHub Actions proof run
+`ci/ai-blaise/schema-job-f1-2vi-smoke.sh`, which provokes a 3-version
+violation, calls the verifier, asserts the JSON report records one
+violation, and asserts a critical `companion.cluster_alarms` row exists.
+The pg_cron schedule and the pager-routed alert wire-up to PagerDuty/Slack
+remain alpha.
+
+**Motivation**: F1's two-version invariant is the operational signal that
+makes online schema change tractable. A continuous, in-database verifier
+catches drift the moment it appears.
+
+**Citus comparison**: Vanilla Citus does not track schema-version drift or
+emit invariant alarms.
+
+**References**:
+
+- Design: `docs/ai-blaise/ADR/0008-f1-style-schema-change.md`
+- Operator guide: `docs/ai-blaise/MIGRATIONS.md`
+- In-source: `FEATURE: M15` in `companion/src/schema_jobs/mod.rs`
+- SQL runtime: `FEATURE: M15` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+- CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
 
 ## Multi-Region
 

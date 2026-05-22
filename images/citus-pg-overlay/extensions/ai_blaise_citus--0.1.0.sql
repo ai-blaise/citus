@@ -5027,3 +5027,445 @@ SELECT
     parameters,
     applied_at
 FROM companion_internal.timescale_bridge_state;
+-- FEATURE: C10
+-- FEATURE: M2
+-- FEATURE: M14
+-- FEATURE: M15
+
+-- F1-style two-version invariant (2VI) extensions. Adds:
+--   * companion.schema_job_phase_log         (phase transition audit)
+--   * companion.worker_schema_lease          (per-worker acknowledgement)
+--   * companion.cluster_alarms               (2VI violation alarms)
+--   * companion_internal.schema_job_phase_log_insert
+--   * companion_internal.schema_job_phase_log_rollback
+--   * companion_internal.worker_schema_lease_upsert
+--   * companion_internal.worker_schema_lease_revoke
+--   * companion_internal.schema_job_rollback_to
+--   * companion_internal.schema_job_cleanup_backfill
+--   * companion_internal.schema_job_drop_added_column
+--   * companion_internal.verify_two_version_invariant
+--   * companion_internal.raise_cluster_alarm
+--   * companion_two_version_invariant_state (view)
+--
+-- All names are namespaced under companion_internal/companion. No upstream
+-- Citus or TimescaleDB identifier is touched.
+
+CREATE TABLE IF NOT EXISTS companion_internal.schema_job_phase_log (
+    log_id bigserial PRIMARY KEY,
+    job_name text NOT NULL
+        REFERENCES companion_internal.schema_jobs(job_name)
+        ON DELETE CASCADE,
+    from_state text NOT NULL CHECK (
+        from_state IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled')
+    ),
+    to_state text NOT NULL CHECK (
+        to_state IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled')
+    ),
+    started_at timestamptz NOT NULL,
+    completed_at timestamptz NOT NULL,
+    workers_acknowledged text[] NOT NULL DEFAULT ARRAY[]::text[],
+    gate text NOT NULL CHECK (
+        gate IN ('wait_forever', 'skip_missing', 'rollback_on_timeout')
+    ),
+    is_rollback boolean NOT NULL DEFAULT false,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    CHECK (completed_at >= started_at)
+);
+
+CREATE INDEX IF NOT EXISTS schema_job_phase_log_job_name_idx
+    ON companion_internal.schema_job_phase_log(job_name, recorded_at);
+
+CREATE TABLE IF NOT EXISTS companion_internal.worker_schema_lease (
+    worker_id text NOT NULL,
+    job_name text NOT NULL
+        REFERENCES companion_internal.schema_jobs(job_name)
+        ON DELETE CASCADE,
+    schema_version_id text NOT NULL,
+    phase text NOT NULL CHECK (
+        phase IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled')
+    ),
+    expires_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (worker_id, job_name)
+);
+
+CREATE INDEX IF NOT EXISTS worker_schema_lease_job_idx
+    ON companion_internal.worker_schema_lease(job_name, expires_at);
+
+CREATE TABLE IF NOT EXISTS companion_internal.cluster_alarms (
+    alarm_id bigserial PRIMARY KEY,
+    alarm_kind text NOT NULL,
+    severity text NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
+    job_name text,
+    detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+    raised_at timestamptz NOT NULL DEFAULT now(),
+    cleared_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS cluster_alarms_active_idx
+    ON companion_internal.cluster_alarms(alarm_kind, raised_at)
+    WHERE cleared_at IS NULL;
+
+CREATE VIEW companion_schema_job_phase_log AS
+SELECT
+    log_id,
+    job_name,
+    from_state,
+    to_state,
+    started_at,
+    completed_at,
+    workers_acknowledged,
+    gate,
+    is_rollback,
+    recorded_at
+FROM companion_internal.schema_job_phase_log;
+
+CREATE VIEW companion_worker_schema_lease AS
+SELECT
+    worker_id,
+    job_name,
+    schema_version_id,
+    phase,
+    expires_at,
+    updated_at
+FROM companion_internal.worker_schema_lease;
+
+CREATE VIEW companion_cluster_alarms AS
+SELECT
+    alarm_id,
+    alarm_kind,
+    severity,
+    job_name,
+    detail,
+    raised_at,
+    cleared_at
+FROM companion_internal.cluster_alarms;
+
+CREATE FUNCTION companion_internal.schema_job_phase_log_insert(
+    p_job_name text,
+    p_from_state text,
+    p_to_state text,
+    p_started_at timestamptz,
+    p_completed_at timestamptz,
+    p_workers_acknowledged text[],
+    p_gate text
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    inserted_id bigint;
+BEGIN
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+    IF p_workers_acknowledged IS NULL THEN
+        RAISE EXCEPTION 'workers_acknowledged must not be null';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.schema_jobs
+        WHERE job_name = btrim(p_job_name)
+    ) THEN
+        RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+
+    INSERT INTO companion_internal.schema_job_phase_log(
+        job_name, from_state, to_state, started_at, completed_at,
+        workers_acknowledged, gate, is_rollback
+    )
+    VALUES (
+        btrim(p_job_name),
+        lower(btrim(p_from_state)),
+        lower(btrim(p_to_state)),
+        p_started_at,
+        p_completed_at,
+        p_workers_acknowledged,
+        lower(btrim(p_gate)),
+        false
+    )
+    RETURNING log_id INTO inserted_id;
+
+    RETURN inserted_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_phase_log_rollback(
+    p_job_name text,
+    p_from_state text,
+    p_to_state text,
+    p_recorded_at timestamptz
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    inserted_id bigint;
+BEGIN
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+
+    INSERT INTO companion_internal.schema_job_phase_log(
+        job_name, from_state, to_state, started_at, completed_at,
+        workers_acknowledged, gate, is_rollback
+    )
+    VALUES (
+        btrim(p_job_name),
+        lower(btrim(p_from_state)),
+        lower(btrim(p_to_state)),
+        p_recorded_at,
+        p_recorded_at,
+        ARRAY[]::text[],
+        'rollback_on_timeout',
+        true
+    )
+    RETURNING log_id INTO inserted_id;
+
+    RETURN inserted_id;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.worker_schema_lease_upsert(
+    p_worker_id text,
+    p_job_name text,
+    p_schema_version_id text,
+    p_phase text,
+    p_expires_at timestamptz
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_worker_id IS NULL OR btrim(p_worker_id) = '' THEN
+        RAISE EXCEPTION 'worker_id must not be empty';
+    END IF;
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+    IF p_schema_version_id IS NULL OR btrim(p_schema_version_id) = '' THEN
+        RAISE EXCEPTION 'schema_version_id must not be empty';
+    END IF;
+    IF lower(btrim(p_phase)) NOT IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled') THEN
+        RAISE EXCEPTION 'unsupported phase: %', p_phase;
+    END IF;
+    IF p_expires_at IS NULL THEN
+        RAISE EXCEPTION 'expires_at must not be null';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.schema_jobs
+        WHERE job_name = btrim(p_job_name)
+    ) THEN
+        RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+
+    INSERT INTO companion_internal.worker_schema_lease(
+        worker_id, job_name, schema_version_id, phase, expires_at, updated_at
+    )
+    VALUES (
+        btrim(p_worker_id),
+        btrim(p_job_name),
+        btrim(p_schema_version_id),
+        lower(btrim(p_phase)),
+        p_expires_at,
+        now()
+    )
+    ON CONFLICT (worker_id, job_name) DO UPDATE
+    SET schema_version_id = EXCLUDED.schema_version_id,
+        phase = EXCLUDED.phase,
+        expires_at = EXCLUDED.expires_at,
+        updated_at = now();
+END;
+$$;
+
+CREATE FUNCTION companion_internal.worker_schema_lease_revoke(
+    p_worker_id text,
+    p_job_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+BEGIN
+    IF p_worker_id IS NULL OR btrim(p_worker_id) = '' THEN
+        RAISE EXCEPTION 'worker_id must not be empty';
+    END IF;
+    IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
+        RAISE EXCEPTION 'job_name must not be empty';
+    END IF;
+
+    DELETE FROM companion_internal.worker_schema_lease
+    WHERE worker_id = btrim(p_worker_id)
+      AND job_name = btrim(p_job_name);
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_rollback_to(
+    p_target_state text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    normalized text;
+BEGIN
+    normalized := lower(btrim(p_target_state));
+    IF normalized NOT IN ('delete_only', 'write_only', 'backfill', 'public', 'paused', 'canceled') THEN
+        RAISE EXCEPTION 'unsupported rollback target: %', p_target_state;
+    END IF;
+    RETURN normalized;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_cleanup_backfill(
+    p_table text,
+    p_column text
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    qualified regclass;
+    rows_cleaned bigint := 0;
+    stmt text;
+BEGIN
+    IF p_table IS NULL OR btrim(p_table) = '' THEN
+        RAISE EXCEPTION 'table must not be empty';
+    END IF;
+    IF p_column IS NULL OR btrim(p_column) = '' THEN
+        RAISE EXCEPTION 'column must not be empty';
+    END IF;
+    qualified := btrim(p_table)::regclass;
+    stmt := format('UPDATE %s SET %I = NULL WHERE %I IS NOT NULL', qualified, btrim(p_column), btrim(p_column));
+    EXECUTE stmt;
+    GET DIAGNOSTICS rows_cleaned = ROW_COUNT;
+    RETURN rows_cleaned;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.schema_job_drop_added_column(
+    p_table text,
+    p_column text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    qualified regclass;
+BEGIN
+    IF p_table IS NULL OR btrim(p_table) = '' THEN
+        RAISE EXCEPTION 'table must not be empty';
+    END IF;
+    IF p_column IS NULL OR btrim(p_column) = '' THEN
+        RAISE EXCEPTION 'column must not be empty';
+    END IF;
+    qualified := btrim(p_table)::regclass;
+    EXECUTE format('ALTER TABLE %s DROP COLUMN IF EXISTS %I', qualified, btrim(p_column));
+END;
+$$;
+
+CREATE FUNCTION companion_internal.raise_cluster_alarm(
+    p_alarm_kind text,
+    p_severity text,
+    p_job_name text,
+    p_detail jsonb
+)
+RETURNS bigint
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    inserted_alarm_id bigint;
+BEGIN
+    IF p_alarm_kind IS NULL OR btrim(p_alarm_kind) = '' THEN
+        RAISE EXCEPTION 'alarm_kind must not be empty';
+    END IF;
+    IF lower(btrim(p_severity)) NOT IN ('info', 'warning', 'critical') THEN
+        RAISE EXCEPTION 'unsupported severity: %', p_severity;
+    END IF;
+
+    INSERT INTO companion_internal.cluster_alarms(
+        alarm_kind, severity, job_name, detail
+    )
+    VALUES (
+        btrim(p_alarm_kind),
+        lower(btrim(p_severity)),
+        NULLIF(btrim(COALESCE(p_job_name, '')), ''),
+        COALESCE(p_detail, '{}'::jsonb)
+    )
+    RETURNING cluster_alarms.alarm_id INTO inserted_alarm_id;
+
+    RETURN inserted_alarm_id;
+END;
+$$;
+
+-- Returns a JSON report of the F1 two-version invariant. The companion sets
+-- a cluster_alarms row when more than two distinct active schema versions are
+-- observed in flight. Continuous monitor calls this via pg_cron.
+CREATE FUNCTION companion_internal.verify_two_version_invariant()
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    job_summary jsonb;
+    violators jsonb;
+    violation_count integer;
+    inflight_versions integer;
+BEGIN
+    SELECT count(DISTINCT schema_version_id)
+    INTO inflight_versions
+    FROM companion_internal.worker_schema_lease
+    WHERE expires_at > now()
+      AND phase IN ('delete_only', 'write_only', 'backfill', 'public');
+
+    SELECT COALESCE(jsonb_agg(row_to_json(t)), '[]'::jsonb)
+    INTO violators
+    FROM (
+        SELECT job_name, count(DISTINCT schema_version_id) AS distinct_versions
+        FROM companion_internal.worker_schema_lease
+        WHERE expires_at > now()
+          AND phase IN ('delete_only', 'write_only', 'backfill', 'public')
+        GROUP BY job_name
+        HAVING count(DISTINCT schema_version_id) > 2
+    ) AS t;
+
+    violation_count := jsonb_array_length(violators);
+
+    job_summary := jsonb_build_object(
+        'checked_at', now(),
+        'inflight_versions', inflight_versions,
+        'violations', violators,
+        'violation_count', violation_count,
+        'invariant_max_versions', 2
+    );
+
+    IF violation_count > 0 THEN
+        PERFORM companion_internal.raise_cluster_alarm(
+            'two_version_invariant_violation',
+            'critical',
+            NULL,
+            job_summary
+        );
+    END IF;
+
+    RETURN job_summary;
+END;
+$$;
+
+CREATE VIEW companion_two_version_invariant_state AS
+SELECT
+    job_name,
+    count(DISTINCT schema_version_id) AS distinct_versions,
+    array_agg(DISTINCT schema_version_id ORDER BY schema_version_id) AS schema_versions,
+    max(expires_at) AS latest_lease_expiry
+FROM companion_internal.worker_schema_lease
+WHERE expires_at > now()
+GROUP BY job_name;

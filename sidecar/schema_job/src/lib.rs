@@ -3,6 +3,13 @@
 // FEATURE: C10
 // FEATURE: M2
 
+pub mod controller;
+
+pub use controller::{
+    tick, worker_status_snapshot, ControllerError, ControllerTickDecision, ControllerTickInput,
+    ControllerTickReport, WorkerStatusSnapshot,
+};
+
 use ai_blaise_citus_companion::{SchemaJobError, SchemaJobPlan, SchemaJobState};
 use std::error::Error;
 use std::fmt;
