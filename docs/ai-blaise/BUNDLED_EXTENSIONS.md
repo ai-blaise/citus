@@ -95,13 +95,13 @@ the operator deploys.
 
 | PG major | Status                | Coverage                                                                                                                          |
 | -------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 16       | SQL smoke covered     | The companion SQL extension smoke runs against stock PG16 on every PR; Bundle1 binary/source manifest rows remain PG17-centered unless their package/build evidence names PG16. |
 | 17       | default               | All required and optional manifest entries target PG17; `pg_versions` column lists `17` for every active row.                     |
 | 18       | alpha (T6 forward)    | Core extensions and PGDG-stable required extensions (citus, timescaledb, postgis, pgvector, pg_cron, pg_partman, pgaudit, pgauditlogtofile, pg_uuidv7, pg_repack, pg_hint_plan, hypopg, pg_qualstats, pg_stat_kcache, pg_wait_sampling, pg_walinspect) are flagged `17,18`. Source-built and lagging binary-packaged extensions stay `17` until their PG18 build path is verified. |
-| 16       | suppressed (flake)    | Re-enable once the `background_rebalance_parallel_reference_tables` upstream flake fix lands.                                     |
 
 `ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL extension against
-the PG17 and PG18 base images on every PR. PG18 additionally exercises the
-new `io_method` GUC (default `worker`, override with
+the PG16, PG17, and PG18 base images on every PR. PG18 additionally exercises
+the new `io_method` GUC (default `worker`, override with
 `SQL_EXTENSION_SMOKE_IO_METHOD=io_uring` on kernels with io_uring enabled) to
 confirm Citus and the bundled SQL surface come up cleanly under PG18.
 

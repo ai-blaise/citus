@@ -3,11 +3,9 @@ set -euo pipefail
 
 # Smoke matrix: ai_blaise_citus companion SQL extension across the PostgreSQL
 # major versions ai-blaise/citus supports. The same SQL surface must come up
-# against PG17 and PG18 operand bases. PG18 adds `io_method` as a configured
-# GUC; this harness asserts it accepts the contract value without breaking
-# Citus or any bundled extension. PG16 stays out of the matrix until the
-# upstream `background_rebalance_parallel_reference_tables` flake fix lands
-# (tracked alongside the PG-version coverage in the smoke runbook).
+# against PG16, PG17, and PG18 operand bases. PG18 adds `io_method` as a
+# configured GUC; this harness asserts it accepts the contract value without
+# breaking Citus or any bundled extension.
 
 repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
@@ -15,13 +13,11 @@ control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
 require_docker="${REQUIRE_DOCKER:-0}"
 
-# PG_MAJOR matrix is explicit: PG17 (current operand default) plus PG18
-# (forward target for T6 io_method). Override with SQL_EXTENSION_SMOKE_PG_MAJORS
+# PG_MAJOR matrix is explicit: PG16 and PG17 production operands plus PG18
+# forward coverage for T6 io_method. Override with SQL_EXTENSION_SMOKE_PG_MAJORS
 # (whitespace-separated) for local repro, e.g.
 #   SQL_EXTENSION_SMOKE_PG_MAJORS=18 bash ci/ai-blaise/sql-extension-smoke.sh
-# TODO: re-enable 16 once the
-# `background_rebalance_parallel_reference_tables` upstream flake fix merges.
-pg_majors_default="17 18"
+pg_majors_default="16 17 18"
 read -r -a pg_majors <<<"${SQL_EXTENSION_SMOKE_PG_MAJORS:-${pg_majors_default}}"
 
 # PG18 ships io_method as a real GUC. Default to the safe `worker` value (also
