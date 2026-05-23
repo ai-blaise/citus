@@ -217,6 +217,7 @@ name = "ai_blaise_citus_sidecar_txn_status"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_hlc",
+ "ai_blaise_citus_sidecar_raft",
  "ai_blaise_citus_sidecar_shared",
 ]
 

@@ -404,6 +404,17 @@ more production-ready than the artifacts justified.
   evidence for JSON-RPC language-server protocol integration, editor
   transport, workspace indexing, automatic file rewrites, or full PostgreSQL
   grammar coverage.
+- The Raft/HLC/transaction-status triad now has executable sidecar runtime
+  evidence: `sidecar-raft-smoke.sh` proves deterministic election,
+  AppendEntries replication, quorum commit, durable log replay, and snapshot
+  watermarking; HLC runtime canonical output proves peer clock exchange and
+  closed-timestamp derivation; `parallel-commits-smoke.sh` proves staging,
+  finalize, and modeled fast-path step count; and `sql-extension-smoke.sh`
+  installs `companion.txn_stage`/`companion.txn_finalize` into real PostgreSQL.
+  S5, S9, MR6, and T5 remain alpha for the broader distributed-database
+  behavior until networked multi-process Raft, MVCC follower-read execution,
+  PostgreSQL-core patch integration, Citus executor integration, and Kubernetes
+  operator reconciliation are live-gated.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a
@@ -548,9 +559,9 @@ feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 143 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
-plan-builder, MCP4, and sidecar runtime entries, plus the backup, CDC,
-realtime, auth sidecar, and vectorizer runtime entries merged in this release
-train dry-run.
+plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, and sidecar
+runtime entries, plus the backup, CDC, realtime, auth sidecar, and vectorizer
+runtime entries merged in this release train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,

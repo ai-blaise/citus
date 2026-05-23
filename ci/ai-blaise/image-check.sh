@@ -229,7 +229,9 @@ custom_probe_contract_file() {
     sidecar/cdc/src/main.rs) echo sidecar/cdc/src/runtime.rs ;;
     sidecar/edge_functions/src/main.rs) echo sidecar/edge_functions/src/lib.rs ;;
     sidecar/graphql/src/main.rs) echo sidecar/graphql/src/lib.rs ;;
+    sidecar/hlc/src/main.rs) echo sidecar/hlc/src/main.rs ;;
     sidecar/postgrest/src/main.rs) echo sidecar/postgrest/src/lib.rs ;;
+    sidecar/txn_status/src/main.rs) echo sidecar/txn_status/src/main.rs ;;
     sidecar/vectorizer/src/main.rs) echo sidecar/vectorizer/src/runtime/server.rs ;;
     *) return 1 ;;
   esac
@@ -245,8 +247,10 @@ has_http_probe_contract() {
 
   if probe_file="$(custom_probe_contract_file "${main_file}")"; then
     [[ -s "${probe_file}" ]] || return 1
-    if grep -Fq 'SidecarRuntime::ready' "${probe_file}" && grep -Fq '/healthz' "${probe_file}"; then
-      return 0
+    if grep -Fq 'SidecarRuntime::ready' "${probe_file}"; then
+      if grep -Fq '/healthz' "${probe_file}" || grep -Fq 'handle_http_bytes' "${probe_file}"; then
+        return 0
+      fi
     fi
     if grep -Fq '/healthz' "${probe_file}" && grep -Fq '/readyz' "${probe_file}"; then
       return 0

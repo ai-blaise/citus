@@ -2,6 +2,13 @@
 
 // FEATURE: S9
 
+pub mod runtime;
+
+pub use runtime::{
+    canonical_hlc_runtime_report, render_closed_ts_json, HlcRuntime, HlcRuntimeError,
+    HlcRuntimeReport, PeerClockExchange,
+};
+
 use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt;
