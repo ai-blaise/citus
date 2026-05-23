@@ -232,7 +232,16 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
   else
-    grep -Fq 'run_probe_server' "${main_file}"
+    if grep -Fq 'run_probe_server' "${main_file}"; then
+      :
+    else
+      runtime_file="${main_file%/main.rs}/runtime.rs"
+      grep -Fq 'SidecarRuntime' "${runtime_file}"
+      grep -Fq 'route("/healthz"' "${runtime_file}"
+      grep -Fq 'route("/readyz"' "${runtime_file}"
+      grep -Fq 'route("/metrics"' "${runtime_file}"
+      grep -Fq 'route("/drain"' "${runtime_file}"
+    fi
   fi
 done
 

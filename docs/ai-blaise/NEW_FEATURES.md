@@ -2484,16 +2484,34 @@ tooling.
 ### B1: Backup Sidecar
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines schedule and archive URI contracts for the backup sidecar,
-plus runnable canonical backup/PITR emitters for plan and execution state.
+**Summary**: Runs a WAL-G-backed backup HTTP runtime with command execution,
+base-backup listing/status, scheduled backup cycles, retention pruning,
+health/readiness, and Prometheus metrics.
 
-**Motivation**: Backup execution needs a sidecar contract that matches the
-operator CRD before WAL archive implementation begins.
+Production evidence: `ci/ai-blaise/sidecar-backup-smoke.sh` builds the real
+`ai_blaise_citus_sidecar_backup` binary on the VM/CI runner, starts `serve`
+with deterministic local `wal-g`, `pg_ctl`, and `psql` fakes, then exercises
+`/readyz`, `/metrics`, `/backups/run`, `/backups/status`, `/backups`,
+`/backups/delete-old`, `/wal/status`, `/pitr/restore`, `/pitr/status/<job>`,
+and `/branches/queryable`. Unit tests cover the WAL-G command builder,
+non-zero exit propagation, retention validation, schedule calculation, HTTP
+body parsing, scheduler due-run behavior, and branch read-only config
+materialization. This proves the sidecar runtime and process-orchestration
+contract without requiring a live cloud bucket.
+
+**Current boundary**: This production-ready claim is intentionally narrow: it
+covers the sidecar process, command orchestration, HTTP API, scheduler,
+retention, and metrics paths. It does not prove a cloud object-store account,
+external secret wiring, Backup CR reconciliation, or a full Kubernetes restore
+against a real WAL-G archive.
+
+**Motivation**: Backup execution needs a sidecar runtime that matches the
+operator CRD and fails through auditable command/status surfaces.
 
 **Citus comparison**: Vanilla Citus delegates backup sidecars to deployment
 tooling.
@@ -2505,6 +2523,8 @@ tooling.
 - In-source: `FEATURE: B1` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- serve`
+- CI: `ci/ai-blaise/sidecar-backup-smoke.sh`
 
 ### B2: Backup CRD
 
@@ -2531,16 +2551,30 @@ declarative schedule.
 ### B3: PITR Restore
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`, `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds point-in-time restore target binding to the backup/restore
-sidecar contract.
+**Summary**: Validates PITR target windows, invokes `wal-g backup-fetch`,
+records restore jobs, and exposes restore status through the backup sidecar
+HTTP runtime.
 
-**Motivation**: PITR restore needs explicit target validation before `citusctl`
-and sidecar code execute recovery.
+Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` covers
+PITR plan validation, wrong-archive rejection before WAL-G invocation,
+out-of-window target rejection, success/failure job recording, and HTTP
+`/pitr/restore` plus `/pitr/status/<job>` behavior. The backup smoke then
+starts the real binary and proves both an out-of-window restore failure and an
+in-window restore success through the sidecar HTTP API using a deterministic
+safe WAL-G fake.
+
+**Current boundary**: The production-ready claim covers sidecar PITR
+orchestration and status reporting. It does not claim that a real production
+archive, cloud credential, in-place restore, or operator-driven target-cluster
+rollout has been live-exercised.
+
+**Motivation**: PITR restore needs explicit target validation before sidecar
+code executes recovery.
 
 **Citus comparison**: Vanilla Citus does not ship PITR restore orchestration.
 
@@ -2555,13 +2589,27 @@ and sidecar code execute recovery.
 ### B4: Backup-As-Data-Source
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/backup`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries a queryable branch name for read-only branch creation from
-backup archives.
+**Summary**: Restores a backup into a named branch directory, writes
+PostgreSQL recovery configuration, starts the branch with `pg_ctl`, probes
+`default_transaction_read_only`, and exposes branch creation/listing through
+`/branches/queryable`.
+
+Production evidence: unit tests cover recovery file generation,
+`postgresql.auto.conf` read-only settings, `pg_ctl` command construction,
+`psql` read-only probe construction, duplicate branch rejection, and HTTP
+create/list behavior. The backup smoke exercises the real binary end to end
+with local `wal-g`, `pg_ctl`, and `psql` fakes and verifies that a branch is
+created, listed, and rejected on duplicate creation.
+
+**Current boundary**: The production-ready claim covers the sidecar branch
+mount boundary and read-only enforcement probe. It does not prove long-running
+query load, operator lifecycle management, or a restore from a real remote
+archive.
 
 **Motivation**: Time-travel and investigation workflows need backup archives
 to become explicit read-only data sources.
@@ -2600,13 +2648,26 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 ### B6: Encrypted Backups
 
 **Overlay**: `operator/src/crds/backup.rs`, `sidecar/backup`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds a KMS key reference to backup policy so encrypted archives
-are part of the reconciled contract.
+**Summary**: Validates the backup encryption contract and materializes the
+sidecar WAL-G encryption environment with `WALG_GPG_KEY_ID` before accepting
+encrypted backup work.
+
+Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` verifies
+that encrypted plans render `WALG_GPG_KEY_ID`, reject missing encryption
+environment, and keep encrypted-artifact accounting in the runtime report. The
+backup smoke runs the real binary with the canonical encrypted plan and proves
+base backup execution, status, PITR, retention, and queryable branch paths
+preserve the encrypted runtime state.
+
+**Current boundary**: The production-ready claim covers sidecar environment
+validation and encrypted backup orchestration. It does not prove hardware KMS,
+External Secrets, cloud IAM, key rotation, or a Backup CR reconciler applying
+secrets into Kubernetes pods.
 
 **Motivation**: Backup encryption must be configured with the schedule, not
 attached later by an external script.
