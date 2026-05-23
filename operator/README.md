@@ -42,3 +42,12 @@ time-range shard pruning.
 canonical V2 operator surface and emits a deterministic TSV summary covering
 `CitusCluster`, `ShardGroup`, `Hypertable`, the hypertable apply plan, and the
 operator catalog CRDs.
+
+`cargo run -p ai_blaise_citus_operator -- run-controller-boundary` renders the
+typed controller execution boundary. The default mode is `dry-run`: specs are
+validated and plans are rendered, while Kubernetes apply, direct SQL execution,
+and `.status` mutation are emitted as `AlphaNotImplemented` conditions. Setting
+`AI_BLAISE_OPERATOR_EXECUTION_MODE=apply` fails closed until those mutating
+paths have real runners, RBAC/status-subresource support, idempotency, and live
+evidence. `ci/ai-blaise/operator-boundary-smoke.sh` locks the dry-run TSV and
+the apply-mode failure.

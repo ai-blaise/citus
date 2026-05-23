@@ -8,7 +8,11 @@
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
 Implemented CRD surface from the V2 plan. `operator/src/main.rs` validates the
-canonical catalog and emits the CI-gated `run-canonical` TSV summary.
+canonical catalog and emits the CI-gated `run-canonical` TSV summary. The
+controller boundary runner also emits typed Conditions for the alpha mutation
+edge: direct SQL execution and `.status` updates remain non-executable unless a
+separate implementation moves them out of `AlphaNotImplemented` and updates the
+smoke expectations.
 
 - `CitusCluster` (`FEATURE: S4`, canonical Rust spec implemented)
 - `ShardGroup` (`FEATURE: S2`, canonical Rust spec implemented)

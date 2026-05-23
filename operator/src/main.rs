@@ -30,6 +30,10 @@
 // FEATURE: WH1
 
 use ai_blaise_citus_operator::controllers;
+use ai_blaise_citus_operator::controllers::boundary::{
+    execution_mode_from_env, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    ExecutionMode,
+};
 use ai_blaise_citus_operator::{
     BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
     BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
@@ -68,6 +72,7 @@ fn main() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
+        [command] if command == "run-controller-boundary" => run_controller_boundary(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -104,7 +109,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-controller-boundary]");
 }
 
 fn run_reconcile_plans() {
@@ -134,6 +139,18 @@ fn run_reconcile_plans() {
 /// tokio runtime drives every kube-rs controller concurrently. The probe
 /// server is the readiness signal the operator deployment uses; the
 /// controllers reconcile CRDs against the live API server.
+fn run_controller_boundary() {
+    let plans = canonical_controller_boundary_plans().unwrap_or_else(|error| {
+        eprintln!("operator: controller boundary execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!("{}", ControllerBoundaryPlan::render_tsv_header());
+    for plan in plans {
+        println!("{}", plan.render_tsv());
+    }
+}
+
 fn run_serve(component: &'static str, default_addr: &'static str) {
     let component_owned = component.to_string();
     let default_owned = default_addr.to_string();
@@ -290,6 +307,97 @@ fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Er
         shard_replication_factor: shard_plan.replication_factor,
         shard_hard_constraint: shard_plan.has_hard_constraint(),
     })
+}
+
+fn canonical_controller_boundary_plans() -> Result<Vec<ControllerBoundaryPlan>, Box<dyn Error>> {
+    canonical_controller_boundary_plans_for_mode(execution_mode_from_env()?)
+}
+
+fn canonical_controller_boundary_plans_for_mode(
+    mode: ExecutionMode,
+) -> Result<Vec<ControllerBoundaryPlan>, Box<dyn Error>> {
+    let default_requeue = std::time::Duration::from_secs(30);
+
+    let cluster_spec = canonical_cluster_spec();
+    let cluster_plan = CitusClusterReconcilePlan::from_spec("ai-blaise-citus", &cluster_spec)?;
+
+    let hypertable_spec = canonical_hypertable_spec();
+    let hypertable_plan = HypertableReconcilePlan::try_from(&hypertable_spec)?;
+    let _hypertable_apply_plan = hypertable_plan.apply_plan();
+
+    let migration_spec = canonical_migration_spec();
+    migration_spec.validate()?;
+
+    let tenant_spec = canonical_tenant_spec();
+    tenant_spec.validate()?;
+
+    Ok(vec![
+        ControllerBoundaryPlan::try_new(
+            "CitusCluster",
+            &cluster_plan.cluster_name,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_citus_cluster_plan"),
+                BoundaryOperation::alpha(
+                    "apply_citus_cluster_children",
+                    BoundaryOperationKind::KubernetesApply,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_citus_cluster_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Hypertable",
+            &hypertable_spec.table,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_hypertable_apply_plan"),
+                BoundaryOperation::alpha(
+                    "execute_hypertable_sql",
+                    BoundaryOperationKind::DirectSql,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_hypertable_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Migration",
+            "users-display-name",
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_migration_state_transition"),
+                BoundaryOperation::alpha(
+                    "invoke_schema_job_sidecar",
+                    BoundaryOperationKind::KubernetesApply,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_migration_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Tenant",
+            &tenant_spec.name,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_tenant_plan"),
+                BoundaryOperation::alpha("execute_tenant_sql", BoundaryOperationKind::DirectSql),
+                BoundaryOperation::alpha(
+                    "patch_tenant_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+    ])
 }
 
 fn canonical_cluster_spec() -> CitusClusterSpec {
@@ -599,5 +707,35 @@ mod tests {
                 shard_hard_constraint: true,
             }
         );
+    }
+
+    #[test]
+    fn canonical_controller_boundary_report_is_deterministic_dry_run() {
+        let plans = canonical_controller_boundary_plans_for_mode(ExecutionMode::DryRun)
+            .expect("canonical controller boundary plans");
+        let rows = plans
+            .iter()
+            .map(ControllerBoundaryPlan::render_tsv)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rows,
+            vec![
+                "CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Migration	users-display-name	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Tenant	tenant-a	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn canonical_controller_boundary_fails_closed_in_apply_mode() {
+        let error = canonical_controller_boundary_plans_for_mode(ExecutionMode::Apply)
+            .expect_err("apply mode must reject alpha operations")
+            .to_string();
+
+        assert!(error.contains("apply mode blocked"));
+        assert!(error.contains("apply_citus_cluster_children"));
     }
 }

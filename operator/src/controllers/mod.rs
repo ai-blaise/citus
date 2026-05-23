@@ -7,11 +7,13 @@
 //! `controllers::serve_all(client)` spawns every controller on the supplied
 //! tokio runtime and returns once any controller exits.
 
+pub mod boundary;
 pub mod citus_cluster;
 pub mod hypertable;
 pub mod migration;
 pub mod tenant;
 
+use boundary::{execution_mode_from_env, BoundaryError, ExecutionMode};
 use kube::Client;
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,14 +25,16 @@ use tracing::{info, warn};
 pub struct Context {
     pub client: Client,
     pub default_requeue: Duration,
+    pub execution_mode: ExecutionMode,
 }
 
 impl Context {
-    pub fn new(client: Client) -> Arc<Self> {
-        Arc::new(Self {
+    pub fn new(client: Client) -> Result<Arc<Self>, ControllerError> {
+        Ok(Arc::new(Self {
             client,
             default_requeue: Duration::from_secs(30),
-        })
+            execution_mode: execution_mode_from_env()?,
+        }))
     }
 }
 
@@ -43,14 +47,19 @@ pub enum ControllerError {
     Companion(String),
     #[error("invalid spec: {0}")]
     InvalidSpec(String),
+    #[error("controller boundary error: {0}")]
+    Boundary(#[from] BoundaryError),
 }
 
 /// Spawn each catalog controller concurrently. Returns when any controller's
 /// future exits (kube `Controller::run` is itself infinite under normal
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
-    let ctx = Context::new(client);
-    info!("operator serving CitusCluster, Migration, Tenant, Hypertable controllers");
+    let ctx = Context::new(client)?;
+    info!(
+        mode = ctx.execution_mode.as_str(),
+        "operator serving CitusCluster, Migration, Tenant, Hypertable controllers"
+    );
 
     let cluster = tokio::spawn(citus_cluster::run(ctx.clone()));
     let migration = tokio::spawn(migration::run(ctx.clone()));

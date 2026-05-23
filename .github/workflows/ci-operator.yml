@@ -21,3 +21,5 @@ jobs:
         run: cargo test -p ai_blaise_citus_operator
       - name: Run canonical operator contract
         run: cargo run -q -p ai_blaise_citus_operator -- run-canonical
+      - name: Run controller boundary smoke
+        run: bash ci/ai-blaise/operator-boundary-smoke.sh

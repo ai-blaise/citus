@@ -3,7 +3,12 @@
 //! Runs each `MigrationSpec` through the gh-ost-style state machine defined in
 //! [`crate::crds::migration::state_machine`].
 
-use super::{Context, ControllerError};
+use super::{
+    boundary::{
+        retry_class_for_error, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    },
+    Context, ControllerError,
+};
 use crate::crds::migration::{
     state_machine::{transition, PhaseEvidence},
     MigrationConflictAction, MigrationPhase, MigrationSpec, MigrationType,
@@ -106,6 +111,11 @@ async fn reconcile(
     migration: Arc<Migration>,
     ctx: Arc<Context>,
 ) -> Result<Action, ControllerError> {
+    let resource_name = migration
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| "<unnamed>".to_string());
     let authoritative = migration.spec.to_authoritative();
     authoritative
         .validate()
@@ -114,11 +124,29 @@ async fn reconcile(
     let current_phase = current_phase(&migration.status);
     let next = transition(current_phase, &evidence)
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let boundary = ControllerBoundaryPlan::try_new(
+        "Migration",
+        &resource_name,
+        ctx.execution_mode,
+        vec![
+            BoundaryOperation::render_plan("render_migration_state_transition"),
+            BoundaryOperation::alpha(
+                "invoke_schema_job_sidecar",
+                BoundaryOperationKind::KubernetesApply,
+            ),
+            BoundaryOperation::alpha(
+                "patch_migration_status",
+                BoundaryOperationKind::StatusMutation,
+            ),
+        ],
+        ctx.default_requeue,
+    )?;
     info!(
-        migration = ?migration.metadata.name,
+        migration = %resource_name,
         from = ?current_phase,
         to = ?next,
-        "Migration state machine advanced"
+        boundary = %boundary.render_tsv(),
+        "Migration state machine reconciled in bounded dry-run/apply contract"
     );
     Ok(Action::requeue(ctx.default_requeue))
 }
@@ -134,6 +162,11 @@ fn current_phase(status: &Option<MigrationStatus>) -> MigrationPhase {
 }
 
 fn error_policy(_migration: Arc<Migration>, error: &ControllerError, ctx: Arc<Context>) -> Action {
-    error!(?error, "Migration controller backoff");
-    Action::requeue(ctx.default_requeue)
+    let retry_class = retry_class_for_error(error);
+    error!(
+        ?error,
+        retry_class = retry_class.as_str(),
+        "Migration controller classified reconcile error"
+    );
+    retry_class.action(ctx.default_requeue)
 }
