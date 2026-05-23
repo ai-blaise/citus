@@ -31,18 +31,20 @@
 
 use ai_blaise_citus_operator::controllers;
 use ai_blaise_citus_operator::{
-    BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
-    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
-    CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec, ConflictResolution,
-    ContinuousAggregateSpec, EmbeddingProvider, FederationConnection, FederationSpec,
-    FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger,
-    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
-    PlacementPolicy, PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
-    ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexSpec, SearchScorer,
-    ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType,
-    SidecarSpec, SidecarType, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec,
-    UnsatisfiablePlacementAction, VectorDestinationSpec, VectorizerScheduleMode,
-    VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent, WebhookRetryPolicy, WebhookSpec,
+    BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec, BackupTarget, BranchSpec,
+    BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
+    CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec,
+    ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
+    FederationSpec, FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec,
+    FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationConflictAction,
+    MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec,
+    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackSpec, SearchColumnKind,
+    SearchColumnSpec, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
+    SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType,
+    SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
+    TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
+    VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
+    WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -68,6 +70,7 @@ fn main() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
+        [command] if command == "run-reconcilers-batch-a" => run_reconcilers_batch_a(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -104,7 +107,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a]");
 }
 
 fn run_reconcile_plans() {
@@ -127,6 +130,29 @@ fn run_reconcile_plans() {
         report.shard_topology_constraints,
         report.shard_replication_factor,
         report.shard_hard_constraint,
+    );
+}
+
+fn run_reconcilers_batch_a() {
+    let report = canonical_reconcilers_batch_a_report().unwrap_or_else(|error| {
+        eprintln!("operator: reconcilers batch A execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "tenant_apply_steps\ttenant_sql_steps\tregion_apply_steps\tregion_sql_steps\tsurvival_goal_apply_steps\tbackup_apply_steps\tbackup_status_endpoints\tsurvival_topology_key\tbackup_archive_scheme"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.tenant_apply_steps,
+        report.tenant_sql_steps,
+        report.region_apply_steps,
+        report.region_sql_steps,
+        report.survival_goal_apply_steps,
+        report.backup_apply_steps,
+        report.backup_status_endpoints,
+        report.survival_topology_key,
+        report.backup_archive_scheme,
     );
 }
 
@@ -271,6 +297,19 @@ struct ReconcilePlansReport {
     shard_hard_constraint: bool,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilersBatchAReport {
+    tenant_apply_steps: usize,
+    tenant_sql_steps: usize,
+    region_apply_steps: usize,
+    region_sql_steps: usize,
+    survival_goal_apply_steps: usize,
+    backup_apply_steps: usize,
+    backup_status_endpoints: usize,
+    survival_topology_key: String,
+    backup_archive_scheme: String,
+}
+
 fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Error>> {
     let cluster_spec = canonical_cluster_spec();
     let cluster_plan = CitusClusterReconcilePlan::from_spec("ai-blaise-citus", &cluster_spec)?;
@@ -289,6 +328,40 @@ fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Er
         shard_topology_constraints: shard_plan.topology_constraint_count(),
         shard_replication_factor: shard_plan.replication_factor,
         shard_hard_constraint: shard_plan.has_hard_constraint(),
+    })
+}
+
+fn canonical_reconcilers_batch_a_report() -> Result<ReconcilersBatchAReport, Box<dyn Error>> {
+    let tenant_spec = canonical_tenant_spec();
+    let tenant_plan = TenantReconcilePlan::try_from(&tenant_spec)?;
+
+    let region_spec = canonical_region_spec();
+    let region_plan = RegionReconcilePlan::try_from(&region_spec)?;
+
+    let survival_goal_spec = canonical_survival_goal_spec();
+    let survival_goal_plan = SurvivalGoalReconcilePlan::new(
+        &survival_goal_spec,
+        &canonical_shard_group_specs_for_survival_goal(),
+        &canonical_region_specs_for_survival_goal(),
+    )?;
+
+    let backup_spec = canonical_backup_spec();
+    let backup_plan = BackupReconcilePlan::from_resource_name("nightly", &backup_spec)?;
+    let backup_archive_scheme = backup_plan
+        .archive_uri
+        .split_once("://")
+        .map_or_else(String::new, |(scheme, _)| scheme.to_string());
+
+    Ok(ReconcilersBatchAReport {
+        tenant_apply_steps: tenant_plan.steps.len(),
+        tenant_sql_steps: tenant_plan.sql_step_count(),
+        region_apply_steps: region_plan.steps.len(),
+        region_sql_steps: region_plan.sql_step_count(),
+        survival_goal_apply_steps: survival_goal_plan.steps.len(),
+        backup_apply_steps: backup_plan.steps.len(),
+        backup_status_endpoints: backup_plan.status_endpoints().len(),
+        survival_topology_key: survival_goal_plan.required_topology_key().to_string(),
+        backup_archive_scheme,
     })
 }
 
@@ -335,6 +408,38 @@ fn canonical_shard_group_spec() -> ShardGroupSpec {
             when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
         }],
     }
+}
+
+fn canonical_shard_group_specs_for_survival_goal() -> Vec<ShardGroupSpec> {
+    vec![ShardGroupSpec {
+        parent_table: "public.metrics".to_string(),
+        distribution_column: "tenant_id".to_string(),
+        num_shards: 32,
+        colocation_group: Some("metrics".to_string()),
+        replication_factor: 3,
+        placement_policy: vec![PlacementPolicy {
+            topology_key: "topology.kubernetes.io/region".to_string(),
+            max_skew: 1,
+            when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
+        }],
+    }]
+}
+
+fn canonical_region_specs_for_survival_goal() -> Vec<RegionSpec> {
+    vec![
+        RegionSpec {
+            name: "us-east-1".to_string(),
+            kubernetes_zone: "us-east-1a".to_string(),
+            tablespace_name: "ts_us_east_1".to_string(),
+            leader_pinned: true,
+        },
+        RegionSpec {
+            name: "us-west-2".to_string(),
+            kubernetes_zone: "us-west-2a".to_string(),
+            tablespace_name: "ts_us_west_2".to_string(),
+            leader_pinned: false,
+        },
+    ]
 }
 
 fn canonical_hypertable_spec() -> HypertableSpec {
@@ -577,6 +682,26 @@ mod tests {
                 webhook_events: 2,
                 search_columns: 2,
                 sidecar_replicas: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_reconcilers_batch_a_report_covers_tenant_region_survival_and_backup() {
+        let report = canonical_reconcilers_batch_a_report().expect("canonical batch A report");
+
+        assert_eq!(
+            report,
+            ReconcilersBatchAReport {
+                tenant_apply_steps: 5,
+                tenant_sql_steps: 3,
+                region_apply_steps: 4,
+                region_sql_steps: 2,
+                survival_goal_apply_steps: 4,
+                backup_apply_steps: 4,
+                backup_status_endpoints: 2,
+                survival_topology_key: "topology.kubernetes.io/region".to_string(),
+                backup_archive_scheme: "s3".to_string(),
             }
         );
     }

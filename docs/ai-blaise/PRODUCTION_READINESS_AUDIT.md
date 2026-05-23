@@ -562,13 +562,14 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 275 source `FEATURE:` markers and 275
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 143 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 152 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
-plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, and sidecar
-runtime entries, plus the backup, CDC, realtime, auth sidecar, and vectorizer
-runtime entries merged in this release train dry-run.
+plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, Reconcilers
+Batch A operator plan builders, and sidecar runtime entries, plus the backup,
+CDC, realtime, auth sidecar, and vectorizer runtime entries merged in this
+release train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -577,12 +578,12 @@ covers PITR target window validation, `wal-g backup-fetch` orchestration,
 restore job tracking, and `/pitr/restore` plus `/pitr/status/<job>`; `B4`
 covers queryable branch restore, recovery/read-only PostgreSQL config
 generation, `pg_ctl` start, `psql` read-only probing, and branch create/list
-endpoints; `B6` covers sidecar encryption environment validation and canonical
-`WALG_GPG_KEY_ID` materialization for encrypted backup work. Their proof is
-`cargo test -p ai_blaise_citus_sidecar_backup` plus
-`ci/ai-blaise/sidecar-backup-smoke.sh`, which starts the real binary with safe
-deterministic local `wal-g`, `pg_ctl`, and `psql` fakes and drives the HTTP
-surface end to end.
+endpoints; `B6` covers sidecar encryption environment validation, canonical
+`WALG_GPG_KEY_ID` materialization, and deterministic Backup CR KMS-binding plan
+construction. Their proof is sidecar backup tests/smoke plus Reconcilers Batch
+A operator tests/smoke; hardware KMS, External Secrets, cloud IAM, key
+rotation, Kubernetes child-resource application, and encrypted object-store
+archives with real WAL-G credentials remain alpha.
 
 Auth sidecar production evidence is intentionally scoped to the local HS256
 issuer/verifier, refresh-token session map, JTI revocation, auth-service
@@ -591,6 +592,13 @@ introspection cache, TOTP-backed login path, and schema smoke proven by
 exchange, key rotation, persistent runtime loading from the auth schema,
 WebAuthn ceremonies, pool data-plane authentication, and pool-side token cache
 operation remain alpha until they have their own live evidence.
+
+Reconcilers Batch A evidence is scoped to kube-rs CR validation and deterministic
+operator plan builders for tenant, survival-goal, region, backup, and related
+multi-region/tenant lifecycle contracts under `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+Live SQL execution, CloudNativePG mutation, object-store backup execution,
+Kubernetes child-resource apply, and `.status` writes remain alpha.
 
 The vectorizer runtime evidence is scoped to the PostgreSQL-backed sidecar
 worker loop, provider routing, tenant budget checks, queue claiming, usage-log
@@ -612,12 +620,12 @@ proof but no live patched-Citus C API caller yet.
 
 The broader backup workflow is still not production-ready as a whole. The
 backup promotions do not prove cloud object-store credentials, external secret
-resolution, hardware KMS, key rotation, Backup CR reconciliation, operator
-lifecycle management, long-running query load on restored branches, or a full
-Kubernetes restore against a real WAL-G archive. Those remain explicit future
-acceptance gates, not hidden assumptions.
+resolution, hardware KMS, key rotation, full Backup CR child-resource
+reconciliation, operator lifecycle management, long-running query load on
+restored branches, or a full Kubernetes restore against a real WAL-G archive.
+Those remain explicit future acceptance gates, not hidden assumptions.
 
-The other 132 feature headings remain `Status: alpha`. There are no remaining
+The other 123 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
