@@ -452,6 +452,13 @@ more production-ready than the artifacts justified.
   zero-shard failures in the PostgreSQL smoke, and does not claim dynamic shard
   creation, Citus router integration, operator rebalancing, pool data-plane
   routing, or distributed range metadata propagation.
+- The Citus quilt now carries `FEATURE: T3` and `FEATURE: T4` patch artifacts
+  for the coordinator-skip locality probe and hashed router-planner placement
+  intersection. The current evidence is patch applicability, companion
+  router-assist tests, and `ci/ai-blaise/router-patch-smoke.sh`, which records
+  portable algorithm-smoke output under `benchmarks/results/`. This is not live
+  Citus performance evidence; full planner CPU and pool latency claims remain
+  alpha until a real Citus build and multi-worker measurement are recorded.
 - The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
   plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
   set names, and promotion policy thresholds, and PM4 evaluates latency/cost
@@ -597,9 +604,11 @@ sidecars and verifies their local HTTP/runtime boundaries, but those entries
 remain alpha where the feature register still requires live Postgres,
 PostgREST/pg_graphql, Deno/Bun, auth, or operator integration evidence.
 
-`TS19` and `TS20` remain alpha: TS19 has a patch-level clock reservation but no
-live Citus+pg_cron boot evidence yet, and TS20 has deterministic companion
-detection proof but no live patched-Citus C API caller yet.
+`T3`, `TS19`, and `TS20` remain alpha: T3 has fork router-planner patch
+artifacts and companion/router smoke coverage but not live pool coordinator-skip
+latency evidence; TS19 has a patch-level clock reservation but no live
+Citus+pg_cron boot evidence yet; TS20 has deterministic companion detection
+proof but no live patched-Citus C API caller yet.
 
 The broader backup workflow is still not production-ready as a whole. The
 backup promotions do not prove cloud object-store credentials, external secret

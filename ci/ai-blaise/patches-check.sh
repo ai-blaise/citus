@@ -173,6 +173,17 @@ for series in "${series_list[@]}"; do
       verify_postgres_patch_format "${patch_path}"
     done
   else
-    check_citus_series "${series_patch_paths[@]}"
+    for patch_path in "${series_patch_paths[@]}"; do
+      echo "checking ${patch_path}"
+      if git apply --reverse --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+        echo "already integrated ${patch_path}"
+      elif git apply --reverse --check -C0 --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+        echo "already integrated with context drift ${patch_path}"
+      elif git apply --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+        git apply --whitespace=error "${patch_path}"
+      else
+        git apply --check --whitespace=error "${patch_path}"
+      fi
+    done
   fi
 done

@@ -291,21 +291,28 @@ applied.
 ### T3: Fast-Path Single-Shard Router
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/shard_map.rs`,
-`pool/src/virtual_pid.rs`
+`pool/src/virtual_pid.rs`, `companion/src/router_assist.rs`,
+`patches/0006-fast-path-router-no-coord-rt.patch`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool routing contract, shard-map route selection, and
-virtual-PID cancel routing needed to send eligible single-shard requests
-directly to the worker path with a coordinator fallback.
+**Summary**: Defines the pool routing contract, shard-map route selection,
+virtual-PID cancel routing, and upstream-targetable Citus locality probe used
+to send eligible single-shard requests directly to the worker path with a
+coordinator fallback.
+
+**Current boundary**: The fork carries the quilt patch, the companion SQL
+probe renderer, and an algorithm smoke that proves conservative routing cases.
+SQL catalog registration, the live pool data-plane coordinator skip, and full
+multi-worker latency measurement remain alpha.
 
 **Motivation**: Coordinator-less topology needs a pool-level fast path before
 query execution patches are wired in.
 
 **Citus comparison**: Vanilla Citus plans single-shard queries but does not
-ship this pool routing layer.
+ship this pool routing layer or an external pool locality probe.
 
 **References**:
 
@@ -314,7 +321,11 @@ ship this pool routing layer.
 - In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
 - In-source: `FEATURE: T3` in `pool/src/virtual_pid.rs`
 - In-source: `FEATURE: T3` in `pool/src/proxy.rs`
+- In-source: `FEATURE: T3` in `companion/src/router_assist.rs`
+- Patch: `patches/0006-fast-path-router-no-coord-rt.patch`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo test -p ai_blaise_citus_companion --lib router_assist`
+- CI: `ci/ai-blaise/router-patch-smoke.sh`
 
 ### T5: Parallel Commit Transaction Status
 
@@ -7467,25 +7478,35 @@ object storage wiring, retention policy, and authorization remain alpha.
 
 ### T4: Hash-Table Planner Hot Path
 
-**Overlay**: `companion/src/advanced_planner.rs`
+**Overlay**: `companion/src/advanced_planner.rs`,
+`companion/src/router_assist.rs`,
+`patches/0004-hashtable-on-planner-hotpath.patch`,
+`benchmarks/router-planner/`
 **Status**: alpha
 **Since**: unreleased
-**Upstream Citus equivalent**: none
+**Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Records the minimum-partition lookup contract for a planner
-hash-table path.
+**Summary**: Adds an upstream-targetable Citus patch that replaces the
+router-planner placement-intersection nested loop with a hashed endpoint lookup
+for non-tiny placement lists while preserving legacy result semantics.
 
-**Current boundary**: Contract execution proves the declaration; benchmarked
-planner hot-path replacement and regression budgets remain alpha.
+**Current boundary**: Patch applicability and the portable router-planner smoke
+prove the algorithmic boundary and guard against semantic regressions. Full
+Citus build evidence and live multi-worker planner CPU measurements remain
+alpha and must be recorded before production performance claims.
 
-**Citus comparison**: Vanilla Citus does not expose this overlay performance
-contract.
+**Citus comparison**: Vanilla Citus still uses the linear placement-list
+intersection on this planner path.
 
 **References**:
 
 - In-source: `FEATURE: T4` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: T4` in `companion/src/router_assist.rs`
+- Patch: `patches/0004-hashtable-on-planner-hotpath.patch`
+- Benchmark smoke: `benchmarks/router-planner/bench.py`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- CI: `ci/ai-blaise/router-patch-smoke.sh`
 
 ### T6: PG18 io_uring Default
 

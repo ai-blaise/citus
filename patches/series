@@ -1,6 +1,8 @@
 0001-allow-trusted-hook-coextensions.patch
 0002-preserve-trusted-hook-chain-state.patch
 0003-guc-report-citus-userset.patch
+0004-hashtable-on-planner-hotpath.patch
 0005-placement-generation-counter.patch
+0006-fast-path-router-no-coord-rt.patch
 0007-citus-clock-cohabit-pg-cron.patch
 0008-cohabit-extensions-detection-api.patch
