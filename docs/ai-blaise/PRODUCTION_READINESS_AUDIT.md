@@ -524,10 +524,9 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and
+273 feature headings in
+`docs/ai-blaise/NEW_FEATURES.md`. 129 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -572,12 +571,18 @@ and a `pg_dist_shard` post-condition guard) plus Kubernetes-style
 topology-spread constraints and the CloudNativePG cluster manifest from the
 canonical `CitusClusterSpec` and `ShardGroupSpec` under `cargo test -p
 ai_blaise_citus_operator` and `cargo run -p ai_blaise_citus_operator --
-run-reconcile-plans`, while live in-cluster reconciliation (a Kubernetes
-controller loop that watches the CRDs and updates `.status`) remains gated
-behind the alpha `operator.controllerRbac.enabled` profile because the
-operator runtime currently exposes only health/readiness/metrics and
-plan-builder helpers, plus `MCP4` for the narrow `tools/citus-mcp` read-only
-database execution runtime against real PostgreSQL with native TLS driver
+run-reconcile-plans`, plus `F1`, `Search7`, `WH1`, and `EF3` for the
+operator-owned Federation, SearchIndex, Webhook, and Function reconcile
+plan-builders and kube-rs controller mirrors under `cargo test -p
+ai_blaise_citus_operator` and `cargo run -p ai_blaise_citus_operator --
+run-reconcilers-batch-b`. The batch-B production claim is intentionally scoped
+to typed CR parsing, validation, deterministic apply-plan rendering, and live
+Kubernetes watch/controller wiring. SQL mutation execution, CRD `.status`
+writes, outbound HTTP delivery, edge-function execution, external warehouse
+connectivity, and distributed search query fanout remain alpha until separately
+implemented and live-gated. The `MCP4` entry covers the narrow
+`tools/citus-mcp` read-only database execution runtime against real PostgreSQL
+with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
 destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
 do not execute the explained statement. The MCP entries `MCP1`, `MCP2`,
@@ -589,7 +594,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 144
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

@@ -8,9 +8,13 @@
 //! tokio runtime and returns once any controller exits.
 
 pub mod citus_cluster;
+pub mod federation;
+pub mod function;
 pub mod hypertable;
 pub mod migration;
+pub mod search_index;
 pub mod tenant;
+pub mod webhook;
 
 use kube::Client;
 use std::sync::Arc;
@@ -50,18 +54,28 @@ pub enum ControllerError {
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client);
-    info!("operator serving CitusCluster, Migration, Tenant, Hypertable controllers");
+    info!(
+        "operator serving CitusCluster, Migration, Tenant, Hypertable, Federation, SearchIndex, Webhook, Function controllers"
+    );
 
     let cluster = tokio::spawn(citus_cluster::run(ctx.clone()));
     let migration = tokio::spawn(migration::run(ctx.clone()));
     let tenant = tokio::spawn(tenant::run(ctx.clone()));
     let hypertable = tokio::spawn(hypertable::run(ctx.clone()));
+    let federation = tokio::spawn(federation::run(ctx.clone()));
+    let search_index = tokio::spawn(search_index::run(ctx.clone()));
+    let webhook = tokio::spawn(webhook::run(ctx.clone()));
+    let function = tokio::spawn(function::run(ctx));
 
     tokio::select! {
         result = cluster => log_exit("citus_cluster", result),
         result = migration => log_exit("migration", result),
         result = tenant => log_exit("tenant", result),
         result = hypertable => log_exit("hypertable", result),
+        result = federation => log_exit("federation", result),
+        result = search_index => log_exit("search_index", result),
+        result = webhook => log_exit("webhook", result),
+        result = function => log_exit("function", result),
     }
     Ok(())
 }

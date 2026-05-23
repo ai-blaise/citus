@@ -2789,8 +2789,9 @@ real PostgreSQL server and verifies
 `companion_internal.register_search_index(...)` records
 `companion_search_worker_indexes`, renders deterministic GIN DDL, and verifies
 a missing distribution column fails closed. Actual pg_search BM25 index
-execution, worker index rollout, distributed DDL application, operator
-reconciliation, and shard-aware query fanout remain alpha.
+execution, worker index rollout, distributed DDL application, and shard-aware
+query fanout remain alpha. The `SearchIndex` operator plan-builder and
+kube-rs watch/controller path are covered separately by `Search7`.
 
 **Motivation**: Search indexes must be declared once and fanned out across
 workers without losing table ownership or scorer semantics.
@@ -2844,14 +2845,27 @@ while BM25 and vector indexes remain worker-local.
 
 ### Search7: Search Index CRD
 
-**Overlay**: `operator/src/crds/search_index.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/search_index.rs`,
+`operator/src/reconcile/search_index.rs`,
+`operator/src/controllers/search_index.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`
 
 **Summary**: Adds the Kubernetes-facing `SearchIndex` object for declarative
-text and hybrid search indexes.
+text and hybrid search indexes, plus an operator reconcile plan that installs
+`pg_search`, creates the operator-owned provenance tables, delegates distributed
+worker fanout to the companion search bridge, and records hybrid vector linkage
+for status/provenance.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `search_apply_steps=5` and `search_hybrid=true`. The kube-rs
+`SearchIndex` controller mirrors the CR into the authoritative Rust spec and
+builds the same plan during `serve`. Actual pg_search BM25 execution,
+distributed DDL application, and shard-aware query fanout remain alpha.
 
 **Motivation**: Search indexes need lifecycle and validation before companion
 SQL and sidecar cold-tier integration can be reconciled.
@@ -2863,7 +2877,10 @@ objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
+- In-source: `FEATURE: Search7` in `operator/src/reconcile/search_index.rs`
+- Controller: `operator/src/controllers/search_index.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### Search8: Search-Aware Cold Tier
 
@@ -3465,14 +3482,27 @@ the sidecar needs runtime selection without changing the CRD shape.
 
 ### EF3: Function CRD
 
-**Overlay**: `operator/src/crds/function.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/function.rs`,
+`operator/src/reconcile/function.rs`, `operator/src/controllers/function.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines edge-function runtime, source, triggers, and secret
-bindings for Deno and Bun deployments.
+bindings for Deno and Bun deployments, plus an operator reconcile plan that
+posts a stable sidecar registration payload, renders HTTP Service/Ingress
+manifests, records function provenance, and registers scheduled or event
+trigger metadata.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `function_apply_steps=6`, `function_sidecar_steps=1`, and
+`function_kubernetes_steps=2`; unit tests cover HTTP, scheduled, and event
+trigger plans plus teardown. Edge-function source execution, runtime sandboxing,
+and gateway traffic remain governed by the edge-functions runtime evidence and
+are not claimed by this CRD/controller promotion.
 
 **Motivation**: Function deployment needs to be declarative so auth, pool, and
 sidecar runtimes can share the same desired state.
@@ -3483,7 +3513,10 @@ sidecar runtimes can share the same desired state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+- In-source: `FEATURE: EF3` in `operator/src/reconcile/function.rs`
+- Controller: `operator/src/controllers/function.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### EF4: Database Callback Over UDS
 
@@ -3996,14 +4029,26 @@ index advisor.
 
 ### WH1: Webhook CRD
 
-**Overlay**: `operator/src/crds/webhook.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/webhook.rs`,
+`operator/src/reconcile/webhook.rs`, `operator/src/controllers/webhook.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines outbound HTTP trigger declarations with events, URL,
-header secret reference, retry policy, and payload template.
+header secret reference, retry policy, and payload template, plus an operator
+reconcile plan that installs `ai_blaise_citus`, delegates trigger/queue setup
+to the companion webhook helper, and records webhook provenance, payload
+template, and dead-letter target metadata.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `webhook_apply_steps=6` and `webhook_events=2`; unit tests cover
+full, minimal, invalid, and teardown plans. Outbound HTTP delivery workers,
+secret resolution, and retry/dead-letter execution remain alpha until the
+sidecar runtime evidence lands separately.
 
 **Motivation**: Webhook delivery needs an operator-controlled contract before
 CDC and queue sidecars can guarantee retry behavior.
@@ -4015,7 +4060,10 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+- In-source: `FEATURE: WH1` in `operator/src/reconcile/webhook.rs`
+- Controller: `operator/src/controllers/webhook.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### WH2: Companion Webhook Helpers
 
@@ -4036,7 +4084,8 @@ real PostgreSQL server and verifies
 `companion_webhook_events` register a webhook, install a table trigger, and
 verifies INSERT and UPDATE rows are enqueued. The smoke also verifies non-http
 webhook URLs fail closed. Outbound HTTP delivery, retry workers,
-dead-letter queues, secret resolution, and operator webhook CRDs remain alpha.
+dead-letter execution, and secret resolution remain alpha; the operator
+Webhook CRD and reconcile plan are covered by `WH1`.
 
 **Motivation**: Declarative webhook CRDs need a companion SQL surface that
 turns table/event/url configuration into queue-backed triggers.
@@ -4721,14 +4770,27 @@ replay and restore commands can share preflight and audit behavior.
 
 ### F1: Federation CRD
 
-**Overlay**: `operator/src/crds/federation.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/federation.rs`,
+`operator/src/reconcile/federation.rs`, `operator/src/controllers/federation.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `oracle_fdw`, `mysql_fdw`, `mongo_fdw`
 
 **Summary**: Defines external federation links for warehouse, document, and
-legacy database targets using secret-backed connection references.
+legacy database targets using secret-backed connection references, plus an
+operator reconcile plan that chooses the FDW or Iceberg bridge backend, installs
+FDW extensions where required, creates foreign server/user-mapping SQL, and
+records deterministic federation provenance.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `federation_apply_steps=4` and `federation_iceberg=true`; unit
+tests cover Snowflake/Iceberg routing, MySQL FDW routing, teardown, invalid
+spec propagation, and Kubernetes CR mirror parsing. Actual external warehouse
+connectivity and Iceberg snapshot reads remain alpha under `F3` and analytical
+runtime evidence.
 
 **Motivation**: FDW and lakehouse federation need a typed source of desired
 state before credentials and foreign schema creation are reconciled.
@@ -4740,7 +4802,12 @@ not ship a federation CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+- In-source: `FEATURE: F1` in `operator/src/reconcile/federation.rs`
+- Controller: `operator/src/controllers/federation.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
+
+## Graph
 
 ## Graph
 
@@ -6649,9 +6716,10 @@ gate.
 **Summary**: Defines catalog and warehouse inputs for an Iceberg federation
 bridge.
 
-**Current boundary**: The advanced-planner contract covers input validation;
-Iceberg catalog connectivity, snapshot planning, and warehouse reads remain
-alpha.
+**Current boundary**: The advanced-planner contract covers input validation,
+and `F1` now covers the operator-side federation plan that records Iceberg
+bridge intent. Iceberg catalog connectivity, snapshot planning, and warehouse
+reads remain alpha.
 
 **Citus comparison**: Vanilla Citus does not define Iceberg warehouse
 federation.

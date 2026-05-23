@@ -8,10 +8,11 @@
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
 Rust operator contract model for Citus topology, CRDs, sidecars, and ai-blaise
-feature orchestration. The current production `serve` path exposes only the
-shared health/readiness/metrics runtime; live Kubernetes watches, CRD status
-updates, and controller reconciliation remain alpha until a real controller is
-implemented and live-gated.
+feature orchestration. The current `serve` path runs kube-rs watches for
+`CitusCluster`, `Migration`, `Tenant`, `Hypertable`, `Federation`,
+`SearchIndex`, `Webhook`, and `Function`, while the shared probe server exposes
+readiness/metrics. SQL mutation executors and CRD `.status` writes remain
+separate alpha work unless a feature entry says otherwise.
 
 The first implemented specs are `CitusCluster` for `FEATURE: S4` topology
 selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
@@ -38,7 +39,17 @@ plan. The plan creates the `ai_blaise_citus` companion extension, checks
 companion SQL for distributed hypertables, policies, continuous aggregates, and
 time-range shard pruning.
 
+Batch-B reconciler plan-builders live in `operator/src/reconcile/federation.rs`,
+`operator/src/reconcile/search_index.rs`, `operator/src/reconcile/webhook.rs`,
+and `operator/src/reconcile/function.rs`. They render deterministic apply steps
+for FDW/Iceberg federation intent, pg_search/hybrid-search metadata, companion
+webhook trigger registration, and edge-function sidecar/Kubernetes trigger
+registration. Their kube-rs controller mirrors live CRs into the same
+authoritative specs and plan-builders during `serve`.
+
 `cargo run -p ai_blaise_citus_operator -- run-canonical` validates the
 canonical V2 operator surface and emits a deterministic TSV summary covering
 `CitusCluster`, `ShardGroup`, `Hypertable`, the hypertable apply plan, and the
-operator catalog CRDs.
+operator catalog CRDs. `cargo run -p ai_blaise_citus_operator --
+run-reconcilers-batch-b` emits the canonical Federation/SearchIndex/Webhook/
+Function reconciler TSV row.

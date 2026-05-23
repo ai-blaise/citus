@@ -52,12 +52,31 @@ pub use reconcile::citus_cluster::{
     PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
     POOL_DEPLOYMENT_NAME_SUFFIX, POSTGRES_SHARED_PRELOAD_LIBRARIES,
 };
+pub use reconcile::federation::{
+    FederationApplyPlan, FederationApplyStep, FederationBackend, FederationReconcileError,
+    FederationReconcilePlan, FEDERATION_METADATA_TABLES_SQL, FEDERATION_PROVENANCE_TABLE,
+    MONGO_FDW_EXTENSION, MYSQL_FDW_EXTENSION, ORACLE_FDW_EXTENSION, TDS_FDW_EXTENSION,
+};
+pub use reconcile::function::{
+    FunctionApplyPlan, FunctionApplyStep, FunctionEventTriggerPlan, FunctionHttpTriggerPlan,
+    FunctionReconcileError, FunctionReconcilePlan, FunctionScheduledTriggerPlan,
+    FunctionSidecarRegistration, FunctionStepKind, FUNCTION_METADATA_TABLES_SQL,
+    FUNCTION_NOTIFY_CHANNEL_PREFIX, PG_CRON_EXTENSION, SIDECAR_REGISTER_ENDPOINT,
+};
 pub use reconcile::hypertable::{
     HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
 };
 pub use reconcile::migration::{MigrationCommand, MigrationReconcileError, MigrationReconcilePlan};
+pub use reconcile::search_index::{
+    SearchIndexApplyPlan, SearchIndexApplyStep, SearchIndexReconcileError,
+    SearchIndexReconcilePlan, PG_SEARCH_ACCESS_METHOD, SEARCH_METADATA_TABLES_SQL,
+};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
     CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
+};
+pub use reconcile::webhook::{
+    WebhookApplyPlan, WebhookApplyStep, WebhookReconcileError, WebhookReconcilePlan,
+    WEBHOOK_METADATA_TABLES_SQL, WEBHOOK_QUEUE,
 };
