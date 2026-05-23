@@ -1,6 +1,8 @@
 // FEATURE: S6
 // FEATURE: S13
 // FEATURE: T2
+// FEATURE: T3
+// FEATURE: T4
 
 use std::error::Error;
 use std::fmt;
@@ -26,6 +28,127 @@ impl PlacementGenerationQuery {
             "T2",
             vec!["SELECT pg_catalog.citus_placement_generation();".to_string()],
         )
+    }
+}
+
+/// Locality probe used by the pool to decide between the direct-to-worker
+/// fast path and the coordinator broker path. Pairs with
+/// `patches/0006-fast-path-router-no-coord-rt.patch`.
+///
+/// FEATURE: T3
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FastPathCoordinatorSkipQuery {
+    pub shard_id: u64,
+}
+
+impl FastPathCoordinatorSkipQuery {
+    pub fn validate(&self) -> Result<(), RouterAssistError> {
+        validate_shard_id(self.shard_id)
+    }
+
+    /// Render the SQL command that asks the coordinator whether a
+    /// single-shard query for `shard_id` is safe to dispatch directly to
+    /// the local worker. Returns a one-row, one-bool result.
+    ///
+    /// FEATURE: T3 -- companion-side surface for the planner-side helper
+    /// installed by `patches/0006-fast-path-router-no-coord-rt.patch`.
+    pub fn to_sql_plan(&self) -> Result<RouterAssistSqlPlan, RouterAssistError> {
+        self.validate()?;
+        RouterAssistSqlPlan::new(
+            "T3",
+            vec![format!(
+                "SELECT pg_catalog.citus_fast_path_router_can_skip_coordinator({})::bool;",
+                self.shard_id
+            )],
+        )
+    }
+}
+
+/// One observation of the coordinator-skip locality probe, parsed out of
+/// the row returned by [`FastPathCoordinatorSkipQuery::to_sql_plan`].
+///
+/// FEATURE: T3
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct FastPathCoordinatorSkipSample {
+    pub shard_id: u64,
+    pub can_skip: bool,
+}
+
+impl FastPathCoordinatorSkipSample {
+    pub fn new(shard_id: u64, can_skip: bool) -> Result<Self, RouterAssistError> {
+        validate_shard_id(shard_id)?;
+        Ok(Self { shard_id, can_skip })
+    }
+}
+
+/// Pool-side decision derived from a [`FastPathCoordinatorSkipSample`].
+///
+/// FEATURE: T3
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CoordinatorSkipDecision {
+    /// Pool dispatches the query directly to the local worker.
+    SkipCoordinator,
+    /// Pool falls back to the coordinator broker path.
+    UseCoordinator,
+}
+
+impl CoordinatorSkipDecision {
+    pub fn from_sample(sample: FastPathCoordinatorSkipSample) -> Self {
+        if sample.can_skip {
+            Self::SkipCoordinator
+        } else {
+            Self::UseCoordinator
+        }
+    }
+}
+
+/// Hint returned by the planner-throughput observability surface. Records
+/// the expected and measured planner-time-per-query ratio so the pool can
+/// detect a planner regression in production. Pairs with
+/// `patches/0004-hashtable-on-planner-hotpath.patch`.
+///
+/// FEATURE: T4
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannerThroughputHint {
+    pub shard_count: u32,
+    pub baseline_us_per_query: f64,
+    pub measured_us_per_query: f64,
+}
+
+impl PlannerThroughputHint {
+    pub fn new(
+        shard_count: u32,
+        baseline_us_per_query: f64,
+        measured_us_per_query: f64,
+    ) -> Result<Self, RouterAssistError> {
+        if shard_count == 0 {
+            return Err(RouterAssistError::InvalidShardCount);
+        }
+        if !baseline_us_per_query.is_finite()
+            || !measured_us_per_query.is_finite()
+            || baseline_us_per_query <= 0.0
+            || measured_us_per_query <= 0.0
+        {
+            return Err(RouterAssistError::InvalidPlannerSample);
+        }
+        Ok(Self {
+            shard_count,
+            baseline_us_per_query,
+            measured_us_per_query,
+        })
+    }
+
+    /// Speed-up ratio. Greater than 1.0 means the hashed planner is
+    /// faster than the linear baseline; less than 1.0 is a regression.
+    pub fn speedup(&self) -> f64 {
+        self.baseline_us_per_query / self.measured_us_per_query
+    }
+
+    /// Returns true if the measured planner time meets or beats the
+    /// configured target speed-up. The harness uses 1.5x as the floor on
+    /// the 1024-shard benchmark (see benchmarks/router-planner).
+    pub fn meets_target(&self, target_speedup: f64) -> bool {
+        self.speedup() >= target_speedup
     }
 }
 
@@ -231,6 +354,7 @@ impl LocalPlacementCheck {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RouterAssistError {
     InvalidGenerationSample,
+    InvalidPlannerSample,
     InvalidShardCount,
     InvalidShardId,
     MissingRequiredField(&'static str),
@@ -242,6 +366,10 @@ impl fmt::Display for RouterAssistError {
             Self::InvalidGenerationSample => write!(
                 formatter,
                 "placement_generation sample must be a non-negative bigint"
+            ),
+            Self::InvalidPlannerSample => write!(
+                formatter,
+                "planner-throughput sample must be a positive, finite number of microseconds per query"
             ),
             Self::InvalidShardCount => write!(formatter, "shard_count must be greater than zero"),
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
@@ -364,6 +492,63 @@ mod tests {
         assert_eq!(
             subscriber.observe(next).unwrap(),
             InvalidationHint::Unchanged(next)
+        );
+    }
+
+    #[test]
+    fn fast_path_coordinator_skip_query_emits_catalog_select() {
+        let plan = FastPathCoordinatorSkipQuery { shard_id: 102001 }
+            .to_sql_plan()
+            .unwrap();
+        assert_eq!(plan.feature_id, "T3");
+        assert_eq!(
+            plan.script(),
+            "SELECT pg_catalog.citus_fast_path_router_can_skip_coordinator(102001)::bool;"
+        );
+    }
+
+    #[test]
+    fn fast_path_coordinator_skip_query_rejects_zero_shard_id() {
+        let result = FastPathCoordinatorSkipQuery { shard_id: 0 }.to_sql_plan();
+        assert_eq!(result.err(), Some(RouterAssistError::InvalidShardId));
+    }
+
+    #[test]
+    fn coordinator_skip_decision_routes_local_placements_to_worker() {
+        let sample = FastPathCoordinatorSkipSample::new(101, true).unwrap();
+        assert_eq!(
+            CoordinatorSkipDecision::from_sample(sample),
+            CoordinatorSkipDecision::SkipCoordinator
+        );
+        let sample = FastPathCoordinatorSkipSample::new(102, false).unwrap();
+        assert_eq!(
+            CoordinatorSkipDecision::from_sample(sample),
+            CoordinatorSkipDecision::UseCoordinator
+        );
+    }
+
+    #[test]
+    fn planner_throughput_hint_computes_speedup_and_target() {
+        let hint = PlannerThroughputHint::new(1024, 90.0, 45.0).unwrap();
+        assert!((hint.speedup() - 2.0).abs() < f64::EPSILON);
+        assert!(hint.meets_target(1.5));
+        let regression = PlannerThroughputHint::new(1024, 30.0, 45.0).unwrap();
+        assert!(!regression.meets_target(1.5));
+    }
+
+    #[test]
+    fn planner_throughput_hint_rejects_zero_or_negative_samples() {
+        assert_eq!(
+            PlannerThroughputHint::new(0, 1.0, 1.0).err(),
+            Some(RouterAssistError::InvalidShardCount)
+        );
+        assert_eq!(
+            PlannerThroughputHint::new(1, 0.0, 1.0).err(),
+            Some(RouterAssistError::InvalidPlannerSample)
+        );
+        assert_eq!(
+            PlannerThroughputHint::new(1, 1.0, -3.0).err(),
+            Some(RouterAssistError::InvalidPlannerSample)
         );
     }
 

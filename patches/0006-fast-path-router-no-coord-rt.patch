@@ -1,0 +1,215 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Thu, 21 May 2026 12:00:01 +0000
+Subject: [PATCH] Expose fast-path router coordinator-skip locality probe
+
+FEATURE: T3
+
+ai-blaise/citus runs an in-process pool layer that can dispatch
+eligible single-shard queries directly to the local worker without a
+coordinator round-trip. Without a planner-side probe the pool either
+has to plan the query itself (duplicating Citus logic) or fall back to
+the coordinator path, both of which defeat the point.
+
+Add a small SQL-callable locality probe so the pool can ask Citus,
+in one round-trip, whether a coordinator skip is safe for a given
+shard. The probe is intentionally conservative:
+
+- The new GUC citus.enable_fast_path_router_skip_coordinator must be
+  on (default true). Operators who run a coordinator-only deployment
+  flip it off to suppress the probe.
+- The target shard must exist and have exactly one active placement so
+  the pool does not have to choose between replicas without coordinator help.
+- The single active placement must already be on the local group; the
+  local-execution path can then dispatch without a coordinator deparse
+  round-trip.
+
+The planner-side enforcement of the skip is deliberately not part of
+this patch. The in-tree executor still goes through the coordinator
+path, so existing semantics and tests are preserved. The skip is
+performed by the ai-blaise pool layer (see companion/src/router_assist.rs
+and pool/src/runtime.rs), which is gated on the coord-less mode
+landing.
+
+Mechanics:
+
+* EnableFastPathRouterSkipCoordinator is a process-local PGC_USERSET
+  bool, defaulting to true, registered in shared_library_init.c next
+  to the other fast-path-router GUCs.
+* RouterFastPathCanSkipCoordinator(uint64 shardId) is the in-process
+  helper. It first verifies the shard exists, then reads the active-
+  placement list through ActiveShardPlacementList(), which uses the
+  existing shard cache, so the probe does not lock pg_dist_placement or
+  pg_dist_shard.
+* citus_fast_path_router_can_skip_coordinator(bigint) is the
+  PG_FUNCTION_INFO_V1 wrapper exported via MODULE_PATHNAME. The catalog
+  SQL registration is deferred to a follow-up migration so this patch
+  stays narrow.
+
+This is an upstream-PR candidate, gated on coord-less mode landing.
+---
+diff --git a/src/backend/distributed/planner/multi_router_planner.c b/src/backend/distributed/planner/multi_router_planner.c
+index eb281679d..6a2069b15 100644
+--- a/src/backend/distributed/planner/multi_router_planner.c
++++ b/src/backend/distributed/planner/multi_router_planner.c
+@@ -161,6 +161,21 @@ typedef struct WalkerState
+ bool EnableRouterExecution = true;
+ bool EnableNonColocatedRouterQueryPushdown = false;
+ 
++/*
++ * FEATURE: T3
++ *
++ * When true (the default), the fast-path router exposes
++ * RouterFastPathCanSkipCoordinator() and the SQL-level
++ * pg_catalog.citus_fast_path_router_can_skip_coordinator() so an
++ * upstream pool/companion can route eligible single-shard requests
++ * directly to the local worker path without paying for a coordinator
++ * round-trip. The planner side is intentionally observational only;
++ * the in-tree executor still goes through the coordinator path so
++ * existing semantics are preserved. The skip is enforced by the
++ * pool/companion layer, which is gated on coord-less mode landing.
++ */
++bool EnableFastPathRouterSkipCoordinator = true;
++
+ 
+ /* planner functions forward declarations */
+ static void CreateSingleTaskRouterSelectPlan(DistributedPlan *distributedPlan,
+@@ -4549,3 +4564,87 @@ CompareInsertValuesByShardId(const void *leftElement, const void *rightElement)
+ 		}
+ 	}
+ }
++
++
++/*
++ * FEATURE: T3
++ *
++ * RouterFastPathCanSkipCoordinator returns true when a single-shard
++ * query targeting shardId would not benefit from a coordinator round-
++ * trip because the shard has exactly one active placement and that
++ * placement lives on the local group. The check is intentionally
++ * conservative:
++ *
++ *   - The GUC citus.enable_fast_path_router_skip_coordinator must be
++ *     on. Operators can flip the GUC off if their pool is not yet
++ *     wired for the coord-less mode.
++ *   - The shard must exist and have a single active placement so the
++ *     pool does not have to choose between replicas without coordinator help.
++ *   - The placement must already live on the local group; the local
++ *     executor path can dispatch the query without a coordinator
++ *     deparse round-trip.
++ *
++ * The function reads the in-process shard cache, so it does not lock
++ * pg_dist_placement or pg_dist_shard. It is safe to call from the
++ * planner hot path and from a SQL-callable wrapper.
++ */
++bool
++RouterFastPathCanSkipCoordinator(uint64 shardId)
++{
++	if (!EnableFastPathRouterSkipCoordinator)
++	{
++		return false;
++	}
++
++	if (shardId == INVALID_SHARD_ID)
++	{
++		return false;
++	}
++
++	if (!ShardExists(shardId))
++	{
++		return false;
++	}
++
++	List *activePlacementList = ActiveShardPlacementList(shardId);
++	if (list_length(activePlacementList) != 1)
++	{
++		return false;
++	}
++
++	ShardPlacement *placement = (ShardPlacement *) linitial(activePlacementList);
++	int32 localGroupId = GetLocalGroupId();
++
++	return placement->groupId == localGroupId;
++}
++
++
++PG_FUNCTION_INFO_V1(citus_fast_path_router_can_skip_coordinator);
++
++/*
++ * FEATURE: T3
++ *
++ * citus_fast_path_router_can_skip_coordinator returns the SQL-level
++ * result of RouterFastPathCanSkipCoordinator() so a session pooler or
++ * the ai-blaise companion can probe locality without re-running the
++ * full router planner. The companion uses this to decide between the
++ * direct-to-worker fast path and the coordinator broker path.
++ */
++Datum
++citus_fast_path_router_can_skip_coordinator(PG_FUNCTION_ARGS)
++{
++	CheckCitusVersion(ERROR);
++
++	if (PG_ARGISNULL(0))
++	{
++		PG_RETURN_BOOL(false);
++	}
++
++	int64 shardIdArg = PG_GETARG_INT64(0);
++	if (shardIdArg <= 0)
++	{
++		PG_RETURN_BOOL(false);
++	}
++
++	PG_RETURN_BOOL(RouterFastPathCanSkipCoordinator((uint64) shardIdArg));
++}
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index f1a25d7bc..aea0f2cc0 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -1518,6 +1518,29 @@ RegisterCitusConfigVariables(void)
+ 		GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE,
+ 		NULL, NULL, NULL);
+ 
++	/*
++	 * FEATURE: T3
++	 *
++	 * When true, the fast-path router exposes
++	 * RouterFastPathCanSkipCoordinator() and the SQL-level
++	 * pg_catalog.citus_fast_path_router_can_skip_coordinator() so an
++	 * upstream pool/companion can route single-shard requests directly
++	 * to the local worker path without paying for a coordinator
++	 * round-trip. The planner-side surface is observational; the
++	 * in-tree executor still goes through the coordinator path so
++	 * existing semantics are preserved.
++	 */
++	DefineCustomBoolVariable(
++		"citus.enable_fast_path_router_skip_coordinator",
++		gettext_noop("Exposes the fast-path-router locality probe used by"
++					 " coord-less pools to skip the coordinator round-trip."),
++		NULL,
++		&EnableFastPathRouterSkipCoordinator,
++		true,
++		PGC_USERSET,
++		GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE,
++		NULL, NULL, NULL);
++
+ 	DefineCustomBoolVariable(
+ 		"citus.enable_local_execution",
+ 		gettext_noop("Enables queries on shards that are local to the current node "
+diff --git a/src/include/distributed/multi_router_planner.h b/src/include/distributed/multi_router_planner.h
+index af3421e96..c383b6cd9 100644
+--- a/src/include/distributed/multi_router_planner.h
++++ b/src/include/distributed/multi_router_planner.h
+@@ -30,6 +30,10 @@ extern bool EnableRouterExecution;
+ extern bool EnableFastPathRouterPlanner;
+ extern bool EnableLocalFastPathQueryOptimization;
+ 
++/* FEATURE: T3 -- fast-path router can short-circuit the coordinator round-trip */
++extern bool EnableFastPathRouterSkipCoordinator;
++extern bool RouterFastPathCanSkipCoordinator(uint64 shardId);
++
+ extern bool EnableNonColocatedRouterQueryPushdown;
+ 
+ extern DistributedPlan * CreateRouterPlan(Query *originalQuery, Query *query,
+-- 
+2.39.5

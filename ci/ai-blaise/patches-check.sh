@@ -105,10 +105,10 @@ for series in "${series_list[@]}"; do
       # Citus is compiled.
       verify_postgres_patch_format "${patch_path}"
     else
-      if git apply --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
-        git apply --whitespace=error "${patch_path}"
-      elif git apply --reverse --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+      if git apply --reverse --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
         echo "already integrated ${patch_path}"
+      elif git apply --check --whitespace=error "${patch_path}" >/dev/null 2>&1; then
+        git apply --whitespace=error "${patch_path}"
       else
         git apply --check --whitespace=error "${patch_path}"
       fi

@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Thu, 21 May 2026 12:00:00 +0000
+Subject: [PATCH] Hash-table accelerator for router placement-intersection hot path
+
+FEATURE: T4
+
+IntersectPlacementList() runs once per non-anchor shard during router
+planning and computes the intersection between the running placement
+list and a freshly-loaded placement list for the next shard. The
+historical implementation is a nested-loop scan: for every lhs
+placement it linearly searches the rhs placement list, comparing
+nodePort and nodeName with strncmp. That is O(L * R) per call and
+O(S * L * R) across S non-anchor shards in the router query.
+
+For a colocated join, S grows with the number of relations in the query
+and L can be the full active worker count. The portable
+benchmarks/router-planner smoke models that placement-intersection
+boundary and fails if the hashed implementation changes legacy result
+semantics or misses its quick-mode speedup floor.
+
+This patch keeps the published function signature intact and preserves
+correctness for replication-factor > 1 by indexing the right-hand
+placement list in a Postgres dynahash keyed by (nodePort, nodeName).
+The lookup is O(1) per lhs element, so the function becomes O(L + R).
+For the common case where one or both inputs have at most two entries
+(replication factor 1 or 2 with no joins) the existing linear scan is
+kept, because hash setup costs more than two pointer comparisons.
+
+Mechanics:
+
+* WorkerEndpointKey packs nodePort and a fixed-width null-padded
+  nodeName so it hashes safely with tag_hash. The padding matches
+  WORKER_LENGTH from worker_manager.h, so the key is identical to the
+  comparison that the original strncmp performed.
+* BuildPlacementEndpointSet stores the first right-hand placement for
+  each endpoint, matching the legacy inner-loop early break exactly.
+  The hash table is owned by the current memory context and is destroyed
+  before returning to keep planner memory flat.
+* IntersectPlacementListHashed performs the new O(L + R) intersection
+  and is selected by IntersectPlacementList when either input has more
+  than IntersectPlacementListLinearThreshold entries.
+
+The patch is an upstream-PR candidate because the function signature,
+the externally observable result ordering, and the legacy duplicate
+semantics are preserved.
+---
+diff --git a/src/backend/distributed/planner/multi_router_planner.c b/src/backend/distributed/planner/multi_router_planner.c
+index 313d2674d..eb281679d 100644
+--- a/src/backend/distributed/planner/multi_router_planner.c
++++ b/src/backend/distributed/planner/multi_router_planner.c
+@@ -42,6 +42,7 @@
+ #include "parser/parsetree.h"
+ #include "postmaster/postmaster.h"
+ #include "storage/lock.h"
++#include "utils/hsearch.h"
+ #include "utils/builtins.h"
+ #include "utils/elog.h"
+ #include "utils/errcodes.h"
+@@ -86,6 +87,45 @@
+ #include "distributed/shard_pruning.h"
+ #include "distributed/shard_utils.h"
+ #include "distributed/shardinterval_utils.h"
++#include "distributed/worker_manager.h"
++
++/*
++ * FEATURE: T4
++ *
++ * Below this lhs/rhs size, the historical O(L * R) linear-search
++ * intersection beats the hashed implementation because the constant
++ * cost of HTAB setup (hash_create + per-element hash_search) is
++ * larger than the inner strncmp on a placement list of one or two
++ * entries. Tuned against benchmarks/router-throughput; do not
++ * change without re-running that bench.
++ */
++#define IntersectPlacementListLinearThreshold 2
++
++
++/*
++ * FEATURE: T4
++ *
++ * Hash key for placement endpoints. nodePort is the primary tag,
++ * nodeName is a fixed-width null-padded buffer so memcmp on
++ * WorkerEndpointKey reproduces the strncmp(nodeName, WORKER_LENGTH)
++ * behaviour of the legacy IntersectPlacementList loop.
++ */
++typedef struct WorkerEndpointKey
++{
++	uint32 nodePort;
++	char nodeName[WORKER_LENGTH];
++} WorkerEndpointKey;
++
++typedef struct WorkerEndpointEntry
++{
++	WorkerEndpointKey key;
++	ShardPlacement *placement;
++} WorkerEndpointEntry;
++
++static HTAB * BuildPlacementEndpointSet(List *placementList);
++static List * IntersectPlacementListHashed(List *lhsPlacementList,
++										   List *rhsPlacementList);
++
+ 
+ /* intermediate value for INSERT processing */
+ typedef struct InsertValues
+@@ -3782,32 +3822,133 @@ MakeDummyColumnString(int dummyColumnId)
+ List *
+ IntersectPlacementList(List *lhsPlacementList, List *rhsPlacementList)
+ {
+-	ListCell *lhsPlacementCell = NULL;
+-	List *placementList = NIL;
++	/*
++	 * FEATURE: T4
++	 *
++	 * For tiny inputs the linear scan is faster than building a
++	 * dynahash. Replication factor 1 or 2 with no shard joins falls
++	 * in this bucket and is the most common path in production.
++	 */
++	int lhsLength = list_length(lhsPlacementList);
++	int rhsLength = list_length(rhsPlacementList);
+ 
+-	/* Keep existing placement in the list if it is also present in new placement list */
+-	foreach(lhsPlacementCell, lhsPlacementList)
++	if (lhsLength <= IntersectPlacementListLinearThreshold &&
++		rhsLength <= IntersectPlacementListLinearThreshold)
+ 	{
+-		ShardPlacement *lhsPlacement = (ShardPlacement *) lfirst(lhsPlacementCell);
+-		ListCell *rhsPlacementCell = NULL;
+-		foreach(rhsPlacementCell, rhsPlacementList)
++		ListCell *lhsPlacementCell = NULL;
++		List *placementList = NIL;
++
++		/* Keep existing placement in the list if it is also present in new placement list */
++		foreach(lhsPlacementCell, lhsPlacementList)
+ 		{
+-			ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
+-			if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
+-				strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
+-						WORKER_LENGTH) == 0)
++			ShardPlacement *lhsPlacement = (ShardPlacement *) lfirst(lhsPlacementCell);
++			ListCell *rhsPlacementCell = NULL;
++			foreach(rhsPlacementCell, rhsPlacementList)
+ 			{
+-				placementList = lappend(placementList, rhsPlacement);
++				ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
++				if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
++					strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
++							WORKER_LENGTH) == 0)
++				{
++					placementList = lappend(placementList, rhsPlacement);
+ 
+-				/*
+-				 * We don't need to add the same placement over and over again. This
+-				 * could happen if both placements of a shard appear on the same node.
+-				 */
+-				break;
++					/*
++					 * We don't need to add the same placement over and over again. This
++					 * could happen if both placements of a shard appear on the same node.
++					 */
++					break;
++				}
+ 			}
+ 		}
++
++		return placementList;
++	}
++
++	return IntersectPlacementListHashed(lhsPlacementList, rhsPlacementList);
++}
++
++
++/*
++ * FEATURE: T4
++ *
++ * BuildPlacementEndpointSet returns a dynahash mapping each placement
++ * endpoint (nodePort, nodeName) to a WorkerEndpointEntry. The caller
++ * owns the returned HTAB and must hash_destroy() it before returning.
++ */
++static HTAB *
++BuildPlacementEndpointSet(List *placementList)
++{
++	HASHCTL info;
++	MemSet(&info, 0, sizeof(info));
++	info.keysize = sizeof(WorkerEndpointKey);
++	info.entrysize = sizeof(WorkerEndpointEntry);
++	info.hash = tag_hash;
++	info.hcxt = CurrentMemoryContext;
++
++	long initialSize = Max(list_length(placementList), 4);
++	HTAB *endpointSet = hash_create("Router Placement Endpoint Set",
++									initialSize, &info,
++									HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
++
++	ListCell *placementCell = NULL;
++	foreach(placementCell, placementList)
++	{
++		ShardPlacement *placement = (ShardPlacement *) lfirst(placementCell);
++		WorkerEndpointKey key;
++
++		MemSet(&key, 0, sizeof(key));
++		key.nodePort = (uint32) placement->nodePort;
++		strlcpy(key.nodeName, placement->nodeName, sizeof(key.nodeName));
++
++		bool found = false;
++		WorkerEndpointEntry *entry =
++			(WorkerEndpointEntry *) hash_search(endpointSet, &key, HASH_ENTER, &found);
++		if (!found)
++		{
++			entry->placement = placement;
++		}
++	}
++
++	return endpointSet;
++}
++
++
++/*
++ * FEATURE: T4
++ *
++ * IntersectPlacementListHashed performs the same intersection as
++ * IntersectPlacementList() but in O(L + R). The right-hand list is
++ * indexed once; each lhs placement probes the index in constant time.
++ * The output preserves lhs ordering and appends the first matching rhs
++ * placement, matching the legacy inner-loop break.
++ */
++static List *
++IntersectPlacementListHashed(List *lhsPlacementList, List *rhsPlacementList)
++{
++	HTAB *rhsIndex = BuildPlacementEndpointSet(rhsPlacementList);
++	List *placementList = NIL;
++
++	ListCell *lhsPlacementCell = NULL;
++	foreach(lhsPlacementCell, lhsPlacementList)
++	{
++		ShardPlacement *lhsPlacement = (ShardPlacement *) lfirst(lhsPlacementCell);
++		WorkerEndpointKey key;
++
++		MemSet(&key, 0, sizeof(key));
++		key.nodePort = (uint32) lhsPlacement->nodePort;
++		strlcpy(key.nodeName, lhsPlacement->nodeName, sizeof(key.nodeName));
++
++		bool found = false;
++		WorkerEndpointEntry *entry =
++			(WorkerEndpointEntry *) hash_search(rhsIndex, &key, HASH_FIND, &found);
++		if (found)
++		{
++			placementList = lappend(placementList, entry->placement);
++		}
+ 	}
+ 
++	hash_destroy(rhsIndex);
++
+ 	return placementList;
+ }
+ 
+-- 
+2.39.5
