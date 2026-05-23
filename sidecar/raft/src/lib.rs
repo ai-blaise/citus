@@ -2,6 +2,14 @@
 
 // FEATURE: S5
 
+pub mod runtime;
+
+pub use runtime::{
+    run_durable_log_snapshot_round_trip, run_raft_round_trip, AppendEntries, AppendResponse,
+    LogIndex, NodeId, RaftDurableLogReport, RaftDurableStore, RaftEntry, RaftMessage, RaftNode,
+    RaftRole, RaftRoundTripReport, RaftRuntimeError, RaftSnapshot, Term, VoteRequest, VoteResponse,
+};
+
 use ai_blaise_citus_sidecar_hlc::HlcTimestamp;
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -225,6 +233,17 @@ pub fn canonical_raft_report() -> Result<RaftCanonicalReport, RaftSidecarError> 
         live_nodes,
         decision,
     })
+}
+
+/// Deterministic 3-node Raft round-trip used by the runtime canonical runner
+/// and the sidecar-raft smoke test.
+pub fn canonical_raft_runtime_report() -> Result<RaftRoundTripReport, RaftRuntimeError> {
+    let members = vec![
+        "worker-a".to_string(),
+        "worker-b".to_string(),
+        "worker-c".to_string(),
+    ];
+    run_raft_round_trip(members, "worker-a", b"shard-placement-canonical".to_vec())
 }
 
 pub fn timestamp(physical_ms: u64) -> HlcTimestamp {

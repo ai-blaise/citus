@@ -1855,6 +1855,71 @@ BEGIN
   END;
 END $$;
 
+
+DO $$
+DECLARE
+  staged jsonb;
+  finalized jsonb;
+  waiting jsonb;
+  aborted jsonb;
+BEGIN
+  staged := companion.txn_stage(
+    'txn-sql-1',
+    'worker-a',
+    1700000000,
+    '[{"shard_id":10,"key_range":"[a,m)","required_acks":2,"replica_acks":2},{"shard_id":11,"key_range":"[m,z)","required_acks":2,"replica_acks":2}]'::jsonb
+  );
+  IF staged->>'status' <> 'staging' THEN
+    RAISE EXCEPTION 'T5 txn_stage did not return staging status: %', staged;
+  END IF;
+  finalized := companion.txn_finalize('txn-sql-1', 1700000010);
+  IF finalized->>'decision' <> 'commit' OR finalized->>'status' <> 'committed' THEN
+    RAISE EXCEPTION 'T5 txn_finalize did not commit with full evidence: %', finalized;
+  END IF;
+
+  PERFORM companion.txn_stage(
+    'txn-sql-2',
+    'worker-a',
+    1700000000,
+    '[{"shard_id":10,"key_range":"[a,m)","required_acks":2,"replica_acks":1}]'::jsonb
+  );
+  waiting := companion.txn_finalize('txn-sql-2', 1700000010);
+  IF waiting->>'decision' <> 'wait_for_replication_evidence'
+      OR waiting->>'status' <> 'staging' THEN
+    RAISE EXCEPTION 'T5 txn_finalize did not wait without evidence: %', waiting;
+  END IF;
+  aborted := companion.txn_finalize('txn-sql-2', 1700006001);
+  IF aborted->>'decision' <> 'abort_stale_staging_record'
+      OR aborted->>'status' <> 'aborted' THEN
+    RAISE EXCEPTION 'T5 stale staging record did not abort: %', aborted;
+  END IF;
+
+  BEGIN
+    PERFORM companion.txn_stage(
+      'txn-sql-1',
+      'worker-a',
+      1700000000,
+      '[{"shard_id":10,"key_range":"[a,m)","required_acks":2,"replica_acks":2}]'::jsonb
+    );
+    RAISE EXCEPTION 'T5 txn_stage accepted a duplicate txn_id';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM NOT LIKE 'txn_id already staged:%' THEN
+        RAISE;
+      END IF;
+  END;
+
+  BEGIN
+    PERFORM companion.txn_stage('txn-sql-empty', 'worker-a', 1700000000, '[]'::jsonb);
+    RAISE EXCEPTION 'T5 txn_stage accepted empty intents';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'intents must not be empty' THEN
+        RAISE;
+      END IF;
+  END;
+END $$;
+
 CREATE ROLE ai_blaise_rls_smoke;
 CREATE TABLE rls_smoke_orders (
   order_id integer NOT NULL,

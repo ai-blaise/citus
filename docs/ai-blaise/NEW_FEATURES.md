@@ -114,8 +114,10 @@ and RLS/JWT contracts for `FEATURE: API3`, `FEATURE: API4`, and
 `FEATURE: API5`.
 `sidecar/hlc/src/lib.rs` validates hybrid-logical-clock, closed timestamp, and
 follower-read contracts for `FEATURE: S9`.
+`sidecar/hlc/src/runtime.rs` runs the deterministic peer clock-exchange and
+closed-timestamp runtime for `FEATURE: S9` and `FEATURE: MR6`.
 `sidecar/hlc/src/main.rs` emits the canonical closed-timestamp follower-read
-runner for `FEATURE: S9`.
+and runtime runners for `FEATURE: S9`.
 `sidecar/mcp/src/lib.rs` validates MCP service auth, session, safe-mode, and
 tenant-scoped tool request policies for `FEATURE: MCP1`, `FEATURE: MCP2`, and
 `FEATURE: MCP3`.
@@ -132,8 +134,10 @@ RLS, JWT, and OpenAPI contracts for `FEATURE: API1`, `FEATURE: API2`,
 `FEATURE: API5`, and `FEATURE: API6`.
 `sidecar/raft/src/lib.rs` validates shard-group Raft membership, leader lease,
 placement intent, quorum, and failover decisions for `FEATURE: S5`.
-`sidecar/raft/src/main.rs` emits the canonical shard-group failover runner for
-`FEATURE: S5`.
+`sidecar/raft/src/runtime.rs` runs the deterministic election, AppendEntries,
+quorum commit, durable log, and snapshot-boundary runtime for `FEATURE: S5`.
+`sidecar/raft/src/main.rs` emits the canonical shard-group failover, runtime,
+and durable-log runners for `FEATURE: S5`.
 `sidecar/realtime/src/lib.rs` validates CDC-driven broadcast, tenant isolation,
 filter, and presence contracts for `FEATURE: RT1`, `FEATURE: RT2`,
 `FEATURE: RT3`, and `FEATURE: RT4`.
@@ -157,8 +161,12 @@ features: presigned URL issuance, tenant bucket ACL checks, object size
 enforcement, metadata persistence, and antivirus quarantine decisions.
 `sidecar/txn_status/src/lib.rs` validates parallel-commit transaction status,
 intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
-`sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status
-runner for `FEATURE: T5`.
+`sidecar/txn_status/src/runtime.rs` runs the Raft-backed staging/finalize state
+machine and parallel-commit microbenchmark for `FEATURE: T5`.
+`sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status,
+runtime, and microbenchmark runners for `FEATURE: T5`.
+`companion/src/txn_coord.rs` renders the companion SQL/UDF coordination plan
+for `FEATURE: T5`.
 The tool overlays expose deterministic canonical runners for their library
 contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 `tools/citus-schema-designer/src/main.rs`, `tools/citus-tui/src/main.rs`, and
@@ -324,12 +332,24 @@ parallel-commit transaction-status sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T5` in `sidecar/txn_status/src/lib.rs`
+- In-source: `FEATURE: T5` in `sidecar/txn_status/src/runtime.rs`
+- In-source: `FEATURE: T5` in `companion/src/txn_coord.rs`
+- SQL runtime: `FEATURE: T5` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-runtime-canonical`
+- CI: `ci/ai-blaise/parallel-commits-smoke.sh`
+- CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- Current boundary: the sidecar has deterministic Raft-backed staging/finalize
+  runtime evidence, the microbenchmark proves the modeled fast-path step count,
+  and the SQL extension installs `companion.txn_stage`/`companion.txn_finalize`
+  against real PostgreSQL. Integration with the Citus distributed executor,
+  real multi-process networked Raft transport, PostgreSQL-core commit timestamp
+  patches, and Kubernetes operator wiring remain alpha.
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
   PostgreSQL-core logical commit clock the parallel-commit path depends on for
-  monotonic shard-finalize ordering. Runtime gate stays alpha until the
-  txn_status sidecar lands; the patch is the upstream-quality diff that makes
-  the gate compilable. Tracked under FEATURE: PGC1.
+  monotonic shard-finalize ordering. The patch is the upstream-quality diff that
+  makes the future integrated gate compilable. Tracked under FEATURE: PGC1.
 - Executable: `patches/postgres/0002-per-subtrans-commit-ts.patch` lets the
   coordinator attribute divergent per-shard commit timestamps inside a single
   umbrella transaction. Tracked under FEATURE: PGC2.
@@ -1284,7 +1304,15 @@ consensus logic into Postgres backends.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S5` in `sidecar/raft/src/lib.rs`
+- In-source: `FEATURE: S5` in `sidecar/raft/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-durable-canonical`
+- CI: `ci/ai-blaise/sidecar-raft-smoke.sh`
+- Current boundary: the sidecar now has deterministic election, quorum commit,
+  AppendEntries replication, durable log, and snapshot-boundary evidence. Real
+  multi-process network transport, operator-driven membership changes, CNPG
+  failover execution, and Citus placement synchronization remain alpha.
 
 ### S6: Per-Shard Placement Generation
 
@@ -1345,7 +1373,13 @@ reads.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S9` in `sidecar/hlc/src/lib.rs`
+- In-source: `FEATURE: S9` in `sidecar/hlc/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
+- Current boundary: the sidecar now has deterministic peer clock-exchange,
+  closed-timestamp derivation, `/closed_ts`, health, readiness, and metrics
+  surfaces. MVCC snapshot execution, replica routing, and stale-read planner
+  integration remain alpha.
 
 ### S10: Schema-Based Tenancy
 
@@ -6790,7 +6824,9 @@ travel.
 **References**:
 
 - In-source: `FEATURE: MR6` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: MR6` in `sidecar/hlc/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
 
 ### MR9: Region Survival Runbook
 
