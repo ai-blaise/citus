@@ -1,10 +1,46 @@
 //! Shard-aware pool primitives.
 
+pub mod admin;
+pub mod auth_cache;
 pub mod execution;
+pub mod geoip;
+pub mod htap;
+pub mod mirror;
+pub mod pipeline;
+pub mod placement_subscriber;
+pub mod prepared;
 pub mod proxy;
+pub mod realtime_hook;
 pub mod runtime;
+pub mod settings_bucket;
 pub mod shard_map;
+pub mod tenant_quota;
+pub mod tls;
 pub mod trace_tap;
+pub mod virtual_pid;
+
+pub use admin::{AdminAck, AdminCommand, AdminError, AdminState};
+pub use auth_cache::{AuthCacheError, AuthVerificationCache, VerifiedClaims};
+pub use geoip::{
+    policy_with_default, route_for_client, ClosestReplicaTable, GeoIpError, RegionReplica,
+};
+pub use htap::{classify as classify_htap_query, HtapClassifierError, HtapDecision, QueryFeatures};
+pub use mirror::{
+    MirrorDecision, MirrorPolicyError, QueryClass, TenantMirrorPolicy, TenantMirrorRule,
+};
+pub use pipeline::{DescribeTarget, ExtendedFrame, ExtendedPipelineBuffer, PipelineError};
+pub use placement_subscriber::{PlacementDelta, PlacementSubscriber, PlacementSubscriberError};
+pub use prepared::{PreparedCacheError, PreparedStatement, PreparedStatementCache};
+pub use realtime_hook::{
+    CdcEvent, CdcOperation, RealtimeHookConfig, RealtimeHookError, RealtimeHookQueue,
+};
+pub use settings_bucket::{SettingsBucketEntry, SettingsBucketError, SettingsBucketPoolMap};
+pub use tenant_quota::{TenantAdmission, TenantQuotaError, TenantQuotaState, TenantQuotaTable};
+pub use tls::{ring_from_policy, TicketKey, TicketKeyRing, TlsTicketError, TICKET_KEY_LEN};
+pub use virtual_pid::{
+    encode_cancel_request, parse_cancel_request, RealBackend, VirtualPidError, VirtualPidTable,
+    PGWIRE_CANCEL_MAGIC,
+};
 
 pub use execution::{
     canonical_pool_execution_report, canonical_pool_runtime_contract, PoolExecutionError,

@@ -28,16 +28,18 @@ CIDR allowlist are rejected before an upstream connection is opened, and
 
 Current implemented surface:
 
-- `ShardMap`
-- `Placement`
-- `CachedPlanGeneration`
-- `PlanCache`
-- `ShardRoute`
-- `PoolRuntimeContract`
-- `PoolExecutionReport`
-- `PoolProxyConfig`
-- `PoolProxyState`
-- `SessionSetting`
+- `SettingsBucketPoolMap` and opaque settings fingerprints
+- `PlacementSubscriber`, `ShardMap`, `PlanCache`, and `PreparedStatementCache`
+- `ExtendedPipelineBuffer` for extended-query protocol batching
+- `TenantMirrorPolicy` and HTAP `QueryFeatures` classifier
+- `AuthVerificationCache` and verified-claim revocation handling
+- `ClosestReplicaTable` GeoIP routing boundary
+- `TicketKeyRing` TLS ticket rotation boundary
+- `TenantQuotaTable` token-bucket admission
+- `VirtualPidTable` cancel-request rewrite support
+- `RealtimeHookQueue` CDC-to-realtime framing
+- `AdminCommand`/`AdminState` pgcat-style admin command parser
+- `PoolRuntimeContract`, `PoolExecutionReport`, `PoolProxyConfig`, and `PoolProxyState`
 
 These types are the first local model for `FEATURE: T2` placement-generation
 partial plan-cache invalidation and `FEATURE: T3` single-shard route

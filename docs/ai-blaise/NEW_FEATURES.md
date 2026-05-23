@@ -199,15 +199,15 @@ federation extension policy.
 
 ### T1: Settings-Bucket Connection Pool
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/settings_bucket.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool settings-bucket contract and versioned GUC
-fingerprint for sharing worker connections across sessions with identical
-tracked GUC state.
+**Summary**: Implements the pool settings-bucket contract with opaque,
+versioned GUC fingerprints and per-fingerprint backend accounting for sharing
+worker connections across sessions with identical tracked GUC state.
 
 **Motivation**: Citus deployments need far more client sessions than worker
 backends without losing session correctness.
@@ -219,13 +219,15 @@ pooler.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T1` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T1` in `pool/src/settings_bucket.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 - Benchmark: `benchmarks/sysbench/run-suite.sh` (TPS / p95 per workload)
 - Benchmark: `benchmarks/tpcc/run.sh` (tpmC, p99 latency, error rate)
 
 ### T2: Plan Cache Placement-Generation Invalidation
 
-**Overlay**: `pool/src/shard_map.rs`, `companion/src/router_assist.rs`,
+**Overlay**: `pool/src/shard_map.rs`, `pool/src/placement_subscriber.rs`,
+`pool/src/prepared.rs`, `companion/src/router_assist.rs`,
 `patches/0003-guc-report-citus-userset.patch`,
 `patches/0005-placement-generation-counter.patch`
 **Status**: alpha
@@ -263,6 +265,8 @@ applied.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T2` in `pool/src/shard_map.rs`
+- In-source: `FEATURE: T2` in `pool/src/placement_subscriber.rs`
+- In-source: `FEATURE: T2` in `pool/src/prepared.rs`
 - In-source: `FEATURE: T2` in `companion/src/router_assist.rs`
 - In-source: `FEATURE: T2` in
   `src/backend/distributed/metadata/metadata_cache.c` (via
@@ -278,15 +282,16 @@ applied.
 
 ### T3: Fast-Path Single-Shard Router
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/shard_map.rs`,
+`pool/src/virtual_pid.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool routing contract and shard-map route selection
-for sending eligible single-shard requests directly to the worker path with a
-coordinator fallback.
+**Summary**: Defines the pool routing contract, shard-map route selection, and
+virtual-PID cancel routing needed to send eligible single-shard requests
+directly to the worker path with a coordinator fallback.
 
 **Motivation**: Coordinator-less topology needs a pool-level fast path before
 query execution patches are wired in.
@@ -299,6 +304,7 @@ ship this pool routing layer.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T3` in `pool/src/shard_map.rs`
+- In-source: `FEATURE: T3` in `pool/src/virtual_pid.rs`
 - In-source: `FEATURE: T3` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
@@ -373,13 +379,14 @@ does not ship a Toolkit-specific two-step aggregate bridge.
 
 ### T9: Mirroring For Canary Traffic
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/mirror.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds a mirror-traffic policy with target and sample percentage.
+**Summary**: Adds deterministic per-tenant and per-query-class canary
+mirroring with target and sample-percentage policy.
 
 **Motivation**: Planner, pool, and sidecar changes need low-risk A/B traffic
 before they become default paths.
@@ -390,18 +397,20 @@ before they become default paths.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T9` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T9` in `pool/src/mirror.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T12: Pool HTAP Routing
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/htap.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines HTAP routing policy from the pool to the analytical
-sidecar with staleness budget and predicate hints.
+**Summary**: Defines HTAP routing policy and a conservative query-feature
+classifier from the pool to the analytical sidecar with staleness budget and
+predicate hints.
 
 **Motivation**: Hot/warm/cold query routing needs a single contract before the
 pool starts classifying real SQL.
@@ -412,11 +421,13 @@ pool starts classifying real SQL.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T12` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T12` in `pool/src/htap.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### T15: Transaction Pipelining In Pool
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/pipeline.rs`,
+`pool/src/proxy.rs`, `pool/src/admin.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -1625,13 +1636,14 @@ cold shard layers.
 
 ### R10: TLS Session Ticket Reuse In Pool
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/tls.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool TLS session-ticket reuse and rotation contract.
+**Summary**: Defines the pool TLS session-ticket reuse and rotation contract
+with a current/previous key ring boundary.
 
 **Motivation**: Connection churn should not pay full TLS handshakes when
 rotation and reuse can be controlled explicitly.
@@ -1643,6 +1655,7 @@ contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R10` in `pool/src/runtime.rs`
+- In-source: `FEATURE: R10` in `pool/src/tls.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ## Change Data And Branching
@@ -2436,14 +2449,14 @@ manage them as region objects.
 
 ### MR5: Pool GeoIP Routing
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/geoip.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool region-routing contract from CIDR rules to
-preferred regions.
+**Summary**: Defines the pool region-routing contract from CIDR/GeoIP region
+resolution to nearest preferred replicas.
 
 **Motivation**: Multi-region reads need a pool-side routing contract before
 GeoIP and edge-replica behavior can be enforced.
@@ -2454,6 +2467,7 @@ GeoIP and edge-replica behavior can be enforced.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR5` in `pool/src/runtime.rs`
+- In-source: `FEATURE: MR5` in `pool/src/geoip.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### MR8: Leader Pinning Per Region
@@ -3326,7 +3340,8 @@ OpenAPI endpoint.
 
 ### RT1: Realtime Sidecar
 
-**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
+**Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`,
+`pool/src/realtime_hook.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -3346,6 +3361,7 @@ broadcasts.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: RT1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT1` in `sidecar/realtime/src/lib.rs`
+- In-source: `FEATURE: RT1` in `pool/src/realtime_hook.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
@@ -3558,13 +3574,14 @@ the auth sidecar starts issuing JWTs.
 
 ### Auth3: Token Introspection Cache
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/auth_cache.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines pool-side token introspection cache sizing and TTL.
+**Summary**: Defines pool-side token introspection cache sizing, TTL, JTI
+revocation, and verified-claim validation.
 
 **Motivation**: Auth verification must be fast enough for pooled connection
 paths without repeatedly hitting the auth sidecar.
@@ -3575,6 +3592,7 @@ paths without repeatedly hitting the auth sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth3` in `pool/src/runtime.rs`
+- In-source: `FEATURE: Auth3` in `pool/src/auth_cache.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### Sec1: RLS Helpers
@@ -3728,14 +3746,14 @@ integration remain alpha.
 
 ### Sec12: Per-Tenant Resource Quotas
 
-**Overlay**: `pool/src/runtime.rs`
+**Overlay**: `pool/src/runtime.rs`, `pool/src/tenant_quota.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines token-bucket admission policy for tenant-scoped pool
-traffic.
+**Summary**: Implements token-bucket admission policy for tenant-scoped pool
+traffic with deterministic refill and fail-fast rejection semantics.
 
 **Motivation**: Tenant quotas need pool-side enforcement before noisy tenants
 can be isolated reliably.
@@ -3746,6 +3764,7 @@ can be isolated reliably.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
+- In-source: `FEATURE: Sec12` in `pool/src/tenant_quota.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 
 ### Sec13: Pool CIDR Access Control
@@ -7175,6 +7194,7 @@ is production-ready under `T15`.
 **References**:
 
 - In-source: `FEATURE: T7` in `pool/src/runtime.rs`
+- In-source: `FEATURE: T7` in `pool/src/pipeline.rs`
 - In-source: `FEATURE: T7` in `pool/src/proxy.rs`
 - In-source: `FEATURE: T7` in `pool/src/main.rs`
 - In-source: `FEATURE: T7` in `companion/src/ops_contracts.rs`
