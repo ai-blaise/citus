@@ -3,8 +3,10 @@
 // FEATURE: API5
 // FEATURE: API6
 
-use ai_blaise_citus_sidecar_postgrest::{canonical_postgrest_execution_plan, RestMethod};
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_sidecar_postgrest::{
+    canonical_postgrest_execution_plan, canonical_postgrest_runtime_report,
+    serve_postgrest_sidecar_http_forever, RestMethod, SupervisorState,
+};
 use std::env;
 use std::process;
 
@@ -16,7 +18,12 @@ fn main() {
     }
 
     if args == ["serve"] {
-        run_server("postgrest", "0.0.0.0:8080");
+        run_http_server("0.0.0.0:8080");
+        return;
+    }
+
+    if args == ["run-runtime-canonical"] {
+        run_runtime_canonical();
         return;
     }
 
@@ -56,15 +63,38 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: postgrest [serve|run-canonical]");
-    println!("runs the deterministic canonical PostgREST sidecar plan and emits TSV");
+    println!("usage: postgrest [serve|run-canonical|run-runtime-canonical]");
+    println!("serves the PostgREST sidecar HTTP front door or emits a deterministic TSV plan");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_http_server(default_addr: &str) {
+    if let Err(error) = serve_postgrest_sidecar_http_forever(default_addr) {
+        eprintln!("postgrest: HTTP server failed: {error}");
         process::exit(1);
     }
+}
+
+fn run_runtime_canonical() {
+    let report = canonical_postgrest_runtime_report().unwrap_or_else(|error| {
+        eprintln!("postgrest: canonical runtime report failed: {error}");
+        process::exit(1);
+    });
+    println!(
+        "binary\tconfig_path\tlaunches\trestarts\tstate\tconfig_bytes\topenapi_bytes\tschemas\troute"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}.{}",
+        report.launch.binary_path,
+        report.launch.config_path,
+        report.state.launches,
+        report.state.restarts,
+        supervisor_state_name(&report.state.state),
+        report.state.config_bytes,
+        report.state.openapi_bytes,
+        report.plan.schemas.join(","),
+        report.plan.routes[0].schema,
+        report.plan.routes[0].table,
+    );
 }
 
 fn method_name(method: &RestMethod) -> &'static str {
@@ -73,5 +103,14 @@ fn method_name(method: &RestMethod) -> &'static str {
         RestMethod::Post => "post",
         RestMethod::Patch => "patch",
         RestMethod::Delete => "delete",
+    }
+}
+
+fn supervisor_state_name(state: &SupervisorState) -> &'static str {
+    match state {
+        SupervisorState::Pending => "pending",
+        SupervisorState::Launched => "launched",
+        SupervisorState::CrashedAndRestarted => "crashed_and_restarted",
+        SupervisorState::Drained => "drained",
     }
 }

@@ -123,6 +123,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-canonical
       - name: Run canonical edge-function runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
+      - name: Run canonical edge-function registry
+        run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical
 
   graphql:
     runs-on: ubuntu-latest
@@ -135,6 +137,8 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_graphql
+      - name: Run canonical GraphQL runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical
 
   hlc:
     runs-on: ubuntu-latest
@@ -177,6 +181,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_postgrest
+      - name: Run canonical PostgREST runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical
+      - name: Run API trio runtime smoke
+        run: bash ci/ai-blaise/api-trio-runtime-smoke.sh
 
   raft:
     runs-on: ubuntu-latest

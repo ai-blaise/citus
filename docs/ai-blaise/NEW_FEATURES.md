@@ -3195,6 +3195,8 @@ starts serving table-backed endpoints.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API1` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### API2: Distributed PostgREST Views
 
@@ -3217,6 +3219,8 @@ so requests route through Citus-aware helper views.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### API3: GraphQL Sidecar
 
@@ -3239,6 +3243,8 @@ contract before exposing pg_graphql to tenants.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API3` in `sidecar/graphql/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### API4: Distributed GraphQL Tables
 
@@ -3299,6 +3305,9 @@ policy.
 - In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
 - In-source: `FEATURE: API5` in `sidecar/graphql/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### API6: Auto OpenAPI Document
 
@@ -3321,6 +3330,8 @@ OpenAPI endpoint.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ## Realtime
 
@@ -3441,6 +3452,8 @@ runtime.
 - In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### EF2: Bun Runtime Alternative
 
@@ -3462,6 +3475,8 @@ the sidecar needs runtime selection without changing the CRD shape.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF2` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### EF3: Function CRD
 
@@ -3507,6 +3522,8 @@ callback path.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF4` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ### EF5: Triggered Edge Functions
 
@@ -3530,6 +3547,8 @@ from schedules or CDC events.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF5` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
 ## Security / Auth
 

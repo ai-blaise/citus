@@ -1,14 +1,16 @@
 // FEATURE: EF1
 // FEATURE: EF2
+// FEATURE: EF3
 // FEATURE: EF4
 // FEATURE: EF5
+// FEATURE: EF6
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
 use ai_blaise_citus_sidecar_edge_functions::{
-    canonical_edge_function_report, canonical_edge_function_runtime_report, EdgeFunctionRuntime,
-    FunctionTrigger, InvocationStatus,
+    canonical_edge_function_registry_report, canonical_edge_function_report,
+    canonical_edge_function_runtime_report, serve_edge_functions_sidecar_http_forever,
+    EdgeFunctionRuntime, EdgeFunctionTriggerKind, FunctionTrigger, InvocationStatus,
 };
-use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
 use std::process;
 
@@ -20,12 +22,17 @@ fn main() {
     }
 
     if args == ["serve"] {
-        run_server("edge-functions", "0.0.0.0:8080");
+        run_http_server("0.0.0.0:8080");
         return;
     }
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["run-registry-canonical"] {
+        run_registry_canonical();
         return;
     }
 
@@ -87,14 +94,46 @@ fn run_runtime_canonical() {
     );
 }
 
-fn print_usage() {
-    println!("usage: edge-functions [serve|run-canonical|run-runtime-canonical]");
-    println!("runs deterministic canonical edge-function launch/runtime reports and emits TSV");
+fn run_registry_canonical() {
+    let report = canonical_edge_function_registry_report().unwrap_or_else(|error| {
+        eprintln!("edge-functions: canonical registry report failed: {error}");
+        process::exit(1);
+    });
+    let summary = &report.snapshot.functions[0];
+    println!(
+        "function\truntime\ttriggers\tdb_callback_socket\tinvocations\ttriggered_invocations\tdb_callbacks\tdue_schedules\tcdc_events\tuds_socket\tuds_statements"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        summary.name,
+        runtime_name(&summary.runtime),
+        summary
+            .triggers
+            .iter()
+            .map(|kind| trigger_kind_name(kind).to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+        summary.db_callback_socket.as_deref().unwrap_or("none"),
+        report.snapshot.invocations,
+        report.snapshot.triggered_invocations,
+        report.snapshot.db_callbacks,
+        report.due_schedules.len(),
+        report.events.len(),
+        report.uds_callback.socket_path,
+        report.uds_callback.statements().len(),
+    );
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn print_usage() {
+    println!(
+        "usage: edge-functions [serve|run-canonical|run-runtime-canonical|run-registry-canonical]"
+    );
+    println!("serves the edge-functions sidecar or emits canonical TSV reports");
+}
+
+fn run_http_server(default_addr: &str) {
+    if let Err(error) = serve_edge_functions_sidecar_http_forever(default_addr) {
+        eprintln!("edge-functions: HTTP server failed: {error}");
         process::exit(1);
     }
 }
@@ -107,6 +146,10 @@ fn trigger_name(trigger: &FunctionTrigger) -> String {
             format!("cdc:{table}:{}", operation_name(operation))
         }
     }
+}
+
+fn trigger_kind_name(kind: &EdgeFunctionTriggerKind) -> &'static str {
+    kind.as_str()
 }
 
 fn operation_name(operation: &CdcOperation) -> &'static str {

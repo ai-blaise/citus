@@ -200,6 +200,15 @@ more production-ready than the artifacts justified.
   smoke, the real Citus+TimescaleDB cohabitation smoke, and the
   primary/standby observability replication smoke. The production gap audit
   rejects regressions that leave a promoted runtime smoke out of those gates.
+- The API trio sidecars now have runtime front doors instead of canonical-only
+  binaries: PostgREST renders config/OpenAPI and can spawn the configured child
+  process, GraphQL renders the `graphql.resolve(...)` pg_graphql boundary and
+  registers subscription transport state, and edge-functions exposes registry,
+  trigger, invocation, and UDS-callback runtime surfaces. The new
+  `ci/ai-blaise/api-trio-runtime-smoke.sh` boots all three services and verifies
+  live TCP readiness plus API-specific behavior. These features remain alpha
+  where the docs still require a live Postgres/PostgREST/pg_graphql/Deno/Bun
+  deployment before production promotion.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is a manifest/init contract, not production evidence that
   every binary package is installed in a runnable operand image. The production
@@ -524,10 +533,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -588,10 +595,7 @@ Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
 execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
-implemented and live-gated. The
-other 146
-feature headings remain
-`Status: alpha`. There are no remaining source-only feature markers: the
+implemented and live-gated. The other 148 feature headings remain `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,
 but it is not a production claim for the full feature plan.
