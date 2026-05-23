@@ -349,7 +349,7 @@ parallel-commit transaction-status sidecar.
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
   PostgreSQL-core logical commit clock the parallel-commit path depends on for
   monotonic shard-finalize ordering. The patch is the upstream-quality diff that
-  makes the future integrated gate compilable. Tracked under FEATURE: PGC1.
+  makes the integrated gate concrete. Tracked under FEATURE: PGC1.
 - Executable: `patches/postgres/0002-per-subtrans-commit-ts.patch` lets the
   coordinator attribute divergent per-shard commit timestamps inside a single
   umbrella transaction. Tracked under FEATURE: PGC2.
