@@ -34,9 +34,10 @@ pub use advanced_planner::{
 };
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{
-    distribute_hypertable_plan, AddContinuousAggregateDistributedPlan, AddPolicyDistributed,
-    AddPolicyDistributedPlan, CompanionError, CompanionSqlPlan, DistributedHypertablePlan,
-    TimeRangeShardPrunerPlan, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
+    distribute_hypertable_plan, enable_timescale_bridge_if_cohabiting,
+    AddContinuousAggregateDistributedPlan, AddPolicyDistributed, AddPolicyDistributedPlan,
+    CompanionError, CompanionSqlPlan, DistributedHypertablePlan, TimeRangeShardPrunerPlan,
+    FEATURE_COHABIT_DETECTION, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
 };
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
@@ -46,9 +47,11 @@ pub use domain_contracts::{
     canonical_domain_contracts_report, DomainContractError, DomainContractExecutionReport,
 };
 pub use extension_catalog::{
-    canonical_extension_catalog_execution_report, v2_extension_contracts,
-    validate_extension_contracts, ExtensionCatalogError, ExtensionCatalogExecutionReport,
-    ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
+    canonical_cohabit_detection_report, canonical_extension_catalog_execution_report,
+    cohabit_extension_specs, detect_cohabit_extensions, v2_extension_contracts,
+    validate_extension_contracts, CohabitExtensionDetectionReport, CohabitExtensionObservation,
+    CohabitExtensionRole, CohabitExtensionSpec, ExtensionCatalogError,
+    ExtensionCatalogExecutionReport, ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
 };
 pub use feature_status::{
     companion_feature_statuses, validate_companion_feature_statuses, FeatureStatus,

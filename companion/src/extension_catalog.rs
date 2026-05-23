@@ -36,10 +36,13 @@
 // FEATURE: Sec14
 // FEATURE: Sec15
 // FEATURE: WF1
+// FEATURE: TS20
 
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fmt;
+
+pub const COHABIT_DETECTION_FEATURE_ID: &str = "TS20";
 
 pub const EXTENSION_CATALOG_FEATURE_IDS: &[&str] = &[
     "A7", "A12", "C11", "C12", "C13", "EF6", "F2", "F5", "G1", "Geo1", "IA1", "IA2", "JS1", "L11",
@@ -82,6 +85,65 @@ pub struct ExtensionCatalogExecutionReport {
     pub preloaded: usize,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CohabitExtensionRole {
+    TrustedHook,
+    ClockWorker,
+    PartitionManager,
+}
+
+impl CohabitExtensionRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TrustedHook => "trusted-hook",
+            Self::ClockWorker => "clock-worker",
+            Self::PartitionManager => "partition-manager",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct CohabitExtensionSpec {
+    pub name: &'static str,
+    pub role: CohabitExtensionRole,
+    pub requires_preload: bool,
+    pub requires_cohabit_guc: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CohabitExtensionObservation {
+    pub name: &'static str,
+    pub role: CohabitExtensionRole,
+    pub configured: bool,
+    pub preloaded: bool,
+    pub installed: bool,
+    pub ready: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CohabitExtensionDetectionReport {
+    pub observations: Vec<CohabitExtensionObservation>,
+    pub unsupported_configured_extensions: Vec<String>,
+    pub detected: usize,
+    pub ready: usize,
+    pub hard_failures: usize,
+}
+
+impl CohabitExtensionDetectionReport {
+    pub fn observation(&self, extension: &str) -> Option<&CohabitExtensionObservation> {
+        self.observations
+            .iter()
+            .find(|observation| observation.name.eq_ignore_ascii_case(extension))
+    }
+
+    pub fn is_ready(&self, extension: &str) -> bool {
+        self.observation(extension)
+            .map(|observation| observation.ready)
+            .unwrap_or(false)
+    }
+}
+
 impl ExtensionCatalogExecutionReport {
     fn from_contracts(contracts: &[ExtensionContract]) -> Result<Self, ExtensionCatalogError> {
         let summary = validate_extension_contracts(contracts)?;
@@ -105,6 +167,122 @@ impl ExtensionCatalogExecutionReport {
             preloaded: summary.preloaded,
         })
     }
+}
+
+pub fn cohabit_extension_specs() -> Vec<CohabitExtensionSpec> {
+    vec![
+        CohabitExtensionSpec {
+            name: "timescaledb",
+            role: CohabitExtensionRole::TrustedHook,
+            requires_preload: true,
+            requires_cohabit_guc: true,
+        },
+        CohabitExtensionSpec {
+            name: "pg_cron",
+            role: CohabitExtensionRole::ClockWorker,
+            requires_preload: true,
+            requires_cohabit_guc: true,
+        },
+        CohabitExtensionSpec {
+            name: "pg_partman",
+            role: CohabitExtensionRole::PartitionManager,
+            requires_preload: false,
+            requires_cohabit_guc: false,
+        },
+    ]
+}
+
+pub fn detect_cohabit_extensions(
+    shared_preload_libraries: &[&str],
+    cohabit_extensions: &[&str],
+    installed_extensions: &[&str],
+) -> CohabitExtensionDetectionReport {
+    let preloaded = normalized_set(shared_preload_libraries);
+    let configured = normalized_set(cohabit_extensions);
+    let installed = normalized_set(installed_extensions);
+    let specs = cohabit_extension_specs();
+    let supported = specs
+        .iter()
+        .map(|spec| spec.name.to_string())
+        .collect::<BTreeSet<_>>();
+    let mut hard_failures = 0;
+    let mut observations = Vec::with_capacity(specs.len());
+
+    for spec in specs {
+        let is_configured = configured.contains(spec.name);
+        let is_preloaded = preloaded.contains(spec.name);
+        let is_installed = installed.contains(spec.name);
+        let mut reasons = Vec::new();
+
+        if spec.requires_cohabit_guc && !is_configured {
+            reasons.push("missing-citus-cohabit-extensions".to_string());
+        }
+        if spec.requires_preload && !is_preloaded {
+            reasons.push("missing-shared-preload-libraries".to_string());
+        }
+        if !is_installed {
+            reasons.push("extension-not-installed".to_string());
+        }
+
+        let ready = reasons.is_empty();
+        if !ready && (is_configured || is_preloaded || is_installed) {
+            hard_failures += 1;
+        }
+
+        observations.push(CohabitExtensionObservation {
+            name: spec.name,
+            role: spec.role,
+            configured: is_configured,
+            preloaded: is_preloaded,
+            installed: is_installed,
+            ready,
+            reason: if reasons.is_empty() {
+                None
+            } else {
+                Some(reasons.join(","))
+            },
+        });
+    }
+
+    let unsupported_configured_extensions = configured
+        .difference(&supported)
+        .cloned()
+        .collect::<Vec<_>>();
+    hard_failures += unsupported_configured_extensions.len();
+    let detected = observations
+        .iter()
+        .filter(|observation| {
+            observation.configured || observation.preloaded || observation.installed
+        })
+        .count();
+    let ready = observations
+        .iter()
+        .filter(|observation| observation.ready)
+        .count();
+
+    CohabitExtensionDetectionReport {
+        observations,
+        unsupported_configured_extensions,
+        detected,
+        ready,
+        hard_failures,
+    }
+}
+
+pub fn canonical_cohabit_detection_report() -> CohabitExtensionDetectionReport {
+    detect_cohabit_extensions(
+        &["timescaledb", "pg_cron"],
+        &["timescaledb", "pg_cron"],
+        &["timescaledb", "pg_cron", "pg_partman"],
+    )
+}
+
+fn normalized_set(values: &[&str]) -> BTreeSet<String> {
+    values
+        .iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect()
 }
 
 pub fn v2_extension_contracts() -> Vec<ExtensionContract> {
@@ -322,5 +500,59 @@ mod tests {
                 "pgvector".to_string()
             ))
         );
+    }
+
+    #[test]
+    fn canonical_cohabit_detection_covers_timescale_cron_and_partman() {
+        let report = canonical_cohabit_detection_report();
+
+        assert_eq!(report.detected, 3);
+        assert_eq!(report.ready, 3);
+        assert_eq!(report.hard_failures, 0);
+        assert!(report.is_ready("timescaledb"));
+        assert!(report.is_ready("pg_cron"));
+        assert!(report.is_ready("pg_partman"));
+        assert_eq!(
+            report.observation("pg_cron").unwrap().role,
+            CohabitExtensionRole::ClockWorker
+        );
+    }
+
+    #[test]
+    fn timescaledb_detection_requires_preload_and_cohabit_guc() {
+        let report = detect_cohabit_extensions(&[], &[], &["timescaledb"]);
+        let observation = report.observation("timescaledb").unwrap();
+
+        assert!(!observation.ready);
+        assert_eq!(report.hard_failures, 1);
+        assert_eq!(
+            observation.reason.as_deref(),
+            Some("missing-citus-cohabit-extensions,missing-shared-preload-libraries")
+        );
+    }
+
+    #[test]
+    fn pg_cron_detection_does_not_grant_hook_trust() {
+        let report = detect_cohabit_extensions(&["pg_cron"], &["pg_cron"], &["pg_cron"]);
+        let observation = report.observation("pg_cron").unwrap();
+
+        assert!(observation.ready);
+        assert_eq!(observation.role, CohabitExtensionRole::ClockWorker);
+        assert_ne!(observation.role, CohabitExtensionRole::TrustedHook);
+    }
+
+    #[test]
+    fn unsupported_configured_cohabit_extensions_fail_closed() {
+        let report = detect_cohabit_extensions(
+            &["timescaledb"],
+            &["timescaledb", "unknown_hooks"],
+            &["timescaledb"],
+        );
+
+        assert_eq!(
+            report.unsupported_configured_extensions,
+            vec!["unknown_hooks"]
+        );
+        assert_eq!(report.hard_failures, 1);
     }
 }

@@ -38,4 +38,8 @@ extern size_t LogicalClockShmemSize(void);
 extern void InitializeClusterClockMem(void);
 extern ClusterClock * GetEpochTimeAsClock(void);
 
+/* FEATURE: TS19 -- cohabit clock-tick reservation helpers */
+extern void ReserveCohabitClockTick(void);
+extern bool IsClockTickCohabitReserved(void);
+
 #endif /* CAUSAL_CLOCK_H */

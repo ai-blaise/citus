@@ -524,10 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 275 source `FEATURE:` markers and 275
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -564,9 +562,9 @@ aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
 for the installable SQL extension catalog runtime that records required,
 optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts, plus `S2` for the operator-owned `ShardGroupReconcilePlan` and
-`CitusClusterReconcilePlan` plan-builders that render the canonical SQL apply
-plan (`set_shard_count`, `set_shard_replication_factor`,
+extension contracts, plus `S2` for the operator-owned `ShardGroupReconcilePlan`
+and `CitusClusterReconcilePlan` plan-builders that render the canonical SQL
+apply plan (`set_shard_count`, `set_shard_replication_factor`,
 `create_distributed_table`, optional `update_distributed_table_colocation`,
 and a `pg_dist_shard` post-condition guard) plus Kubernetes-style
 topology-spread constraints and the CloudNativePG cluster manifest from the
@@ -581,16 +579,16 @@ database execution runtime against real PostgreSQL with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
 destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
 do not execute the explained statement. The MCP entries `MCP1`, `MCP2`,
-`MCP3`, and `D11` now
-remain alpha for the broader workflow: they have real stdio and HTTP JSON-RPC
-process smokes, obvious cross-schema request denial, and exhaustive-profile
-Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
-execution for `tools/citus-mcp`. Authentication, mutating database execution,
-Kubernetes tool execution, and production sidecar enablement remain alpha, and
-production values keep the MCP sidecar disabled until those contracts are
-implemented and live-gated. The
-other 146
-feature headings remain
+`MCP3`, and `D11` now remain alpha for the broader workflow: they have real
+stdio and HTTP JSON-RPC process smokes, obvious cross-schema request denial,
+and exhaustive-profile Kubernetes sidecar traffic proof, while `MCP4` covers
+only read-only database execution for `tools/citus-mcp`. Authentication,
+mutating database execution, Kubernetes tool execution, and production sidecar
+enablement remain alpha, and production values keep the MCP sidecar disabled
+until those contracts are implemented and live-gated. `TS19` and `TS20` remain
+alpha: TS19 has a patch-level clock reservation but no live Citus+pg_cron boot
+evidence yet, and TS20 has deterministic companion detection proof but no live
+patched-Citus C API caller yet. The other 150 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,

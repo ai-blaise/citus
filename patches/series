@@ -2,3 +2,5 @@
 0002-preserve-trusted-hook-chain-state.patch
 0003-guc-report-citus-userset.patch
 0005-placement-generation-counter.patch
+0007-citus-clock-cohabit-pg-cron.patch
+0008-cohabit-extensions-detection-api.patch
