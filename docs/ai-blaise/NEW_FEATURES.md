@@ -37,6 +37,10 @@ and catalog specs for `FEATURE: S2`, `FEATURE: S4`, `FEATURE: TS7`,
 `FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
 `FEATURE: TO5`, and `FEATURE: WH1`, then emits the deterministic TSV summary
 with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
+`cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c` and
+`ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` guard the Batch C operator
+reconcile plans for `FEATURE: R7`, `FEATURE: C9`, `FEATURE: M3`, `FEATURE:
+M14`, `FEATURE: C4`, `FEATURE: C5`, and `FEATURE: O5`.
 `e2e/src/runtime_contracts.rs` validates canonical runtime contracts for
 `FEATURE: Auth1`, `FEATURE: Auth3`, `FEATURE: B1`, `FEATURE: B3`,
 `FEATURE: B4`, `FEATURE: C1`, `FEATURE: L8`, `FEATURE: MR5`, `FEATURE: R7`,
@@ -1594,10 +1598,14 @@ does not provide a scheduled repack CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
+- In-source: `FEATURE: R7` in `operator/src/reconcile/scheduled_repack.rs`
+- In-source: `FEATURE: R7` in `operator/src/controllers/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### R9: Cross-Tier Query Planner Input
 
@@ -1668,7 +1676,11 @@ policy objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
+- In-source: `FEATURE: C4` in `operator/src/reconcile/conflict_policy.rs`
+- In-source: `FEATURE: C4` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### C5: Replication Conflict Taxonomy
 
@@ -1691,7 +1703,11 @@ classification contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
+- In-source: `FEATURE: C5` in `operator/src/reconcile/conflict_policy.rs`
+- In-source: `FEATURE: C5` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` and
   `patches/postgres/0002-per-subtrans-commit-ts.patch` provide the PG-core
   pieces the seven-class conflict resolver needs: monotonic commit timestamps
@@ -1862,7 +1878,11 @@ that can coordinate validation, retries, and conflict handling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
+- In-source: `FEATURE: C9` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: C9` in `operator/src/controllers/migration.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### C10: Online DDL State Machine
 
@@ -2119,7 +2139,11 @@ operator-owned migration object.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
+- In-source: `FEATURE: M3` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: M3` in `operator/src/controllers/migration.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### M5: LSP Refactor Quick-Fixes
 
@@ -2322,6 +2346,9 @@ phase log, worker lease, or rollback planner.
 - In-source: `FEATURE: M14` in `companion/src/schema_jobs/rollback.rs`
 - In-source: `FEATURE: M14` in `sidecar/schema_job/src/controller.rs`
 - In-source: `FEATURE: M14` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: M14` in `operator/src/controllers/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 - SQL runtime: `FEATURE: M14` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
@@ -5112,7 +5139,11 @@ deployment objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
+- In-source: `FEATURE: O5` in `operator/src/reconcile/sidecar.rs`
+- In-source: `FEATURE: O5` in `operator/src/controllers/sidecar.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### O6: Grafana Dashboards As ConfigMaps
 

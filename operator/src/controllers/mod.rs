@@ -12,6 +12,9 @@ pub mod hypertable;
 pub mod migration;
 pub mod tenant;
 
+pub mod conflict_policy;
+pub mod scheduled_repack;
+pub mod sidecar;
 use kube::Client;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,16 +53,22 @@ pub enum ControllerError {
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client);
-    info!("operator serving CitusCluster, Migration, Tenant, Hypertable controllers");
+    info!("operator serving CitusCluster, Migration, Tenant, Hypertable, ScheduledRepack, ConflictPolicy, Sidecar controllers");
 
     let cluster = tokio::spawn(citus_cluster::run(ctx.clone()));
+    let conflict_policy = tokio::spawn(conflict_policy::run(ctx.clone()));
     let migration = tokio::spawn(migration::run(ctx.clone()));
+    let scheduled_repack = tokio::spawn(scheduled_repack::run(ctx.clone()));
+    let sidecar = tokio::spawn(sidecar::run(ctx.clone()));
     let tenant = tokio::spawn(tenant::run(ctx.clone()));
     let hypertable = tokio::spawn(hypertable::run(ctx.clone()));
 
     tokio::select! {
         result = cluster => log_exit("citus_cluster", result),
+        result = conflict_policy => log_exit("conflict_policy", result),
         result = migration => log_exit("migration", result),
+        result = scheduled_repack => log_exit("scheduled_repack", result),
+        result = sidecar => log_exit("sidecar", result),
         result = tenant => log_exit("tenant", result),
         result = hypertable => log_exit("hypertable", result),
     }

@@ -93,7 +93,11 @@ def postgres_reachable() -> bool:
             timeout=5,
         )
         return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+    ):
         return False
 
 
@@ -201,7 +205,11 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--rows", type=int, default=env_int("BENCH_ROWS", 50000))
     parser.add_argument("--series", type=int, default=env_int("BENCH_SERIES", 16))
-    parser.add_argument("--quick", action="store_true", default=env_str("BENCH_QUICK", "1") == "1")
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        default=env_str("BENCH_QUICK", "1") == "1",
+    )
     args = parser.parse_args(argv)
 
     tag = env_str("BENCH_RESULT_TAG", "quick")
@@ -261,7 +269,10 @@ def main(argv: list[str]) -> int:
         elapsed, rows = run_copy(args.rows, args.series)
     except RuntimeError as exc:
         if args.quick:
-            print(f"timescale-ingest: COPY failed ({exc}); recording scaffold result", file=sys.stderr)
+            print(
+                f"timescale-ingest: COPY failed ({exc}); " "recording scaffold result",
+                file=sys.stderr,
+            )
             out = write_result(
                 {
                     "rows_per_s": 0,

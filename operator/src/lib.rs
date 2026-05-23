@@ -52,12 +52,30 @@ pub use reconcile::citus_cluster::{
     PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
     POOL_DEPLOYMENT_NAME_SUFFIX, POSTGRES_SHARED_PRELOAD_LIBRARIES,
 };
+pub use reconcile::conflict_policy::{
+    ConflictPolicyApplyPlan, ConflictPolicyApplyStep, ConflictPolicyReconcileError,
+    ConflictPolicyReconcilePlan, CONFLICT_POLICY_TABLE, CONFLICT_STATUS_TABLE,
+};
 pub use reconcile::hypertable::{
     HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
 };
-pub use reconcile::migration::{MigrationCommand, MigrationReconcileError, MigrationReconcilePlan};
+pub use reconcile::migration::{
+    MigrationApplyPlan, MigrationApplyStep, MigrationCommand, MigrationReconcileError,
+    MigrationReconcilePlan, MigrationTeardownAction, SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+    SCHEMA_JOB_ADVANCE_FUNCTION, SCHEMA_JOB_START_FUNCTION, SCHEMA_JOB_STATUS_VIEW,
+};
+pub use reconcile::scheduled_repack::{
+    ScheduledRepackApplyPlan, ScheduledRepackApplyStep, ScheduledRepackReconcileError,
+    ScheduledRepackReconcilePlan, PG_CRON_SCHEDULE_FUNCTION, PG_CRON_UNSCHEDULE_FUNCTION,
+    REPACK_POLICY_TABLE, REPACK_QUEUE_TABLE,
+};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
     CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
+};
+pub use reconcile::sidecar::{
+    SidecarDeletionPlan, SidecarDeletionStep, SidecarReconcileError, SidecarReconcilePlan,
+    SidecarRuntimeProfile, SidecarStatusProbeUrls, SIDECAR_DEFAULT_PORT,
+    SIDECAR_DELETION_GRACE_SECONDS, SIDECAR_DEPLOYMENT_NAME_PREFIX,
 };
