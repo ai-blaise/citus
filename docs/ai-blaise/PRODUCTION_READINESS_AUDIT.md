@@ -200,6 +200,15 @@ more production-ready than the artifacts justified.
   smoke, the real Citus+TimescaleDB cohabitation smoke, and the
   primary/standby observability replication smoke. The production gap audit
   rejects regressions that leave a promoted runtime smoke out of those gates.
+- The API trio sidecars now have runtime front doors instead of canonical-only
+  binaries: PostgREST renders config/OpenAPI and can spawn the configured child
+  process, GraphQL renders the `graphql.resolve(...)` pg_graphql boundary and
+  registers subscription transport state, and edge-functions exposes registry,
+  trigger, invocation, and UDS-callback runtime surfaces. The new
+  `ci/ai-blaise/api-trio-runtime-smoke.sh` boots all three services and verifies
+  live TCP readiness plus API-specific behavior. These features remain alpha
+  where the docs still require a live Postgres/PostgREST/pg_graphql/Deno/Bun
+  deployment before production promotion.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is a manifest/init contract, not production evidence that
   every binary package is installed in a runnable operand image. The production
@@ -563,6 +572,11 @@ introspection cache, TOTP-backed login path, and schema smoke proven by
 exchange, key rotation, persistent runtime loading from the auth schema,
 WebAuthn ceremonies, pool data-plane authentication, and pool-side token cache
 operation remain alpha until they have their own live evidence.
+
+The API trio runtime smoke boots the PostgREST, GraphQL, and edge-functions
+sidecars and verifies their local HTTP/runtime boundaries, but those entries
+remain alpha where the feature register still requires live Postgres,
+PostgREST/pg_graphql, Deno/Bun, auth, or operator integration evidence.
 
 The broader backup workflow is still not production-ready as a whole. The
 backup promotions do not prove cloud object-store credentials, external secret
