@@ -31,18 +31,19 @@
 
 use ai_blaise_citus_operator::controllers;
 use ai_blaise_citus_operator::{
-    BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
-    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
-    CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec, ConflictResolution,
-    ContinuousAggregateSpec, EmbeddingProvider, FederationConnection, FederationSpec,
-    FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger,
-    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
-    PlacementPolicy, PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
-    ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexSpec, SearchScorer,
-    ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType,
-    SidecarSpec, SidecarType, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec,
-    UnsatisfiablePlacementAction, VectorDestinationSpec, VectorizerScheduleMode,
-    VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent, WebhookRetryPolicy, WebhookSpec,
+    canonical_operator_security_report, BackupEncryption, BackupProvider, BackupSpec, BackupTarget,
+    BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy,
+    CitusClusterReconcilePlan, CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass,
+    ConflictPolicySpec, ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider,
+    FederationConnection, FederationSpec, FederationType, FunctionEvent, FunctionRuntime,
+    FunctionSource, FunctionSpec, FunctionTrigger, HypertableReconcilePlan, HypertableSpec,
+    MigrationConflictAction, MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionSpec,
+    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackSpec, SearchColumnKind,
+    SearchColumnSpec, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
+    SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType, SurvivalGoalSpec,
+    SurvivalGoalType, TenantQuotas, TenantSpec, UnsatisfiablePlacementAction,
+    VectorDestinationSpec, VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec,
+    WebhookEvent, WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -68,6 +69,7 @@ fn main() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
+        [command] if command == "run-security-canonical" => run_security_canonical(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -104,7 +106,30 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-security-canonical]");
+}
+
+fn run_security_canonical() {
+    let report = canonical_operator_security_report().unwrap_or_else(|error| {
+        eprintln!("operator: security canonical execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "workloads\ttls_required\tauth_boundaries\tsecret_refs\trbac_rules\tkube_api_denied\trun_as_non_root\tread_only_rootfs\tdrop_all_capabilities"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.workloads,
+        report.tls_required,
+        report.auth_boundaries,
+        report.secret_refs,
+        report.rbac_rules,
+        report.kube_api_denied,
+        report.run_as_non_root,
+        report.read_only_rootfs,
+        report.drop_all_capabilities,
+    );
 }
 
 fn run_reconcile_plans() {

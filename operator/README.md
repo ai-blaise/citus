@@ -42,3 +42,12 @@ time-range shard pruning.
 canonical V2 operator surface and emits a deterministic TSV summary covering
 `CitusCluster`, `ShardGroup`, `Hypertable`, the hypertable apply plan, and the
 operator catalog CRDs.
+
+`cargo run -p ai_blaise_citus_operator -- run-security-canonical` validates the
+operator-owned security boundary for generated operator, pool, built-in
+sidecar, and custom sidecar workloads. The runner fails closed on inline
+secrets, Secret API RBAC, wildcard RBAC, weak TLS settings, auth policies that
+do not fail closed, root or privilege-escalating containers, writable root
+filesystems, missing `RuntimeDefault` seccomp, and retained Linux capabilities.
+This is model/smoke evidence only; live certificate issuance, mounts, and mTLS
+traffic rotation remain release-gated elsewhere.

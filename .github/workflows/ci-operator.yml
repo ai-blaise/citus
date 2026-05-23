@@ -21,3 +21,5 @@ jobs:
         run: cargo test -p ai_blaise_citus_operator
       - name: Run canonical operator contract
         run: cargo run -q -p ai_blaise_citus_operator -- run-canonical
+      - name: Run operator security enforcement smoke
+        run: bash ci/ai-blaise/security-enforcement-smoke.sh

@@ -403,6 +403,15 @@ more production-ready than the artifacts justified.
   cross-tenant insert, and verifies missing tenant claims fail closed. This is
   not evidence for automatic policy generation, pool authentication, or
   auto-API integration. Sec2 JWT verification is separate evidence.
+- The operator security runner now validates `FEATURE: Sec7` and
+  `FEATURE: Sec8` workload boundaries for generated operator, pool, built-in
+  sidecar, and custom sidecar plans. It rejects inline secret values, Secret
+  API RBAC grants, wildcard RBAC, weak TLS, missing client-certificate
+  requirements, auth policies that do not fail closed, root containers,
+  privilege escalation, writable root filesystems, missing `RuntimeDefault`
+  seccomp, and retained Linux capabilities. This is deterministic model/smoke
+  evidence, not proof of live ExternalSecret reconciliation, certificate
+  issuance, Kubernetes Secret mounts, mTLS traffic enforcement, or rotation.
 - The SQL extension now installs `FEATURE: Sec2` HS256 JWT verification
   helpers: base64url encode/decode, audience matching, and
   `companion_verify_jwt_hs256(...)`. The PostgreSQL extension smoke builds a
@@ -495,6 +504,12 @@ Rule 10 completion for this branch requires local and VM verification of:
   predicates under a real PostgreSQL RLS policy. It must not be cited as
   evidence for automatic policy generation, pool authentication, or auto-API
   integration. Sec2 JWT verification does not expand the Sec1 helper claim.
+- Sec7/Sec8 evidence from `ci/ai-blaise/security-enforcement-smoke.sh` is
+  limited to deterministic operator workload security plans: referenced
+  secrets, no Secret API RBAC, scoped operator RBAC, TLS 1.3+mTLS policy,
+  fail-closed auth boundaries, and restricted pod/container security contexts.
+  It must not be cited as live ExternalSecret reconciliation, certificate
+  issuance, Kubernetes Secret mount, live mTLS traffic, or rotation evidence.
 - Sec2 production evidence is limited to the local SQL HS256 verifier:
   pgcrypto HMAC signature verification, issuer/audience/expiration/not-before
   validation, required Auth2-compatible claim extraction, and fail-closed bad
@@ -524,10 +539,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,9 +602,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
-feature headings remain
-`Status: alpha`. There are no remaining source-only feature markers: the
+other 148 feature headings remain `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,
 but it is not a production claim for the full feature plan.

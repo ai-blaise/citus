@@ -8,6 +8,7 @@ use std::fmt;
 use crate::crds::citus_cluster::{
     CitusClusterSpec, CitusClusterSpecError, CitusTopology, PoolSpec, SidecarSpec, SidecarType,
 };
+use crate::reconcile::security::{WorkloadSecurityError, WorkloadSecurityPlan};
 
 /// Default name suffix used for the CloudNativePG cluster generated for a
 /// `CitusCluster`. The owning CRD's metadata.name is concatenated with this
@@ -86,6 +87,7 @@ pub struct PoolDeploymentPlan {
     pub name: String,
     pub replicas: u32,
     pub geoip_db: Option<String>,
+    pub security: WorkloadSecurityPlan,
 }
 
 impl PoolDeploymentPlan {
@@ -94,6 +96,7 @@ impl PoolDeploymentPlan {
             name: format!("{cluster_name}{POOL_DEPLOYMENT_NAME_SUFFIX}"),
             replicas: pool.replicas,
             geoip_db: pool.geoip_db.clone(),
+            security: WorkloadSecurityPlan::pool(cluster_name),
         }
     }
 }
@@ -104,6 +107,7 @@ pub struct SidecarDeploymentPlan {
     pub sidecar_type: SidecarType,
     pub replicas: u32,
     pub deployment_name: String,
+    pub security: WorkloadSecurityPlan,
 }
 
 impl SidecarDeploymentPlan {
@@ -113,6 +117,7 @@ impl SidecarDeploymentPlan {
             sidecar_type: sidecar.sidecar_type.clone(),
             replicas: sidecar.replicas,
             deployment_name: format!("{cluster_name}-sidecar-{suffix}"),
+            security: WorkloadSecurityPlan::sidecar(cluster_name, &suffix),
         }
     }
 }
@@ -199,12 +204,18 @@ impl CitusClusterReconcilePlan {
             .pool
             .as_ref()
             .map(|pool_spec| PoolDeploymentPlan::from_spec(trimmed, pool_spec));
+        if let Some(pool) = &pool {
+            pool.security.validate()?;
+        }
 
         let sidecars = spec
             .sidecars
             .iter()
             .map(|sidecar| SidecarDeploymentPlan::from_spec(trimmed, sidecar))
             .collect::<Vec<_>>();
+        for sidecar in &sidecars {
+            sidecar.security.validate()?;
+        }
 
         Ok(Self {
             cluster_name: trimmed.to_string(),
@@ -242,6 +253,7 @@ fn shared_preload_libraries(spec: &CitusClusterSpec) -> Vec<String> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum CitusClusterReconcileError {
     InvalidSpec(CitusClusterSpecError),
+    InvalidWorkloadSecurity(WorkloadSecurityError),
     MissingClusterName,
 }
 
@@ -249,6 +261,7 @@ impl fmt::Display for CitusClusterReconcileError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidSpec(error) => write!(formatter, "{error}"),
+            Self::InvalidWorkloadSecurity(error) => write!(formatter, "{error}"),
             Self::MissingClusterName => {
                 write!(formatter, "cluster_name must not be empty")
             }
@@ -261,6 +274,12 @@ impl Error for CitusClusterReconcileError {}
 impl From<CitusClusterSpecError> for CitusClusterReconcileError {
     fn from(error: CitusClusterSpecError) -> Self {
         Self::InvalidSpec(error)
+    }
+}
+
+impl From<WorkloadSecurityError> for CitusClusterReconcileError {
+    fn from(error: WorkloadSecurityError) -> Self {
+        Self::InvalidWorkloadSecurity(error)
     }
 }
 
@@ -313,6 +332,8 @@ mod tests {
         assert_eq!(pool.name, "ai-blaise-citus-pool");
         assert_eq!(pool.replicas, 2);
         assert_eq!(pool.geoip_db.as_deref(), Some("maxmind-city"));
+        assert!(pool.security.requires_tls());
+        assert!(pool.security.denies_kubernetes_api());
         assert_eq!(plan.sidecars.len(), 2);
         assert_eq!(
             plan.sidecars[0].deployment_name,
@@ -322,6 +343,10 @@ mod tests {
             plan.sidecars[1].deployment_name,
             "ai-blaise-citus-sidecar-mcp"
         );
+        assert!(plan
+            .sidecars
+            .iter()
+            .all(|sidecar| sidecar.security.requires_tls()));
         assert_eq!(plan.total_deployments(), 3);
 
         let manifest = plan.cnpg_cluster.manifest_yaml();
