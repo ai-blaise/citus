@@ -232,7 +232,25 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
   else
-    grep -Fq 'run_probe_server' "${main_file}"
+    component_dir="${main_file%/src/main.rs}"
+    lib_file="${component_dir}/src/lib.rs"
+    if grep -Fq 'run_probe_server' "${main_file}"; then
+      continue
+    fi
+    probe_sources=()
+    while IFS= read -r probe_source; do
+      probe_sources+=("${probe_source}")
+    done < <(find "${component_dir}/src" -maxdepth 1 -type f -name '*.rs' | sort)
+    if [[ ${#probe_sources[@]} -eq 0 ]]; then
+      probe_sources=("${main_file}")
+    fi
+    if ! grep -Eq '(/healthz|healthz)' "${probe_sources[@]}" \
+      || ! grep -Eq '(/readyz|readyz)' "${probe_sources[@]}" \
+      || ! grep -Eq '(/metrics|metrics)' "${probe_sources[@]}" \
+      || ! grep -Eq '(TcpListener|axum::|Router::new|serve_[A-Za-z0-9_]*_http|serve_http)' "${probe_sources[@]}"; then
+      echo "${main_file} must expose shared run_probe_server or a custom HTTP probe implementation with healthz, readyz, and metrics" >&2
+      exit 1
+    fi
   fi
 done
 
