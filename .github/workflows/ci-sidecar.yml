@@ -93,6 +93,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-canonical
       - name: Run canonical CDC runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical
+      - name: Run CDC runtime smoke
+        run: bash ci/ai-blaise/sidecar-cdc-smoke.sh
 
   coldtier:
     runs-on: ubuntu-latest
@@ -207,6 +209,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-canonical
       - name: Run canonical realtime runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical
+      - name: Run realtime runtime smoke
+        run: bash ci/ai-blaise/sidecar-realtime-smoke.sh
 
   repack:
     runs-on: ubuntu-latest

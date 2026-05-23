@@ -525,18 +525,22 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 273 source `FEATURE:` markers and 273
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 129 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 137 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
-runtime or SQL surface, and a documented production boundary. The promoted
-backup entries are intentionally scoped: `B1` covers the real backup sidecar
-WAL-G command runner, HTTP runtime, scheduled backup loop, retention endpoint,
-status/list endpoints, readiness, and backup metrics; `B3` covers PITR target
-window validation, `wal-g backup-fetch` orchestration, restore job tracking,
-and `/pitr/restore` plus `/pitr/status/<job>`; `B4` covers queryable branch
-restore, recovery/read-only PostgreSQL config generation, `pg_ctl` start,
-`psql` read-only probing, and branch create/list endpoints; `B6` covers
-sidecar encryption environment validation and canonical `WALG_GPG_KEY_ID`
-materialization for encrypted backup work. Their proof is
+runtime or SQL surface, and a documented production boundary. The promoted set
+includes the previously promoted deploy, observability, SQL, operator
+plan-builder, MCP4, and sidecar runtime entries, plus the backup, CDC, and
+realtime runtime entries merged in this release train dry-run.
+
+The promoted backup entries are intentionally scoped: `B1` covers the real
+backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
+retention endpoint, status/list endpoints, readiness, and backup metrics; `B3`
+covers PITR target window validation, `wal-g backup-fetch` orchestration,
+restore job tracking, and `/pitr/restore` plus `/pitr/status/<job>`; `B4`
+covers queryable branch restore, recovery/read-only PostgreSQL config
+generation, `pg_ctl` start, `psql` read-only probing, and branch create/list
+endpoints; `B6` covers sidecar encryption environment validation and canonical
+`WALG_GPG_KEY_ID` materialization for encrypted backup work. Their proof is
 `cargo test -p ai_blaise_citus_sidecar_backup` plus
 `ci/ai-blaise/sidecar-backup-smoke.sh`, which starts the real binary with safe
 deterministic local `wal-g`, `pg_ctl`, and `psql` fakes and drives the HTTP
@@ -549,8 +553,8 @@ lifecycle management, long-running query load on restored branches, or a full
 Kubernetes restore against a real WAL-G archive. Those remain explicit future
 acceptance gates, not hidden assumptions.
 
-The other 144 feature headings remain `Status: alpha`. There are no remaining
-source-only feature markers: the former V2 addendum rows were promoted to
+The other 136 feature headings remain `Status: alpha`. There are no remaining
+source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
 Every feature heading now has an explicit Executable, CI, Acceptance, SQL
@@ -558,6 +562,21 @@ runtime, or SQL extension reference line. Those references are alpha contract
 evidence unless the entry is also marked `Status: production-ready`; they keep
 the catalog auditable, but they are not independently sufficient for production
 signoff.
+
+Worker D CDC/realtime production evidence from 2026-05-23 adds `C1`, `C3`,
+`WH3`, `RT1`, `RT2`, `RT3`, `RT4`, and `RT5` to the narrow
+production-ready set. The evidence is limited to the CDC/realtime sidecar
+runtime boundary: wal2json ingest, pgoutput logical-frame decoder boundary,
+checkpoint/ack state, health/readiness/metrics, PII anonymization before sink
+encoding, file/in-memory DLQ records, raw WebSocket Phoenix channel join,
+presence, tenant/topic filtering, `postgres_changes` fan-out, and CDC-to-realtime
+Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
+`cargo test -p ai_blaise_citus_sidecar_realtime`,
+`ci/ai-blaise/sidecar-cdc-smoke.sh`, and
+`ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
+(NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
+client operation) remain alpha unless covered by their own feature entry.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

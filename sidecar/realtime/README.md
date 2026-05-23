@@ -1,32 +1,19 @@
 # sidecar/realtime
 
-> Production boundary: unless a feature is explicitly `Status: production-ready`
-> in `docs/ai-blaise/NEW_FEATURES.md`, the surfaces listed here are alpha
-> contracts. Deterministic canonical reports and local runtime models are CI
-> artifacts, not production evidence; promotion requires live VM/container or
-> Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
-> and guarded by `ci/ai-blaise/production-gap-audit.sh`.
+Production realtime runtime for CDC-backed Phoenix-style channels.
 
-WebSocket broadcast layer driven by CDC events.
+The runtime serves raw WebSocket clients at `/realtime/v1/websocket`, accepts CDC ingest over TCP or `unix:/path.sock`, exposes `/healthz`, `/readyz`, and `/metrics` on the WebSocket listener, and broadcasts `postgres_changes` plus presence diffs through an in-process tenant-aware hub.
 
-Current implemented surface:
+Implemented surfaces:
 
-- `RealtimeSidecarPlan`
-- `RealtimeSubscription`
-- `RealtimeFilter`
-- `PresencePlan`
-- `RealtimeBroadcastPlan`
-- `RealtimeRuntime`
-- `RealtimeRuntimeState`
-- `RealtimeRuntimeBroadcast`
-- `canonical_broadcast_plan()`
-- `canonical_realtime_runtime_report()`
-- `cargo run -p ai_blaise_citus_sidecar_realtime -- run-canonical`
-- `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
+- `ws`: RFC 6455 handshake and frame encode/decode.
+- `phoenix`: Phoenix v2 array frame encode/decode.
+- `hub`: subscriptions, tenant/topic filters, mailbox fan-out, presence state, metrics.
+- `live`: WS listener, CDC ingest listener, UDS support, probe responses.
 
-These contracts cover `FEATURE: RT1`, `FEATURE: RT2`, `FEATURE: RT3`, and
-`FEATURE: RT4`.
+Verification:
 
-The runtime surface deterministically models active WebSocket connections,
-CDC fan-out, filtered connections, frame sizing, and presence snapshot
-accounting for canonical tests.
+- `cargo test -p ai_blaise_citus_sidecar_realtime`
+- `bash ci/ai-blaise/sidecar-realtime-smoke.sh`
+
+Client SDK compatibility beyond the Phoenix wire protocol remains a separate matrix concern.

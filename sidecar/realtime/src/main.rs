@@ -2,10 +2,12 @@
 // FEATURE: RT2
 // FEATURE: RT3
 // FEATURE: RT4
+// FEATURE: RT5
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
 use ai_blaise_citus_sidecar_realtime::{
     canonical_broadcast_plan, canonical_realtime_event, canonical_realtime_runtime_report,
+    RealtimeLiveConfig, RealtimeLiveRuntime,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -20,6 +22,11 @@ fn main() {
 
     if args == ["serve"] {
         run_server("realtime", "0.0.0.0:8080");
+        return;
+    }
+
+    if args == ["serve-runtime"] {
+        serve_runtime();
         return;
     }
 
@@ -84,9 +91,44 @@ fn run_runtime_canonical() {
     );
 }
 
+fn serve_runtime() {
+    let mut config = RealtimeLiveConfig::default();
+    if let Ok(addr) = env::var("REALTIME_WS_LISTEN_ADDR") {
+        config.ws_listen_addr = addr;
+    }
+    if let Ok(addr) = env::var("REALTIME_CDC_INGEST_ADDR") {
+        config.cdc_ingest_addr = addr;
+    }
+    if let Ok(key) = env::var("REALTIME_APIKEY") {
+        config.realm_apikey = Some(key);
+    }
+    let runtime = RealtimeLiveRuntime::new(config.clone());
+    let ws_handle = runtime.spawn_ws_listener().unwrap_or_else(|error| {
+        eprintln!(
+            "realtime: ws bind {} failed: {error}",
+            config.ws_listen_addr
+        );
+        process::exit(1);
+    });
+    let cdc_handle = runtime.spawn_cdc_ingest_listener().unwrap_or_else(|error| {
+        eprintln!(
+            "realtime: cdc ingest bind {} failed: {error}",
+            config.cdc_ingest_addr
+        );
+        process::exit(1);
+    });
+    eprintln!(
+        "realtime: serve-runtime ws={} cdc_ingest={}",
+        config.ws_listen_addr, config.cdc_ingest_addr
+    );
+    let _ = ws_handle.join();
+    let _ = cdc_handle.join();
+}
+
 fn print_usage() {
-    println!("usage: realtime [serve|run-canonical|run-runtime-canonical]");
-    println!("runs deterministic canonical realtime broadcast/runtime reports and emits TSV");
+    println!("usage: realtime [serve|serve-runtime|run-canonical|run-runtime-canonical]");
+    println!("runs the realtime sidecar: a deterministic canonical broadcaster and a live");
+    println!("WS + CDC ingest runtime that fans CDC events out to phoenix-channel clients.");
 }
 
 fn run_server(component: &str, default_addr: &str) {
