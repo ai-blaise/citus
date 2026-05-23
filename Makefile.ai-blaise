@@ -314,6 +314,12 @@ run-admin-canonical:
 kind-smoke:
 	@tests/e2e/kind-timescale-citus-smoke.sh
 
+deploy-check:
+	@bash ci/ai-blaise/deploy-check.sh
+
+kind-production-smoke:
+	@bash ci/ai-blaise/kind-production-smoke.sh
+
 sql-extension-smoke:
 	@REQUIRE_DOCKER=1 ci/ai-blaise/sql-extension-smoke.sh
 

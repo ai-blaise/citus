@@ -33,3 +33,19 @@ The V2 release-gate report is not measured production evidence by itself. It
 records the canonical gate shape and expected thresholds that live harnesses
 must later prove. `ci/ai-blaise/production-gap-audit.sh` keeps that boundary
 machine-checkable so canonical model output cannot promote alpha features.
+
+
+## Live Kubernetes Traffic
+
+`ci/ai-blaise/live-k8s-e2e.sh` is the live deployment and traffic harness for
+real clusters and kind. Because the chart lives in `ai-blaise/command-center`,
+real runs must provide `CHART_DIR` or `COMMAND_CENTER_DIR` plus image refs that
+the target cluster can pull or that kind can load through `LOCAL_IMAGE_REFS`.
+The harness waits for Kubernetes readiness, probes HTTP endpoints through
+port-forwards, runs `psql` through the exposed PostgreSQL service path, collects
+logs/events on failure, and tears down safely by default.
+
+`ci/ai-blaise/deploy-check.sh` and the default `kind-production-smoke` mode are
+CI-safe dry-runs. They validate rendering when a chart is supplied, but they do
+not send HTTP or SQL traffic and must not be cited as production runtime
+evidence.

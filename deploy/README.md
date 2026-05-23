@@ -28,3 +28,32 @@ This repository keeps:
 Use the command-center chart with Helm or via Argo CD against
 `ai-blaise/command-center/gitops/apps/13-citus-cluster.yaml`. Operand images are
 still published from this repository.
+
+
+## Live Kubernetes E2E
+
+This repo now ships the external-chart-aware traffic harness at
+`ci/ai-blaise/live-k8s-e2e.sh`. Use `CHART_DIR` to point directly at the
+command-center chart, or `COMMAND_CENTER_DIR` to point at a checkout containing
+`helm/charts/citus-cluster`.
+
+Dry-run contract smoke:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center ci/ai-blaise/deploy-check.sh
+```
+
+Real kind traffic with locally built or published images:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center \
+LIVE_K8S_MODE=kind \
+LOCAL_IMAGE_REFS='registry.local/citus:dev' \
+AI_BLAISE_STACK_IMAGE_REF=registry.local/citus:dev \
+ci/ai-blaise/kind-production-smoke.sh
+```
+
+For richer command-center charts, pass chart-specific image values through
+`HELM_SET_ARGS`. The harness fails real mode when required image refs, HTTP
+probe targets, or SQL service traffic are missing; dry-run output is not live
+runtime evidence.

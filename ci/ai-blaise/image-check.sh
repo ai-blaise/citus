@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 image_dir="images/citus-pg-overlay"
@@ -16,6 +17,9 @@ timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
+deploy_check="ci/ai-blaise/deploy-check.sh"
+kind_production_smoke="ci/ai-blaise/kind-production-smoke.sh"
+live_k8s_e2e="ci/ai-blaise/live-k8s-e2e.sh"
 
 for file in \
   "${dockerignore}" \
@@ -32,7 +36,10 @@ for file in \
   "${timescale_bridge_smoke}" \
   "${timescale_cohabitation_smoke}" \
   "${observability_replication_smoke}" \
-  "${app_digest_smoke}"; do
+  "${app_digest_smoke}" \
+  "${deploy_check}" \
+  "${kind_production_smoke}" \
+  "${live_k8s_e2e}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -59,6 +66,12 @@ if [[ ! -x "${app_digest_smoke}" ]]; then
   echo "missing executable app image digest manifest smoke: ${app_digest_smoke}" >&2
   exit 1
 fi
+for file in "${deploy_check}" "${kind_production_smoke}" "${live_k8s_e2e}"; do
+  if [[ ! -x "${file}" ]]; then
+    echo "missing executable live Kubernetes e2e harness artifact: ${file}" >&2
+    exit 1
+  fi
+done
 
 required_extensions=(
   timescaledb citus pgvector pg_cron pg_partman pgaudit pgauditlogtofile
@@ -162,6 +175,25 @@ grep -Fq "did not report an immutable repo digest" "${build_app_images}"
 grep -Fq "repository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" "${build_app_images}"
 grep -Fq 'DEFAULT_ARGS=${default_args}' "${build_app_images}"
 grep -Fq "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster" "${build_app_images}"
+grep -Fq "LIVE_K8S_MODE=dry-run" "${live_k8s_e2e}"
+grep -Fq "LIVE_K8S_MODE=kind" "${live_k8s_e2e}"
+grep -Fq "LIVE_K8S_MODE=real" "${live_k8s_e2e}"
+grep -Fq "CHART_DIR" "${live_k8s_e2e}"
+grep -Fq "COMMAND_CENTER_DIR" "${live_k8s_e2e}"
+grep -Fq "LOCAL_IMAGE_REFS" "${live_k8s_e2e}"
+grep -Fq "AI_BLAISE_STACK_IMAGE_REF" "${live_k8s_e2e}"
+grep -Fq "ALLOW_UNPUBLISHED_IMAGES" "${live_k8s_e2e}"
+grep -Fq "docker manifest inspect" "${live_k8s_e2e}"
+grep -Fq "kubectl port-forward" "${live_k8s_e2e}"
+grep -Fq "curl -fsS" "${live_k8s_e2e}"
+grep -Fq "psql" "${live_k8s_e2e}"
+grep -Fq "/healthz /readyz /metrics" "${live_k8s_e2e}"
+grep -Fq "collect_diagnostics" "${live_k8s_e2e}"
+grep -Fq "kubectl-events.txt" "${live_k8s_e2e}"
+grep -Fq "dry-run does not send live HTTP or SQL traffic" "${live_k8s_e2e}"
+grep -Fq "LIVE_K8S_MODE=dry-run" "${kind_production_smoke}"
+grep -Fq "REAL_K8S" "${kind_production_smoke}"
+grep -Fq "REQUIRE_CHART" "${deploy_check}"
 grep -Fq "build-app-images.sh must fail a pushed image without an immutable digest" "${app_digest_smoke}"
 grep -Fq "digest manifest must include header plus 20 image rows" "${app_digest_smoke}"
 grep -Fq "FAKE_DOCKER_DIGEST_MODE=missing" "${app_digest_smoke}"
@@ -231,6 +263,12 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
+  elif [[ "${main_file}" == "sidecar/cdc/src/main.rs" ]]; then
+    grep -Fq 'runtime::serve' "${main_file}"
+    grep -Fq 'serve("cdc", default_addr)' "${main_file}"
+    grep -Fq 'route("/healthz", get(healthz))' sidecar/cdc/src/runtime.rs
+    grep -Fq 'route("/readyz", get(readyz))' sidecar/cdc/src/runtime.rs
+    grep -Fq 'route("/metrics", get(metrics))' sidecar/cdc/src/runtime.rs
   else
     grep -Fq 'run_probe_server' "${main_file}"
   fi

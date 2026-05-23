@@ -524,23 +524,22 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
-for the production-safe default Helm install, `D8` for the production-safe
-deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
-shared sidecar health/readiness/metrics runtime, `O1` for the installable
-`pg_stat_statements` percentile view, `O2` for the installable local activity
-stats view, `O3` for the installable replication-lag view against a real
-streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
-`O10` for the live-installed PrometheusRule alert bundle, and `R4` for the
-installable idle transaction detection SQL surface, `TS6` for the integrated
-trusted hook-coextension source path under real Timescale/Citus cohabitation,
-`TS18` for the installable bridge-state SQL surface under real Timescale/Citus
-cohabitation, `Sec13` for pool CIDR access control with live allowed and
-denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
+for the production-safe external-chart deploy check, `D8` for the retired
+in-repo deploy wrapper boundary plus the external-chart live harness entrypoint,
+`D13` for the production runtime image matrix and real Kubernetes traffic
+harness, `O4` for the shared sidecar health/readiness/metrics runtime, `O1` for
+the installable `pg_stat_statements` percentile view, `O2` for the installable
+local activity stats view, `O3` for the installable replication-lag view against
+a real streaming standby, `O6` for the live-installed Grafana dashboard
+ConfigMap, `O10` for the live-installed PrometheusRule alert bundle, and `R4`
+for the installable idle transaction detection SQL surface, `TS6` for the
+integrated trusted hook-coextension source path under real Timescale/Citus
+cohabitation, `TS18` for the installable bridge-state SQL surface under real
+Timescale/Citus cohabitation, `Sec13` for pool CIDR access control with live
+allowed and denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
 pipelining through the real pool proxy data port, plus `Auth2` for installable
 SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
 for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
@@ -589,7 +588,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
@@ -628,12 +627,16 @@ direction: the V2 acceptance model must not be cited as production evidence,
 release-gate constants must remain documented as non-production evidence, and
 the SQL/Kubernetes smoke guards must keep proving real stdin, live Postgres,
 live TimescaleDB behavior, live primary/standby replication behavior, live pool
-SQL traffic, and live pod probe traffic. It also rejects custom boundary docs
-that omit the shared production boundary for deterministic canonical reports,
-benchmark targets, and local runtime models.
+SQL traffic, and live pod probe traffic. It also enforces that this repository's
+external-chart live Kubernetes harness keeps dry-run mode separate from real
+HTTP/SQL traffic evidence, requires explicit image refs for unpublished branch
+images, supports kind-local image loading, and collects logs/events on failure.
+It also rejects custom boundary docs that omit the shared production boundary
+for deterministic canonical reports, benchmark targets, and local runtime
+models.
 
-Production Helm values must also keep alpha sidecars disabled by default.
-`values-prod.yaml` can carry replica/resource intent for those components, but
-`ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
-sidecar before the corresponding feature is promoted with measured production
-evidence.
+Production Helm values live in `ai-blaise/command-center` and must keep alpha
+sidecars disabled by default. This repository's `deploy-check` target is now a
+CI-safe external-chart render smoke by default; release jobs should set
+`REQUIRE_CHART=1` or `REQUIRE_HELM=1` and provide `CHART_DIR` or
+`COMMAND_CENTER_DIR` so missing chart evidence fails closed.

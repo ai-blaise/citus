@@ -7,9 +7,10 @@ cd "${repo_root}"
 # After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this
 # audit verifies only the source-of-truth pieces that remain in this repo:
 # the feature inventory in NEW_FEATURES.md vs PRODUCTION_READINESS_AUDIT.md,
-# the doc overclaim guardrail, and the deploy/k8s/-may-not-be-reintroduced
-# negative gate. Chart contract / digest / argo / sidecar HA assertions
-# moved with the chart to ai-blaise/command-center.
+# the doc overclaim guardrail, the deploy/k8s/-may-not-be-reintroduced
+# negative gate, and the external-chart live Kubernetes harness contract that
+# remains in this repo. Chart object ownership / digest policy / Argo / sidecar
+# HA assertions moved with the chart to ai-blaise/command-center.
 
 python3 <<'PY'
 import pathlib
@@ -28,6 +29,11 @@ ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
+KIND_PRODUCTION_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
+LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
+DEPLOY_README = ROOT / "deploy/README.md"
 
 SOURCE_ROOTS = [
     "companion",
@@ -180,6 +186,64 @@ for path in (
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
 
+
+makefile = read(MAKEFILE)
+deploy_check = read(DEPLOY_CHECK)
+kind_smoke = read(KIND_PRODUCTION_SMOKE)
+live_k8s = read(LIVE_K8S_E2E)
+deploy_readme = read(DEPLOY_README)
+
+for target in ("deploy-check:", "kind-production-smoke:"):
+    if target not in makefile:
+        fail(f"Makefile.ai-blaise must define {target}")
+
+for path, text in (
+    (DEPLOY_CHECK, deploy_check),
+    (KIND_PRODUCTION_SMOKE, kind_smoke),
+    (LIVE_K8S_E2E, live_k8s),
+):
+    if "FEATURE:" not in text:
+        fail(f"{path} must carry a FEATURE marker")
+
+for phrase in (
+    "LIVE_K8S_MODE=dry-run",
+    "LIVE_K8S_MODE=real",
+    "LIVE_K8S_MODE=kind",
+    "CHART_DIR",
+    "COMMAND_CENTER_DIR",
+    "LOCAL_IMAGE_REFS",
+    "AI_BLAISE_STACK_IMAGE_REF",
+    "ALLOW_UNPUBLISHED_IMAGES",
+    "docker manifest inspect",
+    "kubectl port-forward",
+    "curl -fsS",
+    "psql",
+    "/healthz /readyz /metrics",
+    "collect_diagnostics",
+    "kubectl-events.txt",
+    "dry-run does not send live HTTP or SQL traffic",
+):
+    if phrase not in live_k8s:
+        fail(f"live Kubernetes e2e harness missing required contract phrase: {phrase}")
+
+for phrase in ("REQUIRE_CHART", "REQUIRE_HELM", "dry-run"):
+    if phrase not in deploy_check:
+        fail(f"deploy-check wrapper missing required contract phrase: {phrase}")
+
+for phrase in ("REAL_K8S", "LIVE_K8S_MODE=kind", "REQUIRE_HTTP", "REQUIRE_SQL"):
+    if phrase not in kind_smoke:
+        fail(f"kind production smoke wrapper missing required contract phrase: {phrase}")
+
+for phrase in (
+    "ci/ai-blaise/live-k8s-e2e.sh",
+    "CHART_DIR",
+    "COMMAND_CENTER_DIR",
+    "AI_BLAISE_STACK_IMAGE_REF",
+    "LOCAL_IMAGE_REFS",
+):
+    if phrase not in deploy_readme:
+        fail(f"deploy/README.md must document live Kubernetes e2e input: {phrase}")
+
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:
     fail(
@@ -198,6 +262,7 @@ print(
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"
     "live_sql_guards=true\t"
+    "live_k8s_e2e_harness=true\t"
     "chart_folded_to_command_center=2026-05-22"
 )
 PY
