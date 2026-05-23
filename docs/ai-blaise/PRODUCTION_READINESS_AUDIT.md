@@ -524,10 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 130 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -556,7 +554,10 @@ index-advisor, and webhook trigger queue helpers, plus `Search2`, `Search3`,
 installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
 runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
 and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
-aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
+aggregate plan helper runtimes, plus `A2`, `A3`, `A4`, `A5`, and `A6` for the
+PostgreSQL-backed vectorizer sidecar runtime with provider routing, bounded
+retry/backoff, tenant budget enforcement, `ai.usage_log` cost accounting, and
+`FOR UPDATE SKIP LOCKED` queue processing, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `TO5` for installable SQL schema-job and tenant lifecycle helper runtimes, plus
 `A7`, `A12`, `C11`, `C12`, `C13`, `EF6`, `F2`, `F5`, `G1`, `Geo1`, `IA1`,
 `IA2`, `JS1`, `L11`, `M6`, `M10`, `M12`, `MR7`, `O7`, `O8`, `O9`, `O11`,
@@ -589,7 +590,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 143
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

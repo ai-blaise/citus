@@ -1,10 +1,21 @@
 //! Vectorizer sidecar core.
+//!
+//! This crate ships two layers:
+//!
+//! - the deterministic in-process model in this module, which the canonical
+//!   CI run (`cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`)
+//!   uses to emit usage TSV without any I/O,
+//! - the asynchronous production runtime in [`runtime`], which connects to a
+//!   real PostgreSQL queue, calls real embedding providers, enforces
+//!   per-tenant budgets, and writes to the `ai.usage_log` hypertable.
 
 // FEATURE: A2
 // FEATURE: A3
 // FEATURE: A4
 // FEATURE: A5
 // FEATURE: A6
+
+pub mod runtime;
 
 use ai_blaise_citus_sidecar_shared::{ComponentState, HealthReport};
 use std::error::Error;

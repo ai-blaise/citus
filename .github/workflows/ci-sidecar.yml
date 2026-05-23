@@ -47,6 +47,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_vectorizer --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_vectorizer
+      - name: Run canonical vectorizer report
+        run: cargo run -q -p ai_blaise_citus_sidecar_vectorizer -- run-canonical
+      - name: Run Postgres-backed vectorizer smoke
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-vectorizer-smoke.sh
 
   auth:
     runs-on: ubuntu-latest

@@ -1036,10 +1036,11 @@ Production evidence: Local, VM, and GitHub Actions proof run
 real PostgreSQL server and verifies `companion_internal.register_vectorizer(...)`
 renders pgai-compatible `ai.create_vectorizer(...)` SQL, records
 `companion_vectorizer_definitions`, creates a queue table, enqueues a document,
-records `companion_vectorizer_usage_log`, and verifies missing source columns
-and invalid chunk overlap fail closed. Actual pgai worker execution, embedding
-provider calls, vector index creation, per-worker scheduling, and operator
-reconciliation remain alpha.
+records `companion_vectorizer_definitions`, creates a queue table, enqueues a
+document, records `companion_vectorizer_usage_log`, and verifies missing source
+columns and invalid chunk overlap fail closed. The Rust sidecar now executes the
+worker queue and provider runtime for `A2`-`A6`; vector index creation and
+operator reconciliation remain alpha.
 
 **Motivation**: pgai's vectorizer DSL is the right user-facing shape, but its
 archived Python worker is not a good runtime floor for this fork.
@@ -1058,13 +1059,24 @@ archived Python worker is not a good runtime floor for this fork.
 ### A2: Vectorizer Worker
 
 **Overlay**: `sidecar/vectorizer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds the vectorizer sidecar's embedding job model, health surface,
-and deterministic canonical worker execution path.
+**Summary**: Runs the vectorizer sidecar as a long-lived async service with
+health, readiness, drain, metrics, manual `/vectorize`, and queue-processing
+HTTP surfaces. The production path connects to PostgreSQL, bootstraps the
+`ai.vectorizer_queue`, `ai.tenant_budget`, and `ai.usage_log` tables, and
+drives the same deterministic worker model that the canonical report exercises.
+
+Production evidence: VM tests run `cargo test -p
+ai_blaise_citus_sidecar_vectorizer`, `cargo run -q -p
+ai_blaise_citus_sidecar_vectorizer -- run-canonical`, and
+`ci/ai-blaise/sidecar-vectorizer-smoke.sh`. The smoke starts PostgreSQL 17 in
+Docker, launches the real sidecar binary in `serve` mode, waits on `/readyz`,
+enqueues 100 rows, verifies every row reaches `succeeded`, checks usage rows
+and budget decrementing, and exercises `/vectorize` and `/queue/status`.
 
 **Motivation**: pgai's Python worker is archived and coordinator-oriented. The
 fork needs a Rust worker model that can run per Citus worker.
@@ -1075,18 +1087,30 @@ fork needs a Rust worker model that can run per Citus worker.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A2` in `sidecar/vectorizer/src/lib.rs`
+- Runtime: `FEATURE: A2` in `sidecar/vectorizer/src/runtime/worker.rs` and
+  `sidecar/vectorizer/src/runtime/server.rs`
 - Executable: `FEATURE: A2` in `sidecar/vectorizer/src/main.rs`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ### A3: Vector Provider Routing
 
 **Overlay**: `sidecar/vectorizer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines provider/model/secret routing for OpenAI, Azure OpenAI,
-Anthropic, Cohere, Voyage, Ollama, and Vertex AI embedding jobs.
+**Summary**: Provides config-validated embedding provider clients for OpenAI,
+Azure OpenAI-compatible endpoints, Voyage, Cohere, Ollama, and vLLM-compatible
+OpenAI JSON endpoints. The runtime supports `mock`, `live`, and `mixed` provider
+modes, refuses empty live registries, classifies provider errors as retryable or
+permanent, and retries transient transport/rate-limit/server failures with
+bounded exponential backoff before failing rows.
+
+Production evidence: deterministic unit tests cover provider registry ordering,
+mock embeddings, retryable/permanent error classification, and a flaky provider
+that succeeds only after retry. The PostgreSQL-backed smoke runs the real binary
+through provider routing in `mock` mode without external network credentials.
 
 **Motivation**: The vectorizer must validate provider routes before spending
 tenant budget or dispatching requests.
@@ -1096,19 +1120,28 @@ tenant budget or dispatching requests.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: A3` in `sidecar/vectorizer/src/lib.rs`
+- In-source: `FEATURE: A3` in `sidecar/vectorizer/src/runtime/provider.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ### A4: Per-Tenant Token Budgets
 
 **Overlay**: `sidecar/vectorizer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds token reservation accounting so vectorization can reject work
-that would exceed a tenant's embedding budget.
+**Summary**: Enforces per-tenant token budgets through atomic PostgreSQL
+compare-and-decrement updates on `ai.tenant_budget`. The worker reserves tokens
+before provider calls, fails over-budget or unprovisioned tenants without
+calling providers, refunds reservations on provider failure, and reconciles
+reserved tokens against provider-reported billed usage.
+
+Production evidence: unit and end-to-end tests cover successful reservation,
+refund, overrun rejection, missing-budget failure, and queue rows from tenants
+without budgets. The Docker smoke seeds a real tenant budget and verifies the
+budget is decremented after 100 PostgreSQL-backed vectorization jobs.
 
 **Motivation**: Vectorization must be multi-tenant-safe before provider calls
 are wired in.
@@ -1118,19 +1151,28 @@ are wired in.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: A4` in `sidecar/vectorizer/src/lib.rs`
+- In-source: `FEATURE: A4` in `sidecar/vectorizer/src/runtime/budget.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ### A5: Vectorizer Usage Accounting
 
 **Overlay**: `sidecar/vectorizer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Adds usage records with tenant, provider, model, token, and
-micro-cost accounting, emitted by the canonical vectorizer worker run.
+**Summary**: Records durable usage rows with tenant, provider, model, token,
+cost, and timestamp fields in `ai.usage_log`. The schema is plain-PostgreSQL
+compatible and TimescaleDB-hypertable-ready on `recorded_at`, so production can
+turn the table into a hypertable without changing the sidecar contract. Queue
+processing and manual `/vectorize` both write usage entries through the same
+cost table.
+
+Production evidence: unit tests cover usage entry validation and aggregation;
+end-to-end tests assert one usage row per succeeded queue row; the Docker smoke
+checks at least 100 `ai.usage_log` rows after real sidecar processing.
 
 **Motivation**: Cost dashboards and token budgets require a durable accounting
 shape before provider calls are enabled for tenant workloads.
@@ -1141,19 +1183,30 @@ usage.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: A5` in `sidecar/vectorizer/src/lib.rs`
+- In-source: `FEATURE: A5` in `sidecar/vectorizer/src/runtime/usage_log.rs`
+- Runtime: `FEATURE: A5` in `sidecar/vectorizer/src/runtime/worker.rs` and
+  `sidecar/vectorizer/src/runtime/server.rs`
 - Executable: `FEATURE: A5` in `sidecar/vectorizer/src/main.rs`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ### A6: Shard-Local Distributed Vectorize
 
 **Overlay**: `sidecar/vectorizer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines shard-local vectorizer queue polling and execution plans
-so workers can process local shard jobs without coordinator row round trips.
+**Summary**: Processes shard-local queue rows with PostgreSQL `FOR UPDATE SKIP
+LOCKED` semantics, stale in-flight-row reclamation through a visibility
+timeout, per-worker lock ownership, success/failure state transitions, and
+embedding storage on succeeded rows. The runtime validates dynamic queue,
+budget, and usage table names as `schema.table` identifiers before building SQL.
+
+Production evidence: in-memory tests cover queue lock/complete/failure
+semantics and batch length validation; the PostgreSQL smoke proves the real
+`ai.vectorizer_queue` table is locked, processed, and marked succeeded by the
+actual sidecar binary.
 
 **Motivation**: Distributed vectorization must preserve shard locality and
 avoid pushing every embedding job through the coordinator.
@@ -1164,8 +1217,9 @@ workers.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: A6` in `sidecar/vectorizer/src/lib.rs`
+- In-source: `FEATURE: A6` in `sidecar/vectorizer/src/runtime/queue.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ### A8: Vector Dimension Via CRD
 
