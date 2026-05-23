@@ -1,0 +1,3 @@
+observed_at	git_sha	target	image_id	extensions
+2026-05-23T22:26:30+00:00	5319c9ac0335b0604b50d0395862dccc08bb24f6	bundle1-final-light	sha256:4c66c83590fe530c72f00675d2faf3b7735f3a71af389efdab6086d22cfb8de1	ai_blaise_citus citus pgsodium topn pg_jsonschema pg_graphql pg_prewarm pg_warm
+2026-05-23T22:37:37+00:00	5319c9ac0335b0604b50d0395862dccc08bb24f6	bundle1-final-light	sha256:c8e5f832264ebdf280e1e7b1f17c1550597248058e04ae6f5df4ef5f71f24621	ai_blaise_citus citus pgsodium topn pg_jsonschema pg_graphql pg_prewarm pg_warm

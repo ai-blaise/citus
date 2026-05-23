@@ -1,0 +1,4 @@
+comment = 'ai-blaise pg_warm replica cache-warming surface (R11) built on PG core pg_prewarm'
+default_version = '0.1.0'
+relocatable = false
+requires = 'pg_prewarm'

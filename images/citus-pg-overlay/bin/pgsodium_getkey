@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+key_file="${PGSODIUM_KEY_FILE:-/run/secrets/pgsodium_key}"
+
+if [ -n "${PGSODIUM_KEY:-}" ]; then
+  key="${PGSODIUM_KEY}"
+elif [ -r "${key_file}" ]; then
+  key="$(tr -d '\r\n' <"${key_file}")"
+else
+  echo "pgsodium key unavailable: set PGSODIUM_KEY or mount ${key_file}" >&2
+  exit 1
+fi
+
+case "${key}" in
+  *[!0-9a-fA-F]*)
+    echo "pgsodium key must be 64 hexadecimal characters" >&2
+    exit 1
+    ;;
+esac
+
+if [ "${#key}" -ne 64 ]; then
+  echo "pgsodium key must be 64 hexadecimal characters" >&2
+  exit 1
+fi
+
+printf '%s\n' "${key}"
