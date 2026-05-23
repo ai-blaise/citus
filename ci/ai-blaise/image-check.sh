@@ -223,6 +223,39 @@ required_serve_mains=(
   sidecar/vectorizer/src/main.rs
 )
 
+custom_probe_contract_file() {
+  case "${1}" in
+    sidecar/auth/src/main.rs) echo sidecar/auth/src/http.rs ;;
+    sidecar/cdc/src/main.rs) echo sidecar/cdc/src/runtime.rs ;;
+    sidecar/edge_functions/src/main.rs) echo sidecar/edge_functions/src/lib.rs ;;
+    sidecar/graphql/src/main.rs) echo sidecar/graphql/src/lib.rs ;;
+    sidecar/postgrest/src/main.rs) echo sidecar/postgrest/src/lib.rs ;;
+    sidecar/vectorizer/src/main.rs) echo sidecar/vectorizer/src/runtime/server.rs ;;
+    *) return 1 ;;
+  esac
+}
+
+has_http_probe_contract() {
+  local main_file="${1}"
+  local probe_file
+
+  if grep -Fq 'run_probe_server' "${main_file}"; then
+    return 0
+  fi
+
+  if probe_file="$(custom_probe_contract_file "${main_file}")"; then
+    [[ -s "${probe_file}" ]] || return 1
+    if grep -Fq 'SidecarRuntime::ready' "${probe_file}" && grep -Fq '/healthz' "${probe_file}"; then
+      return 0
+    fi
+    if grep -Fq '/healthz' "${probe_file}" && grep -Fq '/readyz' "${probe_file}"; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 for main_file in "${required_serve_mains[@]}"; do
   grep -Fq 'args == ["serve"]' "${main_file}"
   if [[ "${main_file}" == "sidecar/mcp/src/main.rs" ]]; then
@@ -231,17 +264,9 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
-  else
-    if grep -Fq 'run_probe_server' "${main_file}"; then
-      :
-    else
-      runtime_file="${main_file%/main.rs}/runtime.rs"
-      grep -Fq 'SidecarRuntime' "${runtime_file}"
-      grep -Fq 'route("/healthz"' "${runtime_file}"
-      grep -Fq 'route("/readyz"' "${runtime_file}"
-      grep -Fq 'route("/metrics"' "${runtime_file}"
-      grep -Fq 'route("/drain"' "${runtime_file}"
-    fi
+  elif ! has_http_probe_contract "${main_file}"; then
+    echo "serve main lacks HTTP probe contract: ${main_file}" >&2
+    exit 1
   fi
 done
 
