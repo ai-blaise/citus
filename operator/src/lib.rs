@@ -61,3 +61,7 @@ pub use reconcile::shard_group::{
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
     CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
 };
+pub use reconcile::sidecar_endpoint::{
+    EndpointSliceAddressType, SidecarEndpointCandidate, SidecarEndpointRetargetError,
+    SidecarEndpointRetargetPlan, SidecarEndpointRetargetStatus,
+};

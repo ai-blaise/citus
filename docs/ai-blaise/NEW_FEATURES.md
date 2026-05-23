@@ -5088,6 +5088,51 @@ only to the shared probe/metrics runtime.
 - In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
 - Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
+### SC7: Sidecar EndpointSlice Retarget Contract
+
+**Overlay**: `operator/src/reconcile/sidecar_endpoint.rs`, `sidecar/shared/src/ha.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the narrow sidecar HA retarget contract between the
+sidecar health selector and the operator: sidecars produce a deterministic
+`RetargetDecision`, the operator validates Kubernetes EndpointSlice candidates,
+renders a single-selected-endpoint EndpointSlice plus a Service merge patch that
+removes the Service selector, and renders an empty EndpointSlice when no
+candidate is eligible. The fail-closed path prevents stale sidecar endpoints
+from remaining selected after health selection returns no endpoint.
+
+**Motivation**: HA sidecars need a small, reviewable integration surface before
+any broader Kubernetes controller watches EndpointSlices or coordinates regional
+failover. This contract makes the retarget artifact deterministic and testable
+without claiming automated cross-region failover.
+
+**Citus comparison**: Vanilla Citus does not ship ai-blaise sidecars, sidecar
+health selection, or Kubernetes EndpointSlice retargeting for sidecar traffic.
+
+Production evidence: VM verification runs `cargo test -p
+ai_blaise_citus_sidecar_shared`, `cargo test -p ai_blaise_citus_operator`,
+`cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical`,
+`cargo run -q -p ai_blaise_citus_operator --
+run-endpointslice-retarget-canonical`, and
+`ci/ai-blaise/endpointslice-retarget-smoke.sh`. These cover config parsing,
+health-aware selection, drain/failure exclusion, EndpointSlice candidate
+validation, deterministic manifest rendering, deterministic Service merge patch
+rendering, and the empty EndpointSlice fail-closed case. Live in-cluster
+EndpointSlice watches, Service patch application, leader election, and
+cross-region failover remain alpha and are not claimed by this feature.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: SC7` in `sidecar/shared/src/ha.rs`
+- In-source: `FEATURE: SC7` in `operator/src/reconcile/sidecar_endpoint.rs`
+- Executable: `cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical`
+- Executable: `cargo run -q -p ai_blaise_citus_operator -- run-endpointslice-retarget-canonical`
+- CI: `ci/ai-blaise/endpointslice-retarget-smoke.sh`
+
 ### O5: Sidecar Deployment Contract
 
 **Overlay**: `operator/src/crds/sidecar.rs`
