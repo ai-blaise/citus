@@ -21,11 +21,15 @@ def build_placements(count: int, offset: int = 0) -> list[tuple[str, int, int]]:
     placements: list[tuple[str, int, int]] = []
     for index in range(count):
         endpoint = offset + index
-        placements.append((f"worker-{endpoint:05d}", 5400 + endpoint % 97, endpoint % 7))
+        placements.append(
+            (f"worker-{endpoint:05d}", 5400 + endpoint % 97, endpoint % 7)
+        )
     return placements
 
 
-def linear_intersect(lhs: list[tuple[str, int, int]], rhs: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+def linear_intersect(
+    lhs: list[tuple[str, int, int]], rhs: list[tuple[str, int, int]]
+) -> list[tuple[str, int, int]]:
     result: list[tuple[str, int, int]] = []
     for lhs_name, lhs_port, _ in lhs:
         for rhs_placement in rhs:
@@ -36,15 +40,23 @@ def linear_intersect(lhs: list[tuple[str, int, int]], rhs: list[tuple[str, int, 
     return result
 
 
-def hashed_intersect(lhs: list[tuple[str, int, int]], rhs: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+def hashed_intersect(
+    lhs: list[tuple[str, int, int]], rhs: list[tuple[str, int, int]]
+) -> list[tuple[str, int, int]]:
     rhs_index: dict[tuple[str, int], tuple[str, int, int]] = {}
     for placement in rhs:
         name, port, _ = placement
         rhs_index.setdefault((name, port), placement)
-    return [rhs_index[(name, port)] for name, port, _ in lhs if (name, port) in rhs_index]
+    return [
+        rhs_index[(name, port)] for name, port, _ in lhs if (name, port) in rhs_index
+    ]
 
 
-def can_skip_coordinator(active_placements: list[tuple[str, int, int]], local_group_id: int, enabled: bool = True) -> bool:
+def can_skip_coordinator(
+    active_placements: list[tuple[str, int, int]],
+    local_group_id: int,
+    enabled: bool = True,
+) -> bool:
     if not enabled or len(active_placements) != 1:
         return False
     return active_placements[0][2] == local_group_id
@@ -72,8 +84,14 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     if linear_result != hashed_result:
         raise AssertionError("hashed intersection changed legacy placement semantics")
 
-    linear_samples = [time_call(linear_intersect, lhs, rhs, args.iterations) for _ in range(args.samples)]
-    hashed_samples = [time_call(hashed_intersect, lhs, rhs, args.iterations) for _ in range(args.samples)]
+    linear_samples = [
+        time_call(linear_intersect, lhs, rhs, args.iterations)
+        for _ in range(args.samples)
+    ]
+    hashed_samples = [
+        time_call(hashed_intersect, lhs, rhs, args.iterations)
+        for _ in range(args.samples)
+    ]
     linear_us = median(linear_samples)
     hashed_us = median(hashed_samples)
     speedup = linear_us / hashed_us if hashed_us > 0.0 else math.inf
@@ -91,7 +109,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         raise AssertionError("disabled GUC must force coordinator path")
 
     if speedup < args.min_speedup:
-        raise AssertionError(f"hashed planner smoke speedup {speedup:.2f}x below {args.min_speedup:.2f}x")
+        raise AssertionError(
+            f"hashed planner smoke speedup {speedup:.2f}x below {args.min_speedup:.2f}x"
+        )
 
     return {
         "harness": "router-planner",
@@ -116,16 +136,35 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--quick", action="store_true")
-    parser.add_argument("--placements", type=int, default=int(os.getenv("ROUTER_BENCH_PLACEMENTS", "192")))
-    parser.add_argument("--overlap", type=int, default=int(os.getenv("ROUTER_BENCH_OVERLAP", "96")))
-    parser.add_argument("--skew", type=int, default=int(os.getenv("ROUTER_BENCH_SKEW", "10000")))
-    parser.add_argument("--iterations", type=int, default=int(os.getenv("ROUTER_BENCH_ITERATIONS", "160")))
-    parser.add_argument("--samples", type=int, default=int(os.getenv("ROUTER_BENCH_SAMPLES", "5")))
-    parser.add_argument("--min-speedup", type=float, default=float(os.getenv("ROUTER_BENCH_MIN_SPEEDUP", "1.5")))
+    parser.add_argument(
+        "--placements",
+        type=int,
+        default=int(os.getenv("ROUTER_BENCH_PLACEMENTS", "192")),
+    )
+    parser.add_argument(
+        "--overlap", type=int, default=int(os.getenv("ROUTER_BENCH_OVERLAP", "96"))
+    )
+    parser.add_argument(
+        "--skew", type=int, default=int(os.getenv("ROUTER_BENCH_SKEW", "10000"))
+    )
+    parser.add_argument(
+        "--iterations",
+        type=int,
+        default=int(os.getenv("ROUTER_BENCH_ITERATIONS", "160")),
+    )
+    parser.add_argument(
+        "--samples", type=int, default=int(os.getenv("ROUTER_BENCH_SAMPLES", "5"))
+    )
+    parser.add_argument(
+        "--min-speedup",
+        type=float,
+        default=float(os.getenv("ROUTER_BENCH_MIN_SPEEDUP", "1.5")),
+    )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("benchmarks/results") / f"router-planner-{os.getenv('BENCH_RESULT_TAG', 'quick')}.json",
+        default=Path("benchmarks/results")
+        / f"router-planner-{os.getenv('BENCH_RESULT_TAG', 'quick')}.json",
     )
     return parser.parse_args()
 
