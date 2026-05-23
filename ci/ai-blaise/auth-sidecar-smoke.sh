@@ -168,12 +168,23 @@ if [[ "${REQUIRE_DOCKER:-0}" == "1" ]]; then
   command -v docker >/dev/null
   pg_container="auth-sidecar-smoke-${RANDOM}-${RANDOM}"
   docker run -d --name "${pg_container}" -e POSTGRES_PASSWORD=postgres postgres:17 >/dev/null
-  for _ in $(seq 1 80); do
-    if docker exec "${pg_container}" pg_isready -U postgres >/dev/null 2>&1; then
+  pg_ready=0
+  init_complete=0
+  for _ in $(seq 1 120); do
+    if docker logs "${pg_container}" 2>&1 | grep -Fq 'PostgreSQL init process complete'; then
+      init_complete=1
+    fi
+    if [[ "${init_complete}" == "1" ]] && docker exec "${pg_container}" psql -U postgres -d postgres -Atqc 'SELECT 1' 2>/dev/null | grep -qx '1'; then
+      pg_ready=1
       break
     fi
     sleep 0.5
   done
+  if [[ "${pg_ready}" != "1" ]]; then
+    docker logs "${pg_container}" >&2 || true
+    echo "auth schema smoke postgres container did not become SQL-ready" >&2
+    exit 1
+  fi
   docker exec -i "${pg_container}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < sidecar/auth/migrations/0001_auth_schema.sql >/tmp/auth-schema-smoke.out
   docker exec "${pg_container}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -Atc "select count(*) from information_schema.tables where table_schema='auth' and table_name in ('auth_users','auth_sessions','auth_mfa_totp','auth_mfa_webauthn','auth_oidc_providers','auth_revoked_jtis');" | grep -qx '6'
 fi
