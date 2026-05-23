@@ -8,3 +8,4 @@ repository.workspace = true
 [dependencies]
 ai_blaise_citus_sidecar_cdc = { path = "../cdc" }
 ai_blaise_citus_sidecar_shared = { path = "../shared" }
+serde_json = "1"

@@ -524,10 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 133 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,8 +587,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
-feature headings remain
+other 140 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,
@@ -600,6 +597,21 @@ runtime, or SQL extension reference line. Those references are alpha contract
 evidence unless the entry is also marked `Status: production-ready`; they keep
 the catalog auditable, but they are not independently sufficient for production
 signoff.
+
+Worker D CDC/realtime production evidence from 2026-05-23 adds `C1`, `C3`,
+`WH3`, `RT1`, `RT2`, `RT3`, `RT4`, and `RT5` to the narrow
+production-ready set. The evidence is limited to the CDC/realtime sidecar
+runtime boundary: wal2json ingest, pgoutput logical-frame decoder boundary,
+checkpoint/ack state, health/readiness/metrics, PII anonymization before sink
+encoding, file/in-memory DLQ records, raw WebSocket Phoenix channel join,
+presence, tenant/topic filtering, `postgres_changes` fan-out, and CDC-to-realtime
+Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
+`cargo test -p ai_blaise_citus_sidecar_realtime`,
+`ci/ai-blaise/sidecar-cdc-smoke.sh`, and
+`ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
+(NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
+client operation) remain alpha unless covered by their own feature entry.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

@@ -152,6 +152,7 @@ version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_cdc",
  "ai_blaise_citus_sidecar_shared",
+ "serde_json",
 ]
 
 [[package]]

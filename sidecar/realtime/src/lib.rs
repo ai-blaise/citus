@@ -1,9 +1,36 @@
-//! Realtime sidecar contracts.
+//! Realtime sidecar contracts and real-runtime entry points.
+//!
+//! Layers:
+//! 1. Contract data structures ([`RealtimeSidecarPlan`],
+//!    [`RealtimeSubscription`], [`PresencePlan`]) with deterministic
+//!    `broadcast_plan` semantics.
+//! 2. WebSocket primitives ([`ws`]) implementing the RFC 6455 handshake +
+//!    text frame parsing in pure `std`.
+//! 3. Phoenix Channels frame encode/decode ([`phoenix`]).
+//! 4. In-process fan-out hub + presence ([`hub`]).
+//! 5. Live runtime ([`live`]) that wires the WS server, CDC ingest, and
+//!    the hub together.
 
 // FEATURE: RT1
 // FEATURE: RT2
 // FEATURE: RT3
 // FEATURE: RT4
+// FEATURE: RT5
+
+pub mod hub;
+pub mod live;
+pub mod phoenix;
+pub mod ws;
+
+pub use hub::{
+    HubMetrics, Mailbox, PresenceEntry, PresenceState, RealtimeHub, Subscription,
+    SubscriptionFilter,
+};
+pub use live::{handle_cdc_ingest, handle_ws_connection, RealtimeLiveConfig, RealtimeLiveRuntime};
+pub use phoenix::{PhoenixDecodeError, PhoenixFrame};
+pub use ws::{
+    decode_frame, encode_close_frame, encode_text_frame, UpgradeRequest, WsConnection, WsError,
+};
 
 use ai_blaise_citus_sidecar_cdc::{
     CdcColumnValue, CdcEventEnvelope, CdcOperation, CdcSidecarError,
