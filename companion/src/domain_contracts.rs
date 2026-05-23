@@ -374,6 +374,7 @@ fn record_plan_freeze_contracts(
         ));
     }
     report.add_validation(&["PM4"]);
+
     Ok(())
 }
 
@@ -631,7 +632,7 @@ mod tests {
 
         assert_eq!(report.sql_plan_count, 22);
         assert_eq!(report.validation_count, 10);
-        assert_eq!(report.command_count, 44);
+        assert_eq!(report.command_count, 49);
         for feature_id in [
             "A1", "API4", "Auth2", "G2", "G3", "Geo2", "Geo3", "IA3", "JS2", "L9", "M1", "M11",
             "M13", "M2", "M7", "PM3", "PM4", "S13", "S14", "S6", "Search2", "Search3", "Search9",

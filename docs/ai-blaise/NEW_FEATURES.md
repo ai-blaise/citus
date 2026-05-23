@@ -79,6 +79,10 @@ research-guard feature contracts through
 `companion/src/ops_contracts.rs` executes a deterministic readiness summary
 for install, deploy-wrapper, runbook, MCP, security, realtime-client,
 io_uring, and protocol-pipeline gates through the same companion binary.
+`companion/src/plan_runtime.rs` executes a deterministic PM3/PM4 companion
+runtime for durable plan promotion and regression evaluation, including
+idempotency replay, bounded retry, audit events, and unknown-plan failure
+handling through the same companion binary.
 `sidecar/analytical/src/lib.rs` validates pg_lake/DataFusion/DuckDB,
 lakehouse-read, Iceberg snapshot commit, federation, DuckDB extension, and
 MotherDuck contracts for `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
@@ -3879,7 +3883,7 @@ issuance can enforce step-up authentication.
 
 ### PM3: Plan Freeze Companion Module
 
-**Overlay**: `companion/src/plan_freeze.rs`
+**Overlay**: `companion/src/plan_freeze.rs`, `companion/src/plan_runtime.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -3902,23 +3906,28 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 'orders_hint')`, attaches promotion thresholds with
 `companion_internal.plan_auto_promote(...)`, verifies the frozen plan is
 visible through `companion_plan_freezes`, and verifies an empty query hash
-fails closed. This status covers the local SQL plan-freeze registry and
-promotion-policy state only; actual planner enforcement, hint injection,
-pg_hint_plan/sr_plan integration, auto-promotion workers, distributed plan
-capture, and plan XML validation remain alpha.
+fails closed. This status covers the local SQL plan-freeze registry and promotion-policy
+state plus the deterministic companion runtime contract for durable
+idempotency, bounded retry, promotion decisions, and audit emission. Actual
+planner enforcement, hint injection, pg_hint_plan/sr_plan integration,
+auto-promotion workers, distributed plan capture, external durable storage,
+and plan XML validation remain alpha.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs`
+- In-source: `FEATURE: PM3` in `companion/src/plan_freeze.rs` and
+  `companion/src/plan_runtime.rs`
 - SQL runtime: `FEATURE: PM3` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-plan-runtime-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/companion-plan-runtime-smoke.sh`
 
 ### PM4: Plan Regression Detection
 
-**Overlay**: `companion/src/plan_freeze.rs`
+**Overlay**: `companion/src/plan_freeze.rs`, `companion/src/plan_runtime.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -3939,20 +3948,24 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 regression policy through `companion_internal.plan_regression_guard(...)`,
 verifies `companion_plan_regression_violates(...)` flags a latency regression,
 verifies an allowed candidate does not violate policy, verifies regression
-samples are recorded, and verifies a missing frozen plan fails closed. This
-status covers the local SQL regression-policy evaluator and sample log only;
-automatic production-plan replacement, query capture, pg_hint_plan/sr_plan
-enforcement, workload baselining, and distributed planner integration remain
-alpha.
+samples are recorded, and verifies a missing frozen plan fails closed. This status covers the local SQL regression-policy evaluator and sample log
+plus the deterministic companion runtime contract for candidate acceptance,
+regression rejection, idempotency replay, bounded retry, and audit emission.
+Automatic production-plan replacement, query capture, pg_hint_plan/sr_plan
+enforcement, workload baselining, external durable storage, and distributed
+planner integration remain alpha.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs`
+- In-source: `FEATURE: PM4` in `companion/src/plan_freeze.rs` and
+  `companion/src/plan_runtime.rs`
 - SQL runtime: `FEATURE: PM4` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-plan-runtime-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/companion-plan-runtime-smoke.sh`
 
 ## Index Advisor
 

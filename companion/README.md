@@ -34,8 +34,9 @@ Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
   `FEATURE: Geo3`
 - `DbDoctorPlan`, `CohabitPreflightPlan`, and `DbDoctorReport` for
   `FEATURE: TS9` and `FEATURE: M7`
-- `PlanFreezePlan` and `PlanRegressionSample` for `FEATURE: PM3` and
-  `FEATURE: PM4`
+- `PlanFreezePlan`, `PlanRegressionSample`, and `PlanRuntime` for
+  `FEATURE: PM3` and `FEATURE: PM4`; the runtime applies durable
+  idempotency, bounded retry, promotion, regression, and audit contracts.
 - `IndexAdvisorPlan` for `FEATURE: IA3`
 - `LedgerTransferPlan`, `LedgerSealPlan`, and `LedgerChain` for
   `FEATURE: Sec5` and `FEATURE: Sec6`
@@ -60,6 +61,11 @@ Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
   migration, plan freeze, router, search, ledger, toolkit, tenant, and webhook
   contracts; `companion_contracts run-domain-contracts-canonical` emits the
   TSV summary used by CI.
+- `canonical_plan_runtime_report` executes the PM3/PM4 companion runtime
+  depth-B path with a deterministic promotion, an idempotency replay, a
+  transient retry, a blocked regression candidate, and a failed unknown-plan
+  guard; `companion_contracts run-plan-runtime-canonical` emits the TSV
+  summary used by CI.
 - `ExtensionContract` for the V2 bundled and optional extension surfaces,
   including `FEATURE: A7`, `FEATURE: Search1`, `FEATURE: G1`,
   `FEATURE: JS1`, `FEATURE: PM1`, `FEATURE: IA1`, `FEATURE: O7`,
@@ -91,8 +97,10 @@ Use `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- \
 run-advanced-planner-canonical`, `cargo run -p ai_blaise_citus_companion \
 --bin companion_contracts -- run-extension-catalog-canonical`, `cargo run -p \
 ai_blaise_citus_companion --bin companion_contracts -- \
-run-domain-contracts-canonical`, and `cargo run -p \
-ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
-to emit TSV reports for the broad V2 companion contracts.
+run-domain-contracts-canonical`, `cargo run -p ai_blaise_citus_companion \
+--bin companion_contracts -- run-operations-canonical`, and `cargo run -p \
+ai_blaise_citus_companion --bin companion_contracts -- \
+run-plan-runtime-canonical` to emit TSV reports for the broad V2 companion
+contracts.
 The `pg18` feature exposes the first pgrx SQL-callable companion Timescale
 bridge functions.

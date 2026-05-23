@@ -18,6 +18,7 @@ pub mod migration;
 pub mod observability;
 pub mod ops_contracts;
 pub mod plan_freeze;
+pub mod plan_runtime;
 pub mod router_assist;
 pub mod schema_jobs;
 pub mod search_bridge;
@@ -88,6 +89,12 @@ pub use ops_contracts::{
 pub use plan_freeze::{
     PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,
     PlanRegressionSample,
+};
+pub use plan_runtime::{
+    canonical_plan_runtime_report, canonical_plan_runtime_sql_plan, PlanRuntime,
+    PlanRuntimeAuditEvent, PlanRuntimeCommand, PlanRuntimeConfig, PlanRuntimeError,
+    PlanRuntimeOutcome, PlanRuntimeRecord, PlanRuntimeReport, PlanRuntimeRequest,
+    PlanRuntimeSqlPlan,
 };
 pub use router_assist::{
     InvalidationHint, LocalPlacementCheck, PlacementGenerationQuery, PlacementGenerationSample,
