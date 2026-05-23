@@ -412,6 +412,16 @@ more production-ready than the artifacts justified.
   tokens, and missing tenant claims fail closed. This is not evidence for
   JWKS/RSA/ECDSA key discovery, Auth1 token issuance, pool authentication,
   Auth3 token-cache behavior, external secret resolution, or key rotation.
+- The auth sidecar now ships a real `FEATURE: Auth1` HS256 runtime. The
+  auth smoke starts the real binary with an explicit signing secret, verifies
+  live health/readiness/metrics responses, registers a user, logs in, verifies
+  and introspects the JWT, refreshes the session, logs out, proves revoked JWTs
+  fail closed, exercises a TOTP login path, requires WebAuthn and OIDC routes
+  to fail closed with `501`, and applies the auth schema migration against
+  `postgres:17` when `REQUIRE_DOCKER=1`. This is not evidence for RS256/JWKS
+  discovery, external IdP exchange, WebAuthn ceremonies, key rotation,
+  persistent runtime loading from the auth schema, or pool data-plane token
+  authentication.
 - The SQL extension now installs narrow `FEATURE: S6` and `FEATURE: S13`
   router helper runtimes. S6 persists placement-generation counters and
   local-placement worker names, verifies generation advancement and shard-zero
@@ -525,12 +535,12 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 273 source `FEATURE:` markers and 273
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 137 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 138 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
-plan-builder, MCP4, and sidecar runtime entries, plus the backup, CDC, and
-realtime runtime entries merged in this release train dry-run.
+plan-builder, MCP4, and sidecar runtime entries, plus the backup, CDC,
+realtime, and auth sidecar runtime entries merged in this release train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -546,6 +556,14 @@ endpoints; `B6` covers sidecar encryption environment validation and canonical
 deterministic local `wal-g`, `pg_ctl`, and `psql` fakes and drives the HTTP
 surface end to end.
 
+Auth sidecar production evidence is intentionally scoped to the local HS256
+issuer/verifier, refresh-token session map, JTI revocation, auth-service
+introspection cache, TOTP-backed login path, and schema smoke proven by
+`ci/ai-blaise/auth-sidecar-smoke.sh`. RS256/JWKS discovery, external IdP token
+exchange, key rotation, persistent runtime loading from the auth schema,
+WebAuthn ceremonies, pool data-plane authentication, and pool-side token cache
+operation remain alpha until they have their own live evidence.
+
 The broader backup workflow is still not production-ready as a whole. The
 backup promotions do not prove cloud object-store credentials, external secret
 resolution, hardware KMS, key rotation, Backup CR reconciliation, operator
@@ -553,7 +571,7 @@ lifecycle management, long-running query load on restored branches, or a full
 Kubernetes restore against a real WAL-G archive. Those remain explicit future
 acceptance gates, not hidden assumptions.
 
-The other 136 feature headings remain `Status: alpha`. There are no remaining
+The other 135 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
