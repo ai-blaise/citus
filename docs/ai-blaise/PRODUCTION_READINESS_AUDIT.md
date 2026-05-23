@@ -524,10 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 135 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -572,11 +570,16 @@ and a `pg_dist_shard` post-condition guard) plus Kubernetes-style
 topology-spread constraints and the CloudNativePG cluster manifest from the
 canonical `CitusClusterSpec` and `ShardGroupSpec` under `cargo test -p
 ai_blaise_citus_operator` and `cargo run -p ai_blaise_citus_operator --
-run-reconcile-plans`, while live in-cluster reconciliation (a Kubernetes
-controller loop that watches the CRDs and updates `.status`) remains gated
-behind the alpha `operator.controllerRbac.enabled` profile because the
-operator runtime currently exposes only health/readiness/metrics and
-plan-builder helpers, plus `MCP4` for the narrow `tools/citus-mcp` read-only
+run-reconcile-plans`, while live child-resource application and `.status`
+updates for the CitusCluster/ShardGroup path remain alpha until they have
+cluster evidence, plus `S10`, `S11`, `MR1`, `MR2`, `MR4`, `MR8`, `B2`,
+`B6`, `TO1`, and `TO2` for the Reconcilers Batch A operator plan builders and
+kube-rs CR validation proved by `cargo test -p ai_blaise_citus_operator`,
+`cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`, and
+`ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`, while live SQL
+execution, CNPG mutation, object-store backup execution, Kubernetes child
+resource apply, and `.status` writes remain alpha, plus `MCP4` for the narrow
+`tools/citus-mcp` read-only
 database execution runtime against real PostgreSQL with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
 destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
@@ -589,7 +592,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 138
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

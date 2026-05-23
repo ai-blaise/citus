@@ -47,6 +47,10 @@ pub use crds::vectorizer::{
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
+pub use reconcile::backup::{
+    BackupApplyStep, BackupApplyStepKind, BackupDeletePlan, BackupReconcileError,
+    BackupReconcilePlan,
+};
 pub use reconcile::citus_cluster::{
     CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan, CnpgClusterPlan,
     PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
@@ -56,8 +60,19 @@ pub use reconcile::hypertable::{
     HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
 };
 pub use reconcile::migration::{MigrationCommand, MigrationReconcileError, MigrationReconcilePlan};
+pub use reconcile::region::{
+    RegionApplyStep, RegionApplyStepKind, RegionReconcileError, RegionReconcilePlan,
+};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
     CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
+};
+pub use reconcile::survival_goal::{
+    SurvivalGoalApplyStep, SurvivalGoalApplyStepKind, SurvivalGoalReconcileError,
+    SurvivalGoalReconcilePlan,
+};
+pub use reconcile::tenant::{
+    TenantApplyStep, TenantApplyStepKind, TenantDeletePlan, TenantReconcileError,
+    TenantReconcilePlan, TENANT_ARCHIVE_DEFAULT_RETENTION_DAYS,
 };
