@@ -223,16 +223,46 @@ required_serve_mains=(
   sidecar/vectorizer/src/main.rs
 )
 
+has_custom_http_probe() {
+  local main_file="$1"
+  local src_dir="${main_file%/main.rs}"
+  local lib_file="${main_file%/main.rs}/lib.rs"
+  local runtime_file="${src_dir}/runtime.rs"
+  local probe_files=("${main_file}")
+
+  [[ -f "${lib_file}" ]] && probe_files+=("${lib_file}")
+  [[ -f "${runtime_file}" ]] && probe_files+=("${runtime_file}")
+
+  grep -Eq \
+    'serve_[[:alnum:]_]*http(_forever)?|handle_[[:alnum:]_]*http|runtime::serve|axum::serve' \
+    "${probe_files[@]}" || return 1
+
+  if grep -Eq '/healthz|GET /healthz' "${probe_files[@]}" \
+    && grep -Eq '/readyz|GET /readyz' "${probe_files[@]}" \
+    && grep -Eq '/metrics|GET /metrics' "${probe_files[@]}"; then
+    return 0
+  fi
+
+  grep -Eq 'SidecarRuntime::ready|handle_http_bytes' "${probe_files[@]}"
+}
+
 for main_file in "${required_serve_mains[@]}"; do
   grep -Fq 'args == ["serve"]' "${main_file}"
+  if grep -Fq 'run_probe_server' "${main_file}"; then
+    :
+  elif has_custom_http_probe "${main_file}"; then
+    :
+  else
+    echo "${main_file} must use shared probes or a custom HTTP probe implementation" >&2
+    exit 1
+  fi
+
   if [[ "${main_file}" == "sidecar/mcp/src/main.rs" ]]; then
     grep -Fq 'serve_mcp_sidecar_http_forever' "${main_file}"
     grep -Fq 'handle_mcp_sidecar_http_bytes' sidecar/mcp/src/lib.rs
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
-  else
-    grep -Fq 'run_probe_server' "${main_file}"
   fi
 done
 

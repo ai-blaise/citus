@@ -13,5 +13,11 @@ The current Rust contract covers `FEATURE: O13` and `FEATURE: D12` by
 validating data sources and panels for cluster topology, shards, hypertables,
 Citus-aware EXPLAIN, rebalance status, vectorizer backlog, search indexes,
 tenants, and branches.
+The runtime path now renders a deterministic dashboard frame from the shared
+tools snapshot TSV, including pool readiness, vectorizer backlog, shard, and
+tenant signals plus the query plan each panel will execute.
+
 Use `cargo run -p ai_blaise_citus_watch -- run-canonical` to emit the
 deterministic dashboard TSV report.
+Use `cargo run -p ai_blaise_citus_watch -- render-frame --snapshot <snapshot.tsv>`
+to render the dashboard frame.

@@ -12,5 +12,11 @@ Schema designer fork target based on DrawDB.
 The current Rust contract covers `FEATURE: M9` and `FEATURE: D6` by validating
 schema models and rendering overlay layers for distribution columns,
 hypertables, search indexes, webhooks, and operator shard placements.
+The runtime path now converts the shared tools snapshot TSV into the designer
+model and renders deterministic SVG with distribution, hypertable, search,
+webhook, and shard-placement overlays.
+
 Use `cargo run -p ai_blaise_citus_schema_designer -- run-canonical` to emit the
 deterministic overlay-layer TSV report.
+Use `cargo run -p ai_blaise_citus_schema_designer -- render-svg --snapshot <snapshot.tsv>`
+to render the SVG runtime artifact.

@@ -524,10 +524,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 131 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -580,8 +578,13 @@ plan-builder helpers, plus `MCP4` for the narrow `tools/citus-mcp` read-only
 database execution runtime against real PostgreSQL with native TLS driver
 support, read-only transactions, row/timeout bounds, tenant schema denial, and
 destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
-do not execute the explained statement. The MCP entries `MCP1`, `MCP2`,
-`MCP3`, and `D11` now
+do not execute the explained statement, plus `D3`, `D5`, `D6`, `D12`, `M9`,
+and `O13` for the snapshot-backed tools UI runtime that parses a validated
+cluster snapshot TSV, renders concrete admin HTML, schema-designer SVG, TUI
+frames, and watch frames, and fails closed on unsafe or malformed runtime
+inputs. Direct live database sessions, long-running terminal event loops,
+browser embedding, collaborative editing, and production Kubernetes tool
+deployments remain alpha. The MCP entries `MCP1`, `MCP2`, `MCP3`, and `D11` now
 remain alpha for the broader workflow: they have real stdio and HTTP JSON-RPC
 process smokes, obvious cross-schema request denial, and exhaustive-profile
 Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
@@ -589,7 +592,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 142
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

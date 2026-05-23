@@ -2218,13 +2218,22 @@ two-step plan/apply semantics.
 ### M9: Schema Visualization Output
 
 **Overlay**: `tools/citus-schema-designer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines schema visualization data for distribution, hypertable,
-search-index, webhook, and operator shard-placement overlays.
+**Summary**: Provides snapshot-backed schema visualization output for
+distribution, hypertable, search-index, webhook, and operator shard-placement
+overlays.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_schema_designer` binary against a validated tools
+snapshot TSV. The smoke requires `render-svg --snapshot <snapshot.tsv>` to emit
+deterministic SVG containing the `D6 M9` feature marker, table overlays, and a
+real shard-placement label, and it verifies malformed snapshot references fail
+closed. Direct DrawDB front-end embedding, browser collaboration, and live
+operator/companion watch streams remain alpha.
 
 **Motivation**: Distributed schema design needs visual output that shows shard
 and extension-specific state rather than only ordinary table relationships.
@@ -2236,6 +2245,7 @@ operator shard-map overlay model.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M9` in `tools/citus-schema-designer/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_schema_designer -- run-canonical`
 
 ### M11: Online Column-Type Migration
@@ -4420,13 +4430,22 @@ replay, and operator mutation workflows remain alpha.
 ### D3: citus-tui Interactive Shell
 
 **Overlay**: `tools/citus-tui`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the initial contract for the rainfrog-based terminal UI
-shell with Citus-specific panels and guarded operator actions.
+**Summary**: Provides a snapshot-backed terminal frame runtime for the
+rainfrog-based shell panels with Citus-specific data and guarded operator
+action previews.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_tui` binary against a validated tools snapshot
+TSV. The smoke requires `render-frame --snapshot <snapshot.tsv> --panel shards`
+to render concrete shard placement data, requires safe mode to reject a tenant
+move without override, and requires the same action to succeed only with
+`--unsafe-allow-mutation --confirm CONFIRM`. The broader interactive ratatui
+event loop, direct database sessions, and live mutation execution remain alpha.
 
 **Motivation**: Operators need an interactive terminal workflow that can inspect
 cluster topology, shards, hypertables, search indexes, vectorizer backlog,
@@ -4440,6 +4459,7 @@ administration shell.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D3` in `tools/citus-tui/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_tui -- run-canonical`
 
 ### D4: citus-lsp IDE Diagnostics
@@ -4480,13 +4500,22 @@ rather than discovering them during deploy-time reconciliation.
 ### D5: citus-admin Web UI
 
 **Overlay**: `tools/citus-admin`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the initial route and action contract for the WhoDB-based
-web administration UI.
+**Summary**: Provides a snapshot-backed HTML route renderer and fail-closed
+action validator for the WhoDB-based web administration UI.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_admin` binary against a validated tools snapshot
+TSV. The smoke requires `render --snapshot <snapshot.tsv> --route
+/cluster/shards` to emit concrete HTML containing shard and worker data,
+requires rebalance without `CONFIRM` to fail closed, and requires confirmed
+rebalance to emit an accepted dry-run receipt. Full WhoDB front-end embedding,
+browser sessions, live database writes, and Kubernetes-side admin deployment
+remain alpha.
 
 **Motivation**: Administrators need a browser UI for topology, shard,
 Timescale, vectorizer, branch, tenant, backup, and realtime debugging
@@ -4498,18 +4527,26 @@ workflows, with mutating actions requiring exact confirmations.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D5` in `tools/citus-admin/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_admin -- run-canonical`
 
 ### D6: citus-schema-designer Visual
 
 **Overlay**: `tools/citus-schema-designer`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the initial contract for the DrawDB-based visual schema
-designer's Citus overlays.
+**Summary**: Provides the DrawDB-targeted visual schema renderer for Citus
+distribution, hypertable, search, webhook, and shard-placement overlays.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_schema_designer` binary against a validated tools
+snapshot TSV. The smoke requires deterministic SVG output with the `D6 M9`
+feature marker and real shard placement data, and requires invalid snapshot
+references to fail closed. Full DrawDB front-end integration, collaborative
+editing, and live operator/companion refresh remain alpha.
 
 **Motivation**: Schema designers need a versioned model for distribution,
 hypertable, search, webhook, and shard-placement layers before the UI reads
@@ -4521,18 +4558,26 @@ operator CRD or companion state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D6` in `tools/citus-schema-designer/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_schema_designer -- run-canonical`
 
 ### D12: citus-watch Dashboard
 
 **Overlay**: `tools/citus-watch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the dashboard data-source and panel contract for the
+**Summary**: Provides a snapshot-backed dashboard frame runtime for the
 `citus-watch` operator view.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_watch` binary against a validated tools snapshot
+TSV. The smoke requires `render-frame --snapshot <snapshot.tsv>` to emit pool,
+vectorizer backlog, shard, tenant, and companion/Prometheus query-plan data.
+Live Prometheus scraping, direct companion SQL sessions, and continuous terminal
+refresh remain alpha.
 
 **Motivation**: Operators need a single terminal dashboard that can read
 companion metadata, Prometheus metrics, and pool signals without hand-built
@@ -4544,6 +4589,7 @@ queries.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D12` in `tools/citus-watch/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
 ### D7: Helm One-Line Install
@@ -5191,14 +5237,21 @@ division.
 ### O13: citus-watch TUI
 
 **Overlay**: `tools/citus-watch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the initial Rust contract for the `citus-watch` unified
-operator view across cluster topology, shards, hypertables, EXPLAIN,
-rebalance, vectorizer backlog, search indexes, tenants, and branches.
+**Summary**: Provides the snapshot-backed `citus-watch` unified operator frame
+across cluster topology, shards, hypertables, EXPLAIN, rebalance, vectorizer
+backlog, search indexes, tenants, and branches.
+
+Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
+run the real `ai_blaise_citus_watch` binary against a validated tools snapshot
+TSV. The smoke requires the rendered frame to include pool readiness,
+vectorizer backlog signals, and the companion shard-placement query plan.
+Long-running terminal event handling, live Prometheus polling, and direct
+companion database reads remain alpha.
 
 **Motivation**: Runtime operations need a compact, terminal-native view that
 tracks the same companion and metrics surfaces used by dashboards and alerts.
@@ -5210,6 +5263,7 @@ operations TUI.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O13` in `tools/citus-watch/src/lib.rs`
+- CI: `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_watch -- run-canonical`
 
 ### O14: W3C Trace-Context Propagation
