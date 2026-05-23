@@ -205,6 +205,7 @@ static void ErrorIfHooksAlreadyRegistered(void);
 static bool CitusHasAlreadyRegisteredHooks(void);
 static bool CitusHasTrustedHookCoextensions(void);
 static bool IsTrustedHookCoextension(const char *coextensionName);
+static void NoteCohabitClockReservations(void);
 static void RegisterCitusConfigVariables(void);
 static void OverridePostgresConfigProperties(void);
 static bool ErrorIfNotASuitableDeadlockFactor(double *newval, void **extra,
@@ -523,6 +524,12 @@ _PG_init(void)
 	InitializeSharedConnectionStats();
 	InitializeLocallyReservedSharedConnections();
 	InitializeClusterClockMem();
+
+	/*
+	 * FEATURE: TS19 -- record clock-side cohabit reservations the operator has
+	 * enabled before cohabiting background workers enter their execution loops.
+	 */
+	NoteCohabitClockReservations();
 
 	/*
 	 * Adjust the Dynamic Library Path to prepend citus_decodes to the dynamic
@@ -1073,6 +1080,133 @@ static bool
 IsTrustedHookCoextension(const char *coextensionName)
 {
 	return pg_strcasecmp(coextensionName, "timescaledb") == 0;
+}
+
+
+/*
+ * FEATURE: TS20
+ *
+ * ClassifyCitusCohabitExtension is a small in-process detection API for
+ * cohabiting extensions that Citus operators may configure before Citus in
+ * shared_preload_libraries. The classification is deliberately role-specific:
+ * TimescaleDB is the only trusted hook-chain coextension, pg_cron is a
+ * clock-side background-worker coextension, and pg_partman is detected as a
+ * partition-management cohabitant without granting hook-chain trust.
+ */
+CitusCohabitExtensionKind
+ClassifyCitusCohabitExtension(const char *extensionName)
+{
+	if (extensionName == NULL || extensionName[0] == '\0')
+	{
+		return CITUS_COHABIT_EXTENSION_UNSUPPORTED;
+	}
+
+	if (pg_strcasecmp(extensionName, "timescaledb") == 0)
+	{
+		return CITUS_COHABIT_EXTENSION_TRUSTED_HOOK;
+	}
+	else if (pg_strcasecmp(extensionName, "pg_cron") == 0)
+	{
+		return CITUS_COHABIT_EXTENSION_CLOCK;
+	}
+	else if (pg_strcasecmp(extensionName, "pg_partman") == 0)
+	{
+		return CITUS_COHABIT_EXTENSION_PARTITION_MANAGER;
+	}
+
+	return CITUS_COHABIT_EXTENSION_UNSUPPORTED;
+}
+
+
+/* FEATURE: TS20 -- returns true when the postmaster GUC lists extensionName. */
+bool
+CitusCohabitExtensionConfigured(const char *extensionName)
+{
+	List *cohabitExtensionList = NIL;
+	bool configured = false;
+
+	if (extensionName == NULL || extensionName[0] == '\0' ||
+		CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
+	{
+		return false;
+	}
+
+	char *cohabitExtensions = pstrdup(CohabitExtensions);
+	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
+	{
+		ListCell *cell = NULL;
+
+		foreach(cell, cohabitExtensionList)
+		{
+			char *configuredName = (char *) lfirst(cell);
+
+			if (pg_strcasecmp(configuredName, extensionName) == 0 &&
+				ClassifyCitusCohabitExtension(configuredName) !=
+				CITUS_COHABIT_EXTENSION_UNSUPPORTED)
+			{
+				configured = true;
+				break;
+			}
+		}
+
+		list_free(cohabitExtensionList);
+	}
+	pfree(cohabitExtensions);
+
+	return configured;
+}
+
+
+/*
+ * FEATURE: TS19
+ *
+ * NoteCohabitClockReservations inspects the configured cohabit extensions and
+ * informs the clock subsystem about any clock-side cohabit (currently pg_cron)
+ * so the hybrid logical clock initializer can record the reserved-slot path.
+ */
+static void
+NoteCohabitClockReservations(void)
+{
+	List *cohabitExtensionList = NIL;
+	bool reservePgCron = false;
+
+	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
+	{
+		return;
+	}
+
+	char *cohabitExtensions = pstrdup(CohabitExtensions);
+	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
+	{
+		ListCell *cell = NULL;
+
+		foreach(cell, cohabitExtensionList)
+		{
+			char *configuredName = (char *) lfirst(cell);
+
+			if (pg_strcasecmp(configuredName, "pg_cron") == 0)
+			{
+				reservePgCron = true;
+				break;
+			}
+		}
+
+		list_free(cohabitExtensionList);
+	}
+	pfree(cohabitExtensions);
+
+	if (!reservePgCron)
+	{
+		return;
+	}
+
+	ReserveCohabitClockTick();
+
+	ereport(LOG,
+			(errmsg("reserving Citus hybrid logical clock tick slot for "
+					"pg_cron cohabit"),
+			 errdetail("citus.cohabit_extensions includes pg_cron; the clock tick "
+					   "slot is reserved before pg_cron's background worker starts.")));
 }
 
 

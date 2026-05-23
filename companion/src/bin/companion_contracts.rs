@@ -42,8 +42,9 @@
 // FEATURE: TS11
 
 use ai_blaise_citus_companion::{
-    canonical_advanced_planner_execution_report, canonical_domain_contracts_report,
-    canonical_extension_catalog_execution_report, canonical_operations_readiness_report,
+    canonical_advanced_planner_execution_report, canonical_cohabit_detection_report,
+    canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
+    canonical_operations_readiness_report,
 };
 use std::env;
 use std::process;
@@ -62,6 +63,9 @@ fn main() {
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();
+        }
+        [command] if command == "run-cohabit-detection-canonical" => {
+            run_cohabit_detection_canonical();
         }
         [command] if command == "run-domain-contracts-canonical" => {
             run_domain_contracts_canonical();
@@ -99,6 +103,31 @@ fn run_advanced_planner_canonical() {
         report.policy_required_inputs,
         report.storage_domains,
         report.research_guards,
+    );
+}
+
+fn run_cohabit_detection_canonical() {
+    let report = canonical_cohabit_detection_report();
+
+    println!("extension	role	configured	preloaded	installed	ready	reason");
+    for observation in &report.observations {
+        println!(
+            "{}	{}	{}	{}	{}	{}	{}",
+            observation.name,
+            observation.role.as_str(),
+            observation.configured,
+            observation.preloaded,
+            observation.installed,
+            observation.ready,
+            observation.reason.as_deref().unwrap_or("ok"),
+        );
+    }
+    println!(
+        "summary	detected={}	ready={}	hard_failures={}	unsupported={}",
+        report.detected,
+        report.ready,
+        report.hard_failures,
+        report.unsupported_configured_extensions.len(),
     );
 }
 
@@ -163,7 +192,7 @@ fn run_operations_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-domain-contracts-canonical|run-operations-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }

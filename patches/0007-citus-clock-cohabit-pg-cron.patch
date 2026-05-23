@@ -1,0 +1,176 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Sat, 23 May 2026 21:50:00 +0000
+Subject: [PATCH] Reserve Citus clock cohabitation for pg_cron
+
+FEATURE: TS19
+
+Record an explicit hybrid-logical-clock cohabit reservation when operators
+list pg_cron in citus.cohabit_extensions. The patch adds a small shmem flag and
+read helper so pg_cron scheduled-job callers can verify that Citus
+initialized the logical clock before cohabiting background workers execute.
+
+This deliberately does not grant pg_cron trusted hook-chain status; TimescaleDB
+remains the only trusted hook coextension.
+---
+diff --git a/src/backend/distributed/clock/causal_clock.c b/src/backend/distributed/clock/causal_clock.c
+index 033cb5708..7be81ad02 100644
+--- a/src/backend/distributed/clock/causal_clock.c
++++ b/src/backend/distributed/clock/causal_clock.c
+@@ -85,2 +85,13 @@ typedef struct LogicalClockShmemData
+ 	ClockState clockInitialized;
++
++	/*
++	 * FEATURE: TS19
++	 *
++	 * Set to true when the operator has listed a clock-side cohabit extension
++	 * (currently pg_cron) in citus.cohabit_extensions and Citus has reserved
++	 * the tick slot during _PG_init before any cohabiting background worker
++	 * starts. Cohabiting bg-workers can read this flag to confirm the clock
++	 * initialization order is intact.
++	 */
++	bool cohabitClockTickReserved;
+ } LogicalClockShmemData;
+@@ -181,2 +192,5 @@ LogicalClockShmemInit(void)
+ 		LogicalClockShmem->clockInitialized = CLOCKSTATE_UNINITIALIZED;
++
++		/* FEATURE: TS19 -- explicit reset for the cohabit-reservation flag */
++		LogicalClockShmem->cohabitClockTickReserved = false;
+ 	}
+@@ -622 +636,52 @@ citus_get_transaction_clock(PG_FUNCTION_ARGS)
+ }
++
++
++/*
++ * FEATURE: TS19
++ *
++ * ReserveCohabitClockTick marks the in-shmem clock state so cohabiting
++ * extensions (currently pg_cron) and other in-process callers can confirm that
++ * Citus has reserved its hybrid-logical-clock tick slot during _PG_init,
++ * before the cohabiting background worker enters its job-execution loop. The
++ * shared-memory slot itself is reserved unconditionally by
++ * InitializeClusterClockMem; this call only records the operator-trusted
++ * cohabit reservation.
++ */
++void
++ReserveCohabitClockTick(void)
++{
++	if (LogicalClockShmem == NULL)
++	{
++		return;
++	}
++
++	LWLockAcquire(&LogicalClockShmem->clockLock, LW_EXCLUSIVE);
++	LogicalClockShmem->cohabitClockTickReserved = true;
++	LWLockRelease(&LogicalClockShmem->clockLock);
++}
++
++
++/*
++ * FEATURE: TS19
++ *
++ * IsClockTickCohabitReserved returns true when ReserveCohabitClockTick has
++ * recorded the reservation. Cohabiting bg-worker callers and SQL-side
++ * companion checks can use this to confirm the clock initialization order is
++ * intact and the clock UDFs are safe to call from cohabiting bg-worker context.
++ */
++bool
++IsClockTickCohabitReserved(void)
++{
++	bool reserved = false;
++
++	if (LogicalClockShmem == NULL)
++	{
++		return false;
++	}
++
++	LWLockAcquire(&LogicalClockShmem->clockLock, LW_SHARED);
++	reserved = LogicalClockShmem->cohabitClockTickReserved;
++	LWLockRelease(&LogicalClockShmem->clockLock);
++
++	return reserved;
++}
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index f1a25d7bc..1571d986c 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -207,2 +207,3 @@ static bool CitusHasTrustedHookCoextensions(void);
+ static bool IsTrustedHookCoextension(const char *coextensionName);
++static void NoteCohabitClockReservations(void);
+ static void RegisterCitusConfigVariables(void);
+@@ -526,2 +527,8 @@ _PG_init(void)
+ 
++	/*
++	 * FEATURE: TS19 -- record clock-side cohabit reservations the operator has
++	 * enabled before cohabiting background workers enter their execution loops.
++	 */
++	NoteCohabitClockReservations();
++
+ 	/*
+@@ -1078,2 +1085,55 @@ IsTrustedHookCoextension(const char *coextensionName)
+ 
++/*
++ * FEATURE: TS19
++ *
++ * NoteCohabitClockReservations inspects the configured cohabit extensions and
++ * informs the clock subsystem about any clock-side cohabit (currently pg_cron)
++ * so the hybrid logical clock initializer can record the reserved-slot path.
++ */
++static void
++NoteCohabitClockReservations(void)
++{
++	List *cohabitExtensionList = NIL;
++	bool reservePgCron = false;
++
++	if (CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
++	{
++		return;
++	}
++
++	char *cohabitExtensions = pstrdup(CohabitExtensions);
++	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
++	{
++		ListCell *cell = NULL;
++
++		foreach(cell, cohabitExtensionList)
++		{
++			char *configuredName = (char *) lfirst(cell);
++
++			if (pg_strcasecmp(configuredName, "pg_cron") == 0)
++			{
++				reservePgCron = true;
++				break;
++			}
++		}
++
++		list_free(cohabitExtensionList);
++	}
++	pfree(cohabitExtensions);
++
++	if (!reservePgCron)
++	{
++		return;
++	}
++
++	ReserveCohabitClockTick();
++
++	ereport(LOG,
++			(errmsg("reserving Citus hybrid logical clock tick slot for "
++					"pg_cron cohabit"),
++			 errdetail("citus.cohabit_extensions includes pg_cron; the clock tick "
++					   "slot is reserved before pg_cron's background worker starts.")));
++}
++
++
+ /* Register Citus configuration variables. */
+diff --git a/src/include/distributed/causal_clock.h b/src/include/distributed/causal_clock.h
+index 6e0054541..33ae1678f 100644
+--- a/src/include/distributed/causal_clock.h
++++ b/src/include/distributed/causal_clock.h
+@@ -40,2 +40,6 @@ extern ClusterClock * GetEpochTimeAsClock(void);
+ 
++/* FEATURE: TS19 -- cohabit clock-tick reservation helpers */
++extern void ReserveCohabitClockTick(void);
++extern bool IsClockTickCohabitReserved(void);
++
+ #endif /* CAUSAL_CLOCK_H */

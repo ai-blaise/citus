@@ -22,7 +22,17 @@ extern PGDLLEXPORT CompressionTypeStr_type extern_CompressionTypeStr;
 extern PGDLLEXPORT IsColumnarTableAmTable_type extern_IsColumnarTableAmTable;
 extern PGDLLEXPORT ReadColumnarOptions_type extern_ReadColumnarOptions;
 
+typedef enum CitusCohabitExtensionKind
+{
+	CITUS_COHABIT_EXTENSION_UNSUPPORTED = 0,
+	CITUS_COHABIT_EXTENSION_TRUSTED_HOOK,
+	CITUS_COHABIT_EXTENSION_CLOCK,
+	CITUS_COHABIT_EXTENSION_PARTITION_MANAGER,
+} CitusCohabitExtensionKind;
+
 extern void StartupCitusBackend(void);
 extern const char * GetClientMinMessageLevelNameForValue(int minMessageLevel);
+extern CitusCohabitExtensionKind ClassifyCitusCohabitExtension(const char *extensionName);
+extern bool CitusCohabitExtensionConfigured(const char *extensionName);
 
 #endif /* SHARED_LIBRARY_INIT_H */

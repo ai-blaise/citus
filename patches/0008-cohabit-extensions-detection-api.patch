@@ -1,0 +1,112 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ai-blaise <engineering@blaise.tech>
+Date: Sat, 23 May 2026 21:55:00 +0000
+Subject: [PATCH] Add role-aware cohabit extension detection API
+
+FEATURE: TS20
+
+Expose a small Citus-side classifier for supported cohabiting extensions. The
+classifier distinguishes TimescaleDB trusted hook cohabitation from pg_cron
+clock-worker cohabitation and pg_partman partition-management cohabitation, so
+callers can detect supported neighbors without granting blanket hook trust.
+---
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index 1571d986c..6601d4071 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -1085,2 +1085,76 @@ IsTrustedHookCoextension(const char *coextensionName)
+ 
++/*
++ * FEATURE: TS20
++ *
++ * ClassifyCitusCohabitExtension is a small in-process detection API for
++ * cohabiting extensions that Citus operators may configure before Citus in
++ * shared_preload_libraries. The classification is deliberately role-specific:
++ * TimescaleDB is the only trusted hook-chain coextension, pg_cron is a
++ * clock-side background-worker coextension, and pg_partman is detected as a
++ * partition-management cohabitant without granting hook-chain trust.
++ */
++CitusCohabitExtensionKind
++ClassifyCitusCohabitExtension(const char *extensionName)
++{
++	if (extensionName == NULL || extensionName[0] == '\0')
++	{
++		return CITUS_COHABIT_EXTENSION_UNSUPPORTED;
++	}
++
++	if (pg_strcasecmp(extensionName, "timescaledb") == 0)
++	{
++		return CITUS_COHABIT_EXTENSION_TRUSTED_HOOK;
++	}
++	else if (pg_strcasecmp(extensionName, "pg_cron") == 0)
++	{
++		return CITUS_COHABIT_EXTENSION_CLOCK;
++	}
++	else if (pg_strcasecmp(extensionName, "pg_partman") == 0)
++	{
++		return CITUS_COHABIT_EXTENSION_PARTITION_MANAGER;
++	}
++
++	return CITUS_COHABIT_EXTENSION_UNSUPPORTED;
++}
++
++
++/* FEATURE: TS20 -- returns true when the postmaster GUC lists extensionName. */
++bool
++CitusCohabitExtensionConfigured(const char *extensionName)
++{
++	List *cohabitExtensionList = NIL;
++	bool configured = false;
++
++	if (extensionName == NULL || extensionName[0] == '\0' ||
++		CohabitExtensions == NULL || CohabitExtensions[0] == '\0')
++	{
++		return false;
++	}
++
++	char *cohabitExtensions = pstrdup(CohabitExtensions);
++	if (SplitGUCList(cohabitExtensions, ',', &cohabitExtensionList))
++	{
++		ListCell *cell = NULL;
++
++		foreach(cell, cohabitExtensionList)
++		{
++			char *configuredName = (char *) lfirst(cell);
++
++			if (pg_strcasecmp(configuredName, extensionName) == 0 &&
++				ClassifyCitusCohabitExtension(configuredName) !=
++				CITUS_COHABIT_EXTENSION_UNSUPPORTED)
++			{
++				configured = true;
++				break;
++			}
++		}
++
++		list_free(cohabitExtensionList);
++	}
++	pfree(cohabitExtensions);
++
++	return configured;
++}
++
++
+ /*
+diff --git a/src/include/distributed/shared_library_init.h b/src/include/distributed/shared_library_init.h
+index 3764b52fd..267716004 100644
+--- a/src/include/distributed/shared_library_init.h
++++ b/src/include/distributed/shared_library_init.h
+@@ -24,4 +24,14 @@ extern PGDLLEXPORT ReadColumnarOptions_type extern_ReadColumnarOptions;
+ 
++typedef enum CitusCohabitExtensionKind
++{
++	CITUS_COHABIT_EXTENSION_UNSUPPORTED = 0,
++	CITUS_COHABIT_EXTENSION_TRUSTED_HOOK,
++	CITUS_COHABIT_EXTENSION_CLOCK,
++	CITUS_COHABIT_EXTENSION_PARTITION_MANAGER,
++} CitusCohabitExtensionKind;
++
+ extern void StartupCitusBackend(void);
+ extern const char * GetClientMinMessageLevelNameForValue(int minMessageLevel);
++extern CitusCohabitExtensionKind ClassifyCitusCohabitExtension(const char *extensionName);
++extern bool CitusCohabitExtensionConfigured(const char *extensionName);
+ 

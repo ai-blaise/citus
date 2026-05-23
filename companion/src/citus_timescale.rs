@@ -4,12 +4,15 @@
 // FEATURE: TS4
 // FEATURE: TS5
 // FEATURE: TS12
+// FEATURE: TS20
 
+use crate::extension_catalog::CohabitExtensionDetectionReport;
 use std::error::Error;
 use std::fmt;
 
 pub const FEATURE_DISTRIBUTE_HYPERTABLE: &str = "TS1";
 pub const FEATURE_TIME_RANGE_SHARD_PRUNER: &str = "TS5";
+pub const FEATURE_COHABIT_DETECTION: &str = "TS20";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CompanionSqlPlan {
@@ -98,6 +101,24 @@ pub fn distribute_hypertable_plan(
     num_shards: u32,
 ) -> Result<DistributedHypertablePlan, CompanionError> {
     DistributedHypertablePlan::new(table, distribution_column, chunk_time_interval, num_shards)
+}
+
+pub fn enable_timescale_bridge_if_cohabiting(
+    detection: &CohabitExtensionDetectionReport,
+) -> Result<CompanionSqlPlan, CompanionError> {
+    if !detection.is_ready("timescaledb") {
+        return Err(CompanionError::MissingTrustedCohabitExtension(
+            "timescaledb",
+        ));
+    }
+
+    CompanionSqlPlan::new(
+        FEATURE_COHABIT_DETECTION,
+        vec![
+            "SELECT companion_internal.assert_citus_cohabit_extension_order(ARRAY['timescaledb', 'citus'], ARRAY['timescaledb']);"
+                .to_string(),
+        ],
+    )
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -303,6 +324,7 @@ impl TimeRangeShardPrunerPlan {
 pub enum CompanionError {
     InvalidShardCount,
     MissingRequiredField(&'static str),
+    MissingTrustedCohabitExtension(&'static str),
 }
 
 impl fmt::Display for CompanionError {
@@ -312,6 +334,10 @@ impl fmt::Display for CompanionError {
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
             }
+            Self::MissingTrustedCohabitExtension(extension) => write!(
+                formatter,
+                "trusted cohabit extension {extension} is not ready"
+            ),
         }
     }
 }
@@ -474,6 +500,37 @@ mod tests {
         assert_eq!(
             parse_identifier_list("tenant_id, region, ,"),
             vec!["tenant_id".to_string(), "region".to_string()]
+        );
+    }
+
+    #[test]
+    fn timescale_bridge_enablement_requires_ready_timescaledb_detection() {
+        let detection = crate::extension_catalog::detect_cohabit_extensions(
+            &["timescaledb"],
+            &["timescaledb"],
+            &["timescaledb"],
+        );
+        let plan = enable_timescale_bridge_if_cohabiting(&detection).expect("ready detection");
+
+        assert_eq!(plan.feature_id, FEATURE_COHABIT_DETECTION);
+        assert!(plan
+            .script()
+            .contains("assert_citus_cohabit_extension_order"));
+    }
+
+    #[test]
+    fn timescale_bridge_enablement_fails_closed_without_preload() {
+        let detection = crate::extension_catalog::detect_cohabit_extensions(
+            &[],
+            &["timescaledb"],
+            &["timescaledb"],
+        );
+
+        assert_eq!(
+            enable_timescale_bridge_if_cohabiting(&detection),
+            Err(CompanionError::MissingTrustedCohabitExtension(
+                "timescaledb"
+            ))
         );
     }
 }

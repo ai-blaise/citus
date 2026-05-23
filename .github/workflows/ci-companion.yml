@@ -23,6 +23,10 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
       - name: Run canonical extension catalog report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical
+      - name: Run canonical cohabit detection report
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-cohabit-detection-canonical
+      - name: Run cohabit detection smoke
+        run: bash ci/ai-blaise/cohabit-detection-smoke.sh
       - name: Run canonical domain contract report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical
       - name: Run canonical operations readiness report

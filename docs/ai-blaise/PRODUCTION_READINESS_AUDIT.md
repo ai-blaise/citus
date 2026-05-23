@@ -554,7 +554,7 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 273 source `FEATURE:` markers and 273
+The current feature inventory contains 275 source `FEATURE:` markers and 275
 feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 143 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
@@ -597,6 +597,10 @@ sidecars and verifies their local HTTP/runtime boundaries, but those entries
 remain alpha where the feature register still requires live Postgres,
 PostgREST/pg_graphql, Deno/Bun, auth, or operator integration evidence.
 
+`TS19` and `TS20` remain alpha: TS19 has a patch-level clock reservation but no
+live Citus+pg_cron boot evidence yet, and TS20 has deterministic companion
+detection proof but no live patched-Citus C API caller yet.
+
 The broader backup workflow is still not production-ready as a whole. The
 backup promotions do not prove cloud object-store credentials, external secret
 resolution, hardware KMS, key rotation, Backup CR reconciliation, operator
@@ -604,10 +608,11 @@ lifecycle management, long-running query load on restored branches, or a full
 Kubernetes restore against a real WAL-G archive. Those remain explicit future
 acceptance gates, not hidden assumptions.
 
-The other 130 feature headings remain `Status: alpha`. There are no remaining
+The other 132 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
+
 Every feature heading now has an explicit Executable, CI, Acceptance, SQL
 runtime, or SQL extension reference line. Those references are alpha contract
 evidence unless the entry is also marked `Status: production-ready`; they keep
