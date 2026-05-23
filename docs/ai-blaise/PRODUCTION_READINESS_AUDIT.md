@@ -544,12 +544,13 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 273 source `FEATURE:` markers and 273
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 138 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 143 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
 plan-builder, MCP4, and sidecar runtime entries, plus the backup, CDC,
-realtime, and auth sidecar runtime entries merged in this release train dry-run.
+realtime, auth sidecar, and vectorizer runtime entries merged in this release
+train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -573,6 +574,13 @@ exchange, key rotation, persistent runtime loading from the auth schema,
 WebAuthn ceremonies, pool data-plane authentication, and pool-side token cache
 operation remain alpha until they have their own live evidence.
 
+The vectorizer runtime evidence is scoped to the PostgreSQL-backed sidecar
+worker loop, provider routing, tenant budget checks, queue claiming, usage-log
+recording, and local deterministic provider execution proven by
+`ci/ai-blaise/sidecar-vectorizer-smoke.sh` and vectorizer crate tests. Managed
+provider credentials, production embedding providers, operator reconciliation,
+multitenant SLO enforcement, and long-running production load remain alpha.
+
 The API trio runtime smoke boots the PostgREST, GraphQL, and edge-functions
 sidecars and verifies their local HTTP/runtime boundaries, but those entries
 remain alpha where the feature register still requires live Postgres,
@@ -585,7 +593,7 @@ lifecycle management, long-running query load on restored branches, or a full
 Kubernetes restore against a real WAL-G archive. Those remain explicit future
 acceptance gates, not hidden assumptions.
 
-The other 135 feature headings remain `Status: alpha`. There are no remaining
+The other 130 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
