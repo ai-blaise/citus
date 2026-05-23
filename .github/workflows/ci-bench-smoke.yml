@@ -16,5 +16,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Install benchmark format tooling
+        run: python -m pip install black==24.10.0
+      - name: Check Timescale ingest benchmark formatting
+        run: black --check benchmarks/timescale-ingest/ingest.py
       - name: Run benchmark smoke (quick mode)
         run: bash ci/ai-blaise/benchmark-smoke.sh

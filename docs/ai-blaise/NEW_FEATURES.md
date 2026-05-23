@@ -5243,7 +5243,7 @@ sampling drift.
 **Citus comparison**: Vanilla Citus does not propagate W3C trace-context
 through libpq.
 
-Production evidence: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
+Executable alpha evidence: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
 real `postgres:17` container, runs the pool proxy against it, sends a
 traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
 log line reports the exact traceparent and that
@@ -5287,7 +5287,7 @@ cannot plan against the JSON column.
 **Citus comparison**: Vanilla Citus emits unstructured Postgres log lines;
 no per-sidecar JSON schema exists.
 
-Production evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
+Executable alpha evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
 validate every canonical schema, prove no extension field shadows a common
 field, and confirm the schema catalog covers all 17 sidecars. Companion's
 `log_view` tests render the deterministic SQL bundle and assert per-sidecar

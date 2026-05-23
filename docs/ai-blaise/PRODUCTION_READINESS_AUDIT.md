@@ -163,6 +163,11 @@ more production-ready than the artifacts justified.
     backed by the maintained PostgreSQL driver, native TLS support, read-only
     transactions, bounded result materialization, row/timeout ceilings,
     `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
+40. Release and PR integration status could be checked only by reading several
+    separate local gates plus GitHub check pages. That left room for stale V2
+    command counts, missing production evidence, toy or alpha overclaims,
+    missing benchmark formatting, or broad matrix failures to be overlooked
+    while still claiming release readiness.
 
 ## Corrections
 
@@ -524,10 +529,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,7 +592,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
@@ -637,3 +640,10 @@ Production Helm values must also keep alpha sidecars disabled by default.
 `ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
 sidecar before the corresponding feature is promoted with measured production
 evidence.
+
+- The release gate monitor now centralizes the bounded integration contract for
+  production wording, executable evidence, V2 domain-command freshness,
+  benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
+  and parallel matrix monitoring via `gh pr checks`. It is wired into
+  `gate-close` and the `release-gate-monitor` workflow, while the repository
+  remains not production-ready as a whole until production-release mode passes.
