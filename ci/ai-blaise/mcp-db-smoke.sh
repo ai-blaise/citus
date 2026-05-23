@@ -31,8 +31,12 @@ docker run \
   -d "${postgres_image}" >/dev/null
 
 ready=0
+init_complete=0
 for _ in $(seq 1 120); do
-  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+  if docker logs "${container}" 2>&1 | grep -Fq 'PostgreSQL init process complete'; then
+    init_complete=1
+  fi
+  if [[ "${init_complete}" == "1" ]] && docker exec "${container}" psql -U postgres -d postgres -Atqc 'SELECT 1' 2>/dev/null | grep -qx '1'; then
     ready=1
     break
   fi
