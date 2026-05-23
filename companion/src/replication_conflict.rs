@@ -1,4 +1,6 @@
 //! Fail-closed replication conflict classification and resolution.
+// FEATURE: C4
+// FEATURE: C5
 
 use std::cmp::Ordering;
 use std::error::Error;

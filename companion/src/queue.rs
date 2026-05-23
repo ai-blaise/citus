@@ -1,4 +1,5 @@
 //! Durable companion queue runtime primitives.
+// FEATURE: R6
 
 use std::collections::BTreeMap;
 use std::error::Error;
