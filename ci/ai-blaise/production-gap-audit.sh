@@ -26,6 +26,8 @@ DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
+COHABITATION_DOC = ROOT / "docs/ai-blaise/COHABITATION.md"
+COHAB_MATRIX_README = ROOT / "tests/cohab-matrix/README.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
 
@@ -166,6 +168,8 @@ for path in (
     E2E_DOC,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
+    COHABITATION_DOC,
+    COHAB_MATRIX_README,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
 ):
@@ -179,6 +183,19 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+matrix_truth = compact(read(COHAB_MATRIX_README) + "\n" + read(COHABITATION_DOC) + "\n" + audit)
+for phrase in (
+    "skip-with-note",
+    "does not promote TS 2.28 to production-ready",
+    "VM registry probe on 2026-05-23",
+):
+    if compact(phrase) not in matrix_truth:
+        fail(f"Timescale 2.28 matrix docs must preserve truth phrase: {phrase}")
+
+for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready"):
+    if compact(pattern) in matrix_truth:
+        fail(f"Timescale 2.28 matrix overclaims production readiness: {pattern}")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:

@@ -14,6 +14,9 @@ dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
+ts_version_matrix_smoke="ci/ai-blaise/ts-version-matrix-smoke.sh"
+cohab_matrix_dir="tests/cohab-matrix"
+cohab_matrix_compare="${cohab_matrix_dir}/compare-hook-claims.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 
@@ -31,6 +34,15 @@ for file in \
   "${pool_proxy_smoke}" \
   "${timescale_bridge_smoke}" \
   "${timescale_cohabitation_smoke}" \
+  "${ts_version_matrix_smoke}" \
+  "${cohab_matrix_compare}" \
+  "${cohab_matrix_dir}/README.md" \
+  "${cohab_matrix_dir}/2.27/expected-hook-claims.tsv" \
+  "${cohab_matrix_dir}/2.27/image-tag.txt" \
+  "${cohab_matrix_dir}/2.27/notes.md" \
+  "${cohab_matrix_dir}/2.28/expected-hook-claims.tsv" \
+  "${cohab_matrix_dir}/2.28/image-tag.txt" \
+  "${cohab_matrix_dir}/2.28/notes.md" \
   "${observability_replication_smoke}" \
   "${app_digest_smoke}"; do
   if [[ ! -s "${file}" ]]; then
@@ -49,6 +61,14 @@ if [[ ! -x "${timescale_bridge_smoke}" ]]; then
 fi
 if [[ ! -x "${timescale_cohabitation_smoke}" ]]; then
   echo "missing executable Timescale/Citus cohabitation smoke: ${timescale_cohabitation_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${ts_version_matrix_smoke}" ]]; then
+  echo "missing executable TS-version matrix smoke: ${ts_version_matrix_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${cohab_matrix_compare}" ]]; then
+  echo "missing executable TS-version matrix comparator: ${cohab_matrix_compare}" >&2
   exit 1
 fi
 if [[ ! -x "${observability_replication_smoke}" ]]; then
@@ -231,9 +251,17 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
-  else
-    grep -Fq 'run_probe_server' "${main_file}"
+    continue
   fi
+  if grep -Fq 'run_probe_server' "${main_file}"; then
+    continue
+  fi
+  if grep -Fq 'runtime.block_on(serve(' "${main_file}"; then
+    grep -Fq 'runtime::serve' "${main_file}"
+    continue
+  fi
+  echo "${main_file} must expose serve-mode HTTP probes through run_probe_server or a custom runtime::serve implementation" >&2
+  exit 1
 done
 
 grep -Fq 'args == ["serve"]' pool/src/main.rs
@@ -509,8 +537,23 @@ grep -Fq "pg_dist_partition" "${timescale_cohabitation_smoke}"
 grep -Fq "expected six Timescale bridge feature ids" "${timescale_cohabitation_smoke}"
 grep -Fq "timescale-cohabitation-evidence.tsv" "${timescale_cohabitation_smoke}"
 grep -Fq "stable image identity" "${timescale_cohabitation_smoke}"
+grep -Fq "docker buildx imagetools inspect" "${timescale_cohabitation_smoke}"
 grep -Fq "git_sha" "${timescale_cohabitation_smoke}"
 grep -Fq "command_path" "${timescale_cohabitation_smoke}"
+grep -Fq "TS_VERSION_MATRIX_REQUIRED" "${ts_version_matrix_smoke}"
+grep -Fq "docker manifest inspect" "${ts_version_matrix_smoke}"
+grep -Fq "TIMESCALE_COHABITATION_EVIDENCE" "${ts_version_matrix_smoke}"
+grep -Fq "compare-hook-claims.sh" "${ts_version_matrix_smoke}"
+grep -Fq "skip-with-note" "${ts_version_matrix_smoke}"
+grep -Fq "TS_VERSION_MATRIX_ALLOW_UNKNOWN=1 only for exploratory local probes" "${cohab_matrix_compare}"
+grep -Fxq "timescale/timescaledb:2.27.1-pg17" "${cohab_matrix_dir}/2.27/image-tag.txt"
+grep -Fxq "timescale/timescaledb:2.28.0-pg17" "${cohab_matrix_dir}/2.28/image-tag.txt"
+grep -Fq $'ExecutorStart_hook\tunknown\t' "${cohab_matrix_dir}/2.28/expected-hook-claims.tsv"
+grep -Fq "does not promote TS 2.28 to production-ready" "${cohab_matrix_dir}/README.md"
+if grep -Fq $'\tunknown\t' "${cohab_matrix_dir}/2.27/expected-hook-claims.tsv"; then
+  echo "load-bearing TS 2.27 matrix must not contain unknown hook claims" >&2
+  exit 1
+fi
 if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_cohabitation_smoke}"; then
   echo "real Timescale/Citus cohabitation smoke must not stub create_distributed_table" >&2
   exit 1

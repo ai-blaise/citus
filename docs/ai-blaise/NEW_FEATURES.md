@@ -657,10 +657,22 @@ and `ai_blaise_citus` in the same server. The VM run in the production audit
 records the Git SHA, image identity, and command path, and the smoke is part of
 `make -f Makefile.ai-blaise gate-close`.
 
+Forward-compatibility gate: `ci/ai-blaise/ts-version-matrix-smoke.sh`
+iterates the TS minor lines pinned under `tests/cohab-matrix/`, reads each
+exact `image-tag.txt`, runs the single-version cohabitation smoke for
+published images, and compares the running container against the per-version
+expected hook-claim table. TS 2.27 is load-bearing through
+`timescale/timescaledb:2.27.1-pg17`. TS 2.28 is not production evidence yet:
+the VM registry probe on 2026-05-23 found no `2.28-pg17`, `2.28.0-pg17`, or
+`2.28.1-pg17` image, so the 2.28 row records `skip-with-note` until the tag
+is published and all `unknown` hook rows are measured.
+
 **References**:
 
 - Design: `docs/ai-blaise/COHABITATION.md`
 - Executable: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
+- Executable: `ci/ai-blaise/ts-version-matrix-smoke.sh`
+- Matrix: `tests/cohab-matrix/2.27/`, `tests/cohab-matrix/2.28/`
 - In-source marker after patch application:
   `FEATURE: TS6` in
   `src/backend/distributed/shared_library_init.c`,
