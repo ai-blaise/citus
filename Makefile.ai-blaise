@@ -332,6 +332,9 @@ app-image-digest-manifest-smoke:
 image-check:
 	@bash ci/ai-blaise/image-check.sh
 
+deploy-check:
+	@bash ci/ai-blaise/deploy-check.sh
+
 # PG version matrix: ai-blaise/citus operand image emits a PG17 and PG18
 # variant from the same Dockerfile, gated by PG_MAJOR / BASE_IMAGE build args.
 # Operators select a major via Helm `postgresMajor`; default is PG17 for

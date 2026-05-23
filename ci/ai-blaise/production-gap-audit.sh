@@ -28,6 +28,11 @@ ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
+K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
+K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
+DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
+K8S_GUARDRAIL_CHECK = ROOT / "ci/ai-blaise/k8s-guardrails-check.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -188,6 +193,29 @@ if deploy_k8s_tree:
         + ", ".join(str(p) for p in deploy_k8s_tree)
     )
 
+for path in (
+    K8S_GUARDRAIL_RENDERER,
+    K8S_GUARDRAIL_MANIFEST,
+    K8S_GUARDRAIL_KUSTOMIZATION,
+    DEPLOY_CHECK,
+    K8S_GUARDRAIL_CHECK,
+):
+    if not path.exists() or not path.read_text(encoding="utf-8", errors="ignore").strip():
+        fail(f"missing Kubernetes guardrail contract artifact: {path}")
+
+guardrail_text = read(K8S_GUARDRAIL_MANIFEST)
+for phrase in (
+    'kind: "HorizontalPodAutoscaler"',
+    'kind: "PodDisruptionBudget"',
+    'kind: "NetworkPolicy"',
+    'app.kubernetes.io/name: "ai-blaise-citus"',
+    'ai-blaise.com/chart-fold-date: "2026-05-22"',
+    'name: "ai-blaise-citus-pool-postgres"',
+    "ai_blaise_sidecar_queue_depth",
+):
+    if phrase not in guardrail_text:
+        fail(f"Kubernetes guardrail contract missing phrase: {phrase}")
+
 print(
     "production_gap_audit\t"
     f"source_feature_ids={len(source_ids)}\t"
@@ -198,6 +226,7 @@ print(
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"
     "live_sql_guards=true\t"
+    "k8s_guardrail_contract=true\t"
     "chart_folded_to_command_center=2026-05-22"
 )
 PY

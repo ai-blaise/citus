@@ -22,9 +22,20 @@ This repository keeps:
 - The PG-overlay container image build (`images/citus-pg-overlay/`).
 - ai-blaise CI workflows that build, test, and publish the images consumed by
   the command-center chart.
+- A narrow Kubernetes guardrail contract under `deploy/contracts/` for the
+  command-center chart labels and workload names. It renders real HPA,
+  PodDisruptionBudget, and NetworkPolicy resources for the ai-blaise operator,
+  pool, and sidecar surfaces without reintroducing the folded Helm chart.
 
 ## Deploying
 
 Use the command-center chart with Helm or via Argo CD against
 `ai-blaise/command-center/gitops/apps/13-citus-cluster.yaml`. Operand images are
 still published from this repository.
+
+Before promoting Citus-side image/runtime changes, run
+`make -f Makefile.ai-blaise deploy-check`. The check validates that
+`deploy/contracts/k8s-production-guardrails.yaml` is in sync with the renderer,
+that the rendered manifest covers the expected production guardrail resources,
+and, when available on the runner, that kustomize and kubeconform accept the
+manifest. Full Helm values rendering remains owned by `ai-blaise/command-center`.

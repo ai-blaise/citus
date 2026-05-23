@@ -163,6 +163,12 @@ more production-ready than the artifacts justified.
     backed by the maintained PostgreSQL driver, native TLS support, read-only
     transactions, bounded result materialization, row/timeout ceilings,
     `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
+40. After the Helm chart fold into `ai-blaise/command-center`, this repository
+    no longer had an executable deploy contract for the HPA, PodDisruptionBudget,
+    and NetworkPolicy resources that protect the app images it still builds.
+    A missing or stale `deploy-check` could let Citus-side image/runtime changes
+    drift from the Kubernetes guardrails that command-center is expected to
+    render.
 
 ## Corrections
 
@@ -216,6 +222,11 @@ more production-ready than the artifacts justified.
   `ai_blaise_citus_pool_rejected_connections_total`, renders a matching
   NetworkPolicy for clusters with NetworkPolicy-capable CNI enforcement, and is
   proven by Docker plus kind smokes that verify allowed and denied SQL traffic.
+- After the chart fold, this repository keeps a Citus-side Kubernetes guardrail
+  contract under `deploy/contracts/`. `ci/ai-blaise/deploy-check.sh` validates
+  that the committed render stays in sync with the renderer and covers 49 HPA,
+  PodDisruptionBudget, and NetworkPolicy resources for the operator, pool, and
+  sidecars using the command-center chart labels and workload names.
 - Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
   wildcard grant, and it no longer grants Secret access while secret binding
   remains alpha. The deploy check and production gap audit reject wildcard CRD
@@ -524,10 +535,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,7 +598,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
@@ -633,7 +642,7 @@ that omit the shared production boundary for deterministic canonical reports,
 benchmark targets, and local runtime models.
 
 Production Helm values must also keep alpha sidecars disabled by default.
-`values-prod.yaml` can carry replica/resource intent for those components, but
-`ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
-sidecar before the corresponding feature is promoted with measured production
-evidence.
+After the 2026-05-22 chart fold, full values rendering is checked in
+`ai-blaise/command-center`; this repository's `deploy-check` enforces the
+Citus-side guardrail contract for HPA, PodDisruptionBudget, and NetworkPolicy
+resources that command-center must preserve for the images built here.

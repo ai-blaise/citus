@@ -4570,15 +4570,15 @@ exhaustive alpha profile by accident.
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise overlay chart
 or its production default profile.
 
-Production evidence: `ci/ai-blaise/deploy-check.sh` renders the default chart
-and rejects missing immutable digests, alpha sidecar deployments, alpha tools,
-and alpha runtime/security intent in the default profile. The same check keeps
-`values-exhaustive.yaml` as the only direct Helm profile with all alpha
-sidecars enabled. `ci/ai-blaise/kind-production-smoke.sh` now installs the
-default chart profile with direct Helm against a live kind cluster, verifies
-operator/pool replicas, rejects alpha workload deployments and controller-grade
-operator RBAC, and runs live SQL plus operator admin traffic through the
-installed release.
+Production evidence: after the 2026-05-22 chart fold, full Helm rendering
+and live chart smoke evidence live with `ai-blaise/command-center`. This
+repository keeps the Citus-side deploy contract that the chart must preserve:
+`ci/ai-blaise/deploy-check.sh` validates the rendered
+`deploy/contracts/k8s-production-guardrails.yaml` bundle, including 49 HPA,
+PodDisruptionBudget, and NetworkPolicy resources for the operator, pool, and
+sidecar surfaces. The production-readiness workflow and `gate-close` run that
+contract so Citus-side image/runtime changes cannot drift from the Kubernetes
+guardrails consumed by command-center.
 
 **References**:
 
@@ -4670,9 +4670,10 @@ immutable repo digests. The deploy workflow and `gate-close` run
 `ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
 the Makefile smoke targets set `REQUIRE_DOCKER=1` so missing Docker fails the
 release gate instead of silently skipping live evidence. `gate-close` also runs
-the image/deploy contract checks directly, with `REQUIRE_HELM=1` for rendered
-chart checks so missing Helm fails the release gate instead of silently skipping
-render evidence. The deploy wrapper install path is now live-gated by the
+the image/deploy contract checks directly; after the chart fold, this repo's
+`deploy-check` validates the Citus-side HPA, PodDisruptionBudget, and
+NetworkPolicy contract while command-center owns full Helm render evidence. The
+deploy wrapper install path is now live-gated by the
 `values-prod.yaml` phase of the kind smoke through `MODE=install`, while the
 optional tools Deployment remains dev-only and is not production evidence. The
 kind smoke also runs the built `citusctl` image and
