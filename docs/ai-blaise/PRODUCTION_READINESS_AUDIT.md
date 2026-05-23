@@ -412,6 +412,16 @@ more production-ready than the artifacts justified.
   tokens, and missing tenant claims fail closed. This is not evidence for
   JWKS/RSA/ECDSA key discovery, Auth1 token issuance, pool authentication,
   Auth3 token-cache behavior, external secret resolution, or key rotation.
+- The auth sidecar now ships a real `FEATURE: Auth1` HS256 runtime. The
+  auth smoke starts the real binary with an explicit signing secret, verifies
+  live health/readiness/metrics responses, registers a user, logs in, verifies
+  and introspects the JWT, refreshes the session, logs out, proves revoked JWTs
+  fail closed, exercises a TOTP login path, requires WebAuthn and OIDC routes
+  to fail closed with `501`, and applies the auth schema migration against
+  `postgres:17` when `REQUIRE_DOCKER=1`. This is not evidence for RS256/JWKS
+  discovery, external IdP exchange, WebAuthn ceremonies, key rotation,
+  persistent runtime loading from the auth schema, or pool data-plane token
+  authentication.
 - The SQL extension now installs narrow `FEATURE: S6` and `FEATURE: S13`
   router helper runtimes. S6 persists placement-generation counters and
   local-placement worker names, verifies generation advancement and shard-zero
@@ -524,10 +534,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 126 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -541,7 +549,8 @@ trusted hook-coextension source path under real Timescale/Citus cohabitation,
 `TS18` for the installable bridge-state SQL surface under real Timescale/Citus
 cohabitation, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
-pipelining through the real pool proxy data port, plus `Auth2` for installable
+pipelining through the real pool proxy data port, plus `Auth1` for the real HS256 auth sidecar issuer, verifier,
+introspection, refresh, logout, and schema smoke, plus `Auth2` for installable
 SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
 for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
 for the file-backed `citus-lsp` diagnostic and quick-fix CLI, plus `Sec1` for
@@ -589,7 +598,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 147
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

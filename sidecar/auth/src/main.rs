@@ -1,10 +1,10 @@
 // FEATURE: Auth1
 // FEATURE: Auth2
+// FEATURE: Auth3
 // FEATURE: Auth4
 // FEATURE: Auth5
 
-use ai_blaise_citus_sidecar_auth::{canonical_auth_report, SigningAlgorithm};
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_sidecar_auth::{canonical_auth_report, serve_http_forever, SigningAlgorithm};
 use std::env;
 use std::process;
 
@@ -15,7 +15,7 @@ fn main() {
         return;
     }
     if args == ["serve"] {
-        run_server("auth", "0.0.0.0:8080");
+        run_http_server("0.0.0.0:8080");
         return;
     }
 
@@ -62,12 +62,13 @@ fn main() {
 
 fn print_usage() {
     println!("usage: auth [serve|run-canonical]");
-    println!("runs the deterministic canonical auth sidecar plan and emits TSV");
+    println!("  serve            run the JWT issuer / verifier / MFA HTTP service");
+    println!("  run-canonical    emit the deterministic canonical auth sidecar TSV plan");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_http_server(default_addr: &str) {
+    if let Err(error) = serve_http_forever(default_addr) {
+        eprintln!("auth: HTTP server failed: {error}");
         process::exit(1);
     }
 }
