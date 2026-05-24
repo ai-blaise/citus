@@ -170,6 +170,9 @@ test-sidecar-auth:
 run-auth-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_auth -- run-canonical
 
+auth-sidecar-smoke:
+	bash ci/ai-blaise/auth-sidecar-smoke.sh
+
 build-sidecar-postgrest:
 	cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
 

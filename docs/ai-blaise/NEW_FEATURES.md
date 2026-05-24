@@ -3749,18 +3749,35 @@ from schedules or CDC events.
 ### Auth1: JWT-Issuing Service
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/auth`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines issuer, signing key reference, token TTL, and tenant claim
-contract for the auth sidecar, plus a runnable canonical token-plan emitter.
+**Summary**: Provides the auth sidecar's HS256 JWT issuer and verifier runtime,
+including explicit signing-secret configuration, access-token issuance,
+refresh-token exchange, token introspection, JTI revocation, and live
+health/readiness/metrics serving.
 
-**Motivation**: SQL helpers and the pool need the same token contract before
-the auth sidecar starts issuing JWTs.
+**Motivation**: SQL helpers, the pool, and sidecar APIs need one runtime token
+contract with the same claim names and HS256 wire format as the Sec2 SQL
+verifier.
 
 **Citus comparison**: Vanilla Citus does not ship a JWT issuer.
+
+Production evidence: `ci/ai-blaise/auth-sidecar-smoke.sh` starts the real
+`ai_blaise_citus_sidecar_auth serve` binary with an explicit
+`AI_BLAISE_AUTH_HS256_SECRET`, verifies `/healthz`, `/readyz`, and `/metrics`,
+registers a user, logs in, verifies the JWT, introspects it, refreshes the
+session, logs out, and proves the revoked token is rejected. With
+`REQUIRE_DOCKER=1`, the same smoke applies `sidecar/auth/migrations/0001_auth_schema.sql`
+against a real `postgres:17` container and verifies the durable auth tables.
+This production-ready boundary covers the local HS256 issuer/verifier,
+refresh-token session map, JTI revocation, auth-service introspection cache,
+and TOTP-backed login path only. RS256/JWKS discovery, external IdP token
+exchange, key rotation, persistent runtime loading from the auth schema,
+WebAuthn ceremonies, and pool data-plane authentication remain alpha until
+they have their own live evidence.
 
 **References**:
 
@@ -3768,6 +3785,8 @@ the auth sidecar starts issuing JWTs.
 - In-source: `FEATURE: Auth1` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Auth1` in `sidecar/auth/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
+- CI: `ci/ai-blaise/auth-sidecar-smoke.sh`
+- Schema: `sidecar/auth/migrations/0001_auth_schema.sql`
 
 ### Auth3: Token Introspection Cache
 
@@ -3785,12 +3804,19 @@ paths without repeatedly hitting the auth sidecar.
 
 **Citus comparison**: Vanilla Citus does not include token introspection.
 
+Runtime boundary: `ci/ai-blaise/auth-sidecar-smoke.sh` proves the auth service
+can introspect active tokens and reject revoked JTIs through the real HTTP
+runtime. The feature remains alpha because the pool data-plane cache and pool
+token-auth hook are still contract-only and are not exercised through live SQL
+traffic.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: Auth3` in `pool/src/auth_cache.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/auth-sidecar-smoke.sh`
 
 ### Sec1: RLS Helpers
 
@@ -4033,9 +4059,10 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
 'jti-123')`, verifies `companion_current_session_claims()` and
 `companion_current_tenant_id()` return the same values, and verifies empty
-`uid` claims are rejected. Auth1 JWT issuance and Auth3 token caching remain
-alpha until their own runtime evidence exists; Sec2 JWT verification has a
-separate SQL-runtime evidence boundary.
+`uid` claims are rejected. Auth1 HS256 issuance has separate auth-sidecar
+runtime evidence; pool authentication, Auth3 pool-side token caching, and
+non-HS256 issuer modes remain alpha until their own runtime evidence exists.
+Sec2 JWT verification has a separate SQL-runtime evidence boundary.
 
 **References**:
 
@@ -4056,18 +4083,27 @@ separate SQL-runtime evidence boundary.
 **Bundled extension dep**: none
 
 **Summary**: Defines OIDC provider configuration with issuer URL, secret refs,
-and scopes for external identity integrations.
+and scopes for external identity integrations, plus explicit HTTP flow
+boundaries for login and callback routes.
 
 **Motivation**: Auth sidecars need an auditable provider contract before
 Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
 
 **Citus comparison**: Vanilla Citus does not ship OAuth2/OIDC auth services.
 
+Runtime boundary: the auth sidecar validates OIDC provider configuration,
+ships a durable `auth.auth_oidc_providers` table in the auth schema migration,
+and exposes `/auth/oidc/login` and `/auth/oidc/callback` routes that fail
+closed with `501` until IdP-specific exchange, nonce/state validation, JWKS
+fetching, and account-linking are implemented and live-gated.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth4` in `sidecar/auth/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
+- CI: `ci/ai-blaise/auth-sidecar-smoke.sh`
+- Schema: `sidecar/auth/migrations/0001_auth_schema.sql`
 
 ### Auth5: MFA Policy Contracts
 
@@ -4078,18 +4114,28 @@ Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
 **Bundled extension dep**: none
 
 **Summary**: Adds MFA policy validation for TOTP and WebAuthn enablement plus
-bounded retry attempts.
+bounded retry attempts. The auth sidecar now implements TOTP enrollment and
+verification while keeping WebAuthn ceremony routes fail-closed.
 
 **Motivation**: MFA behavior needs a declarative sidecar contract before token
 issuance can enforce step-up authentication.
 
 **Citus comparison**: Vanilla Citus does not ship MFA policy management.
 
+Runtime boundary: unit tests verify RFC 6238 TOTP vectors, TOTP enrollment,
+TOTP login, and failed missing-code login. `ci/ai-blaise/auth-sidecar-smoke.sh`
+exercises the real HTTP TOTP enrollment/login flow and requires WebAuthn
+register/finish routes to return `501`. The feature remains alpha until the
+WebAuthn challenge, credential persistence, signature verification, replay
+protection, and persistent TOTP loading paths are implemented and live-gated.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth5` in `sidecar/auth/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_auth -- run-canonical`
+- CI: `ci/ai-blaise/auth-sidecar-smoke.sh`
+- Schema: `sidecar/auth/migrations/0001_auth_schema.sql`
 
 ## Plan Management
 
