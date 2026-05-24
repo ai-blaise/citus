@@ -59,6 +59,9 @@ DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 TIMESCALE_BRIDGE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
 TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
+SQL_EXTENSION = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql"
+AI_SQL_CONTRACT_SMOKE = ROOT / "ci/ai-blaise/ai-sql-contract-smoke.sh"
+CI_IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
 
 SOURCE_ROOTS = [
     "companion",
@@ -105,6 +108,17 @@ def source_text() -> str:
             except Exception:
                 continue
     return "\n".join(chunks)
+
+
+def feature_section(docs: str, feature_id: str) -> str:
+    heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
+    headings = list(heading_re.finditer(docs))
+    for index, heading in enumerate(headings):
+        if heading.group(1) != feature_id:
+            continue
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(docs)
+        return docs[heading.start():end]
+    fail(f"missing feature heading in NEW_FEATURES.md: {feature_id}")
 
 
 def feature_entries(docs: str):
@@ -266,6 +280,81 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+# A10/A11 SQL-visible contract guardrail: these features remain alpha and prove
+# deterministic intent validation only. This audit prevents accidental promotion
+# to live provider/model execution or generated-query execution without evidence.
+entry_status = {entry["id"]: entry["status"] for entry in entries}
+for feature_id in ("A10", "A11"):
+    if entry_status.get(feature_id) != "alpha":
+        fail(f"{feature_id} must remain Status: alpha until live AI SQL execution is verified")
+
+section_a10 = feature_section(docs, "A10")
+section_a11 = feature_section(docs, "A11")
+for phrase in (
+    "sql-intent-fail-closed-only",
+    "does not call a live model provider",
+    "does not produce real streaming provider chunks",
+    "not production-ready",
+):
+    if compact(phrase) not in compact(section_a10):
+        fail(f"A10 docs must preserve SQL intent caveat: {phrase}")
+for phrase in (
+    "sql-intent-fail-closed-only",
+    "does not call a live text-to-SQL model",
+    "does not execute generated SQL",
+    "not production-ready",
+):
+    if compact(phrase) not in compact(section_a11):
+        fail(f"A11 docs must preserve SQL intent caveat: {phrase}")
+for phrase in (
+    "A10 and A11 remain alpha",
+    "sql-intent-fail-closed-only",
+    "no live provider call",
+    "no generated-query execution",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve AI SQL contract caveat: {phrase}")
+
+sql_extension = read(SQL_EXTENSION)
+ai_sql_smoke = read(AI_SQL_CONTRACT_SMOKE)
+ci_image_workflow = read(CI_IMAGE_WORKFLOW)
+makefile = read(MAKEFILE)
+for phrase in (
+    "CREATE TABLE IF NOT EXISTS companion_internal.ai_provider_bindings",
+    "CREATE TABLE IF NOT EXISTS companion_internal.semantic_catalog_objects",
+    "CREATE VIEW companion_ai_provider_bindings",
+    "CREATE VIEW companion_semantic_catalog_objects",
+    "CREATE FUNCTION companion_internal.register_ai_provider_binding",
+    "CREATE FUNCTION companion_ai_chat_stream",
+    "CREATE FUNCTION companion_internal.register_semantic_catalog_object",
+    "CREATE FUNCTION companion_semantic_text_to_sql_intent",
+    "provider_runtime_available",
+    "AI provider runtime is unavailable; this SQL surface emits request intent only",
+    "text-to-SQL execution is unavailable; this SQL surface emits request intent only",
+):
+    if phrase not in sql_extension:
+        fail(f"AI SQL extension contract missing phrase: {phrase}")
+for phrase in (
+    "sql-intent-fail-closed-only",
+    "provider_runtime_available",
+    "secret_bound",
+    "AI provider runtime is unavailable; this SQL surface emits request intent only",
+    "text-to-SQL execution is unavailable; this SQL surface emits request intent only",
+    "does not call a live LLM provider or execute generated SQL",
+):
+    if compact(phrase) not in compact(ai_sql_smoke):
+        fail(f"AI SQL contract smoke missing fail-closed assertion: {phrase}")
+for phrase in (
+    "ai-sql-contract-smoke:",
+    "REQUIRE_DOCKER=1 ci/ai-blaise/ai-sql-contract-smoke.sh",
+    "gate-close:",
+    "ai-sql-contract-smoke",
+):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire AI SQL contract smoke: {phrase}")
+if "ai-sql-contract-smoke.sh" not in ci_image_workflow:
+    fail("ci-image workflow must run ai-sql-contract-smoke.sh")
 
 thresholds = json.loads(read(PERF_THRESHOLDS))
 for key in ("tpcc", "sysbench", "timescale_ingest", "chaos"):

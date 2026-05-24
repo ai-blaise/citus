@@ -280,6 +280,33 @@ CREATE TABLE IF NOT EXISTS companion_internal.vectorizer_usage_log (
     recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.ai_provider_bindings (
+    binding_name text PRIMARY KEY,
+    tenant_id text NOT NULL CHECK (btrim(tenant_id) <> ''),
+    provider text NOT NULL CHECK (
+        provider IN ('openai', 'azure_openai', 'anthropic', 'cohere', 'voyage', 'ollama', 'vertex_ai')
+    ),
+    model text NOT NULL CHECK (btrim(model) <> ''),
+    secret_ref text NOT NULL CHECK (
+        secret_ref ~ '^(secret|external-secret)://[A-Za-z0-9._/@:-]+$'
+    ),
+    max_tokens_per_request integer NOT NULL CHECK (max_tokens_per_request BETWEEN 1 AND 200000),
+    enabled boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS companion_internal.semantic_catalog_objects (
+    tenant_id text NOT NULL CHECK (btrim(tenant_id) <> ''),
+    object_name text NOT NULL CHECK (btrim(object_name) <> ''),
+    relation_name text NOT NULL CHECK (btrim(relation_name) <> ''),
+    allowed_columns text[] NOT NULL CHECK (cardinality(allowed_columns) > 0),
+    description text NOT NULL CHECK (btrim(description) <> ''),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, object_name)
+);
+
 CREATE TABLE IF NOT EXISTS companion_internal.db_doctor_rules (
     rule_id text PRIMARY KEY,
     severity text NOT NULL CHECK (severity IN ('error', 'warning', 'note')),
@@ -620,6 +647,8 @@ AS $$
         ('TS16', 'distributed downsampler toolkit aggregates', 'sql-runtime'),
         ('TS17', 'distributed state toolkit aggregates', 'sql-runtime'),
         ('A1', 'pgai-compatible vectorizer DSL', 'sql-runtime'),
+        ('A10', 'streaming chat completion SQL contract', 'sql-intent-fail-closed'),
+        ('A11', 'semantic catalog text-to-SQL SQL contract', 'sql-intent-fail-closed'),
         ('Search2', 'distributed BM25 search index', 'sql-runtime'),
         ('Search3', 'hybrid BM25 and vector ranking', 'sql-runtime'),
         ('Search9', 'reranker UDF plan', 'sql-runtime'),
@@ -1323,6 +1352,399 @@ BEGIN
     INTO usage_id;
 
     RETURN usage_id;
+END;
+$$;
+
+-- FEATURE: A9
+-- FEATURE: A10
+-- FEATURE: A11
+CREATE VIEW companion_ai_provider_bindings AS
+SELECT
+    binding_name,
+    tenant_id,
+    provider,
+    model,
+    max_tokens_per_request,
+    enabled,
+    (secret_ref IS NOT NULL AND btrim(secret_ref) <> '') AS has_secret_ref,
+    substr(md5(secret_ref), 1, 16) AS secret_ref_fingerprint,
+    created_at,
+    updated_at
+FROM companion_internal.ai_provider_bindings;
+
+CREATE VIEW companion_semantic_catalog_objects AS
+SELECT
+    tenant_id,
+    object_name,
+    relation_name,
+    allowed_columns,
+    description,
+    created_at,
+    updated_at
+FROM companion_internal.semantic_catalog_objects;
+
+CREATE FUNCTION companion_internal.ai_identifier_is_safe(p_value text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT p_value IS NOT NULL
+       AND p_value ~ '^[A-Za-z_][A-Za-z0-9_]*$'
+$$;
+
+CREATE FUNCTION companion_internal.register_ai_provider_binding(
+    p_binding_name text,
+    p_tenant_id text,
+    p_provider text,
+    p_model text,
+    p_secret_ref text,
+    p_max_tokens_per_request integer,
+    p_enabled boolean DEFAULT true
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    normalized_provider text;
+BEGIN
+    IF p_binding_name IS NULL OR btrim(p_binding_name) = '' THEN
+        RAISE EXCEPTION 'binding_name must not be empty';
+    END IF;
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    normalized_provider := lower(btrim(p_provider));
+    IF normalized_provider NOT IN ('openai', 'azure_openai', 'anthropic', 'cohere', 'voyage', 'ollama', 'vertex_ai') THEN
+        RAISE EXCEPTION 'unsupported AI provider: %', p_provider;
+    END IF;
+    IF p_model IS NULL OR btrim(p_model) = '' THEN
+        RAISE EXCEPTION 'model must not be empty';
+    END IF;
+    IF p_secret_ref IS NULL OR btrim(p_secret_ref) = '' THEN
+        RAISE EXCEPTION 'secret_ref must not be empty';
+    END IF;
+    IF btrim(p_secret_ref) !~ '^(secret|external-secret)://[A-Za-z0-9._/@:-]+$' THEN
+        RAISE EXCEPTION 'secret_ref must use secret:// or external-secret:// URI form';
+    END IF;
+    IF p_max_tokens_per_request IS NULL OR p_max_tokens_per_request <= 0 OR p_max_tokens_per_request > 200000 THEN
+        RAISE EXCEPTION 'max_tokens_per_request must be between 1 and 200000';
+    END IF;
+
+    INSERT INTO companion_internal.ai_provider_bindings(
+        binding_name,
+        tenant_id,
+        provider,
+        model,
+        secret_ref,
+        max_tokens_per_request,
+        enabled
+    )
+    VALUES (
+        btrim(p_binding_name),
+        btrim(p_tenant_id),
+        normalized_provider,
+        btrim(p_model),
+        btrim(p_secret_ref),
+        p_max_tokens_per_request,
+        COALESCE(p_enabled, true)
+    )
+    ON CONFLICT (binding_name) DO UPDATE
+    SET tenant_id = EXCLUDED.tenant_id,
+        provider = EXCLUDED.provider,
+        model = EXCLUDED.model,
+        secret_ref = EXCLUDED.secret_ref,
+        max_tokens_per_request = EXCLUDED.max_tokens_per_request,
+        enabled = EXCLUDED.enabled,
+        updated_at = now();
+
+    RETURN btrim(p_binding_name);
+END;
+$$;
+
+CREATE FUNCTION companion_internal.ai_provider_binding_for_tenant(
+    p_tenant_id text,
+    p_binding_name text
+)
+RETURNS companion_internal.ai_provider_bindings
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    binding companion_internal.ai_provider_bindings%ROWTYPE;
+BEGIN
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    IF p_binding_name IS NULL OR btrim(p_binding_name) = '' THEN
+        RAISE EXCEPTION 'binding_name must not be empty';
+    END IF;
+    SELECT *
+    INTO binding
+    FROM companion_internal.ai_provider_bindings
+    WHERE binding_name = btrim(p_binding_name);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'AI provider binding is not registered: %', p_binding_name;
+    END IF;
+    IF binding.tenant_id <> btrim(p_tenant_id) THEN
+        RAISE EXCEPTION 'AI provider binding tenant mismatch';
+    END IF;
+    IF NOT binding.enabled THEN
+        RAISE EXCEPTION 'AI provider binding is disabled: %', p_binding_name;
+    END IF;
+    RETURN binding;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.validate_ai_messages(p_messages jsonb)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    message jsonb;
+    role text;
+    content text;
+BEGIN
+    IF p_messages IS NULL OR jsonb_typeof(p_messages) <> 'array' OR jsonb_array_length(p_messages) = 0 THEN
+        RAISE EXCEPTION 'messages must be a non-empty JSON array';
+    END IF;
+    IF jsonb_array_length(p_messages) > 64 THEN
+        RAISE EXCEPTION 'messages must contain at most 64 entries';
+    END IF;
+    FOR message IN SELECT value FROM jsonb_array_elements(p_messages) AS value LOOP
+        IF jsonb_typeof(message) <> 'object' THEN
+            RAISE EXCEPTION 'each message must be a JSON object';
+        END IF;
+        role := message ->> 'role';
+        content := message ->> 'content';
+        IF role NOT IN ('system', 'user', 'assistant') THEN
+            RAISE EXCEPTION 'unsupported chat message role: %', COALESCE(role, '<null>');
+        END IF;
+        IF content IS NULL OR btrim(content) = '' THEN
+            RAISE EXCEPTION 'chat message content must not be empty';
+        END IF;
+        IF length(content) > 32768 THEN
+            RAISE EXCEPTION 'chat message content exceeds 32768 characters';
+        END IF;
+    END LOOP;
+END;
+$$;
+
+CREATE FUNCTION companion_ai_chat_stream(
+    p_tenant_id text,
+    p_binding_name text,
+    p_messages jsonb,
+    p_max_output_tokens integer DEFAULT 1024,
+    p_temperature numeric DEFAULT 0,
+    p_allow_provider_execution boolean DEFAULT false
+)
+RETURNS TABLE(chunk_index integer, event text, payload jsonb)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    binding companion_internal.ai_provider_bindings%ROWTYPE;
+    intent jsonb;
+BEGIN
+    binding := companion_internal.ai_provider_binding_for_tenant(p_tenant_id, p_binding_name);
+    PERFORM companion_internal.validate_ai_messages(p_messages);
+    IF p_max_output_tokens IS NULL OR p_max_output_tokens <= 0 THEN
+        RAISE EXCEPTION 'max_output_tokens must be greater than zero';
+    END IF;
+    IF p_max_output_tokens > binding.max_tokens_per_request THEN
+        RAISE EXCEPTION 'max_output_tokens exceeds binding limit';
+    END IF;
+    IF p_temperature IS NULL OR p_temperature < 0 OR p_temperature > 2 THEN
+        RAISE EXCEPTION 'temperature must be between 0 and 2';
+    END IF;
+    IF p_allow_provider_execution THEN
+        RAISE EXCEPTION 'AI provider runtime is unavailable; this SQL surface emits request intent only';
+    END IF;
+
+    intent := jsonb_build_object(
+        'feature_id', 'A10',
+        'evidence_boundary', 'sql-intent-fail-closed-only',
+        'provider_runtime_available', false,
+        'provider_execution_requested', false,
+        'tenant_id', btrim(p_tenant_id),
+        'binding_name', binding.binding_name,
+        'provider', binding.provider,
+        'model', binding.model,
+        'secret_bound', true,
+        'messages_count', jsonb_array_length(p_messages),
+        'max_output_tokens', p_max_output_tokens,
+        'temperature', p_temperature
+    );
+
+    RETURN QUERY SELECT 0, 'request_intent', intent;
+END;
+$$;
+
+CREATE FUNCTION companion_internal.register_semantic_catalog_object(
+    p_tenant_id text,
+    p_object_name text,
+    p_relation_name text,
+    p_allowed_columns text[],
+    p_description text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    relation_regclass regclass;
+    normalized_columns text[];
+    column_name text;
+BEGIN
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    IF p_object_name IS NULL OR NOT companion_internal.ai_identifier_is_safe(btrim(p_object_name)) THEN
+        RAISE EXCEPTION 'object_name must be a SQL identifier';
+    END IF;
+    IF p_relation_name IS NULL OR btrim(p_relation_name) = '' THEN
+        RAISE EXCEPTION 'relation_name must not be empty';
+    END IF;
+    relation_regclass := p_relation_name::regclass;
+    IF p_allowed_columns IS NULL OR cardinality(p_allowed_columns) = 0 THEN
+        RAISE EXCEPTION 'allowed_columns must contain at least one column';
+    END IF;
+    normalized_columns := ARRAY(
+        SELECT DISTINCT btrim(value)
+        FROM unnest(p_allowed_columns) AS value
+        WHERE btrim(value) <> ''
+        ORDER BY btrim(value)
+    );
+    IF cardinality(normalized_columns) = 0 THEN
+        RAISE EXCEPTION 'allowed_columns must contain at least one column';
+    END IF;
+    FOREACH column_name IN ARRAY normalized_columns LOOP
+        IF NOT companion_internal.ai_identifier_is_safe(column_name) THEN
+            RAISE EXCEPTION 'allowed column must be a SQL identifier: %', column_name;
+        END IF;
+        IF NOT companion_internal.table_has_column(relation_regclass::text, column_name::name) THEN
+            RAISE EXCEPTION 'allowed column does not exist on relation: %', column_name;
+        END IF;
+    END LOOP;
+    IF p_description IS NULL OR btrim(p_description) = '' THEN
+        RAISE EXCEPTION 'description must not be empty';
+    END IF;
+    IF length(p_description) > 4096 THEN
+        RAISE EXCEPTION 'description exceeds 4096 characters';
+    END IF;
+
+    INSERT INTO companion_internal.semantic_catalog_objects(
+        tenant_id,
+        object_name,
+        relation_name,
+        allowed_columns,
+        description
+    )
+    VALUES (
+        btrim(p_tenant_id),
+        btrim(p_object_name),
+        relation_regclass::text,
+        normalized_columns,
+        btrim(p_description)
+    )
+    ON CONFLICT (tenant_id, object_name) DO UPDATE
+    SET relation_name = EXCLUDED.relation_name,
+        allowed_columns = EXCLUDED.allowed_columns,
+        description = EXCLUDED.description,
+        updated_at = now();
+
+    RETURN btrim(p_object_name);
+END;
+$$;
+
+CREATE FUNCTION companion_semantic_text_to_sql_intent(
+    p_tenant_id text,
+    p_question text,
+    p_catalog_objects text[],
+    p_binding_name text DEFAULT NULL,
+    p_allow_query_execution boolean DEFAULT false
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    object_count integer;
+    object_record record;
+    selected_columns text;
+    template_sql text;
+    binding companion_internal.ai_provider_bindings%ROWTYPE;
+BEGIN
+    IF p_tenant_id IS NULL OR btrim(p_tenant_id) = '' THEN
+        RAISE EXCEPTION 'tenant_id must not be empty';
+    END IF;
+    IF p_question IS NULL OR btrim(p_question) = '' THEN
+        RAISE EXCEPTION 'question must not be empty';
+    END IF;
+    IF length(p_question) > 4000 THEN
+        RAISE EXCEPTION 'question exceeds 4000 characters';
+    END IF;
+    IF p_question ~ '[;]' OR p_question ~* '\m(drop|alter|truncate|delete|insert|update|copy|grant|revoke)\M' THEN
+        RAISE EXCEPTION 'question contains unsupported SQL-control text';
+    END IF;
+    IF p_catalog_objects IS NULL OR cardinality(p_catalog_objects) = 0 THEN
+        RAISE EXCEPTION 'catalog_objects must contain at least one object';
+    END IF;
+    IF p_allow_query_execution THEN
+        RAISE EXCEPTION 'text-to-SQL execution is unavailable; this SQL surface emits request intent only';
+    END IF;
+    IF p_binding_name IS NOT NULL AND btrim(p_binding_name) <> '' THEN
+        binding := companion_internal.ai_provider_binding_for_tenant(p_tenant_id, p_binding_name);
+    END IF;
+
+    SELECT count(*)
+    INTO object_count
+    FROM unnest(p_catalog_objects) AS requested(object_name)
+    JOIN companion_internal.semantic_catalog_objects AS catalog
+      ON catalog.tenant_id = btrim(p_tenant_id)
+     AND catalog.object_name = btrim(requested.object_name);
+    IF object_count <> cardinality(p_catalog_objects) THEN
+        RAISE EXCEPTION 'all catalog_objects must be registered for tenant';
+    END IF;
+    IF object_count <> 1 THEN
+        RAISE EXCEPTION 'exactly one catalog object is supported by this deterministic intent boundary';
+    END IF;
+
+    SELECT catalog.*
+    INTO object_record
+    FROM unnest(p_catalog_objects) AS requested(object_name)
+    JOIN companion_internal.semantic_catalog_objects AS catalog
+      ON catalog.tenant_id = btrim(p_tenant_id)
+     AND catalog.object_name = btrim(requested.object_name)
+    LIMIT 1;
+
+    SELECT string_agg(format('%I', column_name), ', ' ORDER BY column_name)
+    INTO selected_columns
+    FROM unnest(object_record.allowed_columns) AS column_name;
+    template_sql := format(
+        'SELECT %s FROM %s WHERE tenant_id = $1 LIMIT 100',
+        selected_columns,
+        object_record.relation_name::regclass
+    );
+
+    RETURN jsonb_build_object(
+        'feature_id', 'A11',
+        'evidence_boundary', 'sql-intent-fail-closed-only',
+        'provider_runtime_available', false,
+        'query_execution_requested', false,
+        'tenant_id', btrim(p_tenant_id),
+        'question', btrim(p_question),
+        'catalog_objects', to_jsonb(p_catalog_objects),
+        'relation_name', object_record.relation_name,
+        'allowed_columns', to_jsonb(object_record.allowed_columns),
+        'sql_template', template_sql,
+        'binding_name', NULLIF(btrim(COALESCE(p_binding_name, '')), ''),
+        'provider', CASE WHEN binding.binding_name IS NULL THEN NULL ELSE binding.provider END,
+        'model', CASE WHEN binding.binding_name IS NULL THEN NULL ELSE binding.model END,
+        'execution_allowed', false
+    );
 END;
 $$;
 

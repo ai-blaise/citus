@@ -21,6 +21,7 @@ cohab_matrix_compare="${cohab_matrix_dir}/compare-hook-claims.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
+ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -48,7 +49,8 @@ for file in \
   "${cohab_matrix_dir}/2.28/notes.md" \
   "${observability_replication_smoke}" \
   "${app_digest_smoke}" \
-  "${observability_contracts_check}"; do
+  "${observability_contracts_check}" \
+  "${ai_sql_contract_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -77,6 +79,10 @@ if [[ ! -x "${cohab_matrix_compare}" ]]; then
 fi
 if [[ ! -x "${observability_replication_smoke}" ]]; then
   echo "missing executable observability replication smoke: ${observability_replication_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${ai_sql_contract_smoke}" ]]; then
+  echo "missing executable AI SQL contract smoke: ${ai_sql_contract_smoke}" >&2
   exit 1
 fi
 if [[ ! -x "${app_digest_smoke}" ]]; then
@@ -405,7 +411,7 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'runtime::serve' "${main_file}"
     continue
   fi
-  if has_http_probe_contract "${main_file}"; then
+  if has_custom_http_probe "${main_file}" || has_http_probe_contract "${main_file}"; then
     continue
   fi
   echo "${main_file} must expose serve-mode HTTP probes through run_probe_server, a custom HTTP probe implementation, or a custom runtime::serve implementation" >&2
@@ -511,6 +517,8 @@ grep -Fq "'M13', 'JSON Schema validation triggers', 'sql-runtime'" "${image_dir}
 grep -Fq "'Geo2', 'geo-aware distribution', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'Geo3', 'geo shard pruning', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'A1', 'pgai-compatible vectorizer DSL', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'A10', 'streaming chat completion SQL contract', 'sql-intent-fail-closed'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "'A11', 'semantic catalog text-to-SQL SQL contract', 'sql-intent-fail-closed'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'TS9', 'doctor rules for cohabitation', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'M7', 'pre-flight cohabit-extension check', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "'T8', 'toolkit two-step aggregate pushdown', 'sql-runtime'" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
@@ -537,6 +545,17 @@ grep -Fq "CREATE FUNCTION companion_internal.add_geohash_column" "${image_dir}/e
 grep -Fq "CREATE FUNCTION companion_internal.enable_geo_shard_pruning" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.register_vectorizer" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.vectorizer_enqueue" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.ai_provider_bindings" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE TABLE IF NOT EXISTS companion_internal.semantic_catalog_objects" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_ai_provider_bindings" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE VIEW companion_semantic_catalog_objects" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.register_ai_provider_binding" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_ai_chat_stream" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_internal.register_semantic_catalog_object" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE FUNCTION companion_semantic_text_to_sql_intent" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "sql-intent-fail-closed-only" "${ai_sql_contract_smoke}"
+grep -Fq "AI provider runtime is unavailable" "${ai_sql_contract_smoke}"
+grep -Fq "text-to-SQL execution is unavailable" "${ai_sql_contract_smoke}"
 grep -Fq "CREATE FUNCTION companion_internal.assert_shared_preload_libraries" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.get_violations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.register_toolkit_aggregate_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
