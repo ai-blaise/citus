@@ -63,12 +63,21 @@ require_fails_with() {
 }
 
 admin_html="${tmp_dir}/admin.html"
+admin_html_repeat="${tmp_dir}/admin-repeat.html"
 cargo run -q -p ai_blaise_citus_admin -- \
   render --snapshot "${snapshot}" --route /cluster/shards >"${admin_html}"
+cargo run -q -p ai_blaise_citus_admin -- \
+  render --snapshot "${snapshot}" --route /cluster/shards >"${admin_html_repeat}"
+cmp "${admin_html}" "${admin_html_repeat}"
 require_contains "${admin_html}" 'data-tool="citus-admin"'
 require_contains "${admin_html}" 'data-route="/cluster/shards"'
 require_contains "${admin_html}" '102008'
 require_contains "${admin_html}" 'worker-1'
+
+require_fails_with \
+  'unknown admin route: /not-a-route' \
+  cargo run -q -p ai_blaise_citus_admin -- \
+    render --snapshot "${snapshot}" --route /not-a-route
 
 require_fails_with \
   'rebalance-shard requires CONFIRM' \
@@ -82,8 +91,12 @@ cargo run -q -p ai_blaise_citus_admin -- \
 require_contains "${admin_action}" $'rebalance-shard	accepted	validated dry-run for shard 102008'
 
 schema_svg="${tmp_dir}/schema.svg"
+schema_svg_repeat="${tmp_dir}/schema-repeat.svg"
 cargo run -q -p ai_blaise_citus_schema_designer -- \
   render-svg --snapshot "${snapshot}" >"${schema_svg}"
+cargo run -q -p ai_blaise_citus_schema_designer -- \
+  render-svg --snapshot "${snapshot}" >"${schema_svg_repeat}"
+cmp "${schema_svg}" "${schema_svg_repeat}"
 require_contains "${schema_svg}" '<svg'
 require_contains "${schema_svg}" 'data-feature="D6 M9"'
 require_contains "${schema_svg}" 'public.events'
@@ -109,6 +122,11 @@ require_contains "${tui_frame}" '102008'
 require_contains "${tui_frame}" 'worker-1'
 
 require_fails_with \
+  'unknown panel not-a-panel' \
+  cargo run -q -p ai_blaise_citus_tui -- \
+    render-frame --snapshot "${snapshot}" --panel not-a-panel
+
+require_fails_with \
   'safe_mode blocks tenant-move' \
   cargo run -q -p ai_blaise_citus_tui -- \
     action --snapshot "${snapshot}" --kind tenant-move \
@@ -122,10 +140,27 @@ cargo run -q -p ai_blaise_citus_tui -- \
 require_contains "${tui_action}" $'tenant-move	accepted	validated preview'
 
 watch_frame="${tmp_dir}/watch-frame.txt"
+watch_frame_repeat="${tmp_dir}/watch-frame-repeat.txt"
 cargo run -q -p ai_blaise_citus_watch -- \
   render-frame --snapshot "${snapshot}" >"${watch_frame}"
+cargo run -q -p ai_blaise_citus_watch -- \
+  render-frame --snapshot "${snapshot}" >"${watch_frame_repeat}"
+cmp "${watch_frame}" "${watch_frame_repeat}"
 require_contains "${watch_frame}" 'citus-watch | cluster=prod-east | refresh=5s'
 require_contains "${watch_frame}" 'vectorizer-backlog'
 require_contains "${watch_frame}" 'companion.shard_placements'
+
+watch_bad_snapshot="${tmp_dir}/watch-bad-snapshot.tsv"
+cat >"${watch_bad_snapshot}" <<'TSV'
+meta	cluster_name	prod-east
+meta	generated_at	2026-05-23T22:00:00Z
+worker	worker-1	10.0.0.11	primary	ready
+table	public.events	tenant_id	nope	tenant	created_at	1 day	1	2
+shard	public.events	102008	worker-1	active	1048576
+TSV
+require_fails_with \
+  'table.shard_count has invalid numeric value nope' \
+  cargo run -q -p ai_blaise_citus_watch -- \
+    render-frame --snapshot "${watch_bad_snapshot}"
 
 echo $'tools_ui_runtime_smoke	admin=ok	schema_designer=ok	tui=ok	watch=ok'
