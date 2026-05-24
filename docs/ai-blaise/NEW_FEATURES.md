@@ -4148,7 +4148,7 @@ policy.
 ### API6: Auto OpenAPI Document
 
 **Overlay**: `sidecar/postgrest`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
@@ -4156,7 +4156,9 @@ policy.
 **Summary**: Defines the OpenAPI path, title, and version served by the
 PostgREST sidecar.
 
-Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` verifies the real PostgREST sidecar process serves `/openapi.json` over HTTP with OpenAPI 3.0 metadata, canonical route paths, RLS-required metadata, and the `tenant_id` claim. The same smoke checks process health, readiness, metrics, drain behavior, fail-closed startup errors, and generated `postgrest.conf` secret references. This remains alpha until the document path is paired with live upstream PostgREST/PostgreSQL serving.
+Production evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` builds the real `ai_blaise_citus_sidecar_postgrest` binary, starts `serve` on a loopback TCP listener, and fetches `/openapi.json` over HTTP. The smoke parses the response as JSON and verifies OpenAPI 3.0 metadata, title/version, canonical `/orders` GET/POST operations, `public.orders` tags, `x-ai-blaise` schemas, `rls_required=true`, `tenant_claim=tenant_id`, and absence of database URI or JWT secret material. The same smoke verifies health, readiness, metrics, drain behavior, fail-closed startup dependency validation, and generated `postgrest.conf` secret references.
+
+**Current boundary**: The production-ready claim covers the deterministic OpenAPI document served by the Rust PostgREST sidecar front door. It does not promote API1/API2/API5 table-backed REST serving, live upstream PostgREST execution, PostgreSQL request handling, or generated RLS policy execution; those feature headings remain alpha until the data-plane path is proven end to end.
 
 **Motivation**: Client generation and API inspection need a predictable
 OpenAPI endpoint.

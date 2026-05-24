@@ -38,6 +38,7 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 SIDECAR_REALTIME_SMOKE = ROOT / "ci/ai-blaise/sidecar-realtime-smoke.sh"
 SIDECAR_REALTIME_README = ROOT / "sidecar/realtime/README.md"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
@@ -145,6 +146,7 @@ def feature_entries(docs: str):
             {
                 "id": heading.group(1),
                 "status": status_match.group(1).lower() if status_match else "",
+                "body": body,
             }
         )
     return entries
@@ -196,6 +198,7 @@ alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
 source_only_ids = source_ids - doc_ids
 
 status_by_id = {entry["id"]: entry["status"] for entry in entries}
+entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in ("C6", "C7", "C8"):
     if status_by_id.get(feature_id) != "alpha":
         fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
@@ -584,6 +587,37 @@ for required in (
 ):
     if required not in sidecar_smoke:
         fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+graphql_postgrest_smoke = read(GRAPHQL_POSTGREST_RUNTIME_SMOKE)
+for required in (
+    "json.loads(body)",
+    'openapi["openapi"] == "3.0.0"',
+    'openapi["x-ai-blaise"]["schemas"] == ["public", "api"]',
+    'openapi["x-ai-blaise"]["rls_required"] is True',
+    'openapi["x-ai-blaise"]["tenant_claim"] == "tenant_id"',
+    'orders = openapi["paths"]["/orders"]',
+    'assert POSTGRES_URL not in body',
+    'assert JWT_SECRET not in body',
+):
+    if required not in graphql_postgrest_smoke:
+        fail(f"GraphQL/PostgREST smoke lost API6 OpenAPI assertion: {required}")
+
+for feature_id in ("API1", "API2", "API3", "API5"):
+    if status_by_id.get(feature_id) != "alpha":
+        fail(f"{feature_id} must remain alpha until live API data-plane evidence exists")
+if status_by_id.get("API6") != "production-ready":
+    fail("API6 OpenAPI document must be production-ready after live sidecar JSON smoke evidence")
+api6_body = compact(entry_by_id["API6"]["body"])
+for phrase in (
+    "production evidence",
+    "graphql-postgrest-runtime-smoke.sh",
+    "/openapi.json",
+    "openapi 3.0 metadata",
+    "absence of database uri or jwt secret material",
+    "does not promote api1/api2/api5 table-backed rest serving",
+):
+    if compact(phrase) not in api6_body:
+        fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
 
 if "sidecar-api-runtime-smoke:" not in makefile:
     fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")

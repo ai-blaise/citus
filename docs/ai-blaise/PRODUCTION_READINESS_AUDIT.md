@@ -567,15 +567,20 @@ more production-ready than the artifacts justified.
   evidence for runtime dependency validation, malformed input handling,
   PostgREST route method rejection, secret-backed config rendering, GraphQL
   missing-claim errors, introspection denial, and subscription-boundary
-  responses. The dedicated `sidecar-edge-functions-runtime-smoke.sh`
-  additionally proves edge-functions plan-only status, env-secret/path/JSON
-  validation, payload and timeout ceilings, unknown-function handling, and
-  fail-closed rejection of external Deno/Bun execution requests. This is not
-  evidence for table-backed PostgREST request serving, live `pg_graphql`
-  execution, external Deno/Bun user-code execution, real PostgreSQL UDS callback
-  execution, queue/broker dispatch, live CDC tailing, or Kubernetes deployment;
-  the GraphQL/PostGREST sidecar feature headings and EF1, EF2, EF4, and EF5
-  remain alpha until those live data-plane paths are proven.
+  responses. API6 is now promoted only for the bounded OpenAPI document path:
+  the focused smoke parses the live `/openapi.json` response as JSON and checks
+  OpenAPI 3.0 metadata, `/orders` GET/POST operations, `public.orders` tags,
+  `x-ai-blaise` schemas, `rls_required=true`, `tenant_claim=tenant_id`, and no
+  database URI or JWT secret leakage. The dedicated
+  `sidecar-edge-functions-runtime-smoke.sh` additionally proves
+  edge-functions plan-only status, env-secret/path/JSON validation, payload and
+  timeout ceilings, unknown-function handling, and fail-closed rejection of
+  external Deno/Bun execution requests. This is not evidence for table-backed
+  PostgREST request serving, live `pg_graphql` execution, external Deno/Bun
+  user-code execution, real PostgreSQL UDS callback execution, queue/broker
+  dispatch, live CDC tailing, or Kubernetes deployment; API1, API2, API3,
+  API5, EF1, EF2, EF4, and EF5 remain alpha until those live data-plane paths
+  are proven.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

@@ -11,6 +11,7 @@ cd "${repo_root}"
 
 python3 <<'PY_SMOKE'
 import http.client
+import json
 import os
 import shutil
 import socket
@@ -239,9 +240,18 @@ def smoke_postgrest(binary):
     try:
         status, body = request(port, "GET", "/openapi.json")
         assert status == 200, body
-        assert '"openapi":"3.0.0"' in body, body
-        assert '"rls_required":true' in body, body
-        assert '"tenant_claim":"tenant_id"' in body, body
+        openapi = json.loads(body)
+        assert openapi["openapi"] == "3.0.0", openapi
+        assert openapi["info"] == {"title": "ai-blaise Citus API", "version": "v1alpha1"}, openapi
+        assert openapi["x-ai-blaise"]["schemas"] == ["public", "api"], openapi
+        assert openapi["x-ai-blaise"]["rls_required"] is True, openapi
+        assert openapi["x-ai-blaise"]["tenant_claim"] == "tenant_id", openapi
+        orders = openapi["paths"]["/orders"]
+        assert sorted(orders) == ["get", "post"], orders
+        assert orders["get"]["tags"] == ["public.orders"], orders
+        assert orders["post"]["summary"] == "POST public.orders", orders
+        assert POSTGRES_URL not in body, body
+        assert JWT_SECRET not in body, body
 
         status, body = request(port, "GET", "/postgrest.conf")
         assert status == 200, body
