@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # FEATURE: Bundle1 TS19 TS20
-# Live PG17 smoke for the narrow pg_cron cohabitation boundary. This proves
-# startup parsing, pg_cron package availability, real Citus + pg_cron extension
-# load, SQL-visible cohabit detection, and fail-closed mismatch handling. It
-# does not prove the unexposed TS19 in-shmem clock-reservation flag.
+# Live PG17 smoke for the pg_cron cohabitation boundary. This proves startup
+# parsing, pg_cron package availability, real Citus + pg_cron extension load,
+# SQL-visible cohabit detection, the TS19 in-shmem clock-reservation flag, real
+# scheduled pg_cron worker execution, and fail-closed mismatch handling.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -74,6 +74,27 @@ run_sql() {
   docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1
 }
 
+wait_for_cron_clock_run() {
+  local container="$1"
+  local observed=0
+  local rows
+  local _
+  for _ in $(seq 1 90); do
+    rows="$(docker exec "${container}" psql -U postgres -Atqc "SELECT count(*) FROM public.ai_blaise_pg_cron_cohabit_runs WHERE clock_reserved IS TRUE")"
+    if [[ "${rows}" =~ ^[1-9][0-9]*$ ]]; then
+      observed=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "${observed}" != "1" ]]; then
+    docker exec "${container}" psql -U postgres -Atqc "SELECT jobid, job_pid, status, coalesce(return_message, '') FROM cron.job_run_details ORDER BY start_time DESC LIMIT 5" >&2 || true
+    docker logs "${container}" >&2 || true
+    echo "pg_cron scheduled job did not observe a reserved Citus clock tick" >&2
+    exit 1
+  fi
+}
+
 mkdir -p "$(dirname "${evidence_file}")"
 
 docker build \
@@ -103,7 +124,25 @@ SELECT companion_internal.assert_shared_preload_libraries(
   ARRAY['pg_cron']
 );
 SELECT companion_internal.assert_cohabit_extension_ready('pg_cron');
-SELECT cron.schedule('ai_blaise_pg_cron_cohabit_smoke', '* * * * *', 'SELECT 1');
+DO $$
+BEGIN
+  IF NOT pg_catalog.citus_cohabit_clock_tick_reserved() THEN
+    RAISE EXCEPTION 'Citus did not reserve the pg_cron cohabit clock tick';
+  END IF;
+END;
+$$;
+CREATE TABLE public.ai_blaise_pg_cron_cohabit_runs(
+  run_id bigserial PRIMARY KEY,
+  clock_reserved boolean NOT NULL,
+  node_clock pg_catalog.cluster_clock NOT NULL,
+  ran_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+SELECT cron.schedule(
+  'ai_blaise_pg_cron_cohabit_smoke',
+  '* * * * *',
+  $$INSERT INTO public.ai_blaise_pg_cron_cohabit_runs(clock_reserved, node_clock)
+    SELECT pg_catalog.citus_cohabit_clock_tick_reserved(), pg_catalog.citus_get_node_clock()$$
+);
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -116,6 +155,8 @@ BEGIN
 END;
 $$;
 SQL
+
+wait_for_cron_clock_run "${positive_container}"
 
 {
   printf 'key\tvalue\n'
@@ -135,11 +176,20 @@ SQL
   docker exec "${positive_container}" psql -U postgres -Atqc \
     "SELECT 'pg_cron_detection' || E'\t' || role || ':' || ready || ':' || coalesce(reason, 'ok') FROM companion_internal.cohabit_extension_detection_report() WHERE extension_name = 'pg_cron'"
   docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'clock_tick_reserved' || E'\t' || pg_catalog.citus_cohabit_clock_tick_reserved()"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
     "SELECT 'cron_job_registered' || E'\t' || count(*) FROM cron.job WHERE jobname = 'ai_blaise_pg_cron_cohabit_smoke'"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'cron_clock_reserved_runs' || E'\t' || count(*) FROM public.ai_blaise_pg_cron_cohabit_runs WHERE clock_reserved IS TRUE"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'cron_node_clock_samples' || E'\t' || count(*) FROM public.ai_blaise_pg_cron_cohabit_runs WHERE node_clock IS NOT NULL"
 } >"${evidence_file}"
 
 grep -Fq $'pg_cron_detection\tclock-worker:true:ok' "${evidence_file}"
+grep -Fq $'clock_tick_reserved\tt' "${evidence_file}"
 grep -Fq $'cron_job_registered\t1' "${evidence_file}"
+grep -Eq $'^cron_clock_reserved_runs\t[1-9][0-9]*$' "${evidence_file}"
+grep -Eq $'^cron_node_clock_samples\t[1-9][0-9]*$' "${evidence_file}"
 
 negative_container="ai-blaise-pg-cron-cohabit-negative-${RANDOM}-$$"
 docker run \
@@ -155,7 +205,16 @@ run_sql "${negative_container}" <<'SQL'
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+DO $$
+BEGIN
+  IF pg_catalog.citus_cohabit_clock_tick_reserved() THEN
+    RAISE EXCEPTION 'Citus reserved the pg_cron cohabit clock tick without allowlist';
+  END IF;
+END;
+$$;
 SQL
+
+printf 'negative_clock_tick_reserved\tfalse\n' >>"${evidence_file}"
 
 if docker exec "${negative_container}" psql -U postgres -v ON_ERROR_STOP=1 -c \
   "SELECT companion_internal.assert_cohabit_extension_ready('pg_cron');" >/tmp/pg-cron-negative-$$.out 2>&1; then

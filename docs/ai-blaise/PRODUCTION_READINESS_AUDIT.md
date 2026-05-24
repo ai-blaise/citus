@@ -233,9 +233,10 @@ more production-ready than the artifacts justified.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is not production-ready as a whole. The PG17 source-build
   path has targeted live evidence for feasible PGDG-missing extensions, and the
-  pg_cron cohabitation smoke is subset evidence only for a real PG17
-  Citus+pg_cron boot, SQL-visible detection, job registration, and
-  missing-allowlist fail-closed behavior. The complete operand initdb contract
+  pg_cron cohabitation smoke is production evidence for the TS19 clock-reservation
+  path in a real PG17 Citus+pg_cron boot, including SQL-visible reservation,
+  scheduled worker execution, and missing-allowlist fail-closed behavior. The
+  complete operand initdb contract
   remains alpha until the plrust upstream PG17 blocker and full-bundle image
   smoke are closed. The source-build subset now has a structured lockfile and
   contract checker that cross-validates manifest rows, Dockerfile pins/labels,
@@ -388,16 +389,17 @@ more production-ready than the artifacts justified.
 - The Makefile release gate now runs `image-check` and `deploy-check` directly.
   The `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm is a release
   gate failure instead of a skipped rendered-chart evidence path.
-- `TS19` and `TS20` gained a narrow real pg_cron cohabitation smoke, but they
-  remain alpha as whole features. The smoke builds a PG17 image with PGDG
-  `pg_cron`, this Citus fork, and `ai_blaise_citus`, boots with
-  `shared_preload_libraries=pg_cron,citus` and
-  `citus.cohabit_extensions=pg_cron`, creates real extensions, registers a cron
-  job, records `artifacts/pg-cron-cohabitation-evidence.tsv`, and verifies the
-  SQL-visible cohabit detector fails closed when the allowlist entry is absent.
-  It does not prove the unexposed TS19 in-shmem clock-reservation flag,
-  long-running pg_cron worker execution, the TS20 C API being called by a live C
-  extension, or broad production cohabitation.
+- `TS19` is production-ready for the bounded pg_cron clock-reservation path.
+  The smoke builds a PG17 image with PGDG `pg_cron`, this Citus fork, and
+  `ai_blaise_citus`, boots with `shared_preload_libraries=pg_cron,citus` and
+  `citus.cohabit_extensions=pg_cron`, creates real extensions, verifies
+  `pg_catalog.citus_cohabit_clock_tick_reserved()` is true, waits for a scheduled
+  pg_cron worker to insert evidence rows using `citus_get_node_clock()`, records
+  `artifacts/pg-cron-cohabitation-evidence.tsv`, and verifies the missing-
+  allowlist path leaves the reservation false and fails closed. This does not
+  make `pg_cron` a trusted hook-chain coextension, does not promote the TS20 C
+  API being called by a live C extension, and does not make broad Bundle1
+  cohabitation production-ready.
 - `TS18` now has real Citus+TimescaleDB cohabitation evidence without a stubbed
   distribution entrypoint. The VM run built
   `ai-blaise-citus-timescale-cohabitation:local` from

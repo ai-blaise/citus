@@ -998,22 +998,26 @@ or production cohabitation beyond the measured startup/load/apply guard.
 
 - `patches/0007-citus-clock-cohabit-pg-cron.patch`
 - `src/backend/distributed/clock/causal_clock.c`
+- `src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/latest.sql`
 - `src/include/distributed/causal_clock.h`
 
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_cron`
 
 **Summary**: Reserves and exposes a Citus hybrid-logical-clock cohabit flag
 when the operator explicitly lists `pg_cron` in `citus.cohabit_extensions`.
-The reservation is recorded during `_PG_init` after the logical-clock shared
-memory is initialized, so pg_cron background-worker paths can verify
-that Citus clock state was initialized before scheduled jobs call Citus clock
-UDFs. The live smoke proves the narrower startup boundary: PG17 boots with
+The reservation request is made during `_PG_init` and applied when the logical
+clock shared memory is initialized, so pg_cron background-worker paths can
+verify that Citus clock state was initialized before scheduled jobs call Citus
+clock UDFs. The live smoke proves the production boundary: PG17 boots with
 `shared_preload_libraries=pg_cron,citus`, parses
 `citus.cohabit_extensions=pg_cron`, creates real `citus`, `pg_cron`, and
-`ai_blaise_citus`, registers a cron job, and writes evidence.
+`ai_blaise_citus`, verifies `pg_catalog.citus_cohabit_clock_tick_reserved()` is
+true, runs a scheduled pg_cron worker job that calls Citus clock UDFs, records
+nonzero worker evidence rows, and fails closed when the cohabit allowlist is
+missing.
 
 **Motivation**: pg_cron jobs may run inside the same postmaster as Citus and
 can call Citus clock functions from scheduled maintenance. The clock side of
@@ -1023,13 +1027,15 @@ on load-order folklore.
 **Citus comparison**: Vanilla Citus initializes the clock shared-memory area
 but does not record an operator-approved cohabit reservation for pg_cron.
 
-Boundary: this patch deliberately does not make `pg_cron` a trusted hook-chain
-coextension. `timescaledb` remains the only trusted hook coextension. The
-pg_cron cohabitation smoke is subset evidence only: it proves boot, GUC
-parsing, extension load, SQL-visible detection, job registration, and a
-fail-closed missing-allowlist case. It does not prove the unexposed TS19
-in-shmem clock-reservation flag, pg_cron worker execution over time, or broad
-production cohabitation, so TS19 stays alpha.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
+builds this Citus fork into a PG17 image with `postgresql-17-cron`, starts a
+real postmaster with `pg_cron,citus`, asserts the SQL-visible TS19 reservation
+flag, waits for a scheduled pg_cron worker to insert clock-reserved evidence
+rows using `citus_get_node_clock()`, and proves the missing-allowlist case
+keeps the reservation false and rejects `assert_cohabit_extension_ready('pg_cron')`.
+This production claim is limited to the pg_cron clock-reservation path; it does
+not make `pg_cron` a trusted hook-chain coextension, does not promote TS20's
+broader role-aware C API, and does not claim all Bundle1 cohabitation behavior.
 
 **References**:
 

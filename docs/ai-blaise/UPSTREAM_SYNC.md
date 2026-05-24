@@ -105,8 +105,9 @@ under the same FEATURE id.
   pg_cron trusted hook-chain status; it only reserves and exposes the clock flag
   needed by pg_cron scheduled-job callers.
 - **Gate before upstream PR**: `make -f Makefile.ai-blaise patches-check` plus
-  a live Citus+pg_cron cohabitation boot that records the patched image and
-  verifies no clock registration conflict.
+  `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`, which
+  records the patched image, verifies `citus_cohabit_clock_tick_reserved()`,
+  and waits for a scheduled pg_cron worker to call Citus clock UDFs.
 
 #### 0008-cohabit-extensions-detection-api.patch -- role-aware cohabit detection
 

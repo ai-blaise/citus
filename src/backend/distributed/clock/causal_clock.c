@@ -60,6 +60,7 @@ PG_FUNCTION_INFO_V1(citus_get_node_clock);
 PG_FUNCTION_INFO_V1(citus_internal_adjust_local_clock_to_remote);
 PG_FUNCTION_INFO_V1(citus_is_clock_after);
 PG_FUNCTION_INFO_V1(citus_get_transaction_clock);
+PG_FUNCTION_INFO_V1(citus_cohabit_clock_tick_reserved);
 
 /*
  * Current state of the logical clock
@@ -99,6 +100,7 @@ typedef struct LogicalClockShmemData
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static LogicalClockShmemData *LogicalClockShmem = NULL;
+static bool CohabitClockTickReservationRequested = false;
 static void AdjustLocalClock(ClusterClock *remoteClock);
 static void GetNextNodeClockValue(ClusterClock *nextClusterClockValue);
 static ClusterClock * GetHighestClockInTransaction(List *nodeConnectionList);
@@ -193,6 +195,12 @@ LogicalClockShmemInit(void)
 
 		/* FEATURE: TS19 -- explicit reset for the cohabit-reservation flag */
 		LogicalClockShmem->cohabitClockTickReserved = false;
+	}
+
+	if (CohabitClockTickReservationRequested)
+	{
+		/* FEATURE: TS19 -- apply the _PG_init reservation after shmem exists. */
+		LogicalClockShmem->cohabitClockTickReserved = true;
 	}
 
 	LWLockRelease(AddinShmemInitLock);
@@ -650,6 +658,8 @@ citus_get_transaction_clock(PG_FUNCTION_ARGS)
 void
 ReserveCohabitClockTick(void)
 {
+	CohabitClockTickReservationRequested = true;
+
 	if (LogicalClockShmem == NULL)
 	{
 		return;
@@ -682,4 +692,20 @@ IsClockTickCohabitReserved(void)
 	LWLockRelease(&LogicalClockShmem->clockLock);
 
 	return reserved;
+}
+
+
+/*
+ * FEATURE: TS19
+ *
+ * SQL-visible proof point for pg_cron cohabitation smokes. Operators can use
+ * this read-only UDF to verify that Citus observed citus.cohabit_extensions and
+ * reserved the logical-clock tick slot before cohabiting jobs run.
+ */
+Datum
+citus_cohabit_clock_tick_reserved(PG_FUNCTION_ARGS)
+{
+	CheckCitusVersion(ERROR);
+
+	PG_RETURN_BOOL(IsClockTickCohabitReserved());
 }

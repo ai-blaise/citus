@@ -66,6 +66,7 @@ DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 TIMESCALE_BRIDGE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
+PG_CRON_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
 SQL_EXTENSION = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql"
 AI_SQL_CONTRACT_SMOKE = ROOT / "ci/ai-blaise/ai-sql-contract-smoke.sh"
@@ -328,8 +329,8 @@ for phrase in (
     "v2 acceptance model must not be cited as production evidence",
     "WF2 fixture-backed WAL replay debugger plan",
     "not evidence for real WAL segment inspection",
-    "pg_cron cohabitation smoke is subset evidence only",
-    "does not prove the unexposed TS19 in-shmem clock-reservation flag",
+    "pg_cron cohabitation smoke is production evidence for the TS19 clock-reservation",
+    "does not make broad Bundle1 cohabitation production-ready",
     "TS20 C API being called by a live C extension",
 ):
     if compact(phrase) not in audit_compact:
@@ -1054,6 +1055,9 @@ for phrase in (
     if compact(phrase) not in timescale_runtime_truth:
         fail(f"Timescale runtime evidence boundary must preserve phrase: {phrase}")
 
+if "pg-cron-cohabitation-smoke.sh" not in read(CI_IMAGE_WORKFLOW):
+    fail("ci-image workflow must run pg-cron-cohabitation-smoke for TS19 production evidence")
+
 for phrase in (
     "TIMESCALE_COHABITATION_EXPECTED_TS_MINOR",
     "TimescaleDB minor mismatch",
@@ -1072,6 +1076,33 @@ for pattern in (
 ):
     if compact(pattern) in compact(docs + "\n" + audit):
         fail(f"Timescale docs overclaim production readiness: {pattern}")
+
+pg_cron_cohabitation_smoke = read(PG_CRON_COHABITATION_SMOKE)
+pg_cron_truth = compact(docs + "\n" + audit + "\n" + pg_cron_cohabitation_smoke)
+if status_by_id.get("TS19") != "production-ready":
+    fail("TS19 pg_cron clock cohabitation must be production-ready after live clock-reservation worker evidence")
+if status_by_id.get("TS20") != "alpha":
+    fail("TS20 must remain alpha until the role-aware C API is called by a live extension")
+for phrase in (
+    "citus_cohabit_clock_tick_reserved",
+    "clock_tick_reserved",
+    "cron_clock_reserved_runs",
+    "cron_node_clock_samples",
+    "negative_clock_tick_reserved",
+    "scheduled pg_cron worker",
+    "does not make `pg_cron` a trusted hook-chain coextension",
+    "does not promote the TS20 C API",
+):
+    if compact(phrase) not in pg_cron_truth:
+        fail(f"pg_cron TS19 production boundary must preserve phrase: {phrase}")
+for required_path in (
+    ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/14.0-1.sql",
+    ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/15.0-1.sql",
+    ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/latest.sql",
+):
+    sql = read(required_path)
+    if "citus_cohabit_clock_tick_reserved" not in sql or "MODULE_PATHNAME" not in sql:
+        fail(f"TS19 clock-reservation UDF SQL contract missing required function in {required_path}")
 
 for path in (
     K8S_GUARDRAIL_RENDERER,

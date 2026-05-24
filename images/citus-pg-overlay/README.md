@@ -13,9 +13,10 @@ evidence that every binary package in the manifest is installed in a runnable
 operand image; `FEATURE: Bundle1` remains alpha until the full required bundle,
 including plrust and the complete initdb path, is verified end to end. Explicit
 PG17 source-build targets now provide targeted live evidence for the feasible
-PGDG-missing extensions. The separate pg_cron cohabitation smoke proves only the
-required `pg_cron` package loading beside this Citus fork plus SQL-visible
-cohabit detection; it is subset evidence, not full Bundle1 production evidence.
+PGDG-missing extensions. The separate pg_cron cohabitation smoke is TS19
+production evidence for the bounded clock-reservation path beside this Citus
+fork, including SQL-visible reservation and scheduled worker execution; it is
+not full Bundle1 production evidence.
 
 ## Contract
 

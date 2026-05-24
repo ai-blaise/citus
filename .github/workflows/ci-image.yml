@@ -32,6 +32,10 @@ jobs:
         env:
           TIMESCALE_COHABITATION_MAKE_JOBS: "2"
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-cohabitation-smoke.sh
+      - name: Smoke pg_cron clock cohabitation
+        env:
+          MAKE_JOBS: "2"
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh
       - name: Smoke TS-version cohabitation matrix
         env:
           TIMESCALE_COHABITATION_MAKE_JOBS: "2"

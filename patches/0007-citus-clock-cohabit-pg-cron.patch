@@ -6,18 +6,29 @@ Subject: [PATCH] Reserve Citus clock cohabitation for pg_cron
 FEATURE: TS19
 
 Record an explicit hybrid-logical-clock cohabit reservation when operators
-list pg_cron in citus.cohabit_extensions. The patch adds a small shmem flag and
-read helper so pg_cron scheduled-job callers can verify that Citus
+list pg_cron in citus.cohabit_extensions. The patch adds a small shmem flag,
+preserves _PG_init reservation requests until shared-memory startup, and exposes
+a read-only UDF so pg_cron scheduled-job callers can verify that Citus
 initialized the logical clock before cohabiting background workers execute.
 
 This deliberately does not grant pg_cron trusted hook-chain status; TimescaleDB
 remains the only trusted hook coextension.
 ---
 diff --git a/src/backend/distributed/clock/causal_clock.c b/src/backend/distributed/clock/causal_clock.c
-index 033cb5708..7be81ad02 100644
+index 033cb5708..a0770f51b 100644
 --- a/src/backend/distributed/clock/causal_clock.c
 +++ b/src/backend/distributed/clock/causal_clock.c
-@@ -85,2 +85,13 @@ typedef struct LogicalClockShmemData
+@@ -60,6 +60,7 @@ PG_FUNCTION_INFO_V1(citus_get_node_clock);
+ PG_FUNCTION_INFO_V1(citus_internal_adjust_local_clock_to_remote);
+ PG_FUNCTION_INFO_V1(citus_is_clock_after);
+ PG_FUNCTION_INFO_V1(citus_get_transaction_clock);
++PG_FUNCTION_INFO_V1(citus_cohabit_clock_tick_reserved);
+ 
+ /*
+  * Current state of the logical clock
+@@ -83,11 +84,23 @@ typedef struct LogicalClockShmemData
+ 
+ 	/* Tracks initialization at boot */
  	ClockState clockInitialized;
 +
 +	/*
@@ -31,13 +42,33 @@ index 033cb5708..7be81ad02 100644
 +	 */
 +	bool cohabitClockTickReserved;
  } LogicalClockShmemData;
-@@ -181,2 +192,5 @@ LogicalClockShmemInit(void)
+ 
+ 
+ static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+ static LogicalClockShmemData *LogicalClockShmem = NULL;
++static bool CohabitClockTickReservationRequested = false;
+ static void AdjustLocalClock(ClusterClock *remoteClock);
+ static void GetNextNodeClockValue(ClusterClock *nextClusterClockValue);
+ static ClusterClock * GetHighestClockInTransaction(List *nodeConnectionList);
+@@ -179,6 +192,15 @@ LogicalClockShmemInit(void)
+ 						 LogicalClockShmem->namedLockTranche.trancheId);
+ 
  		LogicalClockShmem->clockInitialized = CLOCKSTATE_UNINITIALIZED;
 +
 +		/* FEATURE: TS19 -- explicit reset for the cohabit-reservation flag */
 +		LogicalClockShmem->cohabitClockTickReserved = false;
++	}
++
++	if (CohabitClockTickReservationRequested)
++	{
++		/* FEATURE: TS19 -- apply the _PG_init reservation after shmem exists. */
++		LogicalClockShmem->cohabitClockTickReserved = true;
  	}
-@@ -622 +636,52 @@ citus_get_transaction_clock(PG_FUNCTION_ARGS)
+ 
+ 	LWLockRelease(AddinShmemInitLock);
+@@ -620,3 +642,70 @@ citus_get_transaction_clock(PG_FUNCTION_ARGS)
+ 
+ 	PG_RETURN_POINTER(clusterClockValue);
  }
 +
 +
@@ -55,6 +86,8 @@ index 033cb5708..7be81ad02 100644
 +void
 +ReserveCohabitClockTick(void)
 +{
++	CohabitClockTickReservationRequested = true;
++
 +	if (LogicalClockShmem == NULL)
 +	{
 +		return;
@@ -77,28 +110,48 @@ index 033cb5708..7be81ad02 100644
 +bool
 +IsClockTickCohabitReserved(void)
 +{
-+	bool reserved = false;
-+
 +	if (LogicalClockShmem == NULL)
 +	{
 +		return false;
 +	}
 +
 +	LWLockAcquire(&LogicalClockShmem->clockLock, LW_SHARED);
-+	reserved = LogicalClockShmem->cohabitClockTickReserved;
++	bool reserved = LogicalClockShmem->cohabitClockTickReserved;
 +	LWLockRelease(&LogicalClockShmem->clockLock);
 +
 +	return reserved;
 +}
++
++
++/*
++ * FEATURE: TS19
++ *
++ * SQL-visible proof point for pg_cron cohabitation smokes. Operators can use
++ * this read-only UDF to verify that Citus observed citus.cohabit_extensions and
++ * reserved the logical-clock tick slot before cohabiting jobs run.
++ */
++Datum
++citus_cohabit_clock_tick_reserved(PG_FUNCTION_ARGS)
++{
++	CheckCitusVersion(ERROR);
++
++	PG_RETURN_BOOL(IsClockTickCohabitReserved());
++}
 diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
-index f1a25d7bc..1571d986c 100644
+index 3bf079c2f..108c2b2fd 100644
 --- a/src/backend/distributed/shared_library_init.c
 +++ b/src/backend/distributed/shared_library_init.c
-@@ -207,2 +207,3 @@ static bool CitusHasTrustedHookCoextensions(void);
+@@ -205,6 +205,7 @@ static void ErrorIfHooksAlreadyRegistered(void);
+ static bool CitusHasAlreadyRegisteredHooks(void);
+ static bool CitusHasTrustedHookCoextensions(void);
  static bool IsTrustedHookCoextension(const char *coextensionName);
 +static void NoteCohabitClockReservations(void);
  static void RegisterCitusConfigVariables(void);
-@@ -526,2 +527,8 @@ _PG_init(void)
+ static void OverridePostgresConfigProperties(void);
+ static bool ErrorIfNotASuitableDeadlockFactor(double *newval, void **extra,
+@@ -526,6 +527,12 @@ _PG_init(void)
+ 	InitializeLocallyReservedSharedConnections();
+ 	InitializeClusterClockMem();
  
 +	/*
 +	 * FEATURE: TS19 -- record clock-side cohabit reservations the operator has
@@ -107,7 +160,11 @@ index f1a25d7bc..1571d986c 100644
 +	NoteCohabitClockReservations();
 +
  	/*
-@@ -1078,2 +1085,55 @@ IsTrustedHookCoextension(const char *coextensionName)
+ 	 * Adjust the Dynamic Library Path to prepend citus_decodes to the dynamic
+ 	 * library path. This is needed to make sure that the citus decoders are
+@@ -1078,6 +1085,59 @@ IsTrustedHookCoextension(const char *coextensionName)
+ }
+ 
  
 +/*
 + * FEATURE: TS19
@@ -163,11 +220,60 @@ index f1a25d7bc..1571d986c 100644
 +
 +
  /* Register Citus configuration variables. */
+ static void
+ RegisterCitusConfigVariables(void)
+diff --git a/src/backend/distributed/sql/citus--8.0-1.sql b/src/backend/distributed/sql/citus--8.0-1.sql
+index 4aac44e2e..d76c27e93 100644
+--- a/src/backend/distributed/sql/citus--8.0-1.sql
++++ b/src/backend/distributed/sql/citus--8.0-1.sql
+@@ -551,6 +551,14 @@ COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
+     IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
+ GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
+ 
++CREATE FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_clock_tick_reserved$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
++
+ CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
+ 	RETURNS void
+ 	LANGUAGE C STRICT
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/14.0-1.sql b/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/14.0-1.sql
+new file mode 100644
+index 000000000..a66bcf795
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/14.0-1.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_clock_tick_reserved$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/latest.sql b/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/latest.sql
+new file mode 100644
+index 000000000..a66bcf795
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_clock_tick_reserved/latest.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_clock_tick_reserved$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
++    IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
 diff --git a/src/include/distributed/causal_clock.h b/src/include/distributed/causal_clock.h
 index 6e0054541..33ae1678f 100644
 --- a/src/include/distributed/causal_clock.h
 +++ b/src/include/distributed/causal_clock.h
-@@ -40,2 +40,6 @@ extern ClusterClock * GetEpochTimeAsClock(void);
+@@ -38,4 +38,8 @@ extern size_t LogicalClockShmemSize(void);
+ extern void InitializeClusterClockMem(void);
+ extern ClusterClock * GetEpochTimeAsClock(void);
  
 +/* FEATURE: TS19 -- cohabit clock-tick reservation helpers */
 +extern void ReserveCohabitClockTick(void);

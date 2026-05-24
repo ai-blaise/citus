@@ -551,6 +551,14 @@ COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
     IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
 GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
 
+CREATE FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
+    RETURNS boolean
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$citus_cohabit_clock_tick_reserved$$;
+COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
+    IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
+GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
+
 CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
 	RETURNS void
 	LANGUAGE C STRICT
