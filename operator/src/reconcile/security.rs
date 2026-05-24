@@ -1,7 +1,9 @@
 // FEATURE: Auth1
 // FEATURE: Auth3
+// FEATURE: A9
 // FEATURE: Sec7
 // FEATURE: Sec8
+// FEATURE: Sec9
 // FEATURE: Sec12
 
 use std::collections::BTreeSet;
@@ -604,6 +606,360 @@ impl WorkloadSecurityReport {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ExternalSecretManifestPlan {
+    pub api_version: String,
+    pub kind: String,
+    pub metadata_name: String,
+    pub secret_store_ref: String,
+    pub target_secret_name: String,
+    pub target_key: String,
+    pub remote_key: String,
+    pub remote_property: String,
+    pub refresh_interval_minutes: u32,
+}
+
+impl ExternalSecretManifestPlan {
+    fn from_binding(binding: &ExternalSecretBindingPlan) -> Self {
+        Self {
+            api_version: "external-secrets.io/v1beta1".to_string(),
+            kind: "ExternalSecret".to_string(),
+            metadata_name: binding.target_secret_name.clone(),
+            secret_store_ref: binding.secret_store_ref.clone(),
+            target_secret_name: binding.target_secret_name.clone(),
+            target_key: binding.target_key.clone(),
+            remote_key: binding.remote_key.clone(),
+            remote_property: binding.remote_property.clone(),
+            refresh_interval_minutes: binding.refresh_interval_minutes,
+        }
+    }
+
+    fn validate(&self, binding: &ExternalSecretBindingPlan) -> Result<(), WorkloadSecurityError> {
+        if self.api_version != "external-secrets.io/v1beta1" || self.kind != "ExternalSecret" {
+            return Err(WorkloadSecurityError::InvalidExternalSecretManifest);
+        }
+        validate_kubernetes_name("external_secret.metadata_name", &self.metadata_name)?;
+        validate_kubernetes_name("external_secret.secret_store_ref", &self.secret_store_ref)?;
+        validate_kubernetes_name(
+            "external_secret.target_secret_name",
+            &self.target_secret_name,
+        )?;
+        validate_secret_key("external_secret.target_key", &self.target_key)?;
+        validate_remote_secret_key("external_secret.remote_key", &self.remote_key)?;
+        validate_secret_key("external_secret.remote_property", &self.remote_property)?;
+        if self.refresh_interval_minutes == 0 {
+            return Err(WorkloadSecurityError::InvalidExternalSecretRefreshInterval);
+        }
+        if self.secret_store_ref != binding.secret_store_ref
+            || self.target_secret_name != binding.target_secret_name
+            || self.target_key != binding.target_key
+            || self.remote_key != binding.remote_key
+            || self.remote_property != binding.remote_property
+            || self.refresh_interval_minutes != binding.refresh_interval_minutes
+        {
+            return Err(WorkloadSecurityError::ExternalSecretBindingMismatch);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TlsSecretManifestPlan {
+    pub secret_name: String,
+    pub cert_key: String,
+    pub private_key: String,
+    pub ca_key: String,
+    pub min_version: TlsVersion,
+    pub require_client_cert: bool,
+}
+
+impl TlsSecretManifestPlan {
+    fn from_tls_policy(tls: &TlsPolicyPlan) -> Result<Option<Self>, WorkloadSecurityError> {
+        if tls.mode == TlsMode::Disabled {
+            return Ok(None);
+        }
+
+        let cert = tls
+            .cert_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.cert"))?;
+        let key = tls
+            .key_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.key"))?;
+        let ca = tls
+            .ca_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.ca"))?;
+
+        Ok(Some(Self {
+            secret_name: cert.name.clone(),
+            cert_key: cert.key.clone(),
+            private_key: key.key.clone(),
+            ca_key: ca.key.clone(),
+            min_version: tls.min_version,
+            require_client_cert: tls.require_client_cert,
+        }))
+    }
+
+    fn validate(&self, tls: &TlsPolicyPlan) -> Result<(), WorkloadSecurityError> {
+        validate_kubernetes_name("tls.secret_name", &self.secret_name)?;
+        if self.cert_key != "tls.crt" || self.private_key != "tls.key" || self.ca_key != "ca.crt" {
+            return Err(WorkloadSecurityError::InvalidTlsSecretManifest);
+        }
+        if self.min_version != TlsVersion::Tls13 {
+            return Err(WorkloadSecurityError::WeakTlsVersion);
+        }
+        if !self.require_client_cert {
+            return Err(WorkloadSecurityError::ClientCertificateNotRequired);
+        }
+
+        let cert = tls
+            .cert_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.cert"))?;
+        let key = tls
+            .key_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.key"))?;
+        let ca = tls
+            .ca_secret_ref
+            .as_ref()
+            .ok_or(WorkloadSecurityError::MissingTlsSecret("tls.ca"))?;
+        if cert.name != self.secret_name
+            || key.name != self.secret_name
+            || ca.name != self.secret_name
+            || cert.key != self.cert_key
+            || key.key != self.private_key
+            || ca.key != self.ca_key
+        {
+            return Err(WorkloadSecurityError::TlsSecretBindingMismatch);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SupplyChainAttestationPlan {
+    pub image_ref: String,
+    pub source_revision: String,
+    pub sbom_path: String,
+    pub cosign_bundle_path: String,
+    pub provenance_predicate_type: String,
+}
+
+impl SupplyChainAttestationPlan {
+    fn validate(&self) -> Result<(), WorkloadSecurityError> {
+        validate_required("supply_chain.image_ref", &self.image_ref)?;
+        validate_required("supply_chain.source_revision", &self.source_revision)?;
+        validate_required("supply_chain.sbom_path", &self.sbom_path)?;
+        validate_required("supply_chain.cosign_bundle_path", &self.cosign_bundle_path)?;
+        validate_required(
+            "supply_chain.provenance_predicate_type",
+            &self.provenance_predicate_type,
+        )?;
+        if !is_sha256_digest_ref(&self.image_ref) {
+            return Err(WorkloadSecurityError::MutableImageReference);
+        }
+        if !is_hex_revision(&self.source_revision) {
+            return Err(WorkloadSecurityError::InvalidSourceRevision);
+        }
+        if !self.sbom_path.ends_with(".spdx.json") {
+            return Err(WorkloadSecurityError::InvalidSbomPath);
+        }
+        if !self.cosign_bundle_path.ends_with(".sigstore.json") {
+            return Err(WorkloadSecurityError::InvalidCosignBundlePath);
+        }
+        if !self
+            .provenance_predicate_type
+            .contains("slsa.dev/provenance/v1")
+        {
+            return Err(WorkloadSecurityError::MissingProvenancePredicate);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SecuritySupplyChainReport {
+    pub workloads: usize,
+    pub external_secret_manifests: usize,
+    pub runtime_secret_refs: usize,
+    pub tls_manifests: usize,
+    pub tls_secret_refs: usize,
+    pub supply_chain_artifacts: usize,
+    pub sbom_documents: usize,
+    pub cosign_attestations: usize,
+    pub digest_pinned_images: usize,
+    pub fail_closed_checks: usize,
+}
+
+pub fn canonical_security_supply_chain_report(
+) -> Result<SecuritySupplyChainReport, WorkloadSecurityError> {
+    let plans = canonical_operator_security_plans();
+    let artifacts = canonical_supply_chain_attestation_plans();
+    let mut external_secret_manifests = 0;
+    let mut runtime_secret_refs = 0;
+    let mut tls_manifests = 0;
+    let mut tls_secret_refs = 0;
+
+    for plan in &plans {
+        plan.validate()?;
+        runtime_secret_refs += plan.secrets.references.len();
+
+        for binding in &plan.external_secrets {
+            let manifest = ExternalSecretManifestPlan::from_binding(binding);
+            manifest.validate(binding)?;
+            external_secret_manifests += 1;
+        }
+
+        if let Some(manifest) = TlsSecretManifestPlan::from_tls_policy(&plan.tls)? {
+            manifest.validate(&plan.tls)?;
+            tls_manifests += 1;
+            tls_secret_refs += plan.tls.secret_reference_count();
+        }
+    }
+
+    for artifact in &artifacts {
+        artifact.validate()?;
+    }
+
+    Ok(SecuritySupplyChainReport {
+        workloads: plans.len(),
+        external_secret_manifests,
+        runtime_secret_refs,
+        tls_manifests,
+        tls_secret_refs,
+        supply_chain_artifacts: artifacts.len(),
+        sbom_documents: artifacts.len(),
+        cosign_attestations: artifacts.len(),
+        digest_pinned_images: artifacts.len(),
+        fail_closed_checks: security_supply_chain_fail_closed_checks()?,
+    })
+}
+
+fn canonical_supply_chain_attestation_plans() -> Vec<SupplyChainAttestationPlan> {
+    let revision = "b97def302812dee560d23c7747ef84b90da25605";
+    vec![
+        supply_chain_artifact(
+            "operator",
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            revision,
+        ),
+        supply_chain_artifact(
+            "pool",
+            "2222222222222222222222222222222222222222222222222222222222222222",
+            revision,
+        ),
+        supply_chain_artifact(
+            "sidecar-vectorizer",
+            "3333333333333333333333333333333333333333333333333333333333333333",
+            revision,
+        ),
+        supply_chain_artifact(
+            "sidecar-mcp",
+            "4444444444444444444444444444444444444444444444444444444444444444",
+            revision,
+        ),
+    ]
+}
+
+fn supply_chain_artifact(
+    component: &str,
+    digest: &str,
+    revision: &str,
+) -> SupplyChainAttestationPlan {
+    SupplyChainAttestationPlan {
+        image_ref: format!("ghcr.io/ai-blaise/citus-{component}@sha256:{digest}"),
+        source_revision: revision.to_string(),
+        sbom_path: format!("artifacts/sbom/citus-{component}.spdx.json"),
+        cosign_bundle_path: format!("artifacts/attestations/citus-{component}.sigstore.json"),
+        provenance_predicate_type: "https://slsa.dev/provenance/v1".to_string(),
+    }
+}
+
+fn security_supply_chain_fail_closed_checks() -> Result<usize, WorkloadSecurityError> {
+    let mut passed = 0;
+
+    let mut missing_binding = WorkloadSecurityPlan::sidecar("ai-blaise-citus", "mcp");
+    missing_binding.external_secrets.clear();
+    passed += expect_security_error(
+        "missing-external-secret-binding",
+        missing_binding.validate(),
+        WorkloadSecurityError::MissingExternalSecretBinding,
+    )?;
+
+    let mut weak_tls = WorkloadSecurityPlan::pool("ai-blaise-citus");
+    weak_tls.tls.min_version = TlsVersion::Tls12;
+    passed += expect_security_error(
+        "weak-tls-version",
+        weak_tls.validate(),
+        WorkloadSecurityError::WeakTlsVersion,
+    )?;
+
+    let mut zero_refresh = ExternalSecretBindingPlan::runtime_secret(
+        "ai-blaise-citus-pool-postgres-auth".to_string(),
+        "password",
+        "postgres/pool/password",
+        "password",
+    );
+    zero_refresh.refresh_interval_minutes = 0;
+    passed += expect_security_error(
+        "zero-external-secret-refresh",
+        zero_refresh.validate(),
+        WorkloadSecurityError::InvalidExternalSecretRefreshInterval,
+    )?;
+
+    let mut mutable_image = supply_chain_artifact(
+        "operator",
+        "5555555555555555555555555555555555555555555555555555555555555555",
+        "b97def302812dee560d23c7747ef84b90da25605",
+    );
+    mutable_image.image_ref = "ghcr.io/ai-blaise/citus-operator:latest".to_string();
+    passed += expect_security_error(
+        "mutable-image-reference",
+        mutable_image.validate(),
+        WorkloadSecurityError::MutableImageReference,
+    )?;
+
+    let mut missing_sbom = supply_chain_artifact(
+        "pool",
+        "6666666666666666666666666666666666666666666666666666666666666666",
+        "b97def302812dee560d23c7747ef84b90da25605",
+    );
+    missing_sbom.sbom_path = "artifacts/sbom/citus-pool.json".to_string();
+    passed += expect_security_error(
+        "invalid-sbom-path",
+        missing_sbom.validate(),
+        WorkloadSecurityError::InvalidSbomPath,
+    )?;
+
+    Ok(passed)
+}
+
+fn expect_security_error<T>(
+    label: &'static str,
+    result: Result<T, WorkloadSecurityError>,
+    expected: WorkloadSecurityError,
+) -> Result<usize, WorkloadSecurityError> {
+    match result {
+        Ok(_) => Err(WorkloadSecurityError::FailClosedCheckDidNotFail(label)),
+        Err(error) if error == expected => Ok(1),
+        Err(error) => Err(error),
+    }
+}
+
+fn is_sha256_digest_ref(image_ref: &str) -> bool {
+    let Some((_, digest)) = image_ref.split_once("@sha256:") else {
+        return false;
+    };
+    digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn is_hex_revision(revision: &str) -> bool {
+    revision.len() == 40 && revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 pub fn canonical_operator_security_plans() -> Vec<WorkloadSecurityPlan> {
     vec![
         WorkloadSecurityPlan::operator(),
@@ -626,13 +982,22 @@ pub enum WorkloadSecurityError {
     CapabilitiesNotDropped,
     ClientCertificateNotRequired,
     DuplicateSecretReference,
+    ExternalSecretBindingMismatch,
+    FailClosedCheckDidNotFail(&'static str),
     InlineSecretValue,
     InsecureAuthIssuer,
+    InvalidCosignBundlePath,
+    InvalidExternalSecretManifest,
     InvalidExternalSecretRefreshInterval,
     InvalidKubernetesName(&'static str),
     InvalidRemoteSecretKey(&'static str),
+    InvalidSbomPath,
     InvalidSecretKey(&'static str),
+    InvalidSourceRevision,
+    InvalidTlsSecretManifest,
     MissingExternalSecretBinding,
+    MissingProvenancePredicate,
+    MutableImageReference,
     MissingRequiredField(&'static str),
     MissingRbacRule,
     MissingTlsSecret(&'static str),
@@ -640,6 +1005,7 @@ pub enum WorkloadSecurityError {
     PrivilegeEscalationAllowed,
     RootContainer,
     SecretRbacForbidden,
+    TlsSecretBindingMismatch,
     UnexpectedRbacRule,
     UnexpectedTlsSecret,
     WeakTlsVersion,
@@ -658,6 +1024,24 @@ impl fmt::Display for WorkloadSecurityError {
                 write!(formatter, "TLS must require client certificates")
             }
             Self::DuplicateSecretReference => write!(formatter, "secret references must be unique"),
+            Self::ExternalSecretBindingMismatch => write!(
+                formatter,
+                "rendered ExternalSecret must match the runtime Secret reference"
+            ),
+            Self::FailClosedCheckDidNotFail(label) => {
+                write!(
+                    formatter,
+                    "fail-closed security check did not fail: {label}"
+                )
+            }
+            Self::InvalidCosignBundlePath => write!(
+                formatter,
+                "cosign attestation bundle must use a .sigstore.json artifact path"
+            ),
+            Self::InvalidExternalSecretManifest => write!(
+                formatter,
+                "rendered ExternalSecret manifest must use the supported API and kind"
+            ),
             Self::InvalidExternalSecretRefreshInterval => {
                 write!(
                     formatter,
@@ -675,14 +1059,30 @@ impl fmt::Display for WorkloadSecurityError {
             Self::InvalidRemoteSecretKey(field) => {
                 write!(formatter, "{field} must be a valid remote secret key")
             }
+            Self::InvalidSbomPath => write!(
+                formatter,
+                "SBOM artifact must use a .spdx.json artifact path"
+            ),
             Self::InvalidSecretKey(field) => {
                 write!(formatter, "{field} must be a valid Secret key")
             }
+            Self::InvalidSourceRevision => write!(
+                formatter,
+                "supply-chain source revision must be a full git SHA"
+            ),
+            Self::InvalidTlsSecretManifest => write!(
+                formatter,
+                "rendered TLS Secret manifest must expose tls.crt, tls.key, and ca.crt"
+            ),
             Self::MissingExternalSecretBinding => write!(
                 formatter,
                 "runtime Secret references must be backed by ExternalSecret bindings"
             ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::MissingProvenancePredicate => write!(
+                formatter,
+                "cosign attestation metadata must include SLSA provenance predicate type"
+            ),
             Self::MissingRbacRule => write!(
                 formatter,
                 "scoped Kubernetes API access requires explicit RBAC rules"
@@ -698,6 +1098,14 @@ impl fmt::Display for WorkloadSecurityError {
             Self::SecretRbacForbidden => {
                 write!(formatter, "workload RBAC must not grant Secret API access")
             }
+            Self::TlsSecretBindingMismatch => write!(
+                formatter,
+                "rendered TLS Secret metadata must match TLS Secret references"
+            ),
+            Self::MutableImageReference => write!(
+                formatter,
+                "supply-chain image references must be immutable sha256 digests"
+            ),
             Self::UnexpectedRbacRule => write!(
                 formatter,
                 "workloads without Kubernetes API access must not carry RBAC rules"
@@ -941,5 +1349,67 @@ mod tests {
                 "external_secret.remote_key"
             ))
         );
+    }
+
+    #[test]
+    fn security_supply_chain_report_is_deterministic() {
+        let report = canonical_security_supply_chain_report().expect("supply-chain report");
+
+        assert_eq!(
+            report,
+            SecuritySupplyChainReport {
+                workloads: 6,
+                external_secret_manifests: 5,
+                runtime_secret_refs: 5,
+                tls_manifests: 5,
+                tls_secret_refs: 15,
+                supply_chain_artifacts: 4,
+                sbom_documents: 4,
+                cosign_attestations: 4,
+                digest_pinned_images: 4,
+                fail_closed_checks: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn security_supply_chain_rejects_mutable_images_and_bad_attestations() {
+        let mut artifact = supply_chain_artifact(
+            "operator",
+            "7777777777777777777777777777777777777777777777777777777777777777",
+            "b97def302812dee560d23c7747ef84b90da25605",
+        );
+        artifact.image_ref = "ghcr.io/ai-blaise/citus-operator:latest".to_string();
+        assert_eq!(
+            artifact.validate(),
+            Err(WorkloadSecurityError::MutableImageReference)
+        );
+
+        let mut artifact = supply_chain_artifact(
+            "operator",
+            "8888888888888888888888888888888888888888888888888888888888888888",
+            "b97def302812dee560d23c7747ef84b90da25605",
+        );
+        artifact.cosign_bundle_path = "artifacts/attestations/operator.json".to_string();
+        assert_eq!(
+            artifact.validate(),
+            Err(WorkloadSecurityError::InvalidCosignBundlePath)
+        );
+    }
+
+    #[test]
+    fn rendered_security_manifests_match_runtime_refs() {
+        let plan = WorkloadSecurityPlan::pool("ai-blaise-citus");
+        let binding = &plan.external_secrets[0];
+        let manifest = ExternalSecretManifestPlan::from_binding(binding);
+        assert_eq!(manifest.validate(binding), Ok(()));
+
+        let tls_manifest = TlsSecretManifestPlan::from_tls_policy(&plan.tls)
+            .expect("tls manifest")
+            .expect("tls required");
+        assert_eq!(tls_manifest.validate(&plan.tls), Ok(()));
+        assert_eq!(tls_manifest.cert_key, "tls.crt");
+        assert_eq!(tls_manifest.private_key, "tls.key");
+        assert_eq!(tls_manifest.ca_key, "ca.crt");
     }
 }

@@ -26,6 +26,7 @@ observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
 bundle1_contract_check="ci/ai-blaise/bundle1-contract-check.py"
 bundle1_source_lock="${image_dir}/bundle1-source-build.lock.tsv"
+security_supply_chain_smoke="ci/ai-blaise/security-supply-chain-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -58,7 +59,8 @@ for file in \
   "${observability_contracts_check}" \
   "${ai_sql_contract_smoke}" \
   "${bundle1_contract_check}" \
-  "${bundle1_source_lock}"; do
+  "${bundle1_source_lock}" \
+  "${security_supply_chain_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -103,6 +105,10 @@ if [[ ! -x "${app_digest_smoke}" ]]; then
 fi
 if [[ ! -x "${observability_contracts_check}" ]]; then
   echo "missing executable observability contracts smoke: ${observability_contracts_check}" >&2
+  exit 1
+fi
+if [[ ! -x "${security_supply_chain_smoke}" ]]; then
+  echo "missing executable security supply-chain smoke: ${security_supply_chain_smoke}" >&2
   exit 1
 fi
 
@@ -681,6 +687,9 @@ grep -Fq "Sec5 ledger entries must reject mutation" ci/ai-blaise/sql-extension-s
 grep -Fq "Sec6 ledger seals must reject deletion" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "Sec6 ledger seal accepted an unsupported algorithm" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "run-security-supply-chain-canonical" "${security_supply_chain_smoke}"
+grep -Fq "slsa.dev/provenance/v1" "${security_supply_chain_smoke}"
+grep -Fq "security-supply-chain-smoke ok" "${security_supply_chain_smoke}"
 grep -Fq "companion_internal.seed_extension_catalog" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_extension_feature_coverage" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_extension_required('A7')" ci/ai-blaise/sql-extension-smoke.sh
