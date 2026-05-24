@@ -2516,6 +2516,11 @@ does not provide this controlled cohabitation preflight.
 **Summary**: Defines the CLI plan/apply execution contract, including
 rendered diffs, preflight checks, apply execution, and audit-record steps.
 
+**Current boundary**: The dev lifecycle apply path now has a deterministic
+local state-file runtime with dry-run plan rendering, stable plan-id validation,
+idempotent up/down state transitions, and state-file-only cleanup guardrails.
+It does not execute manifests against Kubernetes or mutate a Citus data plane.
+
 **Motivation**: Operator actions need a Terraform-style preview before
 mutating clusters, tenants, branches, migrations, backups, or extension state.
 
@@ -2527,6 +2532,8 @@ two-step plan/apply semantics.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-dev-lifecycle-canonical`
+- CI: `ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh`
 
 ### M9: Schema Visualization Output
 
@@ -5020,6 +5027,12 @@ without granting mutation or Kubernetes authority.
 **Summary**: Adds the typed `dev up` and `dev down` command contract for local
 cluster lifecycle operations.
 
+**Current boundary**: The real CLI now exercises a local state-file lifecycle
+for `dev up`/`dev down`: dry-run planning does not write state, apply requires
+a stable plan ID, repeated up/down operations are idempotent, and down removes
+only the tracked state file. Starting Docker, kind, Kubernetes, Postgres/Citus,
+or extension services remains alpha.
+
 **Motivation**: Contributors need a single CLI entrypoint for local end-to-end
 clusters before the kind runner and image builder are wired.
 
@@ -5031,6 +5044,8 @@ ai-blaise single-command local cluster contract.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: D1` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citusctl -- run-dev-lifecycle-canonical`
+- CI: `ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh`
 
 ### D2: citusctl apply
 
