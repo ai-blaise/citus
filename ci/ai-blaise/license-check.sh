@@ -2,6 +2,7 @@
 set -euo pipefail
 
 audit_file="docs/ai-blaise/LICENSE_AUDIT.md"
+release_mode="${AI_BLAISE_RELEASE_MODE:-0}"
 
 if [[ ! -s "${audit_file}" ]]; then
   echo "missing ${audit_file}" >&2
@@ -81,7 +82,17 @@ if [[ -s "Cargo.lock" ]]; then
 
   # SPDX scan: parse `cargo metadata` and flag any package whose
   # license expression contains GPL-2.0 or GPL-3.0 without also
-  # offering an AGPL or LGPL fallback (which are compatible).
+  # offering an AGPL or LGPL fallback (which are compatible). Missing
+  # cargo/jq is a labeled exploratory skip, but it is not valid release
+  # evidence.
+  if [[ "${release_mode}" == "1" ]] && ! command -v cargo >/dev/null 2>&1; then
+    echo "license metadata scan requires cargo in release mode" >&2
+    exit 1
+  fi
+  if [[ "${release_mode}" == "1" ]] && ! command -v jq >/dev/null 2>&1; then
+    echo "license metadata scan requires jq in release mode" >&2
+    exit 1
+  fi
   if command -v cargo >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     metadata_json="$(cargo metadata --format-version 1 2>/dev/null || true)"
     if [[ -n "${metadata_json}" ]]; then
@@ -100,5 +111,7 @@ if [[ -s "Cargo.lock" ]]; then
         exit 1
       fi
     fi
+  else
+    echo "license-check: exploratory-only metadata scan skipped; cargo and jq are required for release evidence" >&2
   fi
 fi

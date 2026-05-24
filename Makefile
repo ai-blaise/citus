@@ -53,6 +53,7 @@ clean: clean-extension
 reindent:
 	${citus_abs_top_srcdir}/ci/fix_style.sh
 check-style:
+	${citus_abs_top_srcdir}/ci/ai-blaise/env-preflight.sh style
 	black . --check --quiet
 	isort . --check --quiet
 	flake8

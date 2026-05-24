@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "${HARNESS_DIR}/../.." && pwd)"
 source "${REPO_ROOT}/benchmarks/common/lib.sh"
 
 release_mode=0
-if [[ "${BENCH_QUICK}" == "0" || "${BENCH_RESULT_TAG}" == "release" || "${PERF_EVIDENCE_MODE:-}" == "release" ]]; then
+if [[ "${BENCH_QUICK}" == "0" || "${BENCH_RESULT_TAG}" == "release" || "${PERF_EVIDENCE_MODE:-}" == "release" || "${AI_BLAISE_RELEASE_MODE:-0}" == "1" || "${BENCH_REQUIRE_MEASURED:-0}" == "1" ]]; then
   release_mode=1
 fi
 
