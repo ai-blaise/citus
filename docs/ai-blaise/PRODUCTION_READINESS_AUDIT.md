@@ -208,9 +208,10 @@ more production-ready than the artifacts justified.
 - CI checks now assert the real image matrix, `serve` support, Helm probe
   contracts, live sidecar probe coverage, loopback `serve` probes and metrics
   for the operator, shared runtime, every sidecar, and the pool admin surface,
-  structured-log schema coverage and typed JSON record validation for every
-  runtime sidecar, pool data/admin port separation, pool live-SQL smoke coverage,
-  and SQL bridge-state smoke coverage.
+  structured-log schema coverage, typed JSON record validation for every runtime
+  sidecar, real PostgreSQL ingestion through all generated `sidecar_*_log` typed
+  views, pool data/admin port separation, pool live-SQL smoke coverage, and SQL
+  bridge-state smoke coverage.
 - The SQL extension smoke now attaches stdin to `psql`, preloads and creates
   `pg_stat_statements`, verifies live percentile rows through
   `companion_pg_stat_statements_p95`, opens a real idle-in-transaction

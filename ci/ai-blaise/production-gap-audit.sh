@@ -39,6 +39,8 @@ MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
+STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
+OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
 SIDECAR_REALTIME_SMOKE = ROOT / "ci/ai-blaise/sidecar-realtime-smoke.sh"
 SIDECAR_REALTIME_README = ROOT / "sidecar/realtime/README.md"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
@@ -376,6 +378,8 @@ for path in (
     MAKEFILE,
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
+    STRUCTURED_LOG_INGESTION_SMOKE,
+    OBSERVABILITY_WORKFLOW,
     SIDECAR_REALTIME_SMOKE,
     SIDECAR_REALTIME_README,
     STORAGE_RUNTIME_SMOKE,
@@ -618,6 +622,54 @@ for phrase in (
 ):
     if compact(phrase) not in api6_body:
         fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
+
+structured_log_smoke = read(STRUCTURED_LOG_INGESTION_SMOKE)
+for required in (
+    "POSTGRES_IMAGE=${POSTGRES_IMAGE:-postgres:17}",
+    "run-log-view-sql-canonical",
+    "log-schema-records-canonical",
+    "companion.sidecar_log_raw",
+    "docker run -d",
+    "typed_view_rows",
+    "vectorizer_types",
+):
+    if required not in structured_log_smoke:
+        fail(f"structured-log ingestion smoke lost O15 runtime proof: {required}")
+
+if status_by_id.get("O14") != "alpha":
+    fail("O14 must remain alpha until full trace propagation and dashboard correlation are measured")
+if status_by_id.get("O15") != "production-ready":
+    fail("O15 structured-log schema must be production-ready after PostgreSQL ingestion smoke evidence")
+o15_body = compact(entry_by_id["O15"]["body"])
+for phrase in (
+    "production evidence",
+    "structured-log-ingestion-smoke.sh",
+    "postgres:17",
+    "companion.sidecar_log_raw",
+    "applies all 17 generated typed views",
+    "ingests all 17 sidecar records as jsonb",
+    "does not claim vector",
+    "broader o14 trace propagation path",
+):
+    if compact(phrase) not in o15_body:
+        fail(f"O15 docs lost PostgreSQL typed-view evidence phrase: {phrase}")
+
+observability_workflow = read(OBSERVABILITY_WORKFLOW)
+for required in (
+    "bootstrap-v2",
+    "postgresql-client",
+    "observability-contracts-check.sh",
+    "structured-log-ingestion-smoke.sh",
+):
+    if required not in observability_workflow:
+        fail(f"observability workflow lost O15 CI runtime proof: {required}")
+
+if (
+    "structured-log-ingestion-smoke:" not in makefile
+    or "gate-close:" not in makefile
+    or "structured-log-ingestion-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run structured-log-ingestion-smoke")
 
 if "sidecar-api-runtime-smoke:" not in makefile:
     fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")

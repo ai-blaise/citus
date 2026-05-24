@@ -203,6 +203,13 @@ dummy TCP upstream to validate the admin readiness and metrics labels, then
 runs `sidecar-shared log-schema-canonical` to ensure every runtime sidecar has
 a structured-log schema row.
 
+`ci/ai-blaise/structured-log-ingestion-smoke.sh` is the PostgreSQL-backed O15
+runtime proof. It renders the companion log-view SQL, starts `postgres:17`,
+creates `companion.sidecar_log_raw`, ingests all canonical sidecar log records
+as `jsonb`, and queries every generated typed view. The smoke intentionally
+stops at the database ingestion/view boundary; live Vector/fluent-bit shipping,
+Loki persistence, and dashboard correlation are separate deployment concerns.
+
 ## Cross-references
 
 - Plan source of truth: `docs/ai-blaise/NEW_FEATURES.md` (`FEATURE: O14`,
@@ -210,7 +217,8 @@ a structured-log schema row.
 - Library: `ai_blaise_citus_sidecar_shared::{otel, log_schema}`.
 - Companion: `ai_blaise_citus_companion::{log_view, trace_context}`.
 - Pool tap: `ai_blaise_citus_pool::trace_tap`.
-- Smokes: `ci/ai-blaise/otel-trace-propagation-smoke.sh` and
-  `ci/ai-blaise/observability-contracts-check.sh`.
+- Smokes: `ci/ai-blaise/otel-trace-propagation-smoke.sh`,
+  `ci/ai-blaise/observability-contracts-check.sh`, and
+  `ci/ai-blaise/structured-log-ingestion-smoke.sh`.
 - Grafana dashboards: `ai-blaise/command-center` repo,
   `platform/citus/observability/dashboards/`.

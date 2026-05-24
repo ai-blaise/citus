@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - bootstrap-v2
 
 jobs:
   smoke:
@@ -13,5 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Smoke custom component observability contracts
         run: bash ci/ai-blaise/observability-contracts-check.sh
+      - name: Smoke structured-log ingestion through PostgreSQL views
+        run: bash ci/ai-blaise/structured-log-ingestion-smoke.sh

@@ -7,6 +7,7 @@
 // FEATURE: D9
 // FEATURE: D10
 // FEATURE: D11
+// FEATURE: O15
 // FEATURE: Edge1
 // FEATURE: Edge2
 // FEATURE: F3
@@ -45,7 +46,7 @@ use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
     canonical_cohabit_detection_report, canonical_domain_contracts_report,
     canonical_extension_catalog_execution_report, canonical_operations_readiness_report,
-    canonical_plan_runtime_report,
+    canonical_plan_runtime_report, render_all_views,
 };
 use std::env;
 use std::process;
@@ -79,6 +80,9 @@ fn main() {
         }
         [command] if command == "run-plan-runtime-canonical" => {
             run_plan_runtime_canonical();
+        }
+        [command] if command == "run-log-view-sql-canonical" => {
+            run_log_view_sql_canonical();
         }
         _ => {
             eprintln!("companion-contracts: unknown command");
@@ -243,9 +247,17 @@ fn run_plan_runtime_canonical() {
     );
 }
 
+fn run_log_view_sql_canonical() {
+    let sql = render_all_views().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: log-view SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{sql}");
+}
+
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
     );
-    println!("runs deterministic canonical companion contract execution reports and emits TSV");
+    println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

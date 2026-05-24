@@ -6502,7 +6502,7 @@ correlation are measured end to end and the feature status is promoted.
 ### O15: Per-Sidecar Structured-Log Schema
 
 **Overlay**: `sidecar/shared/src/log_schema.rs`, `companion/src/log_view.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -6525,20 +6525,23 @@ cannot plan against the JSON column.
 no per-sidecar JSON schema exists.
 
 
-Evidence boundary: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
+Production evidence: `ci/ai-blaise/structured-log-ingestion-smoke.sh`
+builds the real `companion_contracts` and `ai_blaise_citus_sidecar_shared`
+binaries, emits the canonical sidecar JSON log records, renders the companion
+`run-log-view-sql-canonical` SQL bundle, starts a real `postgres:17` container,
+creates `companion.sidecar_log_raw`, applies all 17 generated typed views,
+ingests all 17 sidecar records as jsonb, queries every `sidecar_*_log` view,
+verifies traceparent, tenant, and request-id projection for every sidecar, and
+checks typed vectorizer columns as PostgreSQL `timestamp with time zone`,
+`bigint`, and `double precision` types. The existing `ci/ai-blaise/observability-contracts-check.sh` gate
+continues to validate the loopback `serve` surfaces, schema catalog, generated
+record fixtures, and unknown-field/type validation in the shared runtime.
 
-validate every canonical schema, prove no extension field shadows a common
-field, confirm the schema catalog covers all 17 sidecars, and validate rendered
-JSON log records against sidecar-specific field types, traceparent syntax, and
-unknown-field rejection inside the `fields` envelope. Companion's `log_view`
-tests render the deterministic SQL bundle and assert per-sidecar projections
-cast each extension field to its declared SQL type. The
-`ci/ai-blaise/observability-contracts-check.sh` gate also runs the shared
-`log-schema-canonical` and `log-schema-records-canonical` executables and fails
-if the runtime sidecar inventory, structured-log schema catalog, or typed JSON
-record fixtures diverge. These deterministic tests are contract evidence only
-while O15 is alpha; production evidence requires live log ingestion from
-promoted sidecars into the documented downstream view path.
+Current boundary: the production-ready claim covers the canonical per-sidecar
+JSON schema, generated companion SQL views, and PostgreSQL-backed typed-view
+ingestion/query path. It does not claim Vector, fluent-bit, Loki, or Kubernetes
+log-shipping deployment, Grafana dashboard correlation, or the broader O14
+trace propagation path.
 
 
 **References**:
@@ -6548,8 +6551,10 @@ promoted sidecars into the documented downstream view path.
 - In-source: `FEATURE: O15` in `sidecar/shared/src/log_schema.rs`
 - In-source: `FEATURE: O15` in `companion/src/log_view.rs`
 - Acceptance: `cargo test -p ai_blaise_citus_companion --lib log_view`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-log-view-sql-canonical`
 - Executable: `FEATURE: O15` in `sidecar/shared/src/main.rs` (`log-schema-canonical`, `log-schema-records-canonical`)
 - CI: `ci/ai-blaise/observability-contracts-check.sh`
+- CI: `ci/ai-blaise/structured-log-ingestion-smoke.sh`
 
 ## Extension Catalog SQL Runtime
 
