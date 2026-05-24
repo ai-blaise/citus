@@ -480,6 +480,14 @@ more production-ready than the artifacts justified.
   schemes plus out-of-range target times fail closed. This is not evidence for
   real WAL segment inspection, PostgreSQL `pg_walinspect` execution,
   restore/replay mutation, or production cluster operations.
+- The `citusctl` CLI now has direct executable smokes for bounded plan/apply
+  and dev lifecycle behavior. `citusctl-smoke.sh` proves the narrow D2
+  apply-mode plan-id guard, and `citusctl-dev-lifecycle-smoke.sh` proves
+  local D1/M8 dry-run plan rendering, stable plan-id apply validation,
+  idempotent up/down state handling, and state-file-only cleanup guardrails.
+  This is not evidence for mutating Kubernetes apply execution, manifest
+  reconciliation, migrations, backups, PITR, WAL replay, Docker/kind startup,
+  or a live Citus data plane.
 - The `citus-lsp` CLI now has a direct executable smoke for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
@@ -672,6 +680,11 @@ Rule 10 completion for this branch requires local and VM verification of:
   external ledger backends, external secret resolution, key rotation,
   hardware-backed signing, accounting workflow authorization, or
   migration/operator integration.
+- D1/M8 dev lifecycle evidence is limited to the real `citusctl` CLI local
+  state-file runtime: dry-run plan rendering, stable plan-id validation,
+  idempotent up/down state transitions, and state-file-only cleanup. It must
+  not be cited as evidence for Docker/kind startup, Kubernetes deployment,
+  Postgres/Citus data-plane health, or extension-service orchestration.
 - D2 production evidence is limited to the real `citusctl` CLI apply-mode
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,
