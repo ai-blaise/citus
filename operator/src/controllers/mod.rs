@@ -25,6 +25,7 @@ pub mod webhook;
 
 use boundary::{execution_mode_from_env, BoundaryError, ExecutionMode};
 use kube::Client;
+use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
@@ -66,6 +67,15 @@ pub enum ControllerError {
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client)?;
+    if sidecar_only_controller_selection() {
+        info!(
+            mode = ctx.execution_mode.as_str(),
+            "operator serving Sidecar controller only"
+        );
+        sidecar::run(ctx).await?;
+        return Ok(());
+    }
+
     info!(
         mode = ctx.execution_mode.as_str(),
         "operator serving CitusCluster, Migration, Tenant, Region, SurvivalGoal, Backup, Hypertable, Federation, SearchIndex, Webhook, Function, ScheduledRepack, ConflictPolicy, Sidecar controllers"
@@ -103,6 +113,19 @@ pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
         result = function => log_exit("function", result),
     }
     Ok(())
+}
+
+fn sidecar_only_controller_selection() -> bool {
+    env::var("AI_BLAISE_OPERATOR_CONTROLLERS")
+        .map(|value| {
+            let selected = value
+                .split(',')
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .collect::<Vec<_>>();
+            selected == ["sidecar"]
+        })
+        .unwrap_or(false)
 }
 
 fn log_exit(name: &str, result: Result<Result<(), ControllerError>, tokio::task::JoinError>) {

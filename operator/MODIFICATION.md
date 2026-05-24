@@ -1,5 +1,24 @@
 # operator Modifications
 
+
+## 2026-05-24 — Sidecar controller live apply contract
+
+Promoted the bounded O5 sidecar deployment controller path from deterministic
+planning to live Kubernetes apply. `Sidecar` CRs now accept an optional
+`spec.image`; apply mode requires that image to be immutable and digest-pinned,
+then server-side applies the generated Deployment and Service with owner
+references and patches `sidecars/status`. The `print-sidecar-crd` command emits
+the live CRD for kind smoke tests, and `AI_BLAISE_OPERATOR_CONTROLLERS=sidecar`
+lets the operator run only the Sidecar controller under narrow RBAC for focused
+production evidence.
+
+Regression coverage: unit tests cover digest-pinned image validation and apply
+metadata injection. `ci/ai-blaise/sidecar-controller-live-smoke.sh` builds real
+operator and realtime sidecar containers, pushes digest-pinned images to a
+local registry, runs a kind cluster, verifies generated Deployment/Service
+resources and status, probes `/healthz`, `/readyz`, and `/metrics` through the
+Service, and proves mutable tags are rejected before Deployment creation.
+
 ## 2026-05-22 — kube-rs controllers + Migration phase state machine
 
 Added under `serve`:

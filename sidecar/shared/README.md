@@ -11,11 +11,13 @@ Shared sidecar library for health, readiness, metrics, drain handling, and
 sidecar contract validation.
 
 Tracing and OpenTelemetry export are not implemented in this shared runtime.
-`FEATURE: O5` remains alpha for the sidecar deployment contract until real
-trace emission, collector wiring, and measured VM/Kubernetes evidence are
-added.
-Configuration loading and PostgreSQL connection helpers are also outside the
-current shared runtime surface.
+`FEATURE: O5` is production-ready only for the operator `Sidecar` CR to
+digest-pinned Deployment/Service/status apply path proven by
+`ci/ai-blaise/sidecar-controller-live-smoke.sh`. Trace emission, collector
+wiring, configuration loading, PostgreSQL connection helpers, autoscaling,
+rollout policy, and broader sidecar application behavior remain outside this
+shared runtime surface unless another feature entry claims them with live
+evidence.
 
 Current implemented surface:
 

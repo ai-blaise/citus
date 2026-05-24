@@ -20,7 +20,7 @@ smoke expectations.
 - `Branch` (`FEATURE: R2`, `FEATURE: C6`, `FEATURE: C7`, `FEATURE: C8`,
   canonical Rust spec implemented)
 - `Vectorizer` (`FEATURE: A8`, canonical Rust spec implemented)
-- `Sidecar` (`FEATURE: O5`, spec, reconcile plan, and controller implemented)
+- `Sidecar` (`FEATURE: O5`, spec, digest-pinned apply-mode image contract, reconcile plan, and controller implemented)
 - `Migration` (`FEATURE: C9`, `FEATURE: M3`, schema job reconcile plan and
   controller implemented)
 - `ConflictPolicy` (`FEATURE: C4`, `FEATURE: C5`, canonical Rust spec

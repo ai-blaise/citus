@@ -82,6 +82,15 @@ controller boundary Conditions for dry-run mode, and
 `ci/ai-blaise/operator-boundary-smoke.sh` proves apply mode fails closed while
 Kubernetes apply, direct SQL execution, and `.status` mutation are still alpha.
 
+`ci/ai-blaise/sidecar-controller-live-smoke.sh` is the live O5 apply-mode gate.
+It builds real operator and realtime sidecar containers, pushes digest-pinned
+image references to a local OCI registry, applies the generated `Sidecar` CRD,
+runs only the Sidecar controller with scoped RBAC, and verifies generated
+Deployment/Service/status resources plus `/healthz`, `/readyz`, and `/metrics`
+through the generated Service. Apply mode requires `spec.image` to be an
+immutable `@sha256` reference and rejects mutable tags before creating a
+Deployment.
+
 `cargo run -p ai_blaise_citus_operator -- run-security-canonical` validates the
 operator-owned security boundary for generated operator, pool, built-in
 sidecar, and custom sidecar workloads. The runner fails closed on inline

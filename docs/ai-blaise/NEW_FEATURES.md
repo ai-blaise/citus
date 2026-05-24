@@ -6406,22 +6406,40 @@ cross-region failover remain alpha and are not claimed by this feature.
 ### O5: Sidecar Deployment Contract
 
 **Overlay**: `operator/src/crds/sidecar.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the operator-facing sidecar deployment contract for
-replicas, resources, and type-specific configuration across the V2 sidecar
-surface. The current implementation does not emit or export OpenTelemetry
-traces; trace propagation remains unimplemented until real runtime code,
-collector wiring, and measured VM/Kubernetes evidence are added.
+replicas, resources, digest-pinned images, and type-specific configuration
+across the V2 sidecar surface. The production-ready boundary is the
+Kubernetes controller apply path for `Sidecar` CRs: digest-pinned image
+validation, Deployment and Service creation, owner references, status patching,
+scoped in-cluster RBAC, and live probe traffic through the generated Service.
+It does not claim OpenTelemetry trace propagation, collector export,
+configuration loading, PostgreSQL helper modules, autoscaling/rollout policy,
+or full production semantics for every sidecar application. Those remain
+separate feature surfaces until runtime code and measured evidence exist.
 
 **Motivation**: Rollout behavior is only useful if every sidecar is declared
 and reconciled through a consistent resource contract.
 
 **Citus comparison**: Vanilla Citus does not ship out-of-process sidecar
 deployment objects.
+
+Production evidence: `ci/ai-blaise/sidecar-controller-live-smoke.sh` boots a
+real kind cluster, builds the actual `ai_blaise_citus_operator` and
+`ai_blaise_citus_sidecar_realtime` containers from `images/rust-runtime/Dockerfile`,
+pushes both to a local OCI registry, consumes their immutable `@sha256`
+digests, applies the live `Sidecar` CRD emitted by `print-sidecar-crd`, runs the
+operator in `AI_BLAISE_OPERATOR_EXECUTION_MODE=apply` with
+`AI_BLAISE_OPERATOR_CONTROLLERS=sidecar`, applies a realtime `Sidecar` CR, and
+verifies the generated Deployment, Service, owner references, status fields,
+`/healthz`, `/readyz`, `/metrics`, and scoped `sidecars/status` RBAC. The same
+smoke applies a mutable `:latest` image and verifies the operator rejects it
+before creating a Deployment. `gate-close` depends on this target so the live
+Kubernetes apply proof is part of the release boundary.
 
 **References**:
 
@@ -6431,7 +6449,9 @@ deployment objects.
 - In-source: `FEATURE: O5` in `operator/src/controllers/sidecar.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- Executable: `cargo run -p ai_blaise_citus_operator -- print-sidecar-crd`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-controller-live-smoke.sh`
 
 ### O6: Grafana Dashboards As ConfigMaps
 

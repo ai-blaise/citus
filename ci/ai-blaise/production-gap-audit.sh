@@ -38,6 +38,8 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+SIDECAR_CONTROLLER_LIVE_SMOKE = ROOT / "ci/ai-blaise/sidecar-controller-live-smoke.sh"
+SIDECAR_SHARED_README = ROOT / "sidecar/shared/README.md"
 SIDECAR_CDC_SMOKE = ROOT / "ci/ai-blaise/sidecar-cdc-smoke.sh"
 SIDECAR_CDC_README = ROOT / "sidecar/cdc/README.md"
 SIDECAR_CDC_MODIFICATION = ROOT / "sidecar/cdc/MODIFICATION.md"
@@ -387,6 +389,8 @@ for path in (
     MAKEFILE,
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
+    SIDECAR_CONTROLLER_LIVE_SMOKE,
+    SIDECAR_SHARED_README,
     SIDECAR_CDC_SMOKE,
     SIDECAR_CDC_README,
     SIDECAR_CDC_MODIFICATION,
@@ -692,6 +696,71 @@ for required in (
 ):
     if required not in sidecar_smoke:
         fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+sidecar_controller_live_smoke = read(SIDECAR_CONTROLLER_LIVE_SMOKE)
+if not (SIDECAR_CONTROLLER_LIVE_SMOKE.stat().st_mode & 0o111):
+    fail("sidecar-controller-live-smoke.sh must be executable")
+for required in (
+    "FEATURE: O5",
+    "kind create cluster",
+    "images/rust-runtime/Dockerfile",
+    "build_and_push",
+    "sha256:[0-9a-f]",
+    "AI_BLAISE_OPERATOR_EXECUTION_MODE",
+    "AI_BLAISE_OPERATOR_CONTROLLERS",
+    "print-sidecar-crd",
+    "sidecars/status",
+    "--subresource=status",
+    "ownerReferences",
+    "port-forward --address 127.0.0.1",
+    "ai_blaise_sidecar_ready",
+    "mutable_image_fail_closed",
+    "requires an immutable sha256 digest image",
+):
+    if required not in sidecar_controller_live_smoke:
+        fail(f"O5 live sidecar controller smoke lost required assertion: {required}")
+if status_by_id.get("O5") != "production-ready":
+    fail("O5 must be production-ready after live Sidecar controller apply evidence")
+o5_body = compact(entry_by_id["O5"]["body"])
+for phrase in (
+    "sidecar-controller-live-smoke.sh",
+    "digest-pinned images",
+    "AI_BLAISE_OPERATOR_EXECUTION_MODE=apply",
+    "AI_BLAISE_OPERATOR_CONTROLLERS=sidecar",
+    "generated Deployment, Service, owner references, status fields",
+    "sidecars/status",
+    "rejects it before creating a Deployment",
+    "does not claim OpenTelemetry trace propagation",
+    "full production semantics for every sidecar application",
+):
+    if compact(phrase) not in o5_body:
+        fail(f"O5 docs lost live apply proof/boundary phrase: {phrase}")
+shared_sidecar_readme = read(SIDECAR_SHARED_README)
+shared_sidecar_readme_compact = compact(shared_sidecar_readme)
+for phrase in (
+    "O5` is production-ready only for the operator `Sidecar` CR",
+    "sidecar-controller-live-smoke.sh",
+    "Trace emission, collector wiring",
+    "broader sidecar application behavior remain outside",
+):
+    if compact(phrase) not in shared_sidecar_readme_compact:
+        fail(f"sidecar/shared README lost O5 boundary phrase: {phrase}")
+if (
+    "sidecar-controller-live-smoke:" not in makefile
+    or "gate-close:" not in makefile
+    or "sidecar-controller-live-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run sidecar-controller-live-smoke")
+for phrase in (
+    "O5 register entry",
+    "sidecar-controller-live-smoke.sh",
+    "real operator and",
+    "sidecars/status",
+    "mutable image tag before Deployment creation",
+    "all sidecar app semantics beyond the realtime probe container remain outside",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"production audit lost O5 live apply boundary phrase: {phrase}")
 
 graphql_postgrest_smoke = read(GRAPHQL_POSTGREST_RUNTIME_SMOKE)
 for required in (

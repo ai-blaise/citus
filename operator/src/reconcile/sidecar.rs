@@ -54,6 +54,7 @@ pub struct SidecarReconcilePlan {
     pub sidecar_type: SidecarDeploymentType,
     pub replicas: u32,
     pub resources: ResourceRequirements,
+    pub image: Option<String>,
     pub config_yaml: Option<String>,
     pub profile: SidecarRuntimeProfile,
     pub port: u16,
@@ -95,6 +96,7 @@ impl SidecarReconcilePlan {
             sidecar_type: spec.sidecar_type.clone(),
             replicas: spec.replicas,
             resources: spec.resources.clone(),
+            image: spec.image.clone(),
             config_yaml: spec.config_yaml.clone(),
             profile,
             port: SIDECAR_DEFAULT_PORT,
@@ -106,6 +108,27 @@ impl SidecarReconcilePlan {
     /// `citus-sidecar-<name>` convention used by `sidecar-deployments.yaml`.
     pub fn image_repository(&self) -> String {
         format!("citus-sidecar-{}", sidecar_name_suffix(&self.sidecar_type))
+    }
+
+    /// Image reference rendered into the Deployment. Production apply mode
+    /// must pass an explicit digest-pinned image through the CR spec; dry-run
+    /// mode keeps the historical repository-only convention for plan diffs.
+    pub fn image_ref(&self) -> String {
+        self.image
+            .clone()
+            .unwrap_or_else(|| self.image_repository())
+    }
+
+    pub fn validate_apply_ready(&self) -> Result<(), SidecarReconcileError> {
+        let Some(image) = self.image.as_deref() else {
+            return Err(SidecarReconcileError::MissingApplyImage);
+        };
+        if !is_digest_pinned_image_ref(image) {
+            return Err(SidecarReconcileError::MutableImageReference(
+                image.to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Render the Kubernetes Deployment manifest emitted for the sidecar. We
@@ -186,7 +209,7 @@ spec:
             sidecar_name = self.sidecar_name,
             replicas = self.replicas,
             grace = self.deletion_grace_seconds,
-            image = self.image_repository(),
+            image = self.image_ref(),
             port = self.port,
             readiness_path = self.profile.readiness_path,
             health_path = self.profile.health_path,
@@ -350,6 +373,19 @@ fn sidecar_name_suffix(sidecar_type: &SidecarDeploymentType) -> String {
     }
 }
 
+pub fn is_digest_pinned_image_ref(image: &str) -> bool {
+    let Some((_, digest)) = image.rsplit_once("@") else {
+        return false;
+    };
+    if image.trim() != image || image.trim().is_empty() {
+        return false;
+    }
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn sanitize_custom_sidecar_name(raw: &str) -> String {
     raw.trim()
         .chars()
@@ -366,14 +402,24 @@ fn sanitize_custom_sidecar_name(raw: &str) -> String {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SidecarReconcileError {
     InvalidSpec(SidecarDeploymentSpecError),
+    MissingApplyImage,
     MissingSidecarName,
+    MutableImageReference(String),
 }
 
 impl fmt::Display for SidecarReconcileError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidSpec(error) => write!(formatter, "{error}"),
+            Self::MissingApplyImage => write!(
+                formatter,
+                "sidecar apply mode requires spec.image to be digest-pinned"
+            ),
             Self::MissingSidecarName => write!(formatter, "sidecar_name must not be empty"),
+            Self::MutableImageReference(image) => write!(
+                formatter,
+                "sidecar apply mode requires an immutable sha256 digest image, got {image}"
+            ),
         }
     }
 }
@@ -398,6 +444,7 @@ mod tests {
                 cpu_millis: 250,
                 memory_mib: 512,
             },
+            image: None,
             config_yaml: Some("subscriptions:\n  max_per_tenant: 1000".to_string()),
         }
     }
@@ -415,6 +462,7 @@ mod tests {
         );
         assert_eq!(plan.service_name, plan.deployment_name);
         assert_eq!(plan.image_repository(), "citus-sidecar-realtime");
+        assert_eq!(plan.image_ref(), "citus-sidecar-realtime");
         assert_eq!(plan.replicas, 2);
         assert_eq!(plan.port, SIDECAR_DEFAULT_PORT);
 
@@ -527,6 +575,41 @@ mod tests {
             "ai-blaise-citus-sidecar-alpha-custom-analytics-v2"
         );
         assert_eq!(plan.image_repository(), "citus-sidecar-custom-analytics-v2");
+    }
+
+    #[test]
+    fn digest_pinned_image_is_rendered_for_apply_mode() {
+        let mut spec = baseline_spec(SidecarDeploymentType::Realtime);
+        spec.image = Some(
+            "127.0.0.1:5001/citus-sidecar-realtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string(),
+        );
+
+        let plan = SidecarReconcilePlan::from_spec("primary", &spec).expect("valid plan");
+        assert_eq!(plan.validate_apply_ready(), Ok(()));
+        assert!(plan.deployment_manifest_yaml().contains(
+            "image: 127.0.0.1:5001/citus-sidecar-realtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ));
+    }
+
+    #[test]
+    fn apply_mode_rejects_missing_or_mutable_images() {
+        let spec = baseline_spec(SidecarDeploymentType::Realtime);
+        let plan = SidecarReconcilePlan::from_spec("primary", &spec).expect("valid plan");
+        assert_eq!(
+            plan.validate_apply_ready(),
+            Err(SidecarReconcileError::MissingApplyImage)
+        );
+
+        let mut spec = baseline_spec(SidecarDeploymentType::Realtime);
+        spec.image = Some("citus-sidecar-realtime:latest".to_string());
+        let plan = SidecarReconcilePlan::from_spec("primary", &spec).expect("valid plan");
+        assert_eq!(
+            plan.validate_apply_ready(),
+            Err(SidecarReconcileError::MutableImageReference(
+                "citus-sidecar-realtime:latest".to_string()
+            ))
+        );
     }
 
     #[test]

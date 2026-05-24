@@ -8,6 +8,7 @@ pub struct SidecarDeploymentSpec {
     pub sidecar_type: SidecarDeploymentType,
     pub replicas: u32,
     pub resources: ResourceRequirements,
+    pub image: Option<String>,
     pub config_yaml: Option<String>,
 }
 
@@ -20,6 +21,7 @@ impl SidecarDeploymentSpec {
             validate_required("sidecar_type.custom", name)?;
         }
         self.resources.validate()?;
+        validate_optional("image", &self.image)?;
         validate_optional("config_yaml", &self.config_yaml)
     }
 }
@@ -117,6 +119,7 @@ mod tests {
                 cpu_millis: 250,
                 memory_mib: 512,
             },
+            image: None,
             config_yaml: Some("subscriptions:\n  max_per_tenant: 1000".to_string()),
         };
 
@@ -155,6 +158,7 @@ mod tests {
                 cpu_millis: 100,
                 memory_mib: 256,
             },
+            image: None,
             config_yaml: None,
         }
     }

@@ -36,6 +36,7 @@ use ai_blaise_citus_operator::controllers::boundary::{
     execution_mode_from_env, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
     ExecutionMode,
 };
+use ai_blaise_citus_operator::controllers::sidecar::Sidecar;
 use ai_blaise_citus_operator::{
     canonical_operator_security_report, canonical_security_supply_chain_report,
     plan_branch_lifecycle, BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec,
@@ -58,6 +59,7 @@ use ai_blaise_citus_operator::{
     WebhookEvent, WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::{run_probe_server, EndpointRegistry, RetargetConfig};
+use kube::CustomResourceExt;
 use std::env;
 use std::error::Error;
 use std::process;
@@ -67,6 +69,9 @@ const CANONICAL_OPERATOR_CRDS: usize = 17;
 const V2_OPERATOR_CATALOG_GATES: usize = 13;
 
 fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
     let args = env::args().skip(1).collect::<Vec<_>>();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         print_usage();
@@ -101,6 +106,7 @@ fn main() {
         [command] if command == "run-security-supply-chain-canonical" => {
             run_security_supply_chain_canonical()
         }
+        [command] if command == "print-sidecar-crd" => print_sidecar_crd(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -137,7 +143,15 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-sidecar-crd]");
+}
+
+fn print_sidecar_crd() {
+    let crd = serde_yaml::to_string(&Sidecar::crd()).unwrap_or_else(|error| {
+        eprintln!("operator: sidecar CRD render failed: {error}");
+        process::exit(1);
+    });
+    print!("{crd}");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -1108,6 +1122,7 @@ fn canonical_sidecar_deployment_spec() -> SidecarDeploymentSpec {
             cpu_millis: 250,
             memory_mib: 512,
         },
+        image: None,
         config_yaml: Some("subscriptions:\n  max_per_tenant: 1000".to_string()),
     }
 }

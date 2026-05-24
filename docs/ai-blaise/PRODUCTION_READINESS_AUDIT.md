@@ -431,11 +431,17 @@ more production-ready than the artifacts justified.
   and SQL Service path (`claim_boundary=postgres-substrate-only`). The optional
   tools Deployment remains dev-only, and the Argo application is a GitOps render
   contract until a live controller run is recorded in the chart-owning repository.
-- The O5 register entry and shared sidecar README now describe only the
-  implemented sidecar deployment contract. They explicitly state that tracing
-  and OpenTelemetry export, configuration loading, and PostgreSQL connection
-  helpers are not implemented, and the production gap audit rejects
-  reintroduced claims until real runtime code and live evidence exist.
+- The O5 register entry and shared sidecar README now promote only the
+  bounded sidecar controller apply path after live kind evidence.
+  `ci/ai-blaise/sidecar-controller-live-smoke.sh` builds real operator and
+  realtime sidecar containers, pushes digest-pinned images to a local registry,
+  applies the generated Sidecar CRD, runs the operator in apply mode with
+  scoped RBAC, creates the generated Deployment and Service, patches
+  `sidecars/status`, serves `/healthz`, `/readyz`, and `/metrics` through the
+  generated Service, and rejects a mutable image tag before Deployment
+  creation. Tracing/OpenTelemetry export, configuration loading, PostgreSQL
+  helpers, autoscaling/rollout policy, and all sidecar app semantics beyond the
+  realtime probe container remain outside the O5 production claim.
 - The D7 direct Helm install path now fails closed at the Citus-side harness
   boundary. Strict real-mode renders require immutable `@sha256` images and no
   alpha sidecar workloads, while the actual production chart profiles remain in
@@ -469,7 +475,7 @@ more production-ready than the artifacts justified.
   integration, Kubernetes admission/webhook enforcement for every provider
   model, or broad semantic-search correctness.
 - Alpha wording cleanup now also covers the former addendum entries and tool
-  READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, O5, and
+  READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, and
   O12 wording uses versioned, operator, release, or measured-evidence language
   instead of stable/live/production phrasing for alpha contracts.
 - Worker Tools Runtime evidence from 2026-05-24 tightens the already-promoted
