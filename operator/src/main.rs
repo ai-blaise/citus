@@ -954,6 +954,7 @@ fn canonical_migration_command() -> MigrationCommand {
         ],
         lease_seconds: 60,
         workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+        data_invariants_verified: true,
     }
 }
 
