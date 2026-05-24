@@ -16,3 +16,5 @@ jobs:
         run: make -f Makefile.ai-blaise patches-check
       - name: Verify router patch smoke
         run: make -f Makefile.ai-blaise router-patch-smoke
+      - name: Audit Citus patch production gates
+        run: make -f Makefile.ai-blaise citus-patch-production-audit

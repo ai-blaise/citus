@@ -168,6 +168,10 @@ more production-ready than the artifacts justified.
     command counts, missing production evidence, toy or alpha overclaims,
     missing benchmark formatting, or broad matrix failures to be overlooked
     while still claiming release readiness.
+41. Benchmark smokes emitted JSON artifacts and docs listed SLO targets, but
+    the production path lacked one thresholded, fail-closed evidence checker.
+    Scaffold results, missing baselines, or missing driver data could therefore
+    look like benchmark coverage unless a human inspected the artifacts.
 
 ## Corrections
 
@@ -515,6 +519,15 @@ more production-ready than the artifacts justified.
 
 ## Verification Standard
 
+- Benchmark evidence now has a checked-in threshold manifest and a reusable
+  checker. Quick smoke runs call `ci/ai-blaise/performance-evidence-check.sh`
+  in exploratory mode, while release promotion must run
+  `make -f Makefile.ai-blaise performance-evidence-release-check` with
+  `PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release`. Release mode fails
+  closed on missing artifacts, scaffold notes, missing baselines, malformed
+  JSON, and SLO/capacity threshold misses without rerunning the expensive
+  benchmark jobs.
+
 Rule 10 completion for this branch requires local and VM verification of:
 
 - Rust formatting and compile/test gates for all changed packages.
@@ -602,87 +615,24 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 276 source `FEATURE:` markers and 276
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 164 narrow headings
-are `Status: production-ready`. The authoritative per-feature list is
-`docs/ai-blaise/NEW_FEATURES.md`; the examples below group evidence boundaries
-rather than duplicating every feature id. The group includes `D7`
-for the production-safe default Helm install, `D8` for the production-safe
-deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
-shared sidecar health/readiness/metrics runtime, `O1` for the installable
-`pg_stat_statements` percentile view, `O2` for the installable local activity
-stats view, `O3` for the installable replication-lag view against a real
-streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
-`O10` for the live-installed PrometheusRule alert bundle, and `R4` for the
-installable idle transaction detection SQL surface, `TS6` for the integrated
-trusted hook-coextension source path under real Timescale/Citus cohabitation,
-`TS18` for the installable bridge-state SQL surface under real Timescale/Citus
-cohabitation, `Sec12` for narrow pool data-plane tenant quota admission, `Sec13` for pool CIDR access control with live allowed and
-denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
-pipelining through the real pool proxy data port, plus `Auth1` for the real HS256 auth sidecar issuer, verifier,
-introspection, refresh, logout, and schema smoke, plus `Auth2` for installable
-SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
-for the real `citusctl` apply-mode plan-id guard, plus `D4`, `M5`, and `TS8`
-for the file-backed `citus-lsp` diagnostic and quick-fix CLI, plus `Sec1` for
-installable SQL tenant RLS helper predicates, plus `Sec5` and `Sec6` for the
-append-only SQL ledger and pgcrypto HMAC seal runtime, plus `Sec2` for the
-installable HS256 SQL JWT verifier, plus `S6` and `S13` for installable SQL
-placement-generation and shard-index routing helpers, plus `PM3` and `PM4`
-for installable SQL plan-freeze and regression-policy helpers, plus `M1`,
-`M11`, `IA3`, and `WH2` for installable SQL migration, online type-change,
-index-advisor, and webhook trigger queue helpers, plus `Search2`, `Search3`,
-`Search9`, `G2`, `G3`, `API4`, `JS2`, `M13`, `Geo2`, and `Geo3` for
-installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
-runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
-and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
-aggregate plan helper runtimes, plus `A2`, `A3`, `A4`, `A5`, and `A6` for the
-PostgreSQL-backed vectorizer sidecar runtime with provider routing, bounded
-retry/backoff, tenant budget enforcement, `ai.usage_log` cost accounting, and
-`FOR UPDATE SKIP LOCKED` queue processing, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
-`TO5` for installable SQL schema-job and tenant lifecycle helper runtimes, plus
-`A7`, `A12`, `C11`, `C12`, `C13`, `EF6`, `F2`, `F5`, `G1`, `Geo1`, `IA1`,
-`IA2`, `JS1`, `L11`, `M6`, `M10`, `M12`, `MR7`, `O7`, `O8`, `O9`, `O11`,
-`O12`, `PM1`, `PM2`, `R6`, `R11`, `Search1`, `Search4`, `Search5`,
-`Search6`, `Sec3`, `Sec4`, `Sec10`, `Sec11`, `Sec14`, `Sec15`, and `WF1`
-for the installable SQL extension catalog runtime that records required,
-optional, integration-target, preload, feature-coverage, and hard-block
-extension contracts, plus `S2` for the operator-owned `ShardGroupReconcilePlan`
-and `CitusClusterReconcilePlan` plan-builders that render the canonical SQL
-apply plan (`set_shard_count`, `set_shard_replication_factor`,
-`create_distributed_table`, optional `update_distributed_table_colocation`,
-and a `pg_dist_shard` post-condition guard) plus Kubernetes-style
-topology-spread constraints and the CloudNativePG cluster manifest from the
-canonical `CitusClusterSpec` and `ShardGroupSpec` under `cargo test -p
-ai_blaise_citus_operator` and `cargo run -p ai_blaise_citus_operator --
-run-reconcile-plans`, while live in-cluster reconciliation (a Kubernetes
-controller loop that watches the CRDs and updates `.status`) remains gated
-behind the alpha `operator.controllerRbac.enabled` profile because the
-operator runtime currently exposes only health/readiness/metrics and
-plan-builder helpers, plus `MCP4` for the narrow `tools/citus-mcp` read-only
-database execution runtime against real PostgreSQL with native TLS driver
-support, read-only transactions, row/timeout bounds, tenant schema denial, and
-destructive-tool denial, with `EXPLAIN ANALYZE` rejected so explain requests
-do not execute the explained statement. The MCP entries `MCP1`, `MCP2`,
-`MCP3`, and `D11` now remain alpha for the broader workflow: they have real
-stdio and HTTP JSON-RPC process smokes, obvious cross-schema request denial,
-and exhaustive-profile Kubernetes sidecar traffic proof, while `MCP4` covers
-only read-only database execution for `tools/citus-mcp`. Authentication,
-mutating database execution, Kubernetes tool execution, and production sidecar
-enablement remain alpha, and production values keep the MCP sidecar disabled
-until those contracts are implemented and live-gated. `TS19` and `TS20` remain
-alpha: TS19 has a patch-level clock reservation but no live Citus+pg_cron boot
-evidence yet, and TS20 has deterministic companion detection proof but no live
-patched-Citus C API caller yet. The other 112 feature headings remain
-`Status: alpha`. There are no remaining source-only feature markers: the
+The current feature inventory is machine-derived by
+`ci/ai-blaise/production-readiness-check.sh` and
+`ci/ai-blaise/production-gap-audit.sh`. Do not restate source/heading/status
+counts in prose: mutable totals are emitted on every run as
+`source_feature_ids`, `feature_headings`, `production_ready`, and
+`alpha_headings` fields in the `production_gap_audit` line, with the richer
+`status_counts` map in the `production_readiness_audit` line. The scripts
+compare source `FEATURE:` markers to the feature headings in
+`docs/ai-blaise/NEW_FEATURES.md`, reject missing, extra, or duplicate headings,
+require a status field for every heading, and preserve the production boundary
+here without depending on hand-maintained inventory totals.
 
-former V2 addendum rows were promoted to alpha feature headings with
-deterministic executable evidence. This is acceptable for catalog integrity,
-but it is not a production claim for the full feature plan.
-Every feature heading now has an explicit Executable, CI, Acceptance, SQL
-runtime, or SQL extension reference line. Those references are alpha contract
-evidence unless the entry is also marked `Status: production-ready`; they keep
-the catalog auditable, but they are not independently sufficient for production
-signoff.
+The promoted feature set is the set of `Status: production-ready` headings with
+explicit production evidence in `docs/ai-blaise/NEW_FEATURES.md`; every other
+heading remains `Status: alpha`. There are no manual source-only carve-outs:
+any new source `FEATURE:` marker must land with a corresponding feature heading
+and evidence line before the audit passes. This keeps the catalog auditable, but
+alpha contract evidence is not independently sufficient for production signoff.
 
 Worker D CDC/realtime production evidence from 2026-05-23 adds `C1`, `C3`,
 `WH3`, `RT1`, `RT2`, `RT3`, `RT4`, and `RT5` to the narrow
@@ -697,6 +647,8 @@ Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 `ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
 (NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
 client operation) remain alpha unless covered by their own feature entry.
+
+
 
 
 The audit found three classes of non-closure that must remain visible until
@@ -736,10 +688,18 @@ Production Helm values must also keep alpha sidecars disabled by default.
 sidecar before the corresponding feature is promoted with measured production
 evidence.
 
-- Current inventory: contains 276 source `FEATURE:` markers and 276 feature headings; 164 narrow headings are `Status: production-ready`; the other 112 feature headings remain `Status: alpha`.
-- The release gate monitor now centralizes the bounded integration contract for
-  production wording, executable evidence, V2 domain-command freshness,
-  benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
-  and parallel matrix monitoring via `gh pr checks`. It is wired into
-  `gate-close` and the `release-gate-monitor` workflow, while the repository
-  remains not production-ready as a whole until production-release mode passes.
+The release gate monitor now centralizes the bounded integration contract for
+production wording, executable evidence, V2 domain-command freshness,
+benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
+and parallel matrix monitoring via `gh pr checks`. It is wired into
+`gate-close` and the `release-gate-monitor` workflow, while the repository
+remains not production-ready as a whole until production-release mode passes.
+
+The Citus patch production integration audit keeps custom patch artifacts
+`0004`, `0006`, `0007`, and `0008` explicitly not production-ready until their
+measured gates exist. `ci/ai-blaise/citus-patch-production-audit.sh` fails
+closed unless each artifact is listed in `patches/series`, future patch roster
+entries stay documented as roster-only until artifacts land, and any production
+claim has a measured non-scaffold result with thresholds in
+`benchmarks/citus-patches/production-gates.json`. This is negative evidence for
+the current branch, not a runtime signoff for those patch IDs.

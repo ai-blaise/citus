@@ -630,10 +630,10 @@ pub fn handle_postgrest_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, PostgrestSidecarError> {
     let mut runtime = SidecarRuntime::ready("postgrest");
-    handle_postgrest_sidecar_http_bytes_with_runtime(request, &mut runtime)
+    handle_postgrest_sidecar_http_request(request, &mut runtime)
 }
 
-pub fn handle_postgrest_sidecar_http_bytes_with_runtime(
+fn handle_postgrest_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
 ) -> Result<HttpProbeResponse, PostgrestSidecarError> {
@@ -707,15 +707,15 @@ pub fn serve_postgrest_sidecar_http_forever(
     use std::net::TcpListener;
 
     canonical_postgrest_execution_plan()?;
+    let mut runtime = SidecarRuntime::ready("postgrest");
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise postgrest sidecar listening on {listen_addr}");
-    let mut runtime = SidecarRuntime::ready("postgrest");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_postgrest_sidecar_http_bytes_with_runtime(&request, &mut runtime)
+        let response = handle_postgrest_sidecar_http_request(&request, &mut runtime)
             .unwrap_or_else(|error| {
                 HttpProbeResponse::new(
                     400,

@@ -11,7 +11,7 @@ The local monitor fails closed on:
   executable CI, cargo, VM, Docker, or SQL-runtime evidence marker
 - alpha feature entries that carry production evidence or production-release
   overclaim wording
-- stale V2 domain-contract command counts; the current baseline is 49 commands
+- stale V2 domain-contract command counts; the current baseline is 51 commands
 - release docs that imply V2 acceptance or canonical model data is production
   evidence by itself
 - missing benchmark Black-formatting enforcement for

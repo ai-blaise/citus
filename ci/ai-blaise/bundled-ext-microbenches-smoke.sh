@@ -16,7 +16,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${repo_root}"
 
-export BENCH_QUICK=1
+export BENCH_QUICK="${BENCH_QUICK:-1}"
 export BENCH_DURATION_SECS="${BENCH_DURATION_SECS:-10}"
 export BENCH_RESULT_TAG="${BENCH_RESULT_TAG:-quick}"
 
@@ -76,5 +76,14 @@ if [[ "${failures}" -ne 0 ]]; then
   echo "[microbench-smoke] ${failures} microbench(es) failed" >&2
   exit 1
 fi
+
+if [[ "${AI_BLAISE_RELEASE_MODE:-0}" == "1" || "${BENCH_REQUIRE_MEASURED:-0}" == "1" ]]; then
+  microbench_results=("${results_dir}"/microbench-*-"${BENCH_RESULT_TAG}".json)
+  ci/ai-blaise/env-preflight.sh assert-measured-results "${microbench_results[@]}"
+else
+  echo "[microbench-smoke] exploratory mode: scaffold results are labeled and accepted"
+fi
+
+PERF_EVIDENCE_MODE=exploratory   PERF_EVIDENCE_SCOPE=microbench   BENCH_RESULT_TAG="${BENCH_RESULT_TAG}"   bash ci/ai-blaise/performance-evidence-check.sh exploratory
 
 echo "[microbench-smoke] ok (26 microbenches, ${count} result files)"

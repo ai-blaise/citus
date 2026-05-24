@@ -44,6 +44,10 @@ bench_die() {
   exit 1
 }
 
+bench_release_mode() {
+  [[ "${AI_BLAISE_RELEASE_MODE:-0}" == "1" || "${BENCH_REQUIRE_MEASURED:-0}" == "1" ]]
+}
+
 # Some harness tools (sysbench, benchbase) are not installed in stripped-down
 # CI/VM environments. We treat "tool missing" as a quick-mode soft pass so the
 # scaffold is exercisable everywhere, while full nightly runs use a richer VM
@@ -54,6 +58,10 @@ bench_require_or_quick_pass() {
 
   if command -v "${tool}" >/dev/null 2>&1; then
     return 0
+  fi
+
+  if bench_release_mode; then
+    bench_die "${label} requires '${tool}' on PATH in release mode"
   fi
 
   if [[ "${BENCH_QUICK}" == "1" ]]; then
@@ -74,9 +82,20 @@ bench_write_result() {
 }
 
 bench_psql_available() {
-  command -v psql >/dev/null 2>&1
+  if command -v psql >/dev/null 2>&1; then
+    return 0
+  fi
+
+  bench_release_mode && bench_die "psql is required on PATH in release mode"
+  return 1
 }
 
 # All harnesses bail out at the first failure. The wrapping CI script then
 # decides whether to treat an individual missing tool as a soft skip.
-trap 'status=$?; if [[ ${status} -ne 0 ]]; then bench_log "harness exited with status ${status}"; fi' EXIT
+bench_on_exit() {
+  local status=$?
+  if [[ ${status} -ne 0 ]]; then
+    bench_log "harness exited with status ${status}"
+  fi
+}
+trap bench_on_exit EXIT

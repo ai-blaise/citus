@@ -6,9 +6,9 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T05:58:00Z",
+    "captured_at": "2026-05-24T06:14:25Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url",
-    "post_landing_note": "PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads. PRs #87, #96, #98, #101, and #104 are recorded as landed by the direct runtime durability/upgrade/pool batch."
+    "post_landing_note": "All open bootstrap-v2 PRs in the post-runtime-durability manifest (#97, #99, #100, #102, #103, #105, and draft #109) are recorded as landed by the direct final release/patch integration batch. Earlier direct bootstrap-v2 batches landed PRs #70-#96, #98, #101, #104, and #106-#108."
   },
   "checklist": [
     {
@@ -40,9 +40,7 @@
   ],
   "expensive_citus_matrix_policy": {
     "default_rule": "Batch meaningful work first. Do not spend a full Citus matrix run on every metadata-only rebase, doc-only conflict, or isolated sidecar smoke if the focused gate covers the changed runtime. Run the matrix at the batch boundaries and high-risk path triggers below.",
-    "run_full_matrix_after_batches": [
-      "draft-release-and-patch-audit"
-    ],
+    "run_full_matrix_after_batches": [],
     "run_immediately_when": [
       "A merge or conflict resolution edits src/backend/distributed/**, src/include/distributed/**, src/test/regress/**, src/test/cdc/**, or patches/series.",
       "A merge or conflict resolution edits images/citus-pg-overlay/extensions/**, SQL upgrade manifests, or installable extension SQL.",
@@ -61,181 +59,8 @@
       "git diff --check"
     ]
   },
-  "integration_batches": [
-    {
-      "id": "draft-release-and-patch-audit",
-      "summary": "Merge release, performance, runbook, gap-audit, agentmemory, and canonical integration reconciliation work after their prerequisite runtime evidence is stable.",
-      "prs": [
-        99,
-        100,
-        102,
-        105,
-        103,
-        109,
-        97
-      ],
-      "run_expensive_citus_matrix_after": true,
-      "matrix_reason": "This is the final pre-promotion tranche; run the complete Citus matrix and ai-blaise release gates at its integrated tip."
-    }
-  ],
-  "pull_requests": [
-    {
-      "number": 99,
-      "order": 1,
-      "batch": "draft-release-and-patch-audit",
-      "title": "[codex] Add Citus patch production gate audit",
-      "head": "codex/patch-production-integration-audit-20260524020118",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "benchmarks/citus-patches/production-gates.json",
-        "ci/ai-blaise/citus-patch-production-audit.sh",
-        "docs/ai-blaise/UPSTREAM_SYNC.md",
-        ".github/workflows/ci-patches.yml"
-      ]
-    },
-    {
-      "number": 100,
-      "order": 2,
-      "batch": "draft-release-and-patch-audit",
-      "title": "[codex] Add release environment preflight checks",
-      "head": "codex/release-env-preflight",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/env-preflight.sh",
-        "Makefile.ai-blaise",
-        "ci/ai-blaise/benchmark-smoke.sh",
-        "ci/ai-blaise/license-check.sh",
-        "docs/ai-blaise/DEVELOPER_ENVIRONMENT.md"
-      ]
-    },
-    {
-      "number": 102,
-      "order": 3,
-      "batch": "draft-release-and-patch-audit",
-      "title": "[codex] Harden performance evidence gates",
-      "head": "codex/slo-performance-evidence-hardening-20260524015908",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        99,
-        100
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "benchmarks/performance-evidence-thresholds.json",
-        "ci/ai-blaise/performance-evidence-check.sh",
-        "benchmarks/microbenches/run-all.sh",
-        "ci/ai-blaise/production-gap-audit.sh",
-        "docs/ai-blaise/BENCHMARKS.md"
-      ]
-    },
-    {
-      "number": 105,
-      "order": 4,
-      "batch": "draft-release-and-patch-audit",
-      "title": "Add runbook command validation gate",
-      "head": "codex/runbook-command-checks-20260524-022745",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        100
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/runbook-command-check.sh",
-        ".github/workflows/ci-production-readiness.yml",
-        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
-        "docs/ai-blaise/RUNBOOKS/production.md",
-        "docs/ai-blaise/RUNBOOKS/upgrade.md"
-      ]
-    },
-    {
-      "number": 103,
-      "order": 5,
-      "batch": "draft-release-and-patch-audit",
-      "title": "[codex] Make production gap inventory machine-derived",
-      "head": "codex/production-gap-inventory-audit",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        102
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/production-gap-audit.sh",
-        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
-      ]
-    },
-    {
-      "number": 109,
-      "order": 6,
-      "batch": "draft-release-and-patch-audit",
-      "title": "[codex] Demonstrate production gap audit integration reconciliation",
-      "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
-      "base": "bootstrap-v2",
-      "status": "draft-blocked",
-      "is_draft": true,
-      "dependency_hints": [
-        99,
-        100,
-        102,
-        103,
-        105
-      ],
-      "known_blockers": [
-        "Draft as of the post-landing snapshot.",
-        "Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice.",
-        "Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path."
-      ],
-      "watch_paths": [
-        "Makefile.ai-blaise",
-        "ci/ai-blaise/production-gap-audit.sh",
-        "ci/ai-blaise/performance-evidence-check.sh",
-        "ci/ai-blaise/runbook-command-check.sh",
-        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
-        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md",
-        "docs/ai-blaise/PRODUCTION_GAP_AUDIT_INTEGRATION_PLAN.md"
-      ]
-    },
-    {
-      "number": 97,
-      "order": 7,
-      "batch": "draft-release-and-patch-audit",
-      "title": "Harden ai-blaise release image publishability",
-      "head": "codex/release-publishability-20260523-2357",
-      "base": "bootstrap-v2",
-      "status": "blocked",
-      "is_draft": false,
-      "dependency_hints": [
-        100,
-        102,
-        103,
-        105,
-        109
-      ],
-      "known_blockers": [
-        "Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan.",
-        "Release publishability should land last after environment, performance, gap-audit, runbook, upgrade, image, deployment, release-monitor, and integration-reconciliation gates are integrated."
-      ],
-      "watch_paths": [
-        "scripts/citus-scale/build-app-images.sh",
-        "ci/ai-blaise/release-publishability-check.sh",
-        "docs/ai-blaise/RELEASING.md",
-        "images/README.ai-blaise.md"
-      ]
-    }
-  ],
+  "integration_batches": [],
+  "pull_requests": [],
   "landed_pull_requests": [
     {
       "number": 77,
@@ -670,6 +495,101 @@
         "ci/ai-blaise/production-gap-audit.sh"
       ],
       "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
+    },
+    {
+      "number": 99,
+      "title": "[codex] Add Citus patch production gate audit",
+      "head": "codex/patch-production-integration-audit-20260524020118",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "benchmarks/citus-patches/production-gates.json",
+        "ci/ai-blaise/citus-patch-production-audit.sh",
+        "docs/ai-blaise/UPSTREAM_SYNC.md",
+        ".github/workflows/ci-patches.yml"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 100,
+      "title": "[codex] Add release environment preflight checks",
+      "head": "codex/release-env-preflight",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/env-preflight.sh",
+        "Makefile.ai-blaise",
+        "ci/ai-blaise/benchmark-smoke.sh",
+        "ci/ai-blaise/license-check.sh",
+        "docs/ai-blaise/DEVELOPER_ENVIRONMENT.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 102,
+      "title": "[codex] Harden performance evidence gates",
+      "head": "codex/slo-performance-evidence-hardening-20260524015908",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "benchmarks/performance-evidence-thresholds.json",
+        "ci/ai-blaise/performance-evidence-check.sh",
+        "benchmarks/microbenches/run-all.sh",
+        "ci/ai-blaise/production-gap-audit.sh",
+        "docs/ai-blaise/BENCHMARKS.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 105,
+      "title": "Add runbook command validation gate",
+      "head": "codex/runbook-command-checks-20260524-022745",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/runbook-command-check.sh",
+        ".github/workflows/ci-production-readiness.yml",
+        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
+        "docs/ai-blaise/RUNBOOKS/production.md",
+        "docs/ai-blaise/RUNBOOKS/upgrade.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 103,
+      "title": "[codex] Make production gap inventory machine-derived",
+      "head": "codex/production-gap-inventory-audit",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/production-gap-audit.sh",
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 109,
+      "title": "[codex] Demonstrate production gap audit integration reconciliation",
+      "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "Makefile.ai-blaise",
+        "ci/ai-blaise/production-gap-audit.sh",
+        "ci/ai-blaise/performance-evidence-check.sh",
+        "ci/ai-blaise/runbook-command-check.sh",
+        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md",
+        "docs/ai-blaise/PRODUCTION_GAP_AUDIT_INTEGRATION_PLAN.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
+    },
+    {
+      "number": 97,
+      "title": "Harden ai-blaise release image publishability",
+      "head": "codex/release-publishability-20260523-2357",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "scripts/citus-scale/build-app-images.sh",
+        "ci/ai-blaise/release-publishability-check.sh",
+        "docs/ai-blaise/RELEASING.md",
+        "images/README.ai-blaise.md"
+      ],
+      "landed_by": "direct bootstrap-v2 final release/patch integration batch"
     }
   ]
 }

@@ -250,8 +250,8 @@ for phrase in (
 
 for needle, text, path in (
     ("TO5,TS13", v2_closure, V2_CLOSURE),
-    ("\\t22\\t11\\t49", v2_closure, V2_CLOSURE),
-    ("assert_eq!(report.command_count, 49)", domain_contracts, DOMAIN_CONTRACTS),
+    ("\\t22\\t11\\t51", v2_closure, V2_CLOSURE),
+    ("assert_eq!(report.command_count, 51)", domain_contracts, DOMAIN_CONTRACTS),
     ("black --check benchmarks/timescale-ingest/ingest.py", bench_workflow, BENCH_WORKFLOW),
     ("custom_http_probe_paths", image_check, IMAGE_CHECK),
     ("PostgreSQL init process complete", image_check, IMAGE_CHECK),
@@ -272,14 +272,14 @@ print(
     f"feature_headings={len(sections)}\t"
     f"production_ready={len(production_sections)}\t"
     f"alpha={len(alpha_sections)}\t"
-    "v2_domain_commands=49\t"
+    "v2_domain_commands=51\t"
     "production_release_overclaim_guard=true"
 )
 PY_AUDIT
 }
 
 run_runtime_baselines() {
-  local domain_expected=$'38\tA1,API4,Auth2,G2,G3,Geo2,Geo3,IA3,JS2,L9,M1,M11,M13,M2,M7,PM3,PM4,S13,S14,S6,Search2,Search3,Search9,Sec1,Sec2,Sec5,Sec6,T8,TO3,TO4,TO5,TS13,TS14,TS15,TS16,TS17,TS9,WH2\t22\t11\t49'
+  local domain_expected=$'38\tA1,API4,Auth2,G2,G3,Geo2,Geo3,IA3,JS2,L9,M1,M11,M13,M2,M7,PM3,PM4,S13,S14,S6,Search2,Search3,Search9,Sec1,Sec2,Sec5,Sec6,T8,TO3,TO4,TO5,TS13,TS14,TS15,TS16,TS17,TS9,WH2\t22\t11\t51'
   local domain_output
   domain_output="$(cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical)"
   if ! printf '%s\n' "${domain_output}" | grep -Fqx "${domain_expected}"; then
@@ -305,7 +305,7 @@ run_runtime_baselines() {
   bash -n ci/ai-blaise/production-gap-audit.sh
   bash -n ci/ai-blaise/v2-closure-check.sh
   bash -n ci/ai-blaise/v2-acceptance-check.sh
-  printf 'release_gate_monitor_runtime\tv2_domain_commands=49\tbenchmark_py_compile=ok\tshell_syntax=ok\n'
+  printf 'release_gate_monitor_runtime\tv2_domain_commands=51\tbenchmark_py_compile=ok\tshell_syntax=ok\n'
 }
 
 monitor_pr_checks_once() {

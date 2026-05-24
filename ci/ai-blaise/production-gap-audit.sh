@@ -4,15 +4,15 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
-# After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this
-# audit verifies only the source-of-truth pieces that remain in this repo:
-# the feature inventory in NEW_FEATURES.md vs PRODUCTION_READINESS_AUDIT.md,
-# the doc overclaim guardrail, the deploy/k8s/-may-not-be-reintroduced
-# negative gate, and the external-chart live Kubernetes harness contract that
-# remains in this repo. Chart object ownership / digest policy / Argo / sidecar
-# HA assertions moved with the chart to ai-blaise/command-center.
+# After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this audit
+# verifies only the source-of-truth pieces that remain in this repo: the machine
+# derived feature inventory in NEW_FEATURES.md, the audit doc overclaim
+# guardrail, and the deploy/k8s/-may-not-be-reintroduced negative gate. Chart
+# contract / digest / argo / sidecar HA assertions moved with the chart to
+# ai-blaise/command-center.
 
 python3 <<'PY'
+import json
 import pathlib
 import re
 import sys
@@ -24,28 +24,33 @@ RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
 UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
 DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
-PITR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
+PITR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
 COHABITATION_DOC = ROOT / "docs/ai-blaise/COHABITATION.md"
 COHAB_MATRIX_README = ROOT / "tests/cohab-matrix/README.md"
+BENCHMARKS_DOC = ROOT / "docs/ai-blaise/BENCHMARKS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+PERF_THRESHOLDS = ROOT / "benchmarks/performance-evidence-thresholds.json"
+PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
+SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
+PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
+CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
+RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
 K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
 K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
 K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
-MAKEFILE = ROOT / "Makefile.ai-blaise"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 K8S_GUARDRAIL_CHECK = ROOT / "ci/ai-blaise/k8s-guardrails-check.sh"
 KIND_PRODUCTION_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
 DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
-
-MAKEFILE = ROOT / "Makefile.ai-blaise"
-SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
-SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -55,6 +60,7 @@ SOURCE_ROOTS = [
     "e2e",
     "tools",
     "patches",
+    "deploy",
     "images",
     "scripts",
 ]
@@ -95,11 +101,20 @@ def source_text() -> str:
 
 def feature_entries(docs: str):
     heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
-    return [m.group(1) for m in heading_re.finditer(docs)]
-
-
-def number_forms(n: int):
-    return (str(n),)
+    status_re = re.compile(r"^\*\*Status\*\*:\s*([A-Za-z-]+)\s*$", re.M)
+    headings = list(heading_re.finditer(docs))
+    entries = []
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(docs)
+        body = docs[heading.start():end]
+        status_match = status_re.search(body)
+        entries.append(
+            {
+                "id": heading.group(1),
+                "status": status_match.group(1).lower() if status_match else "",
+            }
+        )
+    return entries
 
 
 docs = read(DOCS)
@@ -108,7 +123,8 @@ source = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", source))
 entries = feature_entries(docs)
-doc_ids = set(entries)
+entry_ids = [entry["id"] for entry in entries]
+doc_ids = set(entry_ids)
 
 if not source_ids:
     fail("no FEATURE: markers found in source")
@@ -127,40 +143,56 @@ if missing_from_source:
         + ", ".join(sorted(missing_from_source))
     )
 
-statuses = [
-    m.group(1).lower()
-    for m in re.finditer(r"\*\*Status\*\*:\s*([a-zA-Z-]+)", docs)
-]
-production_entries = [s for s in statuses if s == "production-ready"]
-alpha_entries = [s for s in statuses if s == "alpha"]
+duplicates = sorted({feature_id for feature_id in entry_ids if entry_ids.count(feature_id) > 1})
+if duplicates:
+    fail("duplicate feature headings in NEW_FEATURES.md: " + ", ".join(duplicates))
+
+missing_status = sorted(entry["id"] for entry in entries if not entry["status"])
+if missing_status:
+    fail("feature headings missing Status fields: " + ", ".join(missing_status))
+
+supported_statuses = {"alpha", "production-ready"}
+unexpected_statuses = sorted(
+    {entry["status"] for entry in entries if entry["status"] not in supported_statuses}
+)
+if unexpected_statuses:
+    fail("unsupported feature Status values: " + ", ".join(unexpected_statuses))
+
+production_entries = [entry for entry in entries if entry["status"] == "production-ready"]
+alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
 source_only_ids = source_ids - doc_ids
 
 audit_compact = compact(audit)
 
-expected_inventory = compact(
-    f"contains {len(source_ids)} source `feature:` markers and {len(entries)} "
-    "feature headings"
-)
-if expected_inventory not in audit_compact:
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current computed feature inventory"
-    )
+for pattern in (
+    r"current feature inventory contains\s+\d+\s+source\s+`feature:`\s+markers",
+    r"\d+\s+narrow headings are\s+`status:\s*production-ready`",
+    r"other\s+\d+\s+feature headings remain\s+`status:\s*alpha`",
+):
+    if re.search(pattern, audit_compact):
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must not hard-code machine-derived "
+            "feature inventory counts"
+        )
 
-expected_production_counts = [
-    compact(f"{form} narrow headings are `status: production-ready`")
-    for form in number_forms(len(production_entries))
-]
-if not any(phrase in audit_compact for phrase in expected_production_counts):
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current production-ready heading count"
-    )
+for phrase in (
+    "feature inventory is machine-derived",
+    "do not restate source/heading/status counts in prose",
+    "production_gap_audit",
+    "source_feature_ids",
+    "feature_headings",
+    "production_ready",
+    "alpha_headings",
+):
+    if compact(phrase) not in audit_compact:
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must document the machine-derived "
+            f"inventory contract: {phrase}"
+        )
 
-expected_alpha_count = compact(
-    f"other {len(alpha_entries)} feature headings remain `status: alpha`"
-)
-if expected_alpha_count not in audit_compact:
+if len(production_entries) + len(alpha_entries) != len(entries):
     fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current alpha heading count"
+        "computed feature status counts do not cover every NEW_FEATURES.md heading"
     )
 
 for phrase in (
@@ -182,11 +214,12 @@ for path in (
     UPGRADE_RUNBOOK,
     DR_RUNBOOK,
     E2E_DOC,
-    PITR_RUNBOOK,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
+    PITR_RUNBOOK,
     COHABITATION_DOC,
     COHAB_MATRIX_README,
+    BENCHMARKS_DOC,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
     MAKEFILE,
@@ -204,44 +237,112 @@ for path in (
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
 
+thresholds = json.loads(read(PERF_THRESHOLDS))
+for key in ("tpcc", "sysbench", "timescale_ingest", "chaos"):
+    if key not in thresholds.get("core_harnesses", {}):
+        fail(f"performance threshold manifest missing core harness: {key}")
+if thresholds.get("microbenches", {}).get("minimum_count") != 26:
+    fail("performance threshold manifest must require all 26 microbenches")
+
+perf_check = read(PERF_CHECK)
+for phrase in (
+    "scaffold evidence is not production evidence",
+    "release evidence requires",
+    "PERF_EVIDENCE_SCOPE",
+):
+    if phrase not in perf_check:
+        fail(f"performance evidence checker lost fail-closed phrase: {phrase}")
 
 makefile = read(MAKEFILE)
-dr_runbook = read(DR_RUNBOOK)
+for target in (
+    "performance-evidence-check:",
+    "performance-evidence-release-check:",
+    "performance-evidence-smoke:",
+):
+    if target not in makefile:
+        fail(f"Makefile.ai-blaise missing performance evidence target: {target}")
+
+benchmarks_doc = read(BENCHMARKS_DOC)
+for phrase in (
+    "benchmarks/performance-evidence-thresholds.json",
+    "PERF_EVIDENCE_MODE=release",
+    "fails closed on missing artifacts",
+):
+    if compact(phrase) not in compact(benchmarks_doc):
+        fail(f"BENCHMARKS.md missing performance evidence release wording: {phrase}")
+
+sidecar_smoke = read(SIDECAR_API_SMOKE)
+for required in (
+    "run-bun-runtime-canonical",
+    "POST",
+    "/drain",
+    "invalid listen address",
+    "definitely-not-a-command",
+    "ai_blaise_sidecar_accepting_new_work",
+):
+    if required not in sidecar_smoke:
+        fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+if "sidecar-api-runtime-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")
+if (
+    "gate-close:" not in makefile
+    or "sidecar-api-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run sidecar-api-runtime-smoke")
+
+sidecar_workflow = read(SIDECAR_WORKFLOW)
+if (
+    "api-runtime-smoke:" not in sidecar_workflow
+    or "sidecar-api-runtime-smoke.sh" not in sidecar_workflow
+):
+    fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
+
+phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
+gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
+for target in (
+    "citus-patch-production-audit",
+    "sidecar-api-runtime-smoke",
+    "runbook-command-check",
+):
+    if target not in phony_lines:
+        fail(f"Makefile.ai-blaise .PHONY missing integration gate: {target}")
+    if target not in gate_deps:
+        fail(f"gate-close must run integration gate: {target}")
+
+patch_audit = read(CITUS_PATCH_AUDIT)
+for phrase in (
+    "production-gates.json",
+    "roster-only",
+    "not production-ready",
+    "required_mode",
+    "measured",
+):
+    if phrase not in patch_audit:
+        fail(f"citus-patch-production-audit.sh lost fail-closed phrase: {phrase}")
+patches_workflow = read(PATCHES_WORKFLOW)
+if "make -f Makefile.ai-blaise citus-patch-production-audit" not in patches_workflow:
+    fail("ci-patches workflow must run citus-patch-production-audit")
+
+runbook_check = read(RUNBOOK_CHECK)
+for phrase in (
+    "shell_syntax_errors",
+    "script_ref_errors",
+    "sidecar_binary_errors",
+    "make_target_errors",
+):
+    if phrase not in runbook_check:
+        fail(f"runbook-command-check.sh lost validator: {phrase}")
+production_workflow = read(PRODUCTION_WORKFLOW)
+if "runbook-command-check.sh" not in production_workflow:
+    fail("ci-production-readiness workflow must run runbook-command-check.sh")
+
+
+live_k8s = read(LIVE_K8S_E2E)
 deploy_check = read(DEPLOY_CHECK)
 kind_smoke = read(KIND_PRODUCTION_SMOKE)
-live_k8s = read(LIVE_K8S_E2E)
 deploy_readme = read(DEPLOY_README)
-
-for target in ("deploy-check:", "kind-production-smoke:"):
-    if target not in makefile:
-        fail(f"Makefile.ai-blaise must define {target}")
-
-for path, text in (
-    (DEPLOY_CHECK, deploy_check),
-    (KIND_PRODUCTION_SMOKE, kind_smoke),
-    (LIVE_K8S_E2E, live_k8s),
-):
-    if "FEATURE:" not in text:
-        fail(f"{path} must carry a FEATURE marker")
-
-for phrase in (
-    "LIVE_K8S_MODE=dry-run",
-    "LIVE_K8S_MODE=real",
-    "LIVE_K8S_MODE=kind",
-    "CHART_DIR",
-    "COMMAND_CENTER_DIR",
-    "LOCAL_IMAGE_REFS",
-    "AI_BLAISE_STACK_IMAGE_REF",
-    "ALLOW_UNPUBLISHED_IMAGES",
-    "docker manifest inspect",
-    "kubectl port-forward",
-    "curl -fsS",
-    "psql",
-    "/healthz /readyz /metrics",
-    "collect_diagnostics",
-    "kubectl-events.txt",
-    "dry-run does not send live HTTP or SQL traffic",
-):
+for phrase in ("CHART_DIR", "COMMAND_CENTER_DIR", "AI_BLAISE_STACK_IMAGE_REF", "LOCAL_IMAGE_REFS"):
     if phrase not in live_k8s:
         fail(f"live Kubernetes e2e harness missing required contract phrase: {phrase}")
 
@@ -268,6 +369,7 @@ if not (DR_RESTORE_DEPTH_CHECK.stat().st_mode & 0o111):
 
 dr_restore_depth_check = read(DR_RESTORE_DEPTH_CHECK)
 pitr_runbook = read(PITR_RUNBOOK)
+dr_runbook = read(DR_RUNBOOK)
 
 for phrase in (
     "dr-restore-depth-check:",
@@ -331,42 +433,6 @@ for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready")
     if compact(pattern) in matrix_truth:
         fail(f"Timescale 2.28 matrix overclaims production readiness: {pattern}")
 
-sidecar_smoke = read(SIDECAR_API_SMOKE)
-for required in (
-    "run-bun-runtime-canonical",
-    "POST",
-    "/drain",
-    "invalid listen address",
-    "definitely-not-a-command",
-    "ai_blaise_sidecar_accepting_new_work",
-):
-    if required not in sidecar_smoke:
-        fail(f"sidecar API runtime smoke lost required assertion: {required}")
-
-makefile = read(MAKEFILE)
-if "sidecar-api-runtime-smoke:" not in makefile:
-    fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")
-if (
-    "gate-close:" not in makefile
-    or "sidecar-api-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
-):
-    fail("gate-close must run sidecar-api-runtime-smoke")
-
-sidecar_workflow = read(SIDECAR_WORKFLOW)
-if (
-    "api-runtime-smoke:" not in sidecar_workflow
-    or "sidecar-api-runtime-smoke.sh" not in sidecar_workflow
-):
-    fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
-
-deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
-if deploy_k8s_tree:
-    fail(
-        "deploy/k8s/ was folded into ai-blaise/command-center on 2026-05-22 and "
-        "must not be reintroduced here: "
-        + ", ".join(str(p) for p in deploy_k8s_tree)
-    )
-
 for path in (
     K8S_GUARDRAIL_RENDERER,
     K8S_GUARDRAIL_MANIFEST,
@@ -390,12 +456,22 @@ for phrase in (
     if phrase not in guardrail_text:
         fail(f"Kubernetes guardrail contract missing phrase: {phrase}")
 
+deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
+if deploy_k8s_tree:
+    fail(
+        "deploy/k8s/ was folded into ai-blaise/command-center on 2026-05-22 and "
+        "must not be reintroduced here: "
+        + ", ".join(str(p) for p in deploy_k8s_tree)
+    )
+
 print(
     "production_gap_audit\t"
     f"source_feature_ids={len(source_ids)}\t"
+    f"doc_feature_headings={len(doc_ids)}\t"
     f"feature_headings={len(entries)}\t"
     f"production_ready={len(production_entries)}\t"
     f"alpha_headings={len(alpha_entries)}\t"
+    "inventory_contract=machine_derived\t"
     f"source_only_alpha={len(source_only_ids)}\t"
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"

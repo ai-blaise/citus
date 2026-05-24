@@ -850,17 +850,18 @@ pub fn handle_edge_functions_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let mut runtime = SidecarRuntime::ready("edge-functions");
-    handle_edge_functions_sidecar_http_bytes_with_runtime(request, &mut runtime)
+    let mut registry = canonical_edge_function_registry()?;
+    handle_edge_functions_sidecar_http_request(request, &mut runtime, &mut registry)
 }
 
-pub fn handle_edge_functions_sidecar_http_bytes_with_runtime(
+fn handle_edge_functions_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
+    registry: &mut EdgeFunctionRegistry,
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let request =
         std::str::from_utf8(request).map_err(|_| EdgeFunctionError::MalformedHttpRequest)?;
     let (method, path, body) = parse_http_request(request)?;
-    let mut registry = canonical_edge_function_registry()?;
 
     if method == "GET" && path == "/functions" {
         let snapshot = registry.snapshot();
@@ -1127,17 +1128,17 @@ pub fn serve_edge_functions_sidecar_http_forever(
     use std::io::Write;
     use std::net::TcpListener;
 
-    canonical_edge_function_registry()?;
+    let mut registry = canonical_edge_function_registry()?;
+    let mut runtime = SidecarRuntime::ready("edge-functions");
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise edge-functions sidecar listening on {listen_addr}");
-    let mut runtime = SidecarRuntime::ready("edge-functions");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
         let response =
-            handle_edge_functions_sidecar_http_bytes_with_runtime(&request, &mut runtime)
+            handle_edge_functions_sidecar_http_request(&request, &mut runtime, &mut registry)
                 .unwrap_or_else(|error| {
                     HttpProbeResponse::new(
                         400,

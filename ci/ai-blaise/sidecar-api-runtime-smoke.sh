@@ -17,6 +17,10 @@ import subprocess
 import sys
 import time
 
+TARGET_DIR = os.environ.get("CARGO_TARGET_DIR", os.path.join(os.getcwd(), "target"))
+if not os.path.isabs(TARGET_DIR):
+    TARGET_DIR = os.path.abspath(TARGET_DIR)
+
 COMPONENTS = [
     {
         "label": "postgrest",
@@ -37,7 +41,7 @@ COMPONENTS = [
 
 
 def binary_path(package):
-    return os.path.join("target", "debug", package)
+    return os.path.join(TARGET_DIR, "debug", package)
 
 
 def require_binary(package):

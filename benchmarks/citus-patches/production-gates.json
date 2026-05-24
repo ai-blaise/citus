@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "scope": "bootstrap-v2 custom Citus patch production integration audit",
+  "contract": "A custom Citus patch is production-ready only after the patch artifact exists, is listed in patches/series, passes patches-check, and has a measured non-scaffold gate result at the declared result_path.",
+  "patches": [
+    {
+      "id": "0004",
+      "title": "hashtable on planner hotpath",
+      "expected_patch_path": "patches/0004-hashtable-on-planner-hotpath.patch",
+      "required_patch_series": "patches/series",
+      "status": "artifact-landed",
+      "production_ready": false,
+      "required_evidence": [
+        "patch artifact exists under patches/ and is listed in patches/series",
+        "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
+        "measured router planner hot-path benchmark result from a real Citus build",
+        "production readiness audit entry with VM or CI run identity"
+      ],
+      "benchmark_gate": {
+        "name": "router planner hot-path placement intersection",
+        "result_path": "benchmarks/citus-patches/results/0004-router-planner-hotpath.json",
+        "required_mode": "measured",
+        "metric": "planner_p95_us",
+        "comparison": "lower_or_equal",
+        "max_regression_pct": 10,
+        "min_sample_count": 30
+      },
+      "fail_closed_notes": "No scaffold, skipped, missing, or prose-only benchmark result can promote this patch."
+    },
+    {
+      "id": "0006",
+      "title": "fast-path router skip coordinator round-trip",
+      "expected_patch_path": "patches/0006-fast-path-router-no-coord-rt.patch",
+      "required_patch_series": "patches/series",
+      "status": "artifact-landed",
+      "production_ready": false,
+      "required_evidence": [
+        "patch artifact exists under patches/ and is listed in patches/series",
+        "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
+        "measured single-shard router probe result from a real Citus build",
+        "production readiness audit entry with pool or companion command path"
+      ],
+      "benchmark_gate": {
+        "name": "fast-path-router coordinator-skip locality probe",
+        "result_path": "benchmarks/citus-patches/results/0006-fast-path-router-skip.json",
+        "required_mode": "measured",
+        "metric": "coordinator_round_trips_per_single_shard_query",
+        "comparison": "lower_or_equal",
+        "max_value": 0,
+        "min_sample_count": 30
+      },
+      "fail_closed_notes": "A quick-mode scaffold or missing Postgres endpoint is not evidence for coordinator-skip behavior."
+    },
+    {
+      "id": "0007",
+      "title": "citus clock cohabit pg_cron",
+      "expected_patch_path": "patches/0007-citus-clock-cohabit-pg-cron.patch",
+      "required_patch_series": "patches/series",
+      "status": "artifact-landed",
+      "production_ready": false,
+      "required_evidence": [
+        "patch artifact exists under patches/ and is listed in patches/series",
+        "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
+        "real cohabitation smoke boots Citus and pg_cron together",
+        "production readiness audit records image identity and zero registration conflicts"
+      ],
+      "benchmark_gate": {
+        "name": "Citus plus pg_cron cohabitation smoke",
+        "result_path": "benchmarks/citus-patches/results/0007-pg-cron-cohabit.json",
+        "required_mode": "measured",
+        "metric": "cohabit_boot_success_rate",
+        "comparison": "equals",
+        "required_value": 1,
+        "max_registration_conflicts": 0
+      },
+      "fail_closed_notes": "A doc-only compatibility claim cannot promote this patch without a real boot result."
+    },
+    {
+      "id": "0008",
+      "title": "cohabit-extensions detection API",
+      "expected_patch_path": "patches/0008-cohabit-extensions-detection-api.patch",
+      "required_patch_series": "patches/series",
+      "status": "artifact-landed",
+      "production_ready": false,
+      "required_evidence": [
+        "patch artifact exists under patches/ and is listed in patches/series",
+        "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
+        "companion detection matrix covers TimescaleDB, pg_cron, and pg_partman",
+        "production readiness audit records measured detection output"
+      ],
+      "benchmark_gate": {
+        "name": "cohabit-extension detection matrix",
+        "result_path": "benchmarks/citus-patches/results/0008-detection-matrix.json",
+        "required_mode": "measured",
+        "metric": "detection_matrix_passed",
+        "comparison": "equals",
+        "required_value": true,
+        "min_cases": 3
+      },
+      "fail_closed_notes": "Static allowlist docs are not enough; the detection matrix must be measured."
+    }
+  ]
+}

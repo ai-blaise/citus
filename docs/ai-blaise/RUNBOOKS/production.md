@@ -24,6 +24,7 @@ Production deployments must run through the continuous gates before release.
 16. Production-readiness audit.
 17. Production gap audit.
 18. Docs evidence boundary audit.
+19. Runbook command checks.
 
 These gates are not a blanket production certification for every custom
 feature. They verify the V2 acceptance model, the current deployment path, and
@@ -35,7 +36,12 @@ contract-only features remain in release scope:
 ci/ai-blaise/production-readiness-check.sh production-release
 ci/ai-blaise/production-gap-audit.sh
 ci/ai-blaise/docs-evidence-boundary-check.sh
+ci/ai-blaise/runbook-command-check.sh
 ```
+
+The runbook-command check statically parses the operational runbook command
+blocks, runs `bash -n` after placeholder normalization, and verifies referenced
+repo scripts, Cargo packages, Makefile targets, and sidecar binaries still exist.
 
 The production-gap-audit gate is intentionally conservative: it asserts that
 V2 acceptance is a modeled prerequisite, that production-release mode remains
@@ -50,16 +56,23 @@ Before promotion, build the real Rust runtime image matrix:
 
 ```bash
 IMAGE_REGISTRY=ghcr.io/ai-blaise TAG="${RELEASE_TAG}" \
+  SOURCE_REVISION="$(git rev-parse --verify HEAD)" \
   DIGEST_FILE=artifacts/ai-blaise-image-digests.tsv PUSH=true \
   scripts/citus-scale/build-app-images.sh
+
+REQUIRE_PUBLISHED_DIGESTS=1 \
+  RELEASE_DIGEST_MANIFEST=artifacts/ai-blaise-image-digests.tsv \
+  ci/ai-blaise/release-publishability-check.sh
 ```
 
 For release builds, `scripts/citus-scale/build-app-images.sh` writes
-`artifacts/ai-blaise-image-digests.tsv` with repository, tag, package, binary,
-push status, and immutable repo digest. A pushed image without a reported
-`sha256:` digest fails the build. Use the operator and pool rows from that
-manifest as `OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` for production
-render/install.
+`artifacts/ai-blaise-image-digests.tsv` with `source_revision`, repository, full
+image tag, package, binary, push status, and immutable repo digest. A pushed
+image without a reported `sha256:` digest fails the build, and the
+release-publishability check rejects missing rows, mutable tags, non-pushed
+release rows, or a source revision that is not the release commit. Use the
+operator and pool rows from that manifest as `OPERATOR_IMAGE_DIGEST` and
+`POOL_IMAGE_DIGEST` for production render/install.
 
 Production traffic tests must use these images, not substitute responder
 containers. Production values start the operator and pool with `serve`, service

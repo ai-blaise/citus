@@ -16,6 +16,8 @@ jobs:
         run: bash ci/ai-blaise/image-check.sh
       - name: Smoke app image digest manifest
         run: bash ci/ai-blaise/app-image-digest-manifest-smoke.sh
+      - name: Check release publishability contract
+        run: bash ci/ai-blaise/release-publishability-check.sh
       - name: Smoke SQL companion extension (PG17 + PG18 matrix)
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
       - name: Smoke migration durability invariants

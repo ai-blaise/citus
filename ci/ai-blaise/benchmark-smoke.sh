@@ -15,7 +15,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "${repo_root}"
 
-export BENCH_QUICK=1
+export BENCH_QUICK="${BENCH_QUICK:-1}"
 export BENCH_DURATION_SECS="${BENCH_DURATION_SECS:-10}"
 export BENCH_WARMUP_SECS="${BENCH_WARMUP_SECS:-2}"
 export BENCH_CLIENTS="${BENCH_CLIENTS:-2}"
@@ -64,5 +64,14 @@ if ! ls "${results_dir}"/sysbench-*-"${BENCH_RESULT_TAG}".json >/dev/null 2>&1; 
   echo "[benchmark-smoke] missing sysbench results" >&2
   exit 1
 fi
+
+if [[ "${AI_BLAISE_RELEASE_MODE:-0}" == "1" || "${BENCH_REQUIRE_MEASURED:-0}" == "1" ]]; then
+  sysbench_results=("${results_dir}"/sysbench-*-"${BENCH_RESULT_TAG}".json)
+  ci/ai-blaise/env-preflight.sh assert-measured-results     "${expected[@]}"     "${sysbench_results[@]}"
+else
+  echo "[benchmark-smoke] exploratory mode: scaffold results are labeled and accepted"
+fi
+
+PERF_EVIDENCE_MODE=exploratory   PERF_EVIDENCE_SCOPE=core   BENCH_RESULT_TAG="${BENCH_RESULT_TAG}"   bash ci/ai-blaise/performance-evidence-check.sh exploratory
 
 echo "[benchmark-smoke] ok"

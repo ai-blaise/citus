@@ -20,6 +20,23 @@ infrastructure and recorded with measured evidence.
 - Current pool GeoIP and CIDR access-control policy.
 - Current `pgactive` reference-table conflict-policy report.
 
+## Dry-run Command Checks
+
+Before scheduling the live failover or restore drill, run the bounded checks
+this repository can execute without touching production data:
+
+```bash
+bash ci/ai-blaise/runbook-command-check.sh
+cargo run -q -p ai_blaise_citus_sidecar_hlc -- run-canonical
+cargo run -q -p ai_blaise_citus_sidecar_raft -- run-canonical
+cargo run -q -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical
+cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
+```
+
+These commands validate runbook syntax and offline contracts only. They do not
+replace measured regional failover, PITR, backup artifact restore, sidecar
+readiness, or conflict-policy evidence from the live drill.
+
 ## Regional Failover Drill
 
 1. Freeze schema changes and canary traffic.

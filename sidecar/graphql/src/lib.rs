@@ -606,10 +606,10 @@ pub fn handle_graphql_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let mut runtime = SidecarRuntime::ready("graphql");
-    handle_graphql_sidecar_http_bytes_with_runtime(request, &mut runtime)
+    handle_graphql_sidecar_http_request(request, &mut runtime)
 }
 
-pub fn handle_graphql_sidecar_http_bytes_with_runtime(
+fn handle_graphql_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
@@ -729,16 +729,16 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
     use std::net::TcpListener;
 
     canonical_graphql_execution_plan()?;
+    let mut runtime = SidecarRuntime::ready("graphql");
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise graphql sidecar listening on {listen_addr}");
-    let mut runtime = SidecarRuntime::ready("graphql");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_graphql_sidecar_http_bytes_with_runtime(&request, &mut runtime)
-            .unwrap_or_else(|error| {
+        let response =
+            handle_graphql_sidecar_http_request(&request, &mut runtime).unwrap_or_else(|error| {
                 HttpProbeResponse::new(
                     400,
                     "application/json",

@@ -10,8 +10,9 @@ per-bundled-extension microbenches under `benchmarks/microbenches/`) and the
 CI smoke runners are `ci/ai-blaise/benchmark-smoke.sh` and
 `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`. Promotion to
 production-ready requires entries in
-`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md` and a live 3-worker Citus
-cluster recording.
+`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`, a live 3-worker Citus
+cluster recording, and a passing `PERF_EVIDENCE_MODE=release` validation
+against `benchmarks/performance-evidence-thresholds.json`.
 
 ## Harnesses
 
@@ -29,7 +30,11 @@ quick-mode toggle, results-directory layout, and the soft-skip pattern when a
 driver binary or target cluster is missing. The router planner patch smoke is a
 portable algorithm harness and intentionally does not soft-skip; it fails if the
 hashed intersection changes legacy semantics or misses the minimum quick-mode
-speedup floor.
+speedup floor. `ci/ai-blaise/performance-evidence-check.sh` parses benchmark
+result files against `benchmarks/performance-evidence-thresholds.json`.
+Exploratory mode reports scaffolded or missing data as warnings; release mode
+fails closed on missing artifacts, scaffold notes, malformed JSON, missing
+baselines, or threshold misses.
 
 ## Per-extension microbenches (26 always-on bundled extensions)
 
@@ -76,6 +81,30 @@ inside each microbench's `README.md` and `baseline.json`). They are refined
 to the 3-worker kind-cluster reality after the first nightly `ci-microbench`
 run lands its measured aggregate.
 
+## Citus patch production gates (0004/0006/0007/0008)
+
+Custom Citus patches `0004`, `0006`, `0007`, and `0008` use the fail-closed
+manifest at `benchmarks/citus-patches/production-gates.json`. The manifest is a
+gate contract, not benchmark evidence. A patch cannot be treated as
+production-ready until its `patches/*.patch` artifact exists, the artifact is
+listed in `patches/series`, `make -f Makefile.ai-blaise patches-check` passes,
+and the declared result under `benchmarks/citus-patches/results/` is a measured
+non-scaffold JSON result with the listed threshold fields.
+
+Current `bootstrap-v2` status:
+
+| Patch | Required result | Fail-closed threshold | Current state |
+| ----- | --------------- | --------------------- | ------------- |
+| `0004` | `0004-router-planner-hotpath.json` | measured planner p95, max 10% regression, at least 30 samples | roster-only; not production-ready |
+| `0006` | `0006-fast-path-router-skip.json` | measured coordinator round trips per single-shard query must be `0`, at least 30 samples | roster-only; not production-ready |
+| `0007` | `0007-pg-cron-cohabit.json` | measured boot success rate `1` and zero registration conflicts | roster-only; not production-ready |
+| `0008` | `0008-detection-matrix.json` | measured detection matrix pass with at least three extension cases | roster-only; not production-ready |
+
+No placeholder or skipped quick-mode result is allowed in this directory. The
+bounded CI check is `make -f Makefile.ai-blaise citus-patch-production-audit`;
+it rejects docs that mark these patch IDs production-ready before the patch
+artifact and measured result both exist.
+
 ## Initial harness target thresholds (alpha)
 
 | Harness            | Metric                        | Threshold (alpha)              |
@@ -99,7 +128,24 @@ run lands its measured aggregate.
 | Chaos              | lost commits                  | 0                              |
 
 The first wave of measured runs is expected to fall short of these thresholds;
-thresholds are tuned across release cycles.
+thresholds are tuned across release cycles. The executable source of truth is
+`benchmarks/performance-evidence-thresholds.json`; table edits must stay in
+sync with that manifest.
+
+## Machine-checkable evidence gate
+
+`ci/ai-blaise/performance-evidence-check.sh` has two modes:
+
+- `exploratory`: used by PR/local smoke. Missing drivers, missing clusters,
+  and scaffold results are labeled warnings so the harness shape stays cheap to
+  exercise on small runners.
+- `release`: used only after the full benchmark run. It requires `BENCH_RESULT_TAG=release`,
+  full-mode JSON artifacts for TPC-C/sysbench/Timescale/chaos, a full
+  microbench aggregate, no scaffold results, all 26 baselines, and every metric
+  at or above the manifest threshold.
+
+The release checker does not launch expensive jobs; it validates the artifacts
+already produced by the bounded benchmark commands below.
 
 ## TS-version Coverage
 
@@ -118,13 +164,16 @@ cohabitation coverage.
 ### Quick mode (CI smoke)
 
 ```sh
-make -f Makefile.ai-blaise bench-smoke
+make -f Makefile.ai-blaise performance-evidence-smoke
 ```
 
 Each harness caps at `BENCH_DURATION_SECS=10` and writes a JSON result under
 `benchmarks/results/`. When a driver binary or the target endpoint is
-unavailable, the harness writes a scaffold result (note flag set) and
-soft-passes so the smoke remains green on the 2-core experiment VM.
+unavailable, the harness writes a scaffold result (`mode` or `note` marks it)
+and soft-passes so the smoke remains green on the 2-core experiment VM. The
+exploratory evidence checker still parses the JSON and prints warnings for
+scaffolded, missing, or under-threshold data; those warnings are not production
+evidence.
 
 ### Full mode (nightly / release)
 
@@ -143,10 +192,16 @@ BENCH_QUICK=0 BENCH_RESULT_TAG=release \
   bash benchmarks/microbenches/run-all.sh
 BENCH_QUICK=0 BENCH_RESULT_TAG=release \
   bash benchmarks/microbenches/compare-to-baseline.sh
+
+# Validate all result artifacts against release thresholds without rerunning
+# the expensive jobs.
+PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release \
+  make -f Makefile.ai-blaise performance-evidence-release-check
 ```
 
 Full-mode results are attached to the release record and tracked in
-`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`. Release mode fails if any
+required driver or cluster data is missing and a harness emits scaffold output.
 
 ## Other measured surfaces (separate runners)
 

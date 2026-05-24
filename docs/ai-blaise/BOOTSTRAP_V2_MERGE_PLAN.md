@@ -1,10 +1,9 @@
 # Bootstrap V2 Merge Plan
 
 `docs/ai-blaise/bootstrap-v2-merge-plan.json` is the machine-readable merge
-order for the open `bootstrap-v2` PR train starting at PR #70. It records the
-current PR metadata snapshot, merge order, dependency hints, draft blockers,
-shared conflict paths, and rules for when the expensive Citus matrix is worth
-running.
+record for the `bootstrap-v2` PR train starting at PR #70. It now records that
+the open PR train has been folded into `bootstrap-v2`; future PRs must refresh
+this manifest before reusing it as an active merge-order plan.
 
 The plan intentionally treats `origin/bootstrap-v2-intermediate` as reference
 only. Merge-order work must target `bootstrap-v2`.
@@ -24,51 +23,44 @@ coverage, and matrix-policy references. `--live` also queries GitHub with
 state fail the check. Newly opened PRs outside the snapshot are warnings by
 default and become failures with `--strict-open-set`.
 
-Before final release promotion, run:
+After the final release/patch integration batch is pushed, the closed-loop check
+is:
 
 ```bash
 python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live --strict-open-set --require-no-drafts
 ```
 
-That command is expected to fail while any draft blocker remains or while any
-open PR #70+ is missing from the manifest.
+That command should pass when GitHub has marked the batch PR heads as merged and
+no new PR #70+ is open against `bootstrap-v2`.
 
 ## Current Snapshot
 
-Captured from GitHub on `2026-05-24T05:58:00Z` for the post-runtime-durability manifest:
+Captured from GitHub bookkeeping on `2026-05-24T06:14:25Z` for the final release/patch manifest:
 
-- Open manifest: 7 PRs against `bootstrap-v2`; PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #87, #88, #89, #90, #91, #92, #93, #94, #95, #96, #98, #101, #104, #106, #107, and #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
-- Draft blockers: PR #109.
-- Non-draft merge-order blockers: PR #97.
+- Open manifest: 0 PRs against `bootstrap-v2` are planned in this file.
+- Draft blockers: none expected after the direct final release/patch integration batch closes draft PR #109 by ancestry.
+- Non-draft merge-order blockers: none expected after the direct final release/patch integration batch closes PR #97 by ancestry.
+- PRs #97, #99, #100, #102, #103, #105, and #109 are recorded as landed by the direct final release/patch integration batch after focused VM verification.
 - PRs #87, #96, #98, #101, and #104 were integrated by the direct runtime durability/upgrade/pool batch after focused VM verification and the Timescale 2.27 Docker cohabitation smoke passed; Timescale 2.28 remains a truthful pass-with-note until `timescale/timescaledb:2.28.0-pg17` exists.
-- CI state is volatile and is not used as a merge-order drift signal. The plan requires title, head branch, base branch, and draft state to match live GitHub metadata.
+- Earlier direct bootstrap-v2 batches recorded PRs #70-#86, #88-#95, and #106-#108 as landed.
+- CI state is volatile and is not used as a merge-order drift signal. The plan requires title, head branch, base branch, and draft state to match live GitHub metadata when active PRs are present.
 
 ## Merge Order
 
-| Order | PR | Status | Batch | Dependency hints |
-| --- | --- | --- | --- | --- |
-| 1 | #99 | ready | draft-release-and-patch-audit | none |
-| 2 | #100 | ready | draft-release-and-patch-audit | none |
-| 3 | #102 | ready | draft-release-and-patch-audit | #99, #100 |
-| 4 | #105 | ready | draft-release-and-patch-audit | #100 |
-| 5 | #103 | ready | draft-release-and-patch-audit | #102 |
-| 6 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #105 |
-| 7 | #97 | blocked | draft-release-and-patch-audit | #100, #102, #103, #105, #109 |
-
-Use the JSON as canonical if this table drifts.
+No open PRs remain in the current manifest. Use the JSON as canonical if a new
+PR train opens and this table is regenerated.
 
 ## Known Blockers
 
-- PR #109 (draft-blocked): Draft as of the post-runtime-durability snapshot. Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice. Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path.
-- PR #97 (blocked): Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan. Release publishability should land last after environment, performance, gap-audit, runbook, upgrade, image, deployment, release-monitor, and integration-reconciliation gates are integrated.
+None in the current manifest.
 
 ## Expensive Matrix Rules
 
 Batch meaningful work before a full Citus matrix run. Run focused PR smokes
-first, then run the expensive matrix at the batch boundaries marked
-`run_expensive_citus_matrix_after=true` in the JSON.
-
-Keep the matrix monitor in a parallel worker while non-overlapping implementation continues on the next PR or batch.
+first, then run the expensive matrix at meaningful integration boundaries. The
+final release/patch integration batch is such a boundary; keep the matrix
+monitor in a parallel worker while non-overlapping implementation continues on
+the next PR or batch.
 
 Run the full matrix immediately if a merge or conflict resolution edits:
 
