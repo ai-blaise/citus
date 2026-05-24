@@ -1,11 +1,17 @@
 //! Shard-aware pool primitives.
 
+pub mod admission;
 pub mod execution;
 pub mod proxy;
 pub mod runtime;
 pub mod shard_map;
 pub mod trace_tap;
 
+pub use admission::{
+    tenant_id_from_startup, PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError,
+    PoolConnectionPermit, TenantQuotaAdmission, TenantQuotaBucket, TenantQuotaConfig,
+    TenantQuotaSnapshot, DEFAULT_STARTUP_TIMEOUT,
+};
 pub use execution::{
     canonical_pool_execution_report, canonical_pool_runtime_contract, PoolExecutionError,
     PoolExecutionReport,

@@ -46,8 +46,9 @@ with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
 `FEATURE: T12`, `FEATURE: T15`, and `FEATURE: WH3`.
 `pool/src/main.rs` executes a real PostgreSQL TCP proxy in `serve` mode, with
 upstream-aware admin readiness on a separate port; `ci/ai-blaise/pool-proxy-smoke.sh`
-verifies live SQL, CIDR allow/deny behavior, and pipelined PostgreSQL
-simple-query frames through that data port. The binary still emits the
+verifies live SQL, CIDR allow/deny behavior, active-connection overload,
+tenant-quota fail-closed denial, upstream-unreachable fail-closed routing, and
+pipelined PostgreSQL simple-query frames through that data port. The binary still emits the
 deterministic pool runtime and shard-map summary for `FEATURE: Auth3`,
 `FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`, `FEATURE: T1`,
 `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`,
@@ -439,8 +440,11 @@ against a `postgres:17` container, opens a raw PostgreSQL client through the
 pool data port, sends two simple-query frames without waiting for the first
 result, verifies ordered `pipeline_one` and `pipeline_two` rows from the real
 backend, and keeps the existing live SQL plus pool admin metrics checks. The
-Makefile `pool-proxy-smoke` target sets `REQUIRE_DOCKER=1`, and `gate-close`
-depends on that target, so missing Docker cannot silently skip this evidence.
+same Docker-backed smoke also proves active-connection overload rejection,
+tenant quota fail-closed denial, and upstream-unreachable fail-closed routing
+on the real data port. The Makefile `pool-proxy-smoke` target sets
+`REQUIRE_DOCKER=1`, and `gate-close` depends on that target, so missing Docker
+cannot silently skip this evidence.
 
 **References**:
 
@@ -3728,25 +3732,40 @@ integration remain alpha.
 
 ### Sec12: Per-Tenant Resource Quotas
 
-**Overlay**: `pool/src/runtime.rs`
-**Status**: alpha
+**Overlay**: `pool/src/runtime.rs`, `pool/src/admission.rs`, `pool/src/proxy.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines token-bucket admission policy for tenant-scoped pool
-traffic.
+**Summary**: Enforces a narrow pool data-plane token-bucket admission quota for
+tenant-scoped PostgreSQL startup packets. Broader tenant resource planning in
+operator specs and non-pool sidecars remains alpha under the tenant-operations
+and workload-specific feature entries until those paths have separate live
+evidence.
 
 **Motivation**: Tenant quotas need pool-side enforcement before noisy tenants
-can be isolated reliably.
+can consume unbounded data-plane connection admission.
 
 **Citus comparison**: Vanilla Citus does not enforce per-tenant pool quotas.
+
+Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` starts the real pool
+against a `postgres:17` container with `AI_BLAISE_POOL_QUOTA_TENANT_ID`,
+`AI_BLAISE_POOL_QUOTA_BURST`, and
+`AI_BLAISE_POOL_QUOTA_REFILL_PER_SECOND`, admits the first tenant-scoped
+PostgreSQL startup through the real backend, denies the next over-budget
+startup with a PostgreSQL `ErrorResponse` before upstream routing, and asserts
+`ai_blaise_citus_pool_tenant_quota_rejections_total` plus
+`ai_blaise_citus_pool_fail_closed_routes_total` metrics.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec12` in `pool/src/runtime.rs`
+- In-source: `FEATURE: Sec12` in `pool/src/admission.rs`
+- In-source: `FEATURE: Sec12` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 
 ### Sec13: Pool CIDR Access Control
 

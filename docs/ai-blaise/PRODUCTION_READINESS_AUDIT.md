@@ -526,8 +526,8 @@ whole.
 
 The current feature inventory contains 245 source `FEATURE:` markers and 245
 feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 126 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -539,7 +539,7 @@ streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
 installable idle transaction detection SQL surface, `TS6` for the integrated
 trusted hook-coextension source path under real Timescale/Citus cohabitation,
 `TS18` for the installable bridge-state SQL surface under real Timescale/Citus
-cohabitation, `Sec13` for pool CIDR access control with live allowed and
+cohabitation, `Sec12` for narrow pool data-plane tenant quota admission, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
 pipelining through the real pool proxy data port, plus `Auth2` for installable
 SQL session-claim helpers under a real PostgreSQL extension smoke, plus `D2`
@@ -589,7 +589,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 147
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

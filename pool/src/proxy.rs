@@ -1,10 +1,14 @@
 // FEATURE: O4
 // FEATURE: O14
+// FEATURE: Sec12
 // FEATURE: Sec13
 // FEATURE: T3
 // FEATURE: T7
 
-use crate::trace_tap;
+use crate::{
+    admission::{PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError},
+    trace_tap,
+};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, Read, Write};
@@ -24,6 +28,7 @@ pub struct PoolProxyConfig {
     pub admin_addr: String,
     pub upstream_addr: String,
     pub client_cidr_allowlist: ClientCidrAllowlist,
+    pub admission: PoolAdmissionConfig,
 }
 
 impl PoolProxyConfig {
@@ -38,12 +43,14 @@ impl PoolProxyConfig {
             "AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST",
             "",
         ))?;
+        let admission = PoolAdmissionConfig::from_env()?;
 
         let config = Self {
             listen_addr,
             admin_addr,
             upstream_addr,
             client_cidr_allowlist,
+            admission,
         };
         config.validate()?;
         Ok(config)
@@ -59,6 +66,7 @@ impl PoolProxyConfig {
                 right: "admin_addr",
             });
         }
+        self.admission.validate()?;
         Ok(())
     }
 }
@@ -190,10 +198,15 @@ fn cidr_contains_v6(network: Ipv6Addr, candidate: Ipv6Addr, prefix: u8) -> bool 
 #[derive(Debug)]
 pub struct PoolProxyState {
     started_at: SystemTime,
+    admission: PoolAdmissionController,
     active_connections: AtomicU64,
     accepted_connections: AtomicU64,
     completed_connections: AtomicU64,
     rejected_connections: AtomicU64,
+    overloaded_connections: AtomicU64,
+    tenant_quota_rejections: AtomicU64,
+    startup_timeouts: AtomicU64,
+    fail_closed_routes: AtomicU64,
     upstream_connect_errors: AtomicU64,
     io_errors: AtomicU64,
     client_to_upstream_bytes: AtomicU64,
@@ -204,19 +217,33 @@ pub struct PoolProxyState {
 
 impl PoolProxyState {
     pub fn new() -> Self {
-        Self {
+        Self::with_admission_config(PoolAdmissionConfig::default())
+            .expect("default pool admission config is valid")
+    }
+
+    pub fn with_admission_config(admission: PoolAdmissionConfig) -> Result<Self, PoolProxyError> {
+        Ok(Self {
             started_at: SystemTime::now(),
+            admission: PoolAdmissionController::new(admission)?,
             active_connections: AtomicU64::new(0),
             accepted_connections: AtomicU64::new(0),
             completed_connections: AtomicU64::new(0),
             rejected_connections: AtomicU64::new(0),
+            overloaded_connections: AtomicU64::new(0),
+            tenant_quota_rejections: AtomicU64::new(0),
+            startup_timeouts: AtomicU64::new(0),
+            fail_closed_routes: AtomicU64::new(0),
             upstream_connect_errors: AtomicU64::new(0),
             io_errors: AtomicU64::new(0),
             client_to_upstream_bytes: AtomicU64::new(0),
             upstream_to_client_bytes: AtomicU64::new(0),
             traceparent_tapped: AtomicU64::new(0),
             traceparent_absent: AtomicU64::new(0),
-        }
+        })
+    }
+
+    pub fn admission(&self) -> &PoolAdmissionController {
+        &self.admission
     }
 
     pub fn active_connections(&self) -> u64 {
@@ -235,6 +262,22 @@ impl PoolProxyState {
 
     fn rejected(&self) {
         self.rejected_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn overloaded(&self) {
+        self.overloaded_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn tenant_quota_rejected(&self) {
+        self.tenant_quota_rejections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn startup_timeout(&self) {
+        self.startup_timeouts.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn fail_closed_route(&self) {
+        self.fail_closed_routes.fetch_add(1, Ordering::Relaxed);
     }
 
     fn connect_error(&self) {
@@ -339,7 +382,9 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     config.validate()?;
     let proxy_listener = TcpListener::bind(&config.listen_addr)?;
     let admin_listener = TcpListener::bind(&config.admin_addr)?;
-    let state = Arc::new(PoolProxyState::new());
+    let state = Arc::new(PoolProxyState::with_admission_config(
+        config.admission.clone(),
+    )?);
 
     let admin_state = Arc::clone(&state);
     let admin_upstream = config.upstream_addr.clone();
@@ -350,14 +395,19 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     });
 
     eprintln!(
-        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {} with client CIDR allowlist {}",
+        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {} with client CIDR allowlist {} and max_active_connections {}",
         config.listen_addr,
         config.upstream_addr,
         if config.client_cidr_allowlist.is_empty() {
             "<allow-all>".to_string()
         } else {
             config.client_cidr_allowlist.as_csv()
-        }
+        },
+        config
+            .admission
+            .max_active_connections
+            .map(|limit| limit.to_string())
+            .unwrap_or_else(|| "<unbounded>".to_string())
     );
     for client in proxy_listener.incoming() {
         let client = client?;
@@ -391,9 +441,21 @@ pub fn handle_proxy_connection(
         });
     }
 
+    let permit = match state.admission().acquire_connection() {
+        Ok(permit) => permit,
+        Err(error) => {
+            if matches!(error, PoolAdmissionError::Overloaded { .. }) {
+                state.overloaded();
+            }
+            state.rejected();
+            return Err(PoolProxyError::from(error));
+        }
+    };
+
     state.accepted();
     let result = proxy_connection(client, upstream_addr, state);
     state.completed();
+    drop(permit);
     result
 }
 
@@ -402,34 +464,52 @@ fn proxy_connection(
     upstream_addr: &str,
     state: &PoolProxyState,
 ) -> Result<(), PoolProxyError> {
+    client.set_nodelay(true)?;
+
+    // Read exactly one PostgreSQL startup envelope before opening an upstream
+    // socket. That lets admission fail closed for slow clients, missing or
+    // over-quota tenants, and unroutable upstreams without spending backend
+    // capacity on traffic the pool will not forward.
+    let startup_tap =
+        match tap_startup_message_with_timeout(&client, state.admission().config().startup_timeout)
+        {
+            Ok(tap) => tap,
+            Err(error) => {
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                ) {
+                    state.startup_timeout();
+                    state.rejected();
+                    state.fail_closed_route();
+                }
+                state.io_error();
+                return Err(PoolProxyError::from(error));
+            }
+        };
+
+    if startup_tap.traceparent().is_some() {
+        state.traceparent_tapped();
+    } else {
+        state.traceparent_absent();
+    }
+    eprintln!("ai-blaise pool {}", trace_tap::render_tap_log(&startup_tap));
+
+    if let Err(error) = state.admission().admit_startup(&startup_tap) {
+        state.tenant_quota_rejected();
+        state.rejected();
+        state.fail_closed_route();
+        let _ = write_postgres_startup_error(&client, "53300", &error.to_string());
+        return Err(PoolProxyError::from(error));
+    }
+
+    let prefix_bytes = startup_tap.buffered_bytes;
     let upstream = connect_upstream(upstream_addr).inspect_err(|_error| {
         state.connect_error();
+        state.fail_closed_route();
+        let _ = write_postgres_startup_error(&client, "08006", "pool upstream is not reachable");
     })?;
-
-    client.set_nodelay(true)?;
     upstream.set_nodelay(true)?;
-
-    // Peek the PostgreSQL startup envelope so the trace_tap can extract a W3C
-    // traceparent embedded in the application_name parameter without
-    // modifying the byte stream. The buffered bytes are replayed to upstream
-    // ahead of the io::copy fan-out below so the proxy stays transparent to
-    // PostgreSQL.
-    let mut startup_reader = client.try_clone()?;
-    let prefix_bytes = match trace_tap::tap_startup_message(&mut startup_reader) {
-        Ok(tap) => {
-            if tap.traceparent().is_some() {
-                state.traceparent_tapped();
-            } else {
-                state.traceparent_absent();
-            }
-            eprintln!("ai-blaise pool {}", trace_tap::render_tap_log(&tap));
-            tap.buffered_bytes
-        }
-        Err(error) => {
-            state.io_error();
-            return Err(PoolProxyError::from(error));
-        }
-    };
 
     thread::scope(|scope| {
         let mut client_reader = client.try_clone()?;
@@ -480,6 +560,48 @@ fn copy_and_shutdown(reader: &mut TcpStream, writer: &mut TcpStream) -> io::Resu
     let bytes = io::copy(reader, writer)?;
     let _ = writer.shutdown(Shutdown::Write);
     Ok(bytes)
+}
+
+fn tap_startup_message_with_timeout(
+    client: &TcpStream,
+    timeout: Duration,
+) -> io::Result<trace_tap::StartupTraceTap> {
+    client.set_read_timeout(Some(timeout))?;
+    let mut startup_reader = client.try_clone()?;
+    let result = trace_tap::tap_startup_message(&mut startup_reader);
+    let reset = client.set_read_timeout(None);
+    match (result, reset) {
+        (Ok(tap), Ok(())) => Ok(tap),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
+}
+
+fn write_postgres_startup_error(
+    mut client: &TcpStream,
+    sqlstate: &str,
+    message: &str,
+) -> io::Result<()> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"SERROR\0");
+    payload.extend_from_slice(b"VFATAL\0");
+    payload.push(b'C');
+    payload.extend_from_slice(sanitize_pg_error_field(sqlstate).as_bytes());
+    payload.push(0);
+    payload.push(b'M');
+    payload.extend_from_slice(sanitize_pg_error_field(message).as_bytes());
+    payload.push(0);
+    payload.push(0);
+
+    client.write_all(b"E")?;
+    client.write_all(&((payload.len() + 4) as u32).to_be_bytes())?;
+    client.write_all(&payload)?;
+    let _ = client.shutdown(Shutdown::Write);
+    Ok(())
+}
+
+fn sanitize_pg_error_field(value: &str) -> String {
+    value.replace('\0', " ")
 }
 
 fn serve_admin(
@@ -581,7 +703,7 @@ fn health_json(
     upstream_ready: bool,
 ) -> String {
     format!(
-        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
+        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"overloaded_connections\":{},\"tenant_quota_rejections\":{},\"startup_timeouts\":{},\"fail_closed_routes\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
         ready,
         upstream_ready,
         escape_json(upstream_addr),
@@ -589,6 +711,10 @@ fn health_json(
         state.accepted_connections.load(Ordering::Relaxed),
         state.completed_connections.load(Ordering::Relaxed),
         state.rejected_connections.load(Ordering::Relaxed),
+        state.overloaded_connections.load(Ordering::Relaxed),
+        state.tenant_quota_rejections.load(Ordering::Relaxed),
+        state.startup_timeouts.load(Ordering::Relaxed),
+        state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed),
         state.io_errors.load(Ordering::Relaxed),
         state.uptime_seconds(),
@@ -607,9 +733,21 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
          # HELP ai_blaise_citus_pool_requests_total Accepted PostgreSQL client connections.\n\
          # TYPE ai_blaise_citus_pool_requests_total counter\n\
          ai_blaise_citus_pool_requests_total {}\n\
-         # HELP ai_blaise_citus_pool_rejected_connections_total PostgreSQL client connections rejected by CIDR allowlist.\n\
+         # HELP ai_blaise_citus_pool_rejected_connections_total PostgreSQL client connections rejected by CIDR allowlist, overload, startup timeout, or quota.\n\
          # TYPE ai_blaise_citus_pool_rejected_connections_total counter\n\
          ai_blaise_citus_pool_rejected_connections_total {}\n\
+         # HELP ai_blaise_citus_pool_overloaded_connections_total PostgreSQL client connections rejected because active connection admission was full.\n\
+         # TYPE ai_blaise_citus_pool_overloaded_connections_total counter\n\
+         ai_blaise_citus_pool_overloaded_connections_total {}\n\
+         # HELP ai_blaise_citus_pool_tenant_quota_rejections_total PostgreSQL client connections rejected by tenant quota admission.\n\
+         # TYPE ai_blaise_citus_pool_tenant_quota_rejections_total counter\n\
+         ai_blaise_citus_pool_tenant_quota_rejections_total {}\n\
+         # HELP ai_blaise_citus_pool_startup_timeouts_total PostgreSQL client connections closed before a complete startup envelope arrived.\n\
+         # TYPE ai_blaise_citus_pool_startup_timeouts_total counter\n\
+         ai_blaise_citus_pool_startup_timeouts_total {}\n\
+         # HELP ai_blaise_citus_pool_fail_closed_routes_total Connections intentionally routed nowhere because admission or upstream safety checks failed.\n\
+         # TYPE ai_blaise_citus_pool_fail_closed_routes_total counter\n\
+         ai_blaise_citus_pool_fail_closed_routes_total {}\n\
          # HELP ai_blaise_citus_pool_errors_total Upstream connect and proxy I/O errors.\n\
          # TYPE ai_blaise_citus_pool_errors_total counter\n\
          ai_blaise_citus_pool_errors_total {}\n\
@@ -630,6 +768,10 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
         state.active_connections.load(Ordering::Relaxed),
         state.accepted_connections.load(Ordering::Relaxed),
         state.rejected_connections.load(Ordering::Relaxed),
+        state.overloaded_connections.load(Ordering::Relaxed),
+        state.tenant_quota_rejections.load(Ordering::Relaxed),
+        state.startup_timeouts.load(Ordering::Relaxed),
+        state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed)
             + state.io_errors.load(Ordering::Relaxed),
         state.client_to_upstream_bytes.load(Ordering::Relaxed),
@@ -665,6 +807,7 @@ fn escape_prometheus_label(value: &str) -> String {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum PoolProxyError {
+    Admission(PoolAdmissionError),
     AddressCollision {
         left: &'static str,
         right: &'static str,
@@ -685,6 +828,7 @@ pub enum PoolProxyError {
 impl fmt::Display for PoolProxyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Admission(error) => write!(formatter, "{error}"),
             Self::AddressCollision { left, right } => {
                 write!(formatter, "{left} must differ from {right}")
             }
@@ -710,6 +854,12 @@ impl fmt::Display for PoolProxyError {
 
 impl Error for PoolProxyError {}
 
+impl From<PoolAdmissionError> for PoolProxyError {
+    fn from(error: PoolAdmissionError) -> Self {
+        Self::Admission(error)
+    }
+}
+
 impl From<io::Error> for PoolProxyError {
     fn from(error: io::Error) -> Self {
         Self::Io(error.to_string())
@@ -734,6 +884,7 @@ mod tests {
             admin_addr: "127.0.0.1:15432".to_string(),
             upstream_addr: "127.0.0.1:25432".to_string(),
             client_cidr_allowlist: ClientCidrAllowlist::default(),
+            admission: PoolAdmissionConfig::default(),
         };
 
         assert_eq!(
@@ -924,6 +1075,107 @@ mod tests {
 
         assert_eq!(&response, b"AuthenticationOK");
         upstream_thread.join().unwrap();
+        proxy_thread.join().unwrap();
+    }
+
+    #[test]
+    fn proxy_rejects_overload_before_startup_or_upstream_connect() {
+        let state = Arc::new(
+            PoolProxyState::with_admission_config(PoolAdmissionConfig {
+                max_active_connections: Some(1),
+                admission_timeout: Duration::ZERO,
+                startup_timeout: trace_tap::STARTUP_TAP_MIN_TIMEOUT,
+                tenant_quota: None,
+            })
+            .unwrap(),
+        );
+        let worker_state = Arc::clone(&state);
+        let held_permit = state.admission().acquire_connection().unwrap();
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_thread = thread::spawn(move || {
+            let (client, _) = proxy_listener.accept().unwrap();
+            let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
+            let error = handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &worker_state)
+                .unwrap_err();
+
+            assert!(matches!(
+                error,
+                PoolProxyError::Admission(PoolAdmissionError::Overloaded { .. })
+            ));
+            assert_eq!(worker_state.accepted_connections.load(Ordering::Relaxed), 0);
+            assert_eq!(worker_state.rejected_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(
+                worker_state.overloaded_connections.load(Ordering::Relaxed),
+                1
+            );
+            assert_eq!(
+                worker_state.upstream_connect_errors.load(Ordering::Relaxed),
+                0
+            );
+        });
+
+        let _client = TcpStream::connect(proxy_addr).unwrap();
+        proxy_thread.join().unwrap();
+        drop(held_permit);
+        assert_eq!(state.admission().active_slots(), Ok(0));
+    }
+
+    #[test]
+    fn proxy_fails_closed_when_upstream_is_unreachable() {
+        let startup_packet = build_startup_packet("psql");
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_thread = thread::spawn(move || {
+            let (client, _) = proxy_listener.accept().unwrap();
+            let state = PoolProxyState::new();
+            let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
+            let error =
+                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+
+            assert!(matches!(error, PoolProxyError::Io(_)));
+            assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.completed_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.upstream_connect_errors.load(Ordering::Relaxed), 1);
+            assert_eq!(state.fail_closed_routes.load(Ordering::Relaxed), 1);
+        });
+
+        let mut client = TcpStream::connect(proxy_addr).unwrap();
+        client.write_all(&startup_packet).unwrap();
+        let mut message_type = [0_u8; 1];
+        client.read_exact(&mut message_type).unwrap();
+        assert_eq!(&message_type, b"E");
+        proxy_thread.join().unwrap();
+    }
+
+    #[test]
+    fn proxy_times_out_incomplete_startup_and_releases_slot() {
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let proxy_thread = thread::spawn(move || {
+            let (client, _) = proxy_listener.accept().unwrap();
+            let state = PoolProxyState::with_admission_config(PoolAdmissionConfig {
+                max_active_connections: Some(1),
+                admission_timeout: Duration::ZERO,
+                startup_timeout: trace_tap::STARTUP_TAP_MIN_TIMEOUT,
+                tenant_quota: None,
+            })
+            .unwrap();
+            let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
+            let error =
+                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+
+            assert!(matches!(error, PoolProxyError::Io(_)));
+            assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.completed_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.rejected_connections.load(Ordering::Relaxed), 1);
+            assert_eq!(state.startup_timeouts.load(Ordering::Relaxed), 1);
+            assert_eq!(state.fail_closed_routes.load(Ordering::Relaxed), 1);
+            assert_eq!(state.active_connections(), 0);
+            assert_eq!(state.admission().active_slots(), Ok(0));
+        });
+
+        let _client = TcpStream::connect(proxy_addr).unwrap();
         proxy_thread.join().unwrap();
     }
 
