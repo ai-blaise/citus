@@ -215,11 +215,7 @@ mod tests {
             "2026-05-22T14:00:00Z",
         )
         .unwrap();
-        let kinds: Vec<_> = plan
-            .steps
-            .iter()
-            .map(|step| std::mem::discriminant(step))
-            .collect();
+        let kinds: Vec<_> = plan.steps.iter().map(std::mem::discriminant).collect();
         assert_eq!(kinds.len(), 4); // revert + cleanup + drop + record
         let script = plan.script();
         assert!(script.contains("schema_job_rollback_to"));

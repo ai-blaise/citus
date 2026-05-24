@@ -83,6 +83,17 @@ typedef struct LogicalClockShmemData
 
 	/* Tracks initialization at boot */
 	ClockState clockInitialized;
+
+	/*
+	 * FEATURE: TS19
+	 *
+	 * Set to true when the operator has listed a clock-side cohabit extension
+	 * (currently pg_cron) in citus.cohabit_extensions and Citus has reserved
+	 * the tick slot during _PG_init before any cohabiting background worker
+	 * starts. Cohabiting bg-workers can read this flag to confirm the clock
+	 * initialization order is intact.
+	 */
+	bool cohabitClockTickReserved;
 } LogicalClockShmemData;
 
 
@@ -179,6 +190,9 @@ LogicalClockShmemInit(void)
 						 LogicalClockShmem->namedLockTranche.trancheId);
 
 		LogicalClockShmem->clockInitialized = CLOCKSTATE_UNINITIALIZED;
+
+		/* FEATURE: TS19 -- explicit reset for the cohabit-reservation flag */
+		LogicalClockShmem->cohabitClockTickReserved = false;
 	}
 
 	LWLockRelease(AddinShmemInitLock);
@@ -619,4 +633,53 @@ citus_get_transaction_clock(PG_FUNCTION_ARGS)
 	ClusterClock *clusterClockValue = PrepareAndSetTransactionClock();
 
 	PG_RETURN_POINTER(clusterClockValue);
+}
+
+
+/*
+ * FEATURE: TS19
+ *
+ * ReserveCohabitClockTick marks the in-shmem clock state so cohabiting
+ * extensions (currently pg_cron) and other in-process callers can confirm that
+ * Citus has reserved its hybrid-logical-clock tick slot during _PG_init,
+ * before the cohabiting background worker enters its job-execution loop. The
+ * shared-memory slot itself is reserved unconditionally by
+ * InitializeClusterClockMem; this call only records the operator-trusted
+ * cohabit reservation.
+ */
+void
+ReserveCohabitClockTick(void)
+{
+	if (LogicalClockShmem == NULL)
+	{
+		return;
+	}
+
+	LWLockAcquire(&LogicalClockShmem->clockLock, LW_EXCLUSIVE);
+	LogicalClockShmem->cohabitClockTickReserved = true;
+	LWLockRelease(&LogicalClockShmem->clockLock);
+}
+
+
+/*
+ * FEATURE: TS19
+ *
+ * IsClockTickCohabitReserved returns true when ReserveCohabitClockTick has
+ * recorded the reservation. Cohabiting bg-worker callers and SQL-side
+ * companion checks can use this to confirm the clock initialization order is
+ * intact and the clock UDFs are safe to call from cohabiting bg-worker context.
+ */
+bool
+IsClockTickCohabitReserved(void)
+{
+	if (LogicalClockShmem == NULL)
+	{
+		return false;
+	}
+
+	LWLockAcquire(&LogicalClockShmem->clockLock, LW_SHARED);
+	bool reserved = LogicalClockShmem->cohabitClockTickReserved;
+	LWLockRelease(&LogicalClockShmem->clockLock);
+
+	return reserved;
 }

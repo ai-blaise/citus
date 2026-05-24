@@ -33,8 +33,8 @@ the PR opens.
 | 0004 | `patches/0004-hashtable-on-planner-hotpath.patch` | pending submission | fork artifact ready; upstream PR after live Citus build evidence | this branch | gates on `patches-check`, `router-patch-smoke`, and a later live Citus planner benchmark before performance claims |
 | 0005 | `patches/0005-placement-generation-counter.patch` | pending submission | draft prepared | landed in fork PR50 | gates on companion-side subscriber tests (`cargo test -p ai_blaise_citus_companion --lib router_assist`) plus a real Citus build that exercises the counter through a rebalance |
 | 0006 | `patches/0006-fast-path-router-no-coord-rt.patch` | pending submission | fork artifact ready; upstream PR after coord-less pool live evidence | this branch | gates on `patches-check`, companion router-assist tests, `router-patch-smoke`, and later live pool latency evidence |
-| 0007 | citus clock cohabit pg_cron | pending submission | in flight | not yet landed in fork | gates on a cohabit-smoke run that boots Citus + `pg_cron` without `citus_clock` registration conflicts |
-| 0008 | cohabit-extensions detection API | pending submission | in flight | not yet landed in fork | gates on companion-side detection harness covering TimescaleDB, `pg_cron`, and `pg_partman` |
+| 0007 | `patches/0007-citus-clock-cohabit-pg-cron.patch` | pending submission | draft prepared; live pg_cron boot evidence still required before upstream PR | this branch | gates on `patches-check` plus a live cohabit-smoke run that boots Citus + `pg_cron` without `citus_clock` registration conflicts |
+| 0008 | `patches/0008-cohabit-extensions-detection-api.patch` | pending submission | draft prepared; C API live-build proof still required before upstream PR | this branch | gates on companion-side `cohabit-detection-smoke` covering TimescaleDB, `pg_cron`, and `pg_partman` |
 | 0009 | distSQL physical plan distribution | pending submission | in flight (large scope; will require multiple sub-PRs) | not yet landed in fork | gates on `companion-advanced-planner` canonical row plus an end-to-end physical-plan distribution smoke |
 | 0010 | distributed cursors | pending submission | in flight | not yet landed in fork | gates on a cursor-correctness smoke that fetches across coordinator failover |
 | 0011 | distributed savepoints | pending submission | in flight | not yet landed in fork | gates on a savepoint-correctness smoke covering nested-transaction rollback across shards |
@@ -45,12 +45,13 @@ maintainers have historically declined to absorb. Patches 0003 and 0005 are
 the next two candidates we expect to submit; their draft mailbox diffs are
 already mailbox-header-clean and have on-disk `patches/series` entries.
 
-Patches 0004 and 0006 now have fork patch artifacts. They stay pending for
-upstream submission until ai-blaise CI, a real Citus build, and the relevant
-live planner/pool evidence are recorded. Patches 0007-0011 remain roster
-entries with tracked designs but no landed fork patch artifact yet. Each lands
-in the fork first, then gets submitted upstream after the runtime gate flips
-from `alpha` to `production-ready` in `docs/ai-blaise/NEW_FEATURES.md`.
+Patches 0004, 0006, 0007, and 0008 now have fork patch artifacts. They stay
+pending for upstream submission until ai-blaise CI, a real Citus build, and the
+relevant live planner, pool, pg_cron boot, or C API evidence are recorded.
+Patches 0009-0011 remain roster entries with tracked designs but no landed fork
+patch artifact yet. Each lands in the fork first, then gets submitted upstream
+after the runtime gate flips from `alpha` to `production-ready` in
+`docs/ai-blaise/NEW_FEATURES.md`.
 
 ### Citus upstream submission cadence
 
@@ -89,6 +90,31 @@ under the same FEATURE id.
 - **Gate before upstream PR**: companion-side subscriber tests
   (`cargo test -p ai_blaise_citus_companion --lib router_assist`) plus a real
   Citus build that exercises the counter through a rebalance.
+
+#### 0007-citus-clock-cohabit-pg-cron.patch -- pg_cron clock cohabitation
+
+- **Target branch**: `release-14.0`
+- **Type**: cohabitation safety hook
+- **Rationale**: Records an explicit logical-clock reservation when operators
+  configure `pg_cron` as a clock-side cohabitant. The patch does not grant
+  pg_cron trusted hook-chain status; it only reserves and exposes the clock flag
+  needed by pg_cron scheduled-job callers.
+- **Gate before upstream PR**: `make -f Makefile.ai-blaise patches-check` plus
+  a live Citus+pg_cron cohabitation boot that records the patched image and
+  verifies no clock registration conflict.
+
+#### 0008-cohabit-extensions-detection-api.patch -- role-aware cohabit detection
+
+- **Target branch**: `release-14.0`
+- **Type**: internal API
+- **Rationale**: Exposes a role-aware classifier for supported cohabitants so
+  the fork can distinguish trusted hook-chain extensions from clock-side and
+  partition-management neighbors. The first roles are TimescaleDB, pg_cron, and
+  pg_partman.
+- **Gate before upstream PR**: `make -f Makefile.ai-blaise patches-check`,
+  `cargo test -p ai_blaise_citus_companion`, and
+  `ci/ai-blaise/cohabit-detection-smoke.sh`, followed by live-build proof for
+  the C API before submission upstream.
 
 ## Pending pgsql-hackers PRs (`postgres/postgres`, via pgEdge/Spock contribution path)
 

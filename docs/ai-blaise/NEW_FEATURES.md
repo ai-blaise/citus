@@ -848,6 +848,94 @@ cohabiting server without defining any Citus stub.
 - CI: `ci/ai-blaise/timescale-bridge-smoke.sh`
 - CI: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
 
+### TS19: pg_cron Clock Cohabitation
+
+**Overlay**:
+
+- `patches/0007-citus-clock-cohabit-pg-cron.patch`
+- `src/backend/distributed/clock/causal_clock.c`
+- `src/include/distributed/causal_clock.h`
+
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `pg_cron`
+
+**Summary**: Reserves and exposes a Citus hybrid-logical-clock cohabit flag
+when the operator explicitly lists `pg_cron` in `citus.cohabit_extensions`.
+The reservation is recorded during `_PG_init` after the logical-clock shared
+memory is initialized, so pg_cron background-worker paths can verify
+that Citus clock state was initialized before scheduled jobs call Citus clock
+UDFs.
+
+**Motivation**: pg_cron jobs may run inside the same postmaster as Citus and
+can call Citus clock functions from scheduled maintenance. The clock side of
+cohabitation needs an explicit, auditable reservation path instead of relying
+on load-order folklore.
+
+**Citus comparison**: Vanilla Citus initializes the clock shared-memory area
+but does not record an operator-approved cohabit reservation for pg_cron.
+
+Boundary: this patch deliberately does not make `pg_cron` a trusted hook-chain
+coextension. `timescaledb` remains the only trusted hook coextension. TS19
+stays alpha until a live Citus+pg_cron build boots with the patch and records
+clock-reservation evidence.
+
+**References**:
+
+- Patch: `FEATURE: TS19` in
+  `patches/0007-citus-clock-cohabit-pg-cron.patch`
+- In-source: `FEATURE: TS19` in
+  `src/backend/distributed/clock/causal_clock.c`
+- In-source: `FEATURE: TS19` in `src/include/distributed/causal_clock.h`
+- CI: `ci/ai-blaise/patches-check.sh`
+
+### TS20: Cohabit Extensions Detection API
+
+**Overlay**:
+
+- `patches/0008-cohabit-extensions-detection-api.patch`
+- `src/include/distributed/shared_library_init.h`
+- `src/backend/distributed/shared_library_init.c`
+- `companion/src/extension_catalog.rs`
+- `companion/src/citus_timescale.rs`
+- `ci/ai-blaise/cohabit-detection-smoke.sh`
+
+**Status**: alpha
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: `timescaledb`, `pg_cron`, `pg_partman`
+
+**Summary**: Adds a role-aware cohabit-extension detection API. The Citus-side
+classification distinguishes `timescaledb` as the trusted hook-chain
+coextension, `pg_cron` as the clock-side background-worker coextension, and
+`pg_partman` as a partition-management cohabitant that is detected without
+receiving hook-chain trust. The companion runtime mirrors that contract with a
+fail-closed deterministic detector and a Timescale bridge enablement guard.
+
+**Motivation**: Cohabitation needs a stable API boundary that can recognize
+supported neighbors without turning every listed extension into a trusted hook
+owner.
+
+**Citus comparison**: Vanilla Citus has a binary first-hook check and no
+role-aware cohabitation classifier.
+
+Boundary: the deterministic companion smoke covers TimescaleDB, pg_cron, and
+pg_partman detection and fail-closed handling of unknown names. TS20 remains
+alpha until the C API is exercised by a live patched Citus build or a SQL-visible
+runtime caller.
+
+**References**:
+
+- Patch: `FEATURE: TS20` in
+  `patches/0008-cohabit-extensions-detection-api.patch`
+- In-source: `FEATURE: TS20` in
+  `src/backend/distributed/shared_library_init.c`
+- In-source: `FEATURE: TS20` in `companion/src/extension_catalog.rs`
+- In-source: `FEATURE: TS20` in `companion/src/citus_timescale.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-cohabit-detection-canonical`
+- CI: `ci/ai-blaise/cohabit-detection-smoke.sh`
+
 ### TS13: Distributed time_bucket_gapfill
 
 **Overlay**: `companion/src/toolkit_distributed.rs`
