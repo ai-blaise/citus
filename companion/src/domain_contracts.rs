@@ -8,7 +8,7 @@ use crate::{
     LocalPlacementCheck, MigrationOperation, MigrationPlan, PlanFreezePlan, PlanPromotionPolicy,
     PlanRegressionPolicy, PlanRegressionSample, RerankerPlan, SearchColumnPlan,
     SearchIndexDistributedPlan, SessionClaims, ShardForValuePlan, ShardRoutingStrategy,
-    TenantArchivePlan, TenantMovePlan, TenantRlsPolicyPlan, ToolkitAggregateKind,
+    TenantArchivePlan, TenantMovePlan, TenantQuotaPlan, TenantRlsPolicyPlan, ToolkitAggregateKind,
     ToolkitDistributedPlan, ValidationTiming, VectorDestinationPlan, VectorProvider,
     VectorizerDefinition, VectorizerSchedule, WebhookEvent, WebhookHeader, WebhookRegistrationPlan,
 };
@@ -570,6 +570,14 @@ fn record_tenant_contracts(
         .map_err(DomainContractError::from_error)?;
     report.add_validation(&["S14", "TO3"]);
 
+    let quota = TenantQuotaPlan {
+        tenant_name: "tenant-a".to_string(),
+        max_connections: 100,
+        max_qps: 1_000,
+    };
+    quota.validate().map_err(DomainContractError::from_error)?;
+    report.add_validation(&["TO5"]);
+
     let archive = TenantArchivePlan {
         tenant_name: "tenant-a".to_string(),
         destination_uri: "s3://archives/tenant-a".to_string(),
@@ -631,13 +639,13 @@ mod tests {
         let report = canonical_domain_contracts_report().expect("domain report");
 
         assert_eq!(report.sql_plan_count, 22);
-        assert_eq!(report.validation_count, 10);
+        assert_eq!(report.validation_count, 11);
         assert_eq!(report.command_count, 49);
         for feature_id in [
             "A1", "API4", "Auth2", "G2", "G3", "Geo2", "Geo3", "IA3", "JS2", "L9", "M1", "M11",
             "M13", "M2", "M7", "PM3", "PM4", "S13", "S14", "S6", "Search2", "Search3", "Search9",
-            "Sec1", "Sec2", "Sec5", "Sec6", "T8", "TO3", "TO4", "TS13", "TS14", "TS15", "TS16",
-            "TS17", "TS9", "WH2",
+            "Sec1", "Sec2", "Sec5", "Sec6", "T8", "TO3", "TO4", "TO5", "TS13", "TS14", "TS15",
+            "TS16", "TS17", "TS9", "WH2",
         ] {
             assert!(
                 report.feature_ids.contains(&feature_id),

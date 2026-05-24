@@ -16,3 +16,6 @@ jobs:
         run: bash ci/ai-blaise/production-readiness-check.sh
       - name: Check production gap guardrails
         run: bash ci/ai-blaise/production-gap-audit.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run release gate monitor static contract
+        run: RELEASE_GATE_MONITOR_STATIC=1 bash ci/ai-blaise/release-gate-monitor.sh --local-only

@@ -144,7 +144,10 @@ pub use search_bridge::{
     HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
     SearchIndexDistributedPlan, SearchSqlPlan,
 };
-pub use tenants::{TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan};
+pub use tenants::{
+    TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan,
+    TenantRegionAffinityPlan, TenantSqlPlan,
+};
 pub use toolkit_distributed::{
     ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,
 };

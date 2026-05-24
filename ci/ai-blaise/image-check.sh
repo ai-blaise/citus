@@ -343,8 +343,10 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'serve_mcp_sidecar_http_forever' "${main_file}"
     grep -Fq 'handle_mcp_sidecar_http_bytes' sidecar/mcp/src/lib.rs
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
-    grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
-    grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
+    custom_http_probe_paths=(/healthz /readyz /metrics)
+    for custom_http_probe_path in "${custom_http_probe_paths[@]}"; do
+      grep -Fq 'request("GET", "'"${custom_http_probe_path}"'")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
+    done
   elif ! has_http_probe_contract "${main_file}"; then
     echo "serve path lacks HTTP probe contract: ${main_file}" >&2
     exit 1

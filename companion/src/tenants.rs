@@ -24,6 +24,31 @@ impl TenantMovePlan {
         }
         validate_optional("region_affinity", &self.region_affinity)
     }
+
+    pub fn to_sql_plan(&self) -> Result<TenantSqlPlan, TenantOperationError> {
+        self.validate()?;
+        let region = match &self.region_affinity {
+            Some(region) => sql_literal(region),
+            None => "NULL".to_string(),
+        };
+
+        TenantSqlPlan::new(
+            "S14",
+            vec![
+                format!(
+                    "SELECT companion_internal.plan_tenant_move({}, {}, {}, {});",
+                    sql_literal(&self.tenant_name),
+                    sql_literal(&self.source_worker),
+                    sql_literal(&self.target_worker),
+                    region
+                ),
+                format!(
+                    "SELECT move_id, status FROM companion_tenant_moves WHERE tenant_name = {};",
+                    sql_literal(&self.tenant_name)
+                ),
+            ],
+        )
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -44,6 +69,19 @@ impl TenantQuotaPlan {
         }
         Ok(())
     }
+
+    pub fn to_sql_plan(&self) -> Result<TenantSqlPlan, TenantOperationError> {
+        self.validate()?;
+        TenantSqlPlan::new(
+            "TO5",
+            vec![format!(
+                "SELECT companion_internal.set_tenant_quota({}, {}, {});",
+                sql_literal(&self.tenant_name),
+                self.max_connections,
+                self.max_qps
+            )],
+        )
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -61,6 +99,66 @@ impl TenantArchivePlan {
             return Err(TenantOperationError::InvalidRetention);
         }
         Ok(())
+    }
+
+    pub fn to_sql_plan(&self) -> Result<TenantSqlPlan, TenantOperationError> {
+        self.validate()?;
+        TenantSqlPlan::new(
+            "TO4",
+            vec![format!(
+                "SELECT companion_internal.plan_tenant_archive({}, {}, {});",
+                sql_literal(&self.tenant_name),
+                sql_literal(&self.destination_uri),
+                self.retention_days
+            )],
+        )
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TenantRegionAffinityPlan {
+    pub tenant_name: String,
+    pub region_affinity: String,
+}
+
+impl TenantRegionAffinityPlan {
+    pub fn validate(&self) -> Result<(), TenantOperationError> {
+        validate_required("tenant_name", &self.tenant_name)?;
+        validate_required("region_affinity", &self.region_affinity)
+    }
+
+    pub fn to_sql_plan(&self) -> Result<TenantSqlPlan, TenantOperationError> {
+        self.validate()?;
+        TenantSqlPlan::new(
+            "TO5",
+            vec![format!(
+                "SELECT companion_internal.set_tenant_region_affinity({}, {});",
+                sql_literal(&self.tenant_name),
+                sql_literal(&self.region_affinity)
+            )],
+        )
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TenantSqlPlan {
+    pub feature_id: &'static str,
+    pub commands: Vec<String>,
+}
+
+impl TenantSqlPlan {
+    fn new(feature_id: &'static str, commands: Vec<String>) -> Result<Self, TenantOperationError> {
+        if commands.is_empty() || commands.iter().any(|command| command.trim().is_empty()) {
+            return Err(TenantOperationError::MissingRequiredField("commands"));
+        }
+        Ok(Self {
+            feature_id,
+            commands,
+        })
+    }
+
+    pub fn script(&self) -> String {
+        self.commands.join("\n")
     }
 }
 
@@ -108,6 +206,10 @@ fn validate_optional(
     Ok(())
 }
 
+fn sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,6 +236,80 @@ mod tests {
         };
 
         assert_eq!(plan.validate(), Err(TenantOperationError::SameWorkerMove));
+    }
+
+    #[test]
+    fn tenant_move_sql_plan_contains_action_and_readback() {
+        let plan = TenantMovePlan {
+            tenant_name: "tenant-a".to_string(),
+            source_worker: "worker-1".to_string(),
+            target_worker: "worker-2".to_string(),
+            region_affinity: Some("us-east-1".to_string()),
+        }
+        .to_sql_plan()
+        .unwrap();
+
+        assert_eq!(plan.feature_id, "S14");
+        assert_eq!(plan.commands.len(), 2);
+        assert!(plan.script().contains("plan_tenant_move"));
+        assert!(plan.script().contains("companion_tenant_moves"));
+    }
+
+    #[test]
+    fn tenant_move_sql_plan_uses_null_region_when_absent() {
+        let plan = TenantMovePlan {
+            tenant_name: "tenant-a".to_string(),
+            source_worker: "worker-1".to_string(),
+            target_worker: "worker-2".to_string(),
+            region_affinity: None,
+        }
+        .to_sql_plan()
+        .unwrap();
+
+        assert!(plan.commands[0].ends_with("'worker-2', NULL);"));
+    }
+
+    #[test]
+    fn tenant_quota_sql_plan_materializes_limits() {
+        let plan = TenantQuotaPlan {
+            tenant_name: "tenant-a".to_string(),
+            max_connections: 100,
+            max_qps: 1_000,
+        }
+        .to_sql_plan()
+        .unwrap();
+
+        assert_eq!(plan.feature_id, "TO5");
+        assert!(plan.script().contains("set_tenant_quota"));
+    }
+
+    #[test]
+    fn tenant_archive_sql_plan_materializes_archive_request() {
+        let plan = TenantArchivePlan {
+            tenant_name: "tenant-a".to_string(),
+            destination_uri: "s3://archives/tenant-a".to_string(),
+            retention_days: 30,
+        }
+        .to_sql_plan()
+        .unwrap();
+
+        assert_eq!(plan.feature_id, "TO4");
+        assert!(plan.script().contains("plan_tenant_archive"));
+    }
+
+    #[test]
+    fn tenant_region_affinity_sql_plan_rejects_empty_region() {
+        let err = TenantRegionAffinityPlan {
+            tenant_name: "tenant-a".to_string(),
+            region_affinity: " ".to_string(),
+        }
+        .to_sql_plan()
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            TenantOperationError::MissingRequiredField("region_affinity")
+        ));
     }
 
     #[test]
