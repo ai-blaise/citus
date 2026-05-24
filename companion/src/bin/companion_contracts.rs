@@ -73,6 +73,9 @@ fn main() {
         [command] if command == "run-operations-canonical" => {
             run_operations_canonical();
         }
+        [command] if command == "run-plan-runtime-canonical" => {
+            run_plan_runtime_canonical();
+        }
         _ => {
             eprintln!("companion-contracts: unknown command");
             print_usage();
@@ -187,6 +190,29 @@ fn run_operations_canonical() {
         report.runtime_toggles,
         report.security_controls,
         report.compatibility_checks,
+    );
+}
+
+fn run_plan_runtime_canonical() {
+    let report = canonical_plan_runtime_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: plan runtime report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "records\tpromoted\tobservations\taudit_events\tidempotent_replays\tretry_attempts\tfailed_commands\tregression_violations\tsql_contract_commands"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.records,
+        report.promoted,
+        report.observations,
+        report.audit_events,
+        report.idempotent_replays,
+        report.retry_attempts,
+        report.failed_commands,
+        report.regression_violations,
+        report.sql_contract_commands,
     );
 }
 
