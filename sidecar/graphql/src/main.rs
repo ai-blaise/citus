@@ -4,7 +4,7 @@
 
 use ai_blaise_citus_sidecar_graphql::{
     canonical_graphql_execution_plan, canonical_graphql_runtime_report,
-    serve_graphql_sidecar_http_forever,
+    graphql_runtime_dependency_report_from_env, serve_graphql_sidecar_http_forever,
 };
 use std::env;
 use std::process;
@@ -23,6 +23,11 @@ fn main() {
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["check-runtime-dependencies"] {
+        run_dependency_check();
         return;
     }
 
@@ -57,7 +62,9 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: graphql [serve|run-canonical|run-runtime-canonical]");
+    println!(
+        "usage: graphql [serve|run-canonical|run-runtime-canonical|check-runtime-dependencies]"
+    );
     println!("serves the GraphQL sidecar HTTP front door or emits a deterministic TSV plan");
 }
 
@@ -89,5 +96,20 @@ fn run_runtime_canonical() {
             .unwrap_or_else(|| "none".to_string()),
         report.response.execution_plan.distributed_types.join(","),
         report.subscription.field,
+    );
+}
+
+fn run_dependency_check() {
+    let report = graphql_runtime_dependency_report_from_env().unwrap_or_else(|error| {
+        eprintln!("graphql: runtime dependency check failed: {error}");
+        process::exit(1);
+    });
+    println!("database_url_env	jwt_secret_env	endpoint	pg_graphql_required");
+    println!(
+        "{}	{}	{}	{}",
+        report.database_url_env,
+        report.jwt_secret_env,
+        report.endpoint_path,
+        report.pg_graphql_extension_required,
     );
 }

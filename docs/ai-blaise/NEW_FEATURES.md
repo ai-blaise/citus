@@ -3900,7 +3900,7 @@ binding rather than an ambient runtime setting.
 ### API1: PostgREST Sidecar
 
 **Overlay**: `sidecar/postgrest`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
@@ -3908,7 +3908,7 @@ binding rather than an ambient runtime setting.
 **Summary**: Defines schemas and REST routes exposed by the PostgREST
 sidecar, plus a runnable canonical route emitter.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the real `ai_blaise_citus_sidecar_postgrest` binary, starts `serve` on a TCP listener, verifies `/healthz`, `/readyz`, `/metrics`, persistent `/drain` readiness, fail-closed invalid commands/listen addresses, `/openapi.json`, `/postgrest.conf`, route descriptors at `/api/orders` and `/api/public/orders`, and 404 behavior for unknown routes. This promotes the bounded Rust sidecar front-door and route contract; it does not claim managed upstream PostgREST operations beyond the configured launch contract.
+Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` builds the real `ai_blaise_citus_sidecar_postgrest` binary, starts `serve` on a TCP listener, verifies `/healthz`, `/readyz`, `/metrics`, persistent `/drain` readiness, malformed raw HTTP handling, fail-closed invalid commands/listen addresses, `/openapi.json`, `/postgrest.conf` with environment-backed secret references, route descriptors at `/api/orders` and `/api/public/orders`, method rejection, and runtime dependency validation for missing/invalid database URI and JWT secret inputs. This is alpha runtime evidence for the Rust front-door and launch contract; it does not prove a live upstream PostgREST process or table-backed request serving against PostgreSQL.
 
 **Motivation**: Auto-REST needs a validated route surface before the sidecar
 starts serving table-backed endpoints.
@@ -3922,11 +3922,12 @@ starts serving table-backed endpoints.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
 
 ### API2: Distributed PostgREST Views
 
 **Overlay**: `sidecar/postgrest`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
@@ -3934,7 +3935,7 @@ starts serving table-backed endpoints.
 **Summary**: Binds REST routes to helper views with distribution column and
 shard-count metadata.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` starts the real PostgREST sidecar process and verifies distributed route descriptors expose `api.orders`, `tenant_id` distribution metadata, shard count, and allowed GET/POST methods through live HTTP requests to `/api/orders` and `/api/public/orders`. This promotes the sidecar-owned distributed view routing contract, not arbitrary tenant schema generation.
+Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` starts the real PostgREST sidecar process and verifies distributed route descriptors expose `api.orders`, `tenant_id` distribution metadata, shard count, and allowed GET/POST methods through live HTTP requests to `/api/orders` and `/api/public/orders`; disallowed methods fail closed. This remains alpha because the sidecar does not yet serve tenant tables through a live upstream PostgREST/PostgreSQL data plane.
 
 **Motivation**: Auto-REST over distributed tables needs a versioned view contract
 so requests route through Citus-aware helper views.
@@ -3948,11 +3949,12 @@ so requests route through Citus-aware helper views.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
 
 ### API3: GraphQL Sidecar
 
 **Overlay**: `sidecar/graphql`, `companion/src/graph_bridge.rs`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
@@ -3960,7 +3962,7 @@ so requests route through Citus-aware helper views.
 **Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
 tables for the GraphQL sidecar, plus a runnable canonical binding emitter.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML, POST `/graphql/v1` query handling with tenant JWT claims, `/graphql/ws` subscription registration, WebSocket-upgrade boundary errors, persistent `/drain` readiness, metrics, and fail-closed invalid startup paths. This promotes the bounded Rust GraphQL front-door contract; external pg_graphql deployment remains governed by the release image/deploy gates.
+Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML, POST `/graphql/v1` query handling with tenant JWT claims, missing-claim and introspection-denied error taxonomy, malformed body handling, `/graphql/ws` subscription registration, WebSocket-upgrade boundary errors, persistent `/drain` readiness, metrics, and fail-closed runtime dependency validation for database URL and JWT secret inputs. This is alpha runtime evidence for the Rust front-door contract; it does not prove live `pg_graphql` execution against PostgreSQL.
 
 **Motivation**: GraphQL routing needs a typed endpoint and schema-binding
 contract before exposing pg_graphql to tenants.
@@ -3974,6 +3976,7 @@ contract before exposing pg_graphql to tenants.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
 
 ### API4: Distributed GraphQL Tables
 
@@ -4014,7 +4017,7 @@ for distributed tables.
 ### API5: RLS-Aware Auto API
 
 **Overlay**: `sidecar/postgrest`, `sidecar/graphql`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4022,7 +4025,7 @@ for distributed tables.
 **Summary**: Requires RLS, JWT secret references, and tenant claims for
 auto-API routes.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the PostgREST and GraphQL sidecars enforce the configured tenant-claim boundary in their canonical reports and live HTTP API paths, including JWT-claim GraphQL execution and RLS-required OpenAPI metadata. This promotes the sidecar route/auth boundary for generated APIs; it does not claim application-specific tenant policy correctness outside those generated descriptors.
+Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` verifies the PostgREST and GraphQL sidecars keep RLS/JWT boundaries explicit in their canonical reports and live HTTP paths, including GraphQL tenant-claim success, missing-tenant fail-closed behavior, PostgREST RLS-required OpenAPI metadata, and secret-backed runtime dependency checks. This remains alpha until generated APIs are exercised against live PostgreSQL RLS policies through upstream PostgREST/pg_graphql.
 
 **Motivation**: Auto-generated APIs must preserve tenant isolation rather than
 exposing raw distributed tables.
@@ -4039,11 +4042,12 @@ policy.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
 
 ### API6: Auto OpenAPI Document
 
 **Overlay**: `sidecar/postgrest`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
@@ -4051,7 +4055,7 @@ policy.
 **Summary**: Defines the OpenAPI path, title, and version served by the
 PostgREST sidecar.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the real PostgREST sidecar process serves `/openapi.json` over HTTP with OpenAPI 3.0 metadata, canonical route paths, RLS-required metadata, and the `tenant_id` claim. The same smoke checks process health, readiness, metrics, drain behavior, and fail-closed startup errors.
+Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` verifies the real PostgREST sidecar process serves `/openapi.json` over HTTP with OpenAPI 3.0 metadata, canonical route paths, RLS-required metadata, and the `tenant_id` claim. The same smoke checks process health, readiness, metrics, drain behavior, fail-closed startup errors, and generated `postgrest.conf` secret references. This remains alpha until the document path is paired with live upstream PostgREST/PostgreSQL serving.
 
 **Motivation**: Client generation and API inspection need a predictable
 OpenAPI endpoint.
@@ -4065,6 +4069,7 @@ OpenAPI endpoint.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
 
 ## Realtime
 
