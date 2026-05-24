@@ -64,6 +64,10 @@ TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
 SQL_EXTENSION = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql"
 AI_SQL_CONTRACT_SMOKE = ROOT / "ci/ai-blaise/ai-sql-contract-smoke.sh"
 CI_IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
+TOOLS_WORKFLOW = ROOT / ".github/workflows/ci-tools.yml"
+CITUSCTL_SMOKE = ROOT / "ci/ai-blaise/citusctl-smoke.sh"
+CITUSCTL_DEV_LIFECYCLE_SMOKE = ROOT / "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh"
+CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 
 SOURCE_ROOTS = [
     "companion",
@@ -226,6 +230,85 @@ if len(production_entries) + len(alpha_entries) != len(entries):
     fail(
         "computed feature status counts do not cover every NEW_FEATURES.md heading"
     )
+
+d1_section = feature_section(docs, "D1")
+m8_section = feature_section(docs, "M8")
+for phrase in (
+    "**Status**: production-ready",
+    "explicit `--state-dir`",
+    "json and tsv outputs are deterministic",
+    "local `dev-lifecycle.audit.tsv` log",
+    "not evidence for docker/kind startup",
+):
+    if compact(phrase) not in compact(d1_section):
+        fail(f"D1 citusctl dev lifecycle production boundary missing phrase: {phrase}")
+for phrase in (
+    "**Status**: alpha",
+    "M8 is not production-ready as a whole",
+    "bounded D1 local dev lifecycle subpath",
+    "deterministic JSON/TSV output",
+    "local audit append",
+    "does not execute manifests against Kubernetes",
+):
+    if compact(phrase) not in compact(m8_section):
+        fail(f"M8 citusctl plan/apply boundary missing phrase: {phrase}")
+for phrase in (
+    "explicit `--state-dir` invocations",
+    "deterministic JSON/TSV output",
+    "local audit append",
+    "M8 remains alpha outside that bounded D1 subpath",
+    "production cluster lifecycle management",
+):
+    if compact(phrase) not in compact(audit):
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve D1/M8 citusctl boundary: {phrase}")
+
+citusctl_lib = read(CITUSCTL_LIB)
+for phrase in (
+    "render_dev_lifecycle_cli_report_from_args",
+    "validate_plan_id(plan_id)",
+    "append_dev_audit_record",
+    "DevLifecycleCliReport",
+    "state-file-only-no-recursive-delete",
+):
+    if phrase not in citusctl_lib:
+        fail(f"tools/citusctl runtime lost production D1/M8 contract code: {phrase}")
+
+citusctl_smoke = read(CITUSCTL_SMOKE)
+for phrase in (
+    "apply \"not ok\" inspect cluster",
+    "plan_id must be stable ascii and non-empty",
+):
+    if phrase not in citusctl_smoke:
+        fail(f"citusctl-smoke.sh lost invalid plan-id guard: {phrase}")
+
+citusctl_dev_smoke = read(CITUSCTL_DEV_LIFECYCLE_SMOKE)
+for phrase in (
+    "--state-dir",
+    "--format json",
+    "--format tsv",
+    "state_dir must not be empty",
+    "plan_id must be stable ascii and non-empty",
+    "audit_record_written",
+    "dev-lifecycle.audit.tsv",
+    "state-file-only-no-recursive-delete",
+    "local-state-file-only",
+):
+    if phrase not in citusctl_dev_smoke:
+        fail(f"citusctl-dev-lifecycle-smoke.sh lost required D1/M8 assertion: {phrase}")
+
+makefile_text = read(MAKEFILE)
+for phrase in (
+    "citusctl-dev-lifecycle-smoke:",
+    "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh",
+    "gate-close:",
+    "citusctl-dev-lifecycle-smoke",
+):
+    if phrase not in makefile_text:
+        fail(f"Makefile.ai-blaise must wire citusctl dev lifecycle smoke: {phrase}")
+
+tools_workflow = read(TOOLS_WORKFLOW)
+if "citusctl-dev-lifecycle-smoke.sh" not in tools_workflow:
+    fail("ci-tools workflow must run citusctl-dev-lifecycle-smoke.sh")
 
 for phrase in (
     "not production-ready as a whole",

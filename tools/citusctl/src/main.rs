@@ -1,6 +1,6 @@
 use ai_blaise_citusctl::{
     canonical_citusctl_report, canonical_dev_lifecycle_report, parse_request,
-    wal_replay_debug_plan_from_args,
+    render_dev_lifecycle_cli_report_from_args, wal_replay_debug_plan_from_args,
 };
 use std::env;
 use std::process;
@@ -48,7 +48,21 @@ fn main() {
         return;
     }
 
-    if args.iter().any(|arg| arg == "--json" || arg == "--fixture") {
+    match render_dev_lifecycle_cli_report_from_args(&args) {
+        Ok(Some(output)) => {
+            println!("{output}");
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("citusctl: {error}");
+            process::exit(2);
+        }
+    }
+
+    let is_wal_replay_debug = args.iter().any(|arg| arg == "--fixture")
+        || (args.iter().any(|arg| arg == "wal-replay") && args.iter().any(|arg| arg == "--json"));
+    if is_wal_replay_debug {
         match wal_replay_debug_plan_from_args(&args) {
             Ok(plan) => println!("{}", plan.to_json()),
             Err(error) => {

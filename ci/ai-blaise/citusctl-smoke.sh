@@ -26,7 +26,7 @@ expect_output() {
 missing_plan_stdout="$(mktemp -t ai-blaise-citusctl-missing-plan.XXXXXX.out)"
 missing_plan_stderr="$(mktemp -t ai-blaise-citusctl-missing-plan.XXXXXX.err)"
 cleanup() {
-  rm -f "${missing_plan_stdout}" "${missing_plan_stderr}"
+  rm -f "${missing_plan_stdout}" "${missing_plan_stderr}" "${bad_plan_stdout:-}" "${bad_plan_stderr:-}"
 }
 trap cleanup EXIT
 
@@ -41,6 +41,20 @@ if ! grep -Fq "citusctl: plan_id must not be empty" "${missing_plan_stderr}"; th
   cat "${missing_plan_stdout}" >&2
   cat "${missing_plan_stderr}" >&2
   echo "citusctl apply without a plan id did not report the guarded plan_id error" >&2
+  exit 1
+fi
+
+bad_plan_stdout="$(mktemp -t ai-blaise-citusctl-bad-plan.XXXXXX.out)"
+bad_plan_stderr="$(mktemp -t ai-blaise-citusctl-bad-plan.XXXXXX.err)"
+if run_citusctl apply "not ok" inspect cluster >"${bad_plan_stdout}" 2>"${bad_plan_stderr}"; then
+  cat "${bad_plan_stdout}" >&2
+  echo "citusctl apply accepted an unstable plan id" >&2
+  exit 1
+fi
+if ! grep -Fq "citusctl: plan_id must be stable ascii and non-empty" "${bad_plan_stderr}"; then
+  cat "${bad_plan_stdout}" >&2
+  cat "${bad_plan_stderr}" >&2
+  echo "citusctl apply did not fail closed on an unstable plan id" >&2
   exit 1
 fi
 
@@ -68,7 +82,7 @@ start_time=2026-05-21T09:00:00Z
 end_time=2026-05-21T11:00:00Z
 segments=3
 FIXTURE
-trap 'rm -f "${missing_plan_stdout}" "${missing_plan_stderr}"; rm -rf "${wal_fixture_dir}"' EXIT
+trap 'rm -f "${missing_plan_stdout}" "${missing_plan_stderr}" "${bad_plan_stdout:-}" "${bad_plan_stderr:-}"; rm -rf "${wal_fixture_dir}"' EXIT
 
 expect_output \
   "wal replay fixture json" \

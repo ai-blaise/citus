@@ -498,12 +498,14 @@ more production-ready than the artifacts justified.
   restore/replay mutation, or production cluster operations.
 - The `citusctl` CLI now has direct executable smokes for bounded plan/apply
   and dev lifecycle behavior. `citusctl-smoke.sh` proves the narrow D2
-  apply-mode plan-id guard, and `citusctl-dev-lifecycle-smoke.sh` proves
-  local D1/M8 dry-run plan rendering, stable plan-id apply validation,
-  idempotent up/down state handling, and state-file-only cleanup guardrails.
-  This is not evidence for mutating Kubernetes apply execution, manifest
-  reconciliation, migrations, backups, PITR, WAL replay, Docker/kind startup,
-  or a live Citus data plane.
+  apply-mode plan-id guard, including fail-closed unstable plan IDs, and
+  `citusctl-dev-lifecycle-smoke.sh` proves local D1/M8 `plan/apply dev`
+  runtime behavior through explicit `--state-dir` real-binary invocations:
+  dry-run plan rendering, deterministic JSON/TSV output, stable plan-id apply
+  validation, idempotent up/down state handling, local audit append, and
+  state-file-only cleanup guardrails. This is not evidence for mutating
+  Kubernetes apply execution, manifest reconciliation, migrations, backups,
+  PITR, WAL replay, Docker/kind startup, or a live Citus data plane.
 - The `citus-lsp` CLI now has direct executable smokes for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
@@ -741,10 +743,13 @@ Rule 10 completion for this branch requires local and VM verification of:
   hardware-backed signing, accounting workflow authorization, or
   migration/operator integration.
 - D1/M8 dev lifecycle evidence is limited to the real `citusctl` CLI local
-  state-file runtime: dry-run plan rendering, stable plan-id validation,
-  idempotent up/down state transitions, and state-file-only cleanup. It must
-  not be cited as evidence for Docker/kind startup, Kubernetes deployment,
-  Postgres/Citus data-plane health, or extension-service orchestration.
+  state-file runtime behind explicit `--state-dir` invocations: dry-run plan
+  rendering, stable plan-id validation, deterministic JSON/TSV output,
+  idempotent up/down state transitions, local audit append, and
+  state-file-only cleanup. M8 remains alpha outside that bounded D1 subpath.
+  This evidence must not be cited for Docker/kind startup, Kubernetes
+  deployment, Postgres/Citus data-plane health, extension-service
+  orchestration, or production cluster lifecycle management.
 - D2 production evidence is limited to the real `citusctl` CLI apply-mode
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,

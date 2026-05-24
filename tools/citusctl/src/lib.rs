@@ -9,7 +9,8 @@
 
 use std::error::Error;
 use std::fmt;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -52,7 +53,7 @@ impl ExecutionIntent {
     fn validate(&self) -> Result<(), CitusCtlError> {
         match self {
             Self::Plan => Ok(()),
-            Self::Apply { plan_id } => validate_required("plan_id", plan_id),
+            Self::Apply { plan_id } => validate_plan_id(plan_id),
         }
     }
 
@@ -226,6 +227,15 @@ pub enum DevAction {
     Down,
 }
 
+impl DevAction {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum InspectTarget {
     Cluster,
@@ -286,6 +296,10 @@ impl DevLifecycleRuntime {
         self.state_dir.join("dev-lifecycle.state")
     }
 
+    pub fn audit_path(&self) -> PathBuf {
+        self.state_dir.join("dev-lifecycle.audit.tsv")
+    }
+
     pub fn plan(&self, action: DevAction) -> Result<DevLifecyclePlan, CitusCtlError> {
         self.build_plan(action, None, true)
     }
@@ -317,12 +331,20 @@ impl DevLifecycleRuntime {
             },
             _ => {}
         }
+        append_dev_audit_record(
+            &self.audit_path(),
+            &plan,
+            changed,
+            state_written,
+            state_removed,
+        )?;
 
         Ok(DevLifecycleReport {
             plan,
             changed,
             state_written,
             state_removed,
+            audit_record_written: true,
             evidence_boundary: "local-state-file-only",
         })
     }
@@ -398,6 +420,7 @@ pub struct DevLifecycleReport {
     pub changed: bool,
     pub state_written: bool,
     pub state_removed: bool,
+    pub audit_record_written: bool,
     pub evidence_boundary: &'static str,
 }
 
@@ -447,6 +470,257 @@ pub struct DevLifecycleCanonicalReport {
     pub final_state_present: bool,
     pub cleanup_guard: &'static str,
     pub evidence_boundary: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum DevLifecycleOutputFormat {
+    Tsv,
+    Json,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct DevLifecycleCliOptions {
+    cluster_name: Option<String>,
+    state_dir: Option<PathBuf>,
+    format: DevLifecycleOutputFormat,
+}
+
+impl DevLifecycleCliOptions {
+    fn parse(args: &[String]) -> Result<Self, CitusCtlError> {
+        let mut cluster_name = None;
+        let mut state_dir = None;
+        let mut format = DevLifecycleOutputFormat::Tsv;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--cluster" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("cluster_name"));
+                    };
+                    validate_required("cluster_name", value)?;
+                    cluster_name = Some(value.clone());
+                    index += 2;
+                }
+                "--state-dir" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("state_dir"));
+                    };
+                    state_dir = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--format" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("format"));
+                    };
+                    format = match value.as_str() {
+                        "tsv" => DevLifecycleOutputFormat::Tsv,
+                        "json" => DevLifecycleOutputFormat::Json,
+                        other => {
+                            return Err(CitusCtlError::UnknownValue {
+                                field: "format",
+                                value: other.to_string(),
+                            })
+                        }
+                    };
+                    index += 2;
+                }
+                value if value.starts_with("--") => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "dev_lifecycle_option",
+                        value: value.to_string(),
+                    })
+                }
+                value => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "argument",
+                        value: value.to_string(),
+                    })
+                }
+            }
+        }
+
+        Ok(Self {
+            cluster_name,
+            state_dir,
+            format,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct DevLifecycleCliReport {
+    mode: &'static str,
+    cluster_name: String,
+    action: DevAction,
+    state_path: String,
+    plan_id: Option<String>,
+    dry_run: bool,
+    changed: bool,
+    state_written: bool,
+    state_removed: bool,
+    audit_record_written: bool,
+    before_status: DevClusterStatus,
+    after_status: DevClusterStatus,
+    before_generation: u64,
+    after_generation: u64,
+    steps: usize,
+    cleanup_guard: &'static str,
+    evidence_boundary: &'static str,
+}
+
+impl DevLifecycleCliReport {
+    fn from_plan(plan: &DevLifecyclePlan) -> Self {
+        Self {
+            mode: "plan",
+            cluster_name: plan.after.cluster_name.clone(),
+            action: plan.action,
+            state_path: plan.state_path.clone(),
+            plan_id: plan.plan_id.clone(),
+            dry_run: plan.dry_run,
+            changed: plan.before.status != plan.after.status,
+            state_written: false,
+            state_removed: false,
+            audit_record_written: false,
+            before_status: plan.before.status,
+            after_status: plan.after.status,
+            before_generation: plan.before.generation,
+            after_generation: plan.after.generation,
+            steps: plan.steps.len(),
+            cleanup_guard: plan.cleanup_guard,
+            evidence_boundary: "local-state-file-only",
+        }
+    }
+
+    fn from_apply(report: &DevLifecycleReport) -> Self {
+        Self {
+            mode: "apply",
+            cluster_name: report.plan.after.cluster_name.clone(),
+            action: report.plan.action,
+            state_path: report.plan.state_path.clone(),
+            plan_id: report.plan.plan_id.clone(),
+            dry_run: report.plan.dry_run,
+            changed: report.changed,
+            state_written: report.state_written,
+            state_removed: report.state_removed,
+            audit_record_written: report.audit_record_written,
+            before_status: report.plan.before.status,
+            after_status: report.plan.after.status,
+            before_generation: report.plan.before.generation,
+            after_generation: report.plan.after.generation,
+            steps: report.plan.steps.len(),
+            cleanup_guard: report.plan.cleanup_guard,
+            evidence_boundary: report.evidence_boundary,
+        }
+    }
+
+    fn tsv_header() -> &'static str {
+        "mode\tcluster\taction\tstate_path\tplan_id\tdry_run\tchanged\tstate_written\tstate_removed\taudit_record_written\tbefore_status\tafter_status\tbefore_generation\tafter_generation\tsteps\tcleanup_guard\tevidence_boundary"
+    }
+
+    fn to_tsv(&self) -> String {
+        format!(
+            "{}\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            Self::tsv_header(),
+            self.mode,
+            self.cluster_name,
+            self.action.as_str(),
+            self.state_path,
+            self.plan_id.as_deref().unwrap_or(""),
+            self.dry_run,
+            self.changed,
+            self.state_written,
+            self.state_removed,
+            self.audit_record_written,
+            self.before_status.as_str(),
+            self.after_status.as_str(),
+            self.before_generation,
+            self.after_generation,
+            self.steps,
+            self.cleanup_guard,
+            self.evidence_boundary
+        )
+    }
+
+    fn to_json(&self) -> String {
+        let plan_id = self
+            .plan_id
+            .as_deref()
+            .map(|value| format!("\"{}\"", json_escape(value)))
+            .unwrap_or_else(|| "null".to_string());
+        format!(
+            "{{\"action\":\"{}\",\"after_generation\":{},\"after_status\":\"{}\",\"audit_record_written\":{},\"before_generation\":{},\"before_status\":\"{}\",\"changed\":{},\"cleanup_guard\":\"{}\",\"cluster\":\"{}\",\"dry_run\":{},\"evidence_boundary\":\"{}\",\"mode\":\"{}\",\"plan_id\":{},\"state_path\":\"{}\",\"state_removed\":{},\"state_written\":{},\"steps\":{}}}",
+            self.action.as_str(),
+            self.after_generation,
+            self.after_status.as_str(),
+            self.audit_record_written,
+            self.before_generation,
+            self.before_status.as_str(),
+            self.changed,
+            self.cleanup_guard,
+            json_escape(&self.cluster_name),
+            self.dry_run,
+            self.evidence_boundary,
+            self.mode,
+            plan_id,
+            json_escape(&self.state_path),
+            self.state_removed,
+            self.state_written,
+            self.steps,
+        )
+    }
+
+    fn render(&self, format: DevLifecycleOutputFormat) -> String {
+        match format {
+            DevLifecycleOutputFormat::Tsv => self.to_tsv(),
+            DevLifecycleOutputFormat::Json => self.to_json(),
+        }
+    }
+}
+
+pub fn render_dev_lifecycle_cli_report_from_args(
+    args: &[String],
+) -> Result<Option<String>, CitusCtlError> {
+    let Some(first) = args.first() else {
+        return Ok(None);
+    };
+    let (plan_id, rest) = match first.as_str() {
+        "plan" => (None, &args[1..]),
+        "apply" => {
+            let Some(plan_id) = args.get(1) else {
+                return Ok(None);
+            };
+            (Some(plan_id.clone()), &args[2..])
+        }
+        _ => return Ok(None),
+    };
+
+    if rest.first().map(String::as_str) != Some("dev") {
+        return Ok(None);
+    }
+    let Some(action_value) = rest.get(1) else {
+        return Ok(None);
+    };
+    let option_args = &rest[2..];
+    if !option_args.iter().any(|arg| arg.starts_with("--")) {
+        return Ok(None);
+    }
+
+    let action = parse_dev_action(action_value)?;
+    let options = DevLifecycleCliOptions::parse(option_args)?;
+    let state_dir = options
+        .state_dir
+        .ok_or(CitusCtlError::MissingRequiredField("state_dir"))?;
+    let cluster_name = options
+        .cluster_name
+        .unwrap_or_else(|| "dev-citus".to_string());
+    let runtime = DevLifecycleRuntime::new(cluster_name, state_dir)?;
+    let report = match plan_id {
+        None => DevLifecycleCliReport::from_plan(&runtime.plan(action)?),
+        Some(plan_id) => DevLifecycleCliReport::from_apply(&runtime.apply(action, plan_id)?),
+    };
+
+    Ok(Some(report.render(options.format)))
 }
 
 pub fn canonical_dev_lifecycle_report() -> Result<DevLifecycleCanonicalReport, CitusCtlError> {
@@ -605,43 +879,73 @@ fn parse_command(args: &[String]) -> Result<CitusCtlCommand, CitusCtlError> {
     };
 
     match command.as_str() {
-        "init" => Ok(CitusCtlCommand::Init {
-            cluster: value(1, "cluster")?,
-        }),
-        "apply" => Ok(CitusCtlCommand::Apply {
-            manifest_path: value(1, "manifest_path")?,
-        }),
-        "upgrade" => Ok(CitusCtlCommand::Upgrade {
-            target_version: value(1, "target_version")?,
-        }),
-        "dev" => Ok(CitusCtlCommand::Dev {
-            action: parse_dev_action(&value(1, "dev_action")?)?,
-        }),
-        "bench" => Ok(CitusCtlCommand::Bench {
-            profile: value(1, "profile")?,
-        }),
-        "inspect" => Ok(CitusCtlCommand::Inspect {
-            target: parse_inspect_target(&value(1, "inspect_target")?)?,
-        }),
+        "init" => {
+            expect_arg_count(args, 2, "init")?;
+            Ok(CitusCtlCommand::Init {
+                cluster: value(1, "cluster")?,
+            })
+        }
+        "apply" => {
+            expect_arg_count(args, 2, "apply")?;
+            Ok(CitusCtlCommand::Apply {
+                manifest_path: value(1, "manifest_path")?,
+            })
+        }
+        "upgrade" => {
+            expect_arg_count(args, 2, "upgrade")?;
+            Ok(CitusCtlCommand::Upgrade {
+                target_version: value(1, "target_version")?,
+            })
+        }
+        "dev" => {
+            expect_arg_count(args, 2, "dev")?;
+            Ok(CitusCtlCommand::Dev {
+                action: parse_dev_action(&value(1, "dev_action")?)?,
+            })
+        }
+        "bench" => {
+            expect_arg_count(args, 2, "bench")?;
+            Ok(CitusCtlCommand::Bench {
+                profile: value(1, "profile")?,
+            })
+        }
+        "inspect" => {
+            expect_arg_count(args, 2, "inspect")?;
+            Ok(CitusCtlCommand::Inspect {
+                target: parse_inspect_target(&value(1, "inspect_target")?)?,
+            })
+        }
         "vectorizer" => Ok(CitusCtlCommand::Vectorizer {
             action: parse_named_action(args, "vectorizer_name")?,
         }),
         "branch" => Ok(CitusCtlCommand::Branch {
             action: parse_named_action(args, "branch_name")?,
         }),
-        "migrate" => Ok(CitusCtlCommand::Migrate {
-            manifest_path: value(1, "manifest_path")?,
-        }),
-        "dump" => Ok(CitusCtlCommand::Dump {
-            target: value(1, "target")?,
-        }),
-        "restore" => Ok(CitusCtlCommand::Restore {
-            source_uri: value(1, "source_uri")?,
-        }),
-        "restore-pitr" => Ok(CitusCtlCommand::RestorePitr {
-            cluster: value(1, "cluster")?,
-            target_time: value(2, "target_time")?,
-        }),
+        "migrate" => {
+            expect_arg_count(args, 2, "migrate")?;
+            Ok(CitusCtlCommand::Migrate {
+                manifest_path: value(1, "manifest_path")?,
+            })
+        }
+        "dump" => {
+            expect_arg_count(args, 2, "dump")?;
+            Ok(CitusCtlCommand::Dump {
+                target: value(1, "target")?,
+            })
+        }
+        "restore" => {
+            expect_arg_count(args, 2, "restore")?;
+            Ok(CitusCtlCommand::Restore {
+                source_uri: value(1, "source_uri")?,
+            })
+        }
+        "restore-pitr" => {
+            expect_arg_count(args, 3, "restore-pitr")?;
+            Ok(CitusCtlCommand::RestorePitr {
+                cluster: value(1, "cluster")?,
+                target_time: value(2, "target_time")?,
+            })
+        }
         "tenant" => Ok(CitusCtlCommand::Tenant {
             action: parse_named_action(args, "tenant_name")?,
         }),
@@ -657,16 +961,25 @@ fn parse_command(args: &[String]) -> Result<CitusCtlCommand, CitusCtlError> {
         "backup" => Ok(CitusCtlCommand::Backup {
             action: parse_named_action(args, "backup_name")?,
         }),
-        "time-travel" => Ok(CitusCtlCommand::TimeTravel {
-            target_time: value(1, "target_time")?,
-        }),
-        "wal-replay" => Ok(CitusCtlCommand::WalReplay {
-            source_uri: value(1, "source_uri")?,
-            target_time: value(2, "target_time")?,
-        }),
-        "new-feature" => Ok(CitusCtlCommand::NewFeature {
-            feature_id: value(1, "feature_id")?,
-        }),
+        "time-travel" => {
+            expect_arg_count(args, 2, "time-travel")?;
+            Ok(CitusCtlCommand::TimeTravel {
+                target_time: value(1, "target_time")?,
+            })
+        }
+        "wal-replay" => {
+            expect_arg_count(args, 3, "wal-replay")?;
+            Ok(CitusCtlCommand::WalReplay {
+                source_uri: value(1, "source_uri")?,
+                target_time: value(2, "target_time")?,
+            })
+        }
+        "new-feature" => {
+            expect_arg_count(args, 2, "new-feature")?;
+            Ok(CitusCtlCommand::NewFeature {
+                feature_id: value(1, "feature_id")?,
+            })
+        }
         other => Err(CitusCtlError::UnknownCommand(other.to_string())),
     }
 }
@@ -675,6 +988,8 @@ fn parse_named_action(
     args: &[String],
     name_field: &'static str,
 ) -> Result<NamedAction, CitusCtlError> {
+    let command_name = args.first().map(String::as_str).unwrap_or("action");
+    expect_arg_count(args, 3, command_name)?;
     let verb = args
         .get(1)
         .ok_or(CitusCtlError::MissingRequiredField("verb"))
@@ -684,6 +999,24 @@ fn parse_named_action(
         .cloned()
         .ok_or(CitusCtlError::MissingRequiredField(name_field))?;
     Ok(NamedAction { verb, name })
+}
+
+fn expect_arg_count(
+    args: &[String],
+    expected: usize,
+    command_name: &str,
+) -> Result<(), CitusCtlError> {
+    if args.len() == expected {
+        return Ok(());
+    }
+    Err(CitusCtlError::UnknownValue {
+        field: "argument",
+        value: format!(
+            "{command_name} expected {} argument(s), got {}",
+            expected.saturating_sub(1),
+            args.len().saturating_sub(1)
+        ),
+    })
 }
 
 fn parse_dev_action(value: &str) -> Result<DevAction, CitusCtlError> {
@@ -779,6 +1112,36 @@ fn dev_lifecycle_steps(action: DevAction, dry_run: bool) -> Vec<DevLifecycleStep
         steps.push(DevLifecycleStep::WriteAuditRecord);
     }
     steps
+}
+
+fn append_dev_audit_record(
+    path: &Path,
+    plan: &DevLifecyclePlan,
+    changed: bool,
+    state_written: bool,
+    state_removed: bool,
+) -> Result<(), CitusCtlError> {
+    let write_header = !path.exists();
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    if write_header {
+        writeln!(
+            file,
+            "plan_id\tcluster\taction\tbefore_status\tafter_status\tchanged\tstate_written\tstate_removed\tevidence_boundary"
+        )?;
+    }
+    writeln!(
+        file,
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\tlocal-state-file-only",
+        plan.plan_id.as_deref().unwrap_or(""),
+        plan.after.cluster_name,
+        plan.action.as_str(),
+        plan.before.status.as_str(),
+        plan.after.status.as_str(),
+        changed,
+        state_written,
+        state_removed
+    )?;
+    Ok(())
 }
 
 fn read_dev_state(path: &Path) -> Result<Option<DevLifecycleState>, CitusCtlError> {
@@ -1201,6 +1564,7 @@ mod tests {
         assert!(first_up.changed);
         assert!(first_up.state_written);
         assert!(runtime.state_path().exists());
+        assert!(runtime.audit_path().exists());
 
         let second_up = runtime
             .apply(DevAction::Up, "plan-up-2")
@@ -1211,7 +1575,9 @@ mod tests {
         let first_down = runtime.apply(DevAction::Down, "plan-down-1").expect("down");
         assert!(first_down.changed);
         assert!(first_down.state_removed);
+        assert!(first_down.audit_record_written);
         assert!(!runtime.state_path().exists());
+        assert!(runtime.audit_path().exists());
         assert_eq!(
             first_down.plan.cleanup_guard,
             "state-file-only-no-recursive-delete"
@@ -1248,6 +1614,26 @@ mod tests {
     fn apply_intent_requires_plan_id() {
         let error = parse_request(&args(&["apply"])).expect_err("missing plan id");
         assert_eq!(error, CitusCtlError::MissingRequiredField("plan_id"));
+    }
+
+    #[test]
+    fn apply_intent_rejects_unstable_plan_id() {
+        let request = parse_request(&args(&["apply", "not ok", "inspect", "cluster"]))
+            .expect("parse invalid plan id request");
+        assert_eq!(request.plan(), Err(CitusCtlError::InvalidPlanId));
+    }
+
+    #[test]
+    fn parser_rejects_trailing_arguments() {
+        let error = parse_request(&args(&["plan", "inspect", "cluster", "ignored"]))
+            .expect_err("trailing argument rejected");
+        assert_eq!(
+            error,
+            CitusCtlError::UnknownValue {
+                field: "argument",
+                value: "inspect expected 1 argument(s), got 2".to_string(),
+            }
+        );
     }
 
     #[test]
@@ -1366,6 +1752,59 @@ mod tests {
                 value: "outside fixture range".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn dev_lifecycle_cli_reports_json_tsv_and_audit_append() {
+        let dir = temp_state_dir("cli-report");
+        let _ = fs::remove_dir_all(&dir);
+        let state_dir = dir.to_str().expect("state dir");
+        let state_path = dir.join("dev-lifecycle.state");
+        let audit_path = dir.join("dev-lifecycle.audit.tsv");
+
+        let plan_json = render_dev_lifecycle_cli_report_from_args(&args(&[
+            "plan",
+            "dev",
+            "up",
+            "--state-dir",
+            state_dir,
+            "--format",
+            "json",
+        ]))
+        .expect("plan json")
+        .expect("dev lifecycle output");
+        assert!(plan_json.contains("\"mode\":\"plan\""));
+        assert!(plan_json.contains("\"dry_run\":true"));
+        assert!(plan_json.contains("\"plan_id\":null"));
+        assert!(plan_json.contains(&format!(
+            "\"state_path\":\"{}\"",
+            json_escape(&state_path.to_string_lossy())
+        )));
+        assert!(!state_path.exists());
+        assert!(!audit_path.exists());
+
+        let apply_tsv = render_dev_lifecycle_cli_report_from_args(&args(&[
+            "apply",
+            "plan-dev-up-1",
+            "dev",
+            "up",
+            "--state-dir",
+            state_dir,
+            "--format",
+            "tsv",
+        ]))
+        .expect("apply tsv")
+        .expect("dev lifecycle output");
+        assert!(apply_tsv.starts_with(DevLifecycleCliReport::tsv_header()));
+        assert!(apply_tsv.contains("apply\tdev-citus\tup\t"));
+        assert!(apply_tsv.contains("\tplan-dev-up-1\tfalse\ttrue\ttrue\tfalse\ttrue\t"));
+        assert!(state_path.exists());
+        assert!(audit_path.exists());
+        let audit = fs::read_to_string(&audit_path).expect("audit");
+        assert_eq!(audit.lines().count(), 2);
+        assert!(audit.contains("plan-dev-up-1\tdev-citus\tup\tabsent\trunning\ttrue\ttrue\tfalse"));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
