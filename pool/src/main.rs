@@ -1,4 +1,6 @@
-use ai_blaise_citus_pool::{canonical_pool_execution_report, run_pool_service_from_env};
+use ai_blaise_citus_pool::{
+    canonical_pool_execution_report, run_pool_service_from_env, PoolExecutionReport,
+};
 use std::env;
 use std::process;
 
@@ -30,26 +32,8 @@ fn run_canonical() {
         process::exit(1);
     });
 
-    println!(
-        "tracked_gucs\tsettings_bucket_max_connections\tfast_path_routes\tmirror_sample_percent\thtap_max_staleness_ms\tpipeline_max_in_flight\ttransaction_pipelining\ttls_rotation_seconds\ttenant_burst\tgeo_rules\ttoken_cache_entries\tplan_cache_entries_before_invalidation\tinvalidated_plans\tsingle_shard_generation"
-    );
-    println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-        report.tracked_gucs,
-        report.settings_bucket_max_connections,
-        report.fast_path_routes,
-        report.mirror_sample_percent,
-        report.htap_max_staleness_ms,
-        report.pipeline_max_in_flight,
-        report.transaction_pipelining,
-        report.tls_rotation_seconds,
-        report.tenant_burst,
-        report.geo_rules,
-        report.token_cache_entries,
-        report.plan_cache_entries_before_invalidation,
-        report.invalidated_plans,
-        report.single_shard_generation,
-    );
+    println!("{}", PoolExecutionReport::tsv_header());
+    println!("{}", report.tsv_row());
 }
 
 fn print_usage() {

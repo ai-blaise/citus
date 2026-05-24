@@ -188,7 +188,7 @@ assert_row \
 
 assert_row \
   pool \
-  $'1\t1000\t1\t5\t2000\t32\ttrue\t3600\t1000\t1\t10000\t2\t1\t7' \
+  $'1\t1000\t1\t1\t1\t5\t1\t2000\t1\t32\ttrue\t1\t3600\ttrue\ttrue\t1000\t1\t1\t1\t1\t10000\t1\t1\t2\t1\t8\t1\t1\t1\t1\t1\t1\t1\t2\t1' \
   cargo run -q -p ai_blaise_citus_pool -- run-canonical
 
 assert_row \

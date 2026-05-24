@@ -47,7 +47,7 @@ pub struct SettingsBucketPolicy {
 }
 
 impl SettingsBucketPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("settings_bucket.bucket_name", &self.bucket_name)?;
         validate_required_list("settings_bucket.tracked_gucs", &self.tracked_gucs)?;
         if self.max_connections == 0 {
@@ -71,16 +71,16 @@ impl SettingsBucketPolicy {
                     .find(|setting| setting.name.eq_ignore_ascii_case(tracked_guc))
                     .map(|setting| setting.value.as_str())
                     .unwrap_or("<unset>");
-                format!(
-                    "{}={}",
-                    tracked_guc.to_ascii_lowercase(),
-                    escape_fingerprint(value)
-                )
+                format!("{}={}", tracked_guc.to_ascii_lowercase(), value)
             })
             .collect::<Vec<_>>();
         values.sort();
 
-        Ok(format!("{}:{}", self.bucket_name, values.join(";")))
+        Ok(format!(
+            "{}:v1:{:016x}",
+            self.bucket_name,
+            stable_fingerprint_hash(&values)
+        ))
     }
 }
 
@@ -91,7 +91,7 @@ pub struct SessionSetting {
 }
 
 impl SessionSetting {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("session_setting.name", &self.name)?;
         validate_required("session_setting.value", &self.value)
     }
@@ -105,7 +105,7 @@ pub struct FastPathRouterPolicy {
 }
 
 impl FastPathRouterPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         self.fallback_target.validate()
     }
 
@@ -141,7 +141,7 @@ pub struct RouteTarget {
 }
 
 impl RouteTarget {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("route_target.host", &self.host)?;
         if self.port == 0 {
             return Err(PoolRuntimeError::InvalidPort);
@@ -158,7 +158,7 @@ pub struct MirrorTrafficPolicy {
 }
 
 impl MirrorTrafficPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         if self.sample_percent > 100 {
             return Err(PoolRuntimeError::InvalidPercent);
         }
@@ -181,7 +181,7 @@ pub struct HtapRoutingPolicy {
 }
 
 impl HtapRoutingPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         self.analytical_target.validate()?;
         if self.max_staleness_ms == 0 {
             return Err(PoolRuntimeError::InvalidStalenessBudget);
@@ -197,7 +197,7 @@ pub struct ProtocolPipelinePolicy {
 }
 
 impl ProtocolPipelinePolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         if self.max_in_flight == 0 {
             return Err(PoolRuntimeError::InvalidPipelineDepth);
         }
@@ -212,7 +212,7 @@ pub struct TlsSessionTicketPolicy {
 }
 
 impl TlsSessionTicketPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         if self.enabled && self.rotation_seconds == 0 {
             return Err(PoolRuntimeError::InvalidRotation);
         }
@@ -228,7 +228,7 @@ pub struct TenantAdmissionPolicy {
 }
 
 impl TenantAdmissionPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("tenant_quota.tenant_id", &self.tenant_id)?;
         if self.burst == 0 {
             return Err(PoolRuntimeError::InvalidQuota("burst"));
@@ -247,7 +247,7 @@ pub struct GeoRoutingPolicy {
 }
 
 impl GeoRoutingPolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("geo.default_region", &self.default_region)?;
         if self.rules.is_empty() {
             return Err(PoolRuntimeError::MissingRequiredField("geo.rules"));
@@ -266,7 +266,7 @@ pub struct GeoRoutingRule {
 }
 
 impl GeoRoutingRule {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("geo.rules.cidr", &self.cidr)?;
         validate_required("geo.rules.region", &self.region)
     }
@@ -279,7 +279,7 @@ pub struct TokenIntrospectionCachePolicy {
 }
 
 impl TokenIntrospectionCachePolicy {
-    fn validate(&self) -> Result<(), PoolRuntimeError> {
+    pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         if self.max_entries == 0 {
             return Err(PoolRuntimeError::InvalidCacheSize);
         }
@@ -354,8 +354,18 @@ fn validate_optional_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
-fn escape_fingerprint(value: &str) -> String {
-    value.replace('\\', "\\\\").replace(';', "\\;")
+fn stable_fingerprint_hash(values: &[String]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for value in values {
+        for byte in value.as_bytes().iter().chain([0].iter()) {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    hash
 }
 
 #[cfg(test)]
@@ -391,10 +401,22 @@ mod tests {
             ])
             .expect("fingerprint");
 
-        assert_eq!(
-            fingerprint,
-            "default:citus.enable_repartition_joins=off;search_path=tenant_a,public"
-        );
+        let reordered = policy
+            .fingerprint(&[
+                SessionSetting {
+                    name: "citus.enable_repartition_joins".to_string(),
+                    value: "off".to_string(),
+                },
+                SessionSetting {
+                    name: "search_path".to_string(),
+                    value: "tenant_a,public".to_string(),
+                },
+            ])
+            .expect("reordered fingerprint");
+
+        assert_eq!(fingerprint, reordered);
+        assert!(fingerprint.starts_with("default:v1:"));
+        assert!(!fingerprint.contains("tenant_a"));
     }
 
     #[test]
