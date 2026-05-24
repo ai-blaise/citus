@@ -4,7 +4,8 @@
 // FEATURE: B6
 
 use ai_blaise_citus_sidecar_backup::{
-    canonical_backup_report, canonical_backup_runtime_report, WalCompression,
+    canonical_backup_job, canonical_backup_report, canonical_backup_runtime_report,
+    serve_backup_http_forever, BackupEngine, BackupEngineConfig, WalCompression,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -17,7 +18,11 @@ fn main() {
         return;
     }
     if args == ["serve"] {
-        run_server("backup", "0.0.0.0:8080");
+        run_backup_server("0.0.0.0:8080");
+        return;
+    }
+    if args == ["serve-probes"] {
+        run_probe_only("backup", "0.0.0.0:8080");
         return;
     }
 
@@ -90,11 +95,27 @@ fn run_runtime_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: backup [serve|run-canonical|run-runtime-canonical]");
-    println!("runs deterministic canonical backup sidecar plan/runtime reports and emits TSV");
+    println!("usage: backup [serve|serve-probes|run-canonical|run-runtime-canonical]");
+    println!("  serve              boot the BackupEngine HTTP runtime (real wal-g orchestration)");
+    println!("  serve-probes       run only the readiness/liveness/metrics probes (no wal-g)");
+    println!("  run-canonical      emit the deterministic backup plan TSV report");
+    println!("  run-runtime-canonical emit the deterministic backup runtime TSV report");
 }
 
-fn run_server(component: &str, default_addr: &str) {
+fn run_backup_server(default_addr: &str) {
+    let job = canonical_backup_job();
+    let config = BackupEngineConfig::from_env(job);
+    let engine = BackupEngine::new(config).unwrap_or_else(|error| {
+        eprintln!("backup: engine init failed: {error}");
+        process::exit(1);
+    });
+    if let Err(error) = serve_backup_http_forever(engine, default_addr) {
+        eprintln!("backup: HTTP server failed: {error}");
+        process::exit(1);
+    }
+}
+
+fn run_probe_only(component: &str, default_addr: &str) {
     if let Err(error) = run_probe_server(component, default_addr) {
         eprintln!("{component}: probe server failed: {error}");
         process::exit(1);

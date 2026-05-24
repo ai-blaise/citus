@@ -116,6 +116,9 @@ run-backup-canonical:
 run-backup-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical
 
+sidecar-backup-smoke:
+	@bash ci/ai-blaise/sidecar-backup-smoke.sh
+
 build-sidecar-edge-functions:
 	cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
 

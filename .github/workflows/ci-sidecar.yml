@@ -75,6 +75,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_backup -- run-canonical
       - name: Run canonical backup runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical
+      - name: Run backup HTTP smoke
+        run: bash ci/ai-blaise/sidecar-backup-smoke.sh
 
   cdc:
     runs-on: ubuntu-latest
