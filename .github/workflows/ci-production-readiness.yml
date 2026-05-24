@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check Kubernetes deployment guardrail contract
+        run: bash ci/ai-blaise/deploy-check.sh
       - name: Check production-readiness audit guardrails
         run: bash ci/ai-blaise/production-readiness-check.sh
       - name: Check docs evidence boundaries

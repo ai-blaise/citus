@@ -94,8 +94,11 @@ evidence. Running the direct scripts without `REQUIRE_DOCKER=1` is only for
 exploratory local checks.
 
 The Makefile release gate also runs the image and deploy contract checks
-directly. Its `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm fails
-the release gate instead of skipping rendered chart checks.
+directly. After the 2026-05-22 chart fold, this repository's `deploy-check`
+validates the Citus-side HPA, PodDisruptionBudget, and NetworkPolicy contract
+under `deploy/contracts/`; full Helm values rendering remains owned by
+`ai-blaise/command-center`. When kustomize or kubeconform is present on the
+runner, the Citus-side check also renders and schema-validates the manifest.
 
 The `values-prod.yaml` phase of the Kubernetes smoke installs through
 `scripts/citus-scale/deploy.sh MODE=install`, so the production-safe deploy
@@ -134,6 +137,9 @@ deployment, renders a matching NetworkPolicy when an allowlist is configured,
 the pool rejects PostgreSQL clients outside the allowlist before opening an
 upstream connection, and the Docker/kind smokes verify both allowed and denied
 SQL traffic plus `ai_blaise_citus_pool_rejected_connections_total`.
+The Citus-side deployment contract also renders the pool NetworkPolicy shape
+that command-center must preserve, including the pool data-port allowlist,
+admin probe access, and matching selectors for the folded chart labels.
 
 - `FEATURE: Sec7`: API keys and cloud credentials will be referenced by
   external secret names only after ExternalSecret rendering is implemented and
