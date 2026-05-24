@@ -604,6 +604,11 @@ Rule 10 completion for this branch requires local and VM verification of:
   not be cited as evidence for planner hint enforcement, background
   auto-promotion workers, distributed workload baselining, external durable
   storage, or pg_hint_plan/sr_plan runtime integration.
+- R7 repack hardening now adds fail-closed strategy selection and a deterministic
+  dry-run execution report for `sidecar/repack`. The canonical smoke records
+  `dry_run=true`, `executed=false`, and `evidence_boundary=dry-run-plan-only`, so
+  it must not be cited as production evidence for live `pg_repack`, live
+  PostgreSQL 19 `REPACK CONCURRENTLY`, or Kubernetes-scheduled repack execution.
 - Agentmemory checkpointing for this depth-B slice was unavailable on the VM
   because `http://127.0.0.1:3911` refused connections; no memory files were
   edited or erased.

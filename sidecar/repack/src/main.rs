@@ -30,12 +30,12 @@ fn main() {
     let first_shard = &report.job.shard_targets[0];
 
     println!(
-        "target\tstrategy\tschedule\tmax_concurrency\tlock_timeout_ms\tshard_count\tfirst_shard_id\tfirst_worker\tfirst_table\texecutable\targs"
+        "target\tstrategy\tschedule\tmax_concurrency\tlock_timeout_ms\tshard_count\tfirst_shard_id\tfirst_worker\tfirst_table\tpg_major\tpg_repack_available\tpg19_repack_concurrently_available\tdry_run\texecuted\tevidence_boundary\texecutable\targs"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.job.contract.target,
-        strategy_name(&report.job.contract.strategy),
+        strategy_name(&report.execution.selected_strategy),
         report.job.schedule,
         report.job.contract.max_concurrency,
         report.command.lock_timeout_ms,
@@ -43,6 +43,12 @@ fn main() {
         first_shard.shard_id,
         first_shard.worker,
         first_shard.table,
+        report.environment.pg_major,
+        report.environment.pg_repack_available,
+        report.environment.repack_concurrently_available,
+        report.execution.dry_run,
+        report.execution.executed,
+        report.execution.evidence_boundary,
         report.command.executable,
         report.command.args.join(" "),
     );

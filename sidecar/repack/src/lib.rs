@@ -19,6 +19,7 @@ pub struct RepackJobPlan {
 impl RepackJobPlan {
     pub fn validate(&self) -> Result<(), RepackSidecarError> {
         self.contract.validate()?;
+        validate_qualified_name("repack.target", &self.contract.target)?;
         validate_required("schedule", &self.schedule)?;
         if self.lock_timeout_ms == 0 {
             return Err(RepackSidecarError::InvalidLockTimeout);
@@ -30,6 +31,53 @@ impl RepackJobPlan {
             target.validate()?;
         }
         Ok(())
+    }
+
+    pub fn select_strategy(
+        &self,
+        environment: &RepackRuntimeEnvironment,
+    ) -> Result<RepackExecutionStrategy, RepackSidecarError> {
+        self.validate()?;
+        environment.validate()?;
+
+        match self.contract.strategy {
+            RepackExecutionStrategy::PgRepack if environment.pg_repack_available => {
+                Ok(RepackExecutionStrategy::PgRepack)
+            }
+            RepackExecutionStrategy::PgRepack => Err(RepackSidecarError::MissingCapability(
+                "pg_repack extension or binary",
+            )),
+            RepackExecutionStrategy::RepackConcurrentlyPg19
+                if environment.pg_major >= 19 && environment.repack_concurrently_available =>
+            {
+                Ok(RepackExecutionStrategy::RepackConcurrentlyPg19)
+            }
+            RepackExecutionStrategy::RepackConcurrentlyPg19 => {
+                Err(RepackSidecarError::UnsupportedStrategy(
+                    "repack_concurrently_pg19 requires PostgreSQL 19+ and an explicit capability flag",
+                ))
+            }
+        }
+    }
+
+    pub fn execution_report(
+        &self,
+        environment: RepackRuntimeEnvironment,
+    ) -> Result<RepackExecutionReport, RepackSidecarError> {
+        let selected_strategy = self.select_strategy(&environment)?;
+        let mut selected_job = self.clone();
+        selected_job.contract.strategy = selected_strategy;
+        let command = selected_job.command_plan()?;
+
+        Ok(RepackExecutionReport {
+            job: selected_job,
+            environment,
+            selected_strategy,
+            command,
+            dry_run: true,
+            executed: false,
+            evidence_boundary: "dry-run-plan-only".to_string(),
+        })
     }
 
     pub fn command_plan(&self) -> Result<RepackCommandPlan, RepackSidecarError> {
@@ -85,13 +133,43 @@ pub struct RepackCommandPlan {
     pub shard_count: u32,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct RepackRuntimeEnvironment {
+    pub pg_major: u16,
+    pub pg_repack_available: bool,
+    pub repack_concurrently_available: bool,
+}
+
+impl RepackRuntimeEnvironment {
+    fn validate(&self) -> Result<(), RepackSidecarError> {
+        if self.pg_major == 0 {
+            return Err(RepackSidecarError::InvalidPostgresMajor);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RepackExecutionReport {
+    pub job: RepackJobPlan,
+    pub environment: RepackRuntimeEnvironment,
+    pub selected_strategy: RepackExecutionStrategy,
+    pub command: RepackCommandPlan,
+    pub dry_run: bool,
+    pub executed: bool,
+    pub evidence_boundary: String,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RepackSidecarError {
     InvalidIdentifier(&'static str),
     InvalidLockTimeout,
+    InvalidPostgresMajor,
     InvalidShardId,
+    MissingCapability(&'static str),
     MissingRequiredField(&'static str),
     SharedContract(String),
+    UnsupportedStrategy(&'static str),
 }
 
 impl fmt::Display for RepackSidecarError {
@@ -101,9 +179,19 @@ impl fmt::Display for RepackSidecarError {
             Self::InvalidLockTimeout => {
                 write!(formatter, "lock_timeout_ms must be greater than zero")
             }
+            Self::InvalidPostgresMajor => {
+                write!(formatter, "pg_major must be greater than zero")
+            }
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
+            Self::MissingCapability(capability) => write!(
+                formatter,
+                "required repack capability is unavailable: {capability}"
+            ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::SharedContract(error) => write!(formatter, "{error}"),
+            Self::UnsupportedStrategy(reason) => {
+                write!(formatter, "unsupported strategy: {reason}")
+            }
         }
     }
 }
@@ -153,6 +241,8 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), Repac
 pub struct RepackCanonicalReport {
     pub job: RepackJobPlan,
     pub command: RepackCommandPlan,
+    pub environment: RepackRuntimeEnvironment,
+    pub execution: RepackExecutionReport,
 }
 
 pub fn canonical_repack_job() -> RepackJobPlan {
@@ -179,11 +269,26 @@ pub fn canonical_repack_job() -> RepackJobPlan {
     }
 }
 
+pub fn canonical_repack_environment() -> RepackRuntimeEnvironment {
+    RepackRuntimeEnvironment {
+        pg_major: 18,
+        pg_repack_available: true,
+        repack_concurrently_available: false,
+    }
+}
+
 pub fn canonical_repack_report() -> Result<RepackCanonicalReport, RepackSidecarError> {
     let job = canonical_repack_job();
-    let command = job.command_plan()?;
+    let environment = canonical_repack_environment();
+    let execution = job.execution_report(environment)?;
+    let command = execution.command.clone();
 
-    Ok(RepackCanonicalReport { job, command })
+    Ok(RepackCanonicalReport {
+        job,
+        command,
+        environment,
+        execution,
+    })
 }
 
 #[cfg(test)]
@@ -219,6 +324,69 @@ mod tests {
     }
 
     #[test]
+    fn missing_pg_repack_capability_fails_closed() {
+        let job = valid_job();
+        let environment = RepackRuntimeEnvironment {
+            pg_major: 18,
+            pg_repack_available: false,
+            repack_concurrently_available: false,
+        };
+
+        assert_eq!(
+            job.select_strategy(&environment),
+            Err(RepackSidecarError::MissingCapability(
+                "pg_repack extension or binary"
+            ))
+        );
+    }
+
+    #[test]
+    fn pg19_strategy_requires_pg19_capability() {
+        let mut job = valid_job();
+        job.contract.strategy = RepackExecutionStrategy::RepackConcurrentlyPg19;
+        let environment = RepackRuntimeEnvironment {
+            pg_major: 18,
+            pg_repack_available: true,
+            repack_concurrently_available: true,
+        };
+
+        assert_eq!(
+            job.select_strategy(&environment),
+            Err(RepackSidecarError::UnsupportedStrategy(
+                "repack_concurrently_pg19 requires PostgreSQL 19+ and an explicit capability flag"
+            ))
+        );
+    }
+
+    #[test]
+    fn pg19_strategy_can_be_selected_when_capability_is_declared() {
+        let mut job = valid_job();
+        job.contract.strategy = RepackExecutionStrategy::RepackConcurrentlyPg19;
+        let environment = RepackRuntimeEnvironment {
+            pg_major: 19,
+            pg_repack_available: false,
+            repack_concurrently_available: true,
+        };
+
+        assert_eq!(
+            job.select_strategy(&environment),
+            Ok(RepackExecutionStrategy::RepackConcurrentlyPg19)
+        );
+    }
+
+    #[test]
+    fn execution_report_is_dry_run_and_non_executing() {
+        let report = valid_job()
+            .execution_report(canonical_repack_environment())
+            .expect("execution report");
+
+        assert!(report.dry_run);
+        assert!(!report.executed);
+        assert_eq!(report.evidence_boundary, "dry-run-plan-only");
+        assert_eq!(report.command.executable, "pg_repack");
+    }
+
+    #[test]
     fn shard_target_requires_qualified_table() {
         let mut job = valid_job();
         job.shard_targets[0].table = "orders_102008".to_string();
@@ -236,6 +404,8 @@ mod tests {
         assert_eq!(report.job.contract.target, "public.orders");
         assert_eq!(report.command.executable, "pg_repack");
         assert_eq!(report.command.shard_count, 2);
+        assert_eq!(report.environment.pg_major, 18);
+        assert!(!report.execution.executed);
     }
 
     fn valid_job() -> RepackJobPlan {
