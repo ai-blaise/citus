@@ -554,6 +554,16 @@ Rule 10 completion for this branch requires local and VM verification of:
   diagnostic and quick-fix action CLI over supported SQL migration statements.
   It must not be cited as evidence for JSON-RPC editor integration, workspace
   indexing, automatic rewrites, or full PostgreSQL grammar coverage.
+- PM3/PM4 production evidence now includes the deterministic
+  `companion/src/plan_runtime.rs` execution path for idempotency replay,
+  bounded retry, durable audit-event emission, promotion-policy evaluation,
+  regression-candidate rejection, and unknown-plan failure handling. It must
+  not be cited as evidence for planner hint enforcement, background
+  auto-promotion workers, distributed workload baselining, external durable
+  storage, or pg_hint_plan/sr_plan runtime integration.
+- Agentmemory checkpointing for this depth-B slice was unavailable on the VM
+  because `http://127.0.0.1:3911` refused connections; no memory files were
+  edited or erased.
 
 ## Whole-Repo Production Readiness Audit
 
@@ -627,6 +637,14 @@ replication-conflict taxonomy across `M1`, `M11`, `R6`, `C4`, and `C5` under
 installable SQL runtime evidence where those entries are already promoted, but
 distributed DDL execution, queue worker operations, active-active replication,
 operator reconciliation, and live multi-node conflict handling remain alpha.
+
+Companion plan runtime depth B evidence is scoped to deterministic in-memory
+plan runtime registration, idempotent replay, retry exhaustion, audit event
+recording, promotion evaluation, regression-candidate rejection, and unknown
+plan failure handling for `PM3` and `PM4` under
+`ci/ai-blaise/companion-plan-runtime-smoke.sh`. Planner hint enforcement,
+background auto-promotion workers, distributed workload baselining, external
+durable storage, and pg_hint_plan/sr_plan runtime integration remain alpha.
 
 `SC7` sidecar HA retarget evidence is scoped to shared-library config parsing,
 health-aware deterministic endpoint selection, failure retargeting,

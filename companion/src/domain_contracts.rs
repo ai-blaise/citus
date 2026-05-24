@@ -374,6 +374,7 @@ fn record_plan_freeze_contracts(
         ));
     }
     report.add_validation(&["PM4"]);
+
     Ok(())
 }
 

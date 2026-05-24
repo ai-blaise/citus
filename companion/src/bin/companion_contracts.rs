@@ -44,7 +44,7 @@
 use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_cohabit_detection_report,
     canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
-    canonical_operations_readiness_report,
+    canonical_operations_readiness_report, canonical_plan_runtime_report,
 };
 use std::env;
 use std::process;
@@ -72,6 +72,9 @@ fn main() {
         }
         [command] if command == "run-operations-canonical" => {
             run_operations_canonical();
+        }
+        [command] if command == "run-plan-runtime-canonical" => {
+            run_plan_runtime_canonical();
         }
         _ => {
             eprintln!("companion-contracts: unknown command");
@@ -190,9 +193,32 @@ fn run_operations_canonical() {
     );
 }
 
+fn run_plan_runtime_canonical() {
+    let report = canonical_plan_runtime_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: plan runtime report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "records\tpromoted\tobservations\taudit_events\tidempotent_replays\tretry_attempts\tfailed_commands\tregression_violations\tsql_contract_commands"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.records,
+        report.promoted,
+        report.observations,
+        report.audit_events,
+        report.idempotent_replays,
+        report.retry_attempts,
+        report.failed_commands,
+        report.regression_violations,
+        report.sql_contract_commands,
+    );
+}
+
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }
