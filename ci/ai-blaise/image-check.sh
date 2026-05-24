@@ -24,6 +24,8 @@ observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
+bundle1_contract_check="ci/ai-blaise/bundle1-contract-check.py"
+bundle1_source_lock="${image_dir}/bundle1-source-build.lock.tsv"
 
 for file in \
   "${dockerignore}" \
@@ -54,7 +56,9 @@ for file in \
   "${observability_replication_smoke}" \
   "${app_digest_smoke}" \
   "${observability_contracts_check}" \
-  "${ai_sql_contract_smoke}"; do
+  "${ai_sql_contract_smoke}" \
+  "${bundle1_contract_check}" \
+  "${bundle1_source_lock}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -221,6 +225,12 @@ grep -Fq "alpha-upstream-pg17-blocked" "${dockerfile}"
 grep -Fq "ARG PLV8_TAG=v3.2.4" "${dockerfile}"
 grep -Fq "ARG PLV8_REF=cafc37f7aee850de5478773a4e56f7fadfad8e00" "${dockerfile}"
 grep -Fq "ARG CITUS_TAG=v13.3.0" "${dockerfile}"
+grep -Fq "AI_BLAISE_SOURCE_GIT_SHA" "${dockerfile}"
+grep -Fq "ai-blaise.citus.source-git-sha" "${dockerfile}"
+grep -Fq "ai-blaise.citus.source-tree-state" "${dockerfile}"
+grep -Fq "bundle1-source-build.lock.tsv" "${dockerfile}"
+grep -Fq "source-build-subset-no-complete-initdb" "${dockerfile}"
+python3 "${bundle1_contract_check}"
 grep -Fq "AS bundle1-final-light" "${dockerfile}"
 grep -Fq "AS bundle1-final-full" "${dockerfile}"
 grep -Fq "BUNDLE1_BUILD_IMAGE" ci/ai-blaise/sql-extension-smoke.sh
@@ -234,6 +244,8 @@ grep -Fq "full required binary extension bundle is installed" "${image_overview}
 grep -Fq "build/initdb smoke" "${image_overview}"
 grep -Fq "not production evidence" "${image_dir}/README.md"
 grep -Fq "ai_blaise_citus-upgrade-manifest.tsv" "${image_dir}/README.md"
+grep -Fq "bundle1-source-build.lock.tsv" "${image_dir}/README.md"
+grep -Fq "structured Bundle1 contract check" "${image_dir}/README.md"
 grep -Fq "every binary package" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 if [[ "$(grep -Fc "ARG DEFAULT_ARGS=serve" "${runtime_dockerfile}")" -lt 2 ]]; then
@@ -599,7 +611,7 @@ grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_rejected_connections_total" "${pool_proxy_smoke}"
 grep -Fq "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" "${pool_proxy_smoke}"
 grep -Fq "PostgreSQL init process complete" "${pool_proxy_smoke}"
-grep -Fq "raw PostgreSQL pipelined simple-query smoke passed through pool proxy" "${pool_proxy_smoke}"
+grep -Fq "raw PostgreSQL pipelined simple-query and settings-bucket smoke passed through pool proxy" "${pool_proxy_smoke}"
 grep -Fq "pack_simple_query(\"SELECT 'pipeline_one'::text\")" "${pool_proxy_smoke}"
 grep -Fq "pack_simple_query(\"SELECT 'pipeline_two'::text\")" "${pool_proxy_smoke}"
 grep -Fq 'expected = [["pipeline_one"], ["pipeline_two"]]' "${pool_proxy_smoke}"

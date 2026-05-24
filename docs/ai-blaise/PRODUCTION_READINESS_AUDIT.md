@@ -236,8 +236,12 @@ more production-ready than the artifacts justified.
   Citus+pg_cron boot, SQL-visible detection, job registration, and
   missing-allowlist fail-closed behavior. The complete operand initdb contract
   remains alpha until the plrust upstream PG17 blocker and full-bundle image
-  smoke are closed. The production gap audit rejects the old operand-image
-  overclaim until that full-bundle evidence exists.
+  smoke are closed. The source-build subset now has a structured lockfile and
+  contract checker that cross-validates manifest rows, Dockerfile pins/labels,
+  smoke coverage, tracked evidence, and docs; source-build image labels state
+  `source-build-subset-no-complete-initdb` so the evidence cannot be mistaken
+  for the complete initdb path. The production gap audit rejects the old
+  operand-image overclaim until that full-bundle evidence exists.
 - Production values now keep alpha runtime/security intent controls disabled by
   default. The deploy check and production gap audit reject production values
   that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,

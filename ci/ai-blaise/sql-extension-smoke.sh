@@ -11,6 +11,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
 control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
+bundle1_lock_file="${repo_root}/images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 require_docker="${REQUIRE_DOCKER:-0}"
 
 # PG_MAJOR matrix is explicit: PG16 and PG17 production operands plus PG18
@@ -29,7 +30,7 @@ bundle1_build_heavy="${BUNDLE1_BUILD_HEAVY:-0}"
 bundle1_image="${BUNDLE1_IMAGE:-ai-blaise-citus-overlay:bundle1-source-smoke-pg17}"
 bundle1_evidence_file="${BUNDLE1_EVIDENCE_FILE:-}"
 
-for file in "${control_file}" "${sql_file}"; do
+for file in "${control_file}" "${sql_file}" "${bundle1_lock_file}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing SQL extension smoke artifact: ${file}" >&2
     exit 1
@@ -2192,13 +2193,78 @@ run_bundle1_source_build_smoke() {
   fi
 
   echo "=== bundle1 source-build smoke (${target}) ==="
+  local source_git_sha
+  local source_tree_state
+  source_git_sha="$(git rev-parse HEAD)"
+  source_tree_state="clean"
+  if [[ -n "$(git status --porcelain)" ]]; then
+    source_tree_state="dirty"
+  fi
   docker build \
     -f images/citus-pg-overlay/Dockerfile \
     --target "${target}" \
     --build-arg PG_MAJOR=17 \
     --build-arg BASE_IMAGE=postgres:17-bookworm \
+    --build-arg AI_BLAISE_SOURCE_GIT_SHA="${source_git_sha}" \
+    --build-arg AI_BLAISE_SOURCE_TREE_STATE="${source_tree_state}" \
     -t "${bundle1_image}" \
     .
+
+
+  local observed_source_git_sha
+  observed_source_git_sha="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.source-git-sha" }}' "${bundle1_image}")"
+  if [[ "${observed_source_git_sha}" != "${source_git_sha}" ]]; then
+    echo "bundle1 image source-git-sha label mismatch: expected ${source_git_sha}, observed ${observed_source_git_sha}" >&2
+    exit 1
+  fi
+  local observed_source_tree_state
+  observed_source_tree_state="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.source-tree-state" }}' "${bundle1_image}")"
+  if [[ "${observed_source_tree_state}" != "${source_tree_state}" ]]; then
+    echo "bundle1 image source-tree-state label mismatch: expected ${source_tree_state}, observed ${observed_source_tree_state}" >&2
+    exit 1
+  fi
+  local evidence_scope
+  evidence_scope="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.evidence-scope" }}' "${bundle1_image}")"
+  if [[ "${evidence_scope}" != "source-build-subset-no-complete-initdb" ]]; then
+    echo "bundle1 image evidence-scope label mismatch: ${evidence_scope}" >&2
+    exit 1
+  fi
+  local full_initdb_path
+  full_initdb_path="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.full-initdb-path" }}' "${bundle1_image}")"
+  if [[ "${full_initdb_path}" != "false" ]]; then
+    echo "bundle1 image must not claim complete initdb evidence (observed ${full_initdb_path})" >&2
+    exit 1
+  fi
+  docker run --rm --entrypoint /bin/sh "${bundle1_image}" -c '
+    set -eu
+    test -s /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv
+    grep -Fq "pgsodium" /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv
+  ' >/dev/null
+
+  local getkey_error_file
+  getkey_error_file="$(mktemp)"
+  if docker run --rm --entrypoint /usr/share/postgresql/17/extension/pgsodium_getkey "${bundle1_image}" >"${getkey_error_file}" 2>&1; then
+    cat "${getkey_error_file}" >&2
+    rm -f "${getkey_error_file}"
+    echo "pgsodium_getkey succeeded without a configured key" >&2
+    exit 1
+  fi
+  if ! grep -Fq "pgsodium key unavailable" "${getkey_error_file}"; then
+    cat "${getkey_error_file}" >&2
+    rm -f "${getkey_error_file}"
+    echo "pgsodium_getkey did not fail closed with the expected error" >&2
+    exit 1
+  fi
+  rm -f "${getkey_error_file}"
+  local observed_key
+  observed_key="$(docker run --rm \
+    -e PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --entrypoint /usr/share/postgresql/17/extension/pgsodium_getkey \
+    "${bundle1_image}")"
+  if [[ "${observed_key}" != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" ]]; then
+    echo "pgsodium_getkey did not emit the configured deterministic test key" >&2
+    exit 1
+  fi
 
   local container="ai-blaise-bundle1-source-smoke-${RANDOM}-$$"
   active_container="${container}"
@@ -2261,7 +2327,7 @@ SQL
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' \
       "$(date -Is)" \
-      "$(git rev-parse HEAD)" \
+      "${source_git_sha}" \
       "${target}" \
       "${image_id}" \
       "${expected_extensions[*]}" >>"${bundle1_evidence_file}"

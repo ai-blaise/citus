@@ -5,7 +5,7 @@ The canonical operand-image extension contract lives in
 production-ready as a whole: the fast default image remains a manifest/init
 contract, while the explicit PG17 source-build targets now provide live build
 and `CREATE EXTENSION` evidence for the feasible PGDG-missing extensions.
-`FEATURE: Bundle1` remains alpha until the full required bundle, including the
+FEATURE: Bundle1 remains alpha until the full required bundle, including the
 plrust PG17 upstream gap and complete initdb path, is verified end to end. The
 pg_cron cohabitation smoke is subset evidence only for the required `pg_cron`
 package loading beside this Citus fork; it is not evidence for the full Bundle1
@@ -22,9 +22,12 @@ fast default PG17/PG18 contract target:
 | `bundle1-final-light` | PR-time or VM targeted proof for the feasible light subset | `citus`, `pgsodium`, `topn`, `pg_jsonschema`, `pg_graphql`, local `pg_warm`, plus `ai_blaise_citus` |
 | `bundle1-final-full` | release-boundary proof for heavy feasible extensions | everything in light plus `pg_search` and `plv8` |
 
-The upstream pins are labels and build args in
-`images/citus-pg-overlay/Dockerfile`; each clone checks the tag's resolved
-commit before building.
+The upstream pins are recorded in
+`images/citus-pg-overlay/bundle1-source-build.lock.tsv` and mirrored as labels
+and build args in `images/citus-pg-overlay/Dockerfile`; each external clone
+checks the tag's resolved commit before building. The structured Bundle1
+contract check (`ci/ai-blaise/bundle1-contract-check.py`) fails closed if the
+manifest, lockfile, Dockerfile, smoke, evidence, or docs drift apart.
 
 | Extension | Upstream | Tag | Commit | Status |
 | --- | --- | --- | --- | --- |
@@ -51,8 +54,12 @@ iteration cycle.
 `pgsodium` is preloaded with a fail-closed getkey contract. The Bundle1 image
 installs `pgsodium_getkey` at pgsodium's default extension path; production
 deployments must set `PGSODIUM_KEY` or mount a 64-hex-character secret and set
-`PGSODIUM_KEY_FILE`. The smoke test provides an explicit deterministic test key
-only for the disposable test container.
+`PGSODIUM_KEY_FILE`. The smoke test first proves `pgsodium_getkey` fails closed
+without a key, then provides an explicit deterministic test key only for the
+disposable test container. Source-build images also carry the
+`ai-blaise.citus.source-git-sha` and `ai-blaise.citus.source-tree-state`
+labels plus the `source-build-subset-no-complete-initdb` evidence-scope label,
+so this evidence remains a subset proof rather than a complete initdb path promotion.
 
 ## pg_cron Cohabitation Subset
 

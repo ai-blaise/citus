@@ -68,6 +68,9 @@ TOOLS_WORKFLOW = ROOT / ".github/workflows/ci-tools.yml"
 CITUSCTL_SMOKE = ROOT / "ci/ai-blaise/citusctl-smoke.sh"
 CITUSCTL_DEV_LIFECYCLE_SMOKE = ROOT / "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh"
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
+BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
+BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
+IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -384,6 +387,54 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+
+# Bundle1 remains alpha until the complete operand initdb path is proven. Keep
+# the source-build subset tied to structured manifest/lock/smoke evidence so it
+# cannot drift into a prose-only production claim.
+for path in (BUNDLE1_LOCK, BUNDLE1_CONTRACT_CHECK):
+    if not path.exists() or not read(path).strip():
+        fail(f"missing Bundle1 source-build contract artifact: {path}")
+
+bundle1_truth = "\n".join(
+    read(path)
+    for path in (
+        BUNDLED_EXTENSIONS_DOC,
+        PG_OVERLAY_README,
+        DOCS,
+        AUDIT,
+        SQL_EXTENSION_SMOKE,
+        IMAGE_CHECK,
+        BUNDLE1_LOCK,
+        BUNDLE1_CONTRACT_CHECK,
+    )
+)
+for phrase in (
+    "bundle1-source-build.lock.tsv",
+    "structured Bundle1 contract check",
+    "BUNDLE1_BUILD_IMAGE=1",
+    "BUNDLE1_BUILD_HEAVY=1",
+    "source-build-subset-no-complete-initdb",
+    "ai-blaise.citus.source-git-sha",
+    "ai-blaise.citus.source-tree-state",
+    "plrust PG17 upstream gap",
+    "complete initdb path",
+):
+    if compact(phrase) not in compact(bundle1_truth):
+        fail(f"Bundle1 source-build contract boundary missing phrase: {phrase}")
+
+bundle1_docs_truth = "\n".join(
+    read(path)
+    for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, DOCS, AUDIT)
+)
+for pattern in (
+    "FEATURE: Bundle1 is production-ready",
+    "Bundle1 is production-ready",
+    "full Bundle1 production evidence exists",
+    "plrust PG17 source-build is supported",
+):
+    if compact(pattern) in compact(bundle1_docs_truth):
+        fail(f"Bundle1 docs overclaim production readiness: {pattern}")
 
 # A10/A11 SQL-visible contract guardrail: these features remain alpha and prove
 # deterministic intent validation only. This audit prevents accidental promotion
