@@ -31,12 +31,30 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 PY
 }
 
+choose_distinct_port() {
+  local candidate
+  local used
+  while true; do
+    candidate="$(choose_port)"
+    for used in "$@"; do
+      if [[ "${candidate}" == "${used}" ]]; then
+        continue 2
+      fi
+    done
+    printf '%s
+' "${candidate}"
+    return 0
+  done
+}
+
 postgres_port="$(choose_port)"
-pool_port="$(choose_port)"
-admin_port="$(choose_port)"
+pool_port="$(choose_distinct_port "${postgres_port}")"
+admin_port="$(choose_distinct_port "${postgres_port}" "${pool_port}")"
 container="ai-blaise-pool-proxy-smoke-${RANDOM}-$$"
 pool_log="$(mktemp -t ai-blaise-pool-proxy.XXXXXX.log)"
+auth_log="$(mktemp -t ai-blaise-pool-auth.XXXXXX.log)"
 pool_pid=""
+auth_pid=""
 holder_pid=""
 
 cleanup() {
@@ -48,8 +66,12 @@ cleanup() {
     kill "${pool_pid}" >/dev/null 2>&1 || true
     wait "${pool_pid}" >/dev/null 2>&1 || true
   fi
+  if [[ -n "${auth_pid}" ]] && kill -0 "${auth_pid}" >/dev/null 2>&1; then
+    kill "${auth_pid}" >/dev/null 2>&1 || true
+    wait "${auth_pid}" >/dev/null 2>&1 || true
+  fi
   docker rm -f "${container}" >/dev/null 2>&1 || true
-  rm -f "${pool_log}"
+  rm -f "${pool_log}" "${auth_log}"
 }
 trap cleanup EXIT
 
@@ -401,6 +423,7 @@ overload_stderr="$(mktemp -t ai-blaise-pool-overload.XXXXXX.err)"
 if docker run --rm \
   --network host \
   -e PGPASSWORD=postgres \
+  -e PGSSLMODE=disable \
   -e PGCONNECT_TIMEOUT=2 \
   "${postgres_image}" \
   psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqc 'SELECT 1' \
@@ -553,7 +576,309 @@ kill "${pool_pid}" >/dev/null 2>&1 || true
 wait "${pool_pid}" >/dev/null 2>&1 || true
 pool_pid=""
 : >"${pool_log}"
-closed_port="$(choose_port)"
+
+auth_port="$(choose_distinct_port "${postgres_port}" "${pool_port}" "${admin_port}")"
+auth_base="http://127.0.0.1:${auth_port}"
+auth_secret="pool-auth-smoke-secret-32-bytes-minimum-material"
+AI_BLAISE_LISTEN_ADDR="127.0.0.1:${auth_port}" \
+  AI_BLAISE_AUTH_ISSUER="https://auth.example.com" \
+  AI_BLAISE_AUTH_AUDIENCE="postgres" \
+  AI_BLAISE_AUTH_TTL_SECONDS="300" \
+  AI_BLAISE_AUTH_HS256_SECRET="${auth_secret}" \
+  cargo run -q -p ai_blaise_citus_sidecar_auth -- serve >"${auth_log}" 2>&1 &
+auth_pid="$!"
+
+for _ in $(seq 1 120); do
+  if curl -fsS "${auth_base}/healthz" >/dev/null 2>&1; then
+    break
+  fi
+  if ! kill -0 "${auth_pid}" >/dev/null 2>&1; then
+    cat "${auth_log}" >&2
+    echo "auth sidecar exited before pool auth smoke" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+token_file="$(mktemp -t ai-blaise-pool-auth-token.XXXXXX)"
+python3 - "${auth_base}" >"${token_file}" <<'PY_AUTH'
+import http.client
+import json
+import sys
+
+base = sys.argv[1]
+host_port = base.removeprefix("http://")
+host, port = host_port.split(":")
+
+def request(method, path, body=None, status=200):
+    conn = http.client.HTTPConnection(host, int(port), timeout=10)
+    headers = {"Connection": "close"}
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        body = json.dumps(body)
+    conn.request(method, path, body=body, headers=headers)
+    response = conn.getresponse()
+    raw = response.read()
+    if response.status != status:
+        raise SystemExit(f"{method} {path} -> {response.status}: {raw!r}")
+    return json.loads(raw or b"{}")
+
+request("POST", "/auth/users", {
+    "username": "poolalice",
+    "password": "hunter2-correct-horse",
+    "role": "authenticated",
+    "tenant_id": "tenant-a",
+}, status=201)
+login = request("POST", "/auth/login", {
+    "username": "poolalice",
+    "password": "hunter2-correct-horse",
+})
+print(login["access_token"])
+PY_AUTH
+
+access_token="$(sed -n '1p' "${token_file}")"
+rm -f "${token_file}"
+
+AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
+  AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
+  AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
+  AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="127.0.0.0/8" \
+  AI_BLAISE_POOL_AUTH_INTROSPECTION_URL="${auth_base}/auth/introspect" \
+  AI_BLAISE_POOL_AUTH_CACHE_TTL_MS="0" \
+  cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
+pool_pid="$!"
+
+pool_ready=0
+for _ in $(seq 1 120); do
+  if ! kill -0 "${pool_pid}" >/dev/null 2>&1; then
+    cat "${pool_log}" >&2
+    echo "pool proxy exited before auth readiness" >&2
+    exit 1
+  fi
+  if curl -fsS "http://127.0.0.1:${admin_port}/readyz" 2>/dev/null |
+    grep -Fq '"upstream_ready":true'; then
+    pool_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "${pool_ready}" != "1" ]]; then
+  cat "${pool_log}" >&2
+  echo "pool proxy did not report upstream-ready readiness for auth smoke" >&2
+  exit 1
+fi
+
+python3 - "${pool_port}" "${access_token}" <<'PY_AUTH_PG'
+import socket
+import struct
+import sys
+
+pool_port = int(sys.argv[1])
+access_token = sys.argv[2]
+
+
+def pack_startup(parameters):
+    body = struct.pack("!I", 196608)
+    for key, value in parameters.items():
+        body += key.encode("utf-8") + b"\x00" + value.encode("utf-8") + b"\x00"
+    body += b"\x00"
+    return struct.pack("!I", len(body) + 4) + body
+
+
+def pack_simple_query(query):
+    body = query.encode("utf-8") + b"\x00"
+    return b"Q" + struct.pack("!I", len(body) + 4) + body
+
+
+def read_exact(sock, byte_count):
+    chunks = []
+    remaining = byte_count
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise RuntimeError("unexpected EOF from PostgreSQL server")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def read_message(sock):
+    message_type = read_exact(sock, 1)
+    length = struct.unpack("!I", read_exact(sock, 4))[0]
+    payload = read_exact(sock, length - 4)
+    return message_type, payload
+
+
+def error_message(payload):
+    parts = []
+    for field in payload.split(b"\x00"):
+        if len(field) > 1:
+            parts.append(field[1:].decode("utf-8", errors="replace"))
+    return "; ".join(parts) or payload.decode("utf-8", errors="replace")
+
+
+def data_row(payload):
+    column_count = struct.unpack("!H", payload[:2])[0]
+    offset = 2
+    values = []
+    for _ in range(column_count):
+        value_length = struct.unpack("!i", payload[offset : offset + 4])[0]
+        offset += 4
+        if value_length == -1:
+            values.append(None)
+            continue
+        value = payload[offset : offset + value_length]
+        offset += value_length
+        values.append(value.decode("utf-8", errors="strict"))
+    return values
+
+
+def connect_with_startup(parameters):
+    sock = socket.create_connection(("127.0.0.1", pool_port), timeout=10)
+    sock.sendall(pack_startup(parameters))
+    return sock
+
+
+def wait_ready(sock):
+    while True:
+        message_type, payload = read_message(sock)
+        if message_type == b"R":
+            auth_code = struct.unpack("!I", payload[:4])[0]
+            if auth_code != 0:
+                raise RuntimeError(f"expected trust auth code 0, got {auth_code}")
+        elif message_type == b"E":
+            raise RuntimeError(f"startup failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            return
+
+
+def simple_query(sock, query):
+    sock.sendall(pack_simple_query(query))
+    rows = []
+    while True:
+        message_type, payload = read_message(sock)
+        if message_type == b"D":
+            rows.append(data_row(payload))
+        elif message_type == b"E":
+            raise RuntimeError(f"query failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            return rows
+
+base_params = {
+    "user": "postgres",
+    "database": "postgres",
+    "application_name": "pool_auth_smoke",
+}
+
+valid_params = dict(base_params)
+valid_params["ai_blaise.tenant_id"] = "tenant-a"
+valid_params["ai_blaise.jwt"] = access_token
+with connect_with_startup(valid_params) as sock:
+    wait_ready(sock)
+    rows = simple_query(sock, "SELECT current_setting('application_name')")
+    if rows != [["pool_auth_smoke"]]:
+        raise RuntimeError(f"unexpected valid-token query rows: {rows!r}")
+    sock.sendall(b"X" + struct.pack("!I", 4))
+
+with connect_with_startup(base_params) as sock:
+    message_type, payload = read_message(sock)
+    if message_type != b"E":
+        raise RuntimeError(f"expected missing-token startup ErrorResponse, got {message_type!r}")
+    if "auth token is required" not in error_message(payload):
+        raise RuntimeError(f"unexpected missing-token error: {error_message(payload)}")
+
+print("pool auth valid-token admission and missing-token fail-closed smoke passed")
+PY_AUTH_PG
+
+curl -fsS -X POST -H 'content-type: application/json' \
+  --data "{\"token\":\"${access_token}\"}" \
+  "${auth_base}/auth/logout" >/dev/null
+
+python3 - "${pool_port}" "${access_token}" <<'PY_AUTH_REVOKED'
+import socket
+import struct
+import sys
+
+pool_port = int(sys.argv[1])
+access_token = sys.argv[2]
+
+
+def pack_startup(parameters):
+    body = struct.pack("!I", 196608)
+    for key, value in parameters.items():
+        body += key.encode("utf-8") + b"\x00" + value.encode("utf-8") + b"\x00"
+    body += b"\x00"
+    return struct.pack("!I", len(body) + 4) + body
+
+
+def read_exact(sock, byte_count):
+    chunks = []
+    remaining = byte_count
+    while remaining:
+        chunk = sock.recv(remaining)
+        if not chunk:
+            raise RuntimeError("unexpected EOF from PostgreSQL server")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def read_message(sock):
+    message_type = read_exact(sock, 1)
+    length = struct.unpack("!I", read_exact(sock, 4))[0]
+    payload = read_exact(sock, length - 4)
+    return message_type, payload
+
+
+def error_message(payload):
+    parts = []
+    for field in payload.split(b"\x00"):
+        if len(field) > 1:
+            parts.append(field[1:].decode("utf-8", errors="replace"))
+    return "; ".join(parts) or payload.decode("utf-8", errors="replace")
+
+params = {
+    "user": "postgres",
+    "database": "postgres",
+    "application_name": "pool_auth_smoke",
+    "ai_blaise.tenant_id": "tenant-a",
+    "ai_blaise.jwt": access_token,
+}
+with socket.create_connection(("127.0.0.1", pool_port), timeout=10) as sock:
+    sock.sendall(pack_startup(params))
+    message_type, payload = read_message(sock)
+    if message_type != b"E":
+        raise RuntimeError(f"expected revoked-token startup ErrorResponse, got {message_type!r}")
+    message = error_message(payload)
+    if "inactive" not in message and "revoked" not in message:
+        raise RuntimeError(f"unexpected revoked-token error: {message}")
+
+print("pool auth revoked-token fail-closed smoke passed")
+PY_AUTH_REVOKED
+
+metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
+if ! printf '%s\n' "${metrics}" | awk '
+  /^ai_blaise_citus_pool_auth_verified_connections_total / && $2 >= 1 { verified = 1 }
+  /^ai_blaise_citus_pool_auth_rejections_total / && $2 >= 2 { rejected = 1 }
+  /^ai_blaise_citus_pool_fail_closed_routes_total / && $2 >= 2 { fail_closed = 1 }
+  END { exit verified && rejected && fail_closed ? 0 : 1 }
+'; then
+  cat "${pool_log}" >&2
+  cat "${auth_log}" >&2
+  echo "pool metrics did not show auth admission and fail-closed rejections" >&2
+  printf '%s\n' "${metrics}" >&2
+  exit 1
+fi
+
+kill "${pool_pid}" >/dev/null 2>&1 || true
+wait "${pool_pid}" >/dev/null 2>&1 || true
+pool_pid=""
+kill "${auth_pid}" >/dev/null 2>&1 || true
+wait "${auth_pid}" >/dev/null 2>&1 || true
+auth_pid=""
+: >"${pool_log}"
+closed_port="$(choose_distinct_port "${postgres_port}" "${pool_port}" "${admin_port}" "${auth_port}")"
 
 AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
   AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
@@ -572,7 +897,7 @@ for _ in $(seq 1 120); do
     rm -f "${readyz_body}"
     exit 1
   fi
-  status_code="$(curl -sS -o "${readyz_body}" -w '%{http_code}' "http://127.0.0.1:${admin_port}/readyz" || true)"
+  status_code="$(curl -s -o "${readyz_body}" -w '%{http_code}' "http://127.0.0.1:${admin_port}/readyz" || true)"
   if [[ "${status_code}" == "503" ]] && grep -Fq '"upstream_ready":false' "${readyz_body}"; then
     pool_fail_closed_ready=1
     break

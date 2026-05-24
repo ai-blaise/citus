@@ -1,13 +1,13 @@
 //! PostgreSQL startup-message tap that extracts a W3C traceparent embedded
 //! in the libpq `application_name` startup parameter.
 //!
-//! The pool proxy is otherwise a transparent byte-copy: it does not modify
-//! upstream traffic. The trace-tap reads the first startup-message envelope
-//! from the client, parses the `application_name` value for a traceparent
-//! using the canonical wire format documented on
-//! `ai_blaise_citus_sidecar_shared::parse_application_name`, and returns
-//! both the parsed result and the buffered bytes so the proxy can replay the
-//! exact bytes to upstream without rewriting them.
+//! The pool proxy is otherwise a transparent byte-copy after admission. The
+//! trace-tap reads the first startup-message envelope from the client, parses
+//! the `application_name` value for a traceparent using the canonical wire
+//! format documented on `ai_blaise_citus_sidecar_shared::parse_application_name`,
+//! and returns both the parsed result and the buffered bytes. When pool auth is
+//! enabled, callers replay `sanitized_startup_bytes()` so pool-only auth
+//! parameters are consumed by the pool and not leaked to PostgreSQL.
 //!
 //! The companion pgrx extension recovers the traceparent on the server side
 //! by reading `current_setting('application_name')` and re-parsing it,
@@ -30,9 +30,9 @@ use ai_blaise_citus_sidecar_shared::{
 /// accept up to the spec maximum so non-libpq clients still work.
 const STARTUP_MESSAGE_MAX_BYTES: usize = 30_000;
 
-/// Result of peeking the startup message. Callers MUST replay `buffered_bytes`
-/// to the upstream PostgreSQL server verbatim, in addition to any further
-/// bytes the client sends.
+/// Result of peeking the startup message. Callers normally replay
+/// `buffered_bytes`; auth-enabled pool paths replay `sanitized_startup_bytes()`
+/// so pool-only credential parameters do not reach PostgreSQL.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StartupTraceTap {
     pub fields: ApplicationNameFields,
@@ -62,6 +62,39 @@ impl StartupTraceTap {
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
+    }
+
+    /// Return startup bytes with pool-only auth parameters removed.
+    ///
+    /// Auth and tenant guard parameters are consumed by the pool before it
+    /// opens an upstream socket. Replaying them to PostgreSQL would either leak
+    /// bearer material into backend logs or fail startup because the server does
+    /// not know those custom parameters. Non-startup special envelopes are left
+    /// unchanged.
+    pub fn sanitized_startup_bytes(&self) -> Vec<u8> {
+        if self.special_envelope || self.parameters.is_empty() || self.buffered_bytes.len() < 8 {
+            return self.buffered_bytes.clone();
+        }
+
+        let protocol = &self.buffered_bytes[4..8];
+        let mut body = Vec::new();
+        body.extend_from_slice(protocol);
+        for (key, value) in &self.parameters {
+            if is_pool_only_startup_parameter(key) {
+                continue;
+            }
+            body.extend_from_slice(key.as_bytes());
+            body.push(0);
+            body.extend_from_slice(value.as_bytes());
+            body.push(0);
+        }
+        body.push(0);
+
+        let length = (body.len() + 4) as u32;
+        let mut packet = Vec::with_capacity(body.len() + 4);
+        packet.extend_from_slice(&length.to_be_bytes());
+        packet.extend_from_slice(&body);
+        packet
     }
 }
 
@@ -172,6 +205,21 @@ fn derive_fields_from_parameters(params: &[(String, String)]) -> ApplicationName
     }
 
     fields
+}
+
+fn is_pool_only_startup_parameter(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().as_str(),
+        "ai_blaise.jwt"
+            | "ai_blaise.token"
+            | "ai_blaise.access_token"
+            | "ai_blaise.tenant_id"
+            | "jwt"
+            | "token"
+            | "access_token"
+            | "tenant_id"
+            | "tenant"
+    )
 }
 
 fn parse_libpq_startup_parameters(body: &[u8]) -> Vec<(String, String)> {
@@ -376,6 +424,35 @@ mod tests {
 
         let error = tap_startup_message(&mut cursor).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn sanitized_startup_bytes_strip_pool_auth_parameters() {
+        let mut packet = Vec::new();
+        let mut body = Vec::new();
+        body.extend_from_slice(&196608_u32.to_be_bytes());
+        for (key, value) in [
+            ("user", "postgres"),
+            ("database", "postgres"),
+            ("application_name", "pool_auth_smoke"),
+            ("ai_blaise.jwt", "secret-token"),
+            ("ai_blaise.tenant_id", "tenant-a"),
+        ] {
+            body.extend_from_slice(key.as_bytes());
+            body.push(0);
+            body.extend_from_slice(value.as_bytes());
+            body.push(0);
+        }
+        body.push(0);
+        packet.extend_from_slice(&((body.len() + 4) as u32).to_be_bytes());
+        packet.extend_from_slice(&body);
+
+        let mut cursor = Cursor::new(packet);
+        let tap = tap_startup_message(&mut cursor).unwrap();
+        let sanitized = tap.sanitized_startup_bytes();
+        assert!(!String::from_utf8_lossy(&sanitized).contains("secret-token"));
+        assert!(!String::from_utf8_lossy(&sanitized).contains("tenant-a"));
+        assert!(String::from_utf8_lossy(&sanitized).contains("pool_auth_smoke"));
     }
 
     #[test]

@@ -51,12 +51,13 @@ M14`, `FEATURE: C4`, `FEATURE: C5`, and `FEATURE: O5`.
 `pool/src/main.rs` executes a real PostgreSQL TCP proxy in `serve` mode, with
 upstream-aware admin readiness on a separate port; `ci/ai-blaise/pool-proxy-smoke.sh`
 verifies live SQL, CIDR allow/deny behavior, active-connection overload,
-tenant-quota fail-closed denial, upstream-unreachable fail-closed routing, and
-pipelined PostgreSQL simple-query frames through that data port. The binary still emits the
-deterministic pool runtime and shard-map summary for `FEATURE: Auth3`,
-`FEATURE: MR5`, `FEATURE: R10`, `FEATURE: Sec12`, `FEATURE: T1`,
-`FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`,
-and `FEATURE: T15`.
+tenant-quota fail-closed denial, Auth3 startup-token introspection against the
+real auth sidecar, revoked-token fail-closed denial, upstream-unreachable
+fail-closed routing, and pipelined PostgreSQL simple-query frames through that
+data port. The binary still emits the deterministic pool runtime and shard-map
+summary for `FEATURE: Auth3`, `FEATURE: MR5`, `FEATURE: R10`, `FEATURE:
+Sec12`, `FEATURE: T1`, `FEATURE: T2`, `FEATURE: T3`, `FEATURE: T7`,
+`FEATURE: T9`, `FEATURE: T12`, and `FEATURE: T15`.
 `images/citus-pg-overlay/extension-manifest.tsv` and
 `companion/src/extension_catalog.rs` validate the bundled, optional,
 integration-target, and hard-blocked extension contracts for
@@ -4143,32 +4144,57 @@ they have their own live evidence.
 
 ### Auth3: Token Introspection Cache
 
-**Overlay**: `pool/src/runtime.rs`, `pool/src/auth_cache.rs`
-**Status**: alpha
+**Overlay**: `pool/src/runtime.rs`, `pool/src/auth_cache.rs`,
+`pool/src/auth_introspection.rs`, `pool/src/proxy.rs`, `sidecar/auth`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines pool-side token introspection cache sizing, TTL, JTI
-revocation, and verified-claim validation.
+**Summary**: Provides the bounded production pool authentication path: the pool
+extracts a startup JWT, validates it through the auth sidecar's introspection
+endpoint before opening an upstream PostgreSQL socket, caches verified claims
+when configured, strips pool-only auth parameters before forwarding startup
+bytes, and fails closed for missing, inactive, revoked, expired, or
+cross-tenant tokens.
 
 **Motivation**: Auth verification must be fast enough for pooled connection
-paths without repeatedly hitting the auth sidecar.
+paths without repeatedly hitting the auth sidecar, while still denying revoked
+or malformed credentials before backend capacity is spent.
 
-**Citus comparison**: Vanilla Citus does not include token introspection.
+**Citus comparison**: Vanilla Citus does not include token introspection or a
+pool-side startup-token admission gate.
 
-Runtime boundary: `ci/ai-blaise/auth-sidecar-smoke.sh` proves the auth service
-can introspect active tokens and reject revoked JTIs through the real HTTP
-runtime. The feature remains alpha because the pool data-plane cache and pool
-token-auth hook are still contract-only and are not exercised through live SQL
-traffic.
+Production evidence: `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh`
+starts a real `postgres:17` container, starts the real auth sidecar, creates a
+user, issues an HS256 access token through `/auth/login`, starts the real pool
+proxy with `AI_BLAISE_POOL_AUTH_INTROSPECTION_URL`, sends a raw PostgreSQL
+startup packet containing pool-only `ai_blaise.jwt` and `ai_blaise.tenant_id`
+parameters, verifies a live SQL query succeeds through the pool after token
+introspection, verifies the pool strips those auth parameters before forwarding
+startup bytes to PostgreSQL, verifies a missing token fails closed before
+upstream routing, logs out the token through `/auth/logout`, verifies the
+revoked token fails closed before upstream routing, and asserts the pool
+metrics `ai_blaise_citus_pool_auth_verified_connections_total`,
+`ai_blaise_citus_pool_auth_rejections_total`, and
+`ai_blaise_citus_pool_fail_closed_routes_total`. `cargo test -p
+ai_blaise_citus_pool --lib` covers cache TTL/expiry/revocation behavior and
+startup-parameter extraction. `ci/ai-blaise/auth-sidecar-smoke.sh` separately
+proves the auth service's introspection and revocation semantics. This status
+covers HS256 auth-sidecar introspection and the pool startup-token gate only;
+OAuth2/OIDC providers (`Auth4`), WebAuthn MFA, non-HS256 issuer modes, and
+application-level RLS policy generation remain separately scoped.
 
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Auth3` in `pool/src/runtime.rs`
 - In-source: `FEATURE: Auth3` in `pool/src/auth_cache.rs`
+- In-source: `FEATURE: Auth3` in `pool/src/auth_introspection.rs`
+- In-source: `FEATURE: Auth3` in `sidecar/auth/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- Executable: `cargo test -p ai_blaise_citus_pool --lib`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 - CI: `ci/ai-blaise/auth-sidecar-smoke.sh`
 
 ### Sec1: RLS Helpers
@@ -4426,10 +4452,10 @@ Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
 `companion_set_session_claims('user-123', 'authenticated', 'tenant-a',
 'jti-123')`, verifies `companion_current_session_claims()` and
 `companion_current_tenant_id()` return the same values, and verifies empty
-`uid` claims are rejected. Auth1 HS256 issuance has separate auth-sidecar
-runtime evidence; pool authentication, Auth3 pool-side token caching, and
-non-HS256 issuer modes remain alpha until their own runtime evidence exists.
-Sec2 JWT verification has a separate SQL-runtime evidence boundary.
+`uid` claims are rejected. Auth1 HS256 issuance and Auth3 pool-side token introspection have separate
+runtime evidence; non-HS256 issuer modes remain alpha until their own runtime
+evidence exists. Sec2 JWT verification has a separate SQL-runtime evidence
+boundary.
 
 **References**:
 

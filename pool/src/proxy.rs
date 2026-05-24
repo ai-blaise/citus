@@ -7,6 +7,7 @@
 
 use crate::{
     admission::{PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError},
+    auth_introspection::{PoolAuthConfig, PoolAuthError, PoolAuthGate},
     trace_tap,
 };
 use std::error::Error;
@@ -29,6 +30,7 @@ pub struct PoolProxyConfig {
     pub upstream_addr: String,
     pub client_cidr_allowlist: ClientCidrAllowlist,
     pub admission: PoolAdmissionConfig,
+    pub auth: Option<PoolAuthConfig>,
 }
 
 impl PoolProxyConfig {
@@ -44,6 +46,7 @@ impl PoolProxyConfig {
             "",
         ))?;
         let admission = PoolAdmissionConfig::from_env()?;
+        let auth = PoolAuthConfig::from_env()?;
 
         let config = Self {
             listen_addr,
@@ -51,6 +54,7 @@ impl PoolProxyConfig {
             upstream_addr,
             client_cidr_allowlist,
             admission,
+            auth,
         };
         config.validate()?;
         Ok(config)
@@ -67,6 +71,9 @@ impl PoolProxyConfig {
             });
         }
         self.admission.validate()?;
+        if let Some(auth) = &self.auth {
+            auth.validate()?;
+        }
         Ok(())
     }
 }
@@ -199,12 +206,16 @@ fn cidr_contains_v6(network: Ipv6Addr, candidate: Ipv6Addr, prefix: u8) -> bool 
 pub struct PoolProxyState {
     started_at: SystemTime,
     admission: PoolAdmissionController,
+    auth: Option<PoolAuthGate>,
     active_connections: AtomicU64,
     accepted_connections: AtomicU64,
     completed_connections: AtomicU64,
     rejected_connections: AtomicU64,
     overloaded_connections: AtomicU64,
     tenant_quota_rejections: AtomicU64,
+    auth_verified_connections: AtomicU64,
+    auth_cache_hits: AtomicU64,
+    auth_rejections: AtomicU64,
     startup_timeouts: AtomicU64,
     fail_closed_routes: AtomicU64,
     upstream_connect_errors: AtomicU64,
@@ -217,20 +228,32 @@ pub struct PoolProxyState {
 
 impl PoolProxyState {
     pub fn new() -> Self {
-        Self::with_admission_config(PoolAdmissionConfig::default())
+        Self::with_config(PoolAdmissionConfig::default(), None)
             .expect("default pool admission config is valid")
     }
 
     pub fn with_admission_config(admission: PoolAdmissionConfig) -> Result<Self, PoolProxyError> {
+        Self::with_config(admission, None)
+    }
+
+    pub fn with_config(
+        admission: PoolAdmissionConfig,
+        auth: Option<PoolAuthConfig>,
+    ) -> Result<Self, PoolProxyError> {
+        let auth = auth.map(PoolAuthGate::new).transpose()?;
         Ok(Self {
             started_at: SystemTime::now(),
             admission: PoolAdmissionController::new(admission)?,
+            auth,
             active_connections: AtomicU64::new(0),
             accepted_connections: AtomicU64::new(0),
             completed_connections: AtomicU64::new(0),
             rejected_connections: AtomicU64::new(0),
             overloaded_connections: AtomicU64::new(0),
             tenant_quota_rejections: AtomicU64::new(0),
+            auth_verified_connections: AtomicU64::new(0),
+            auth_cache_hits: AtomicU64::new(0),
+            auth_rejections: AtomicU64::new(0),
             startup_timeouts: AtomicU64::new(0),
             fail_closed_routes: AtomicU64::new(0),
             upstream_connect_errors: AtomicU64::new(0),
@@ -244,6 +267,10 @@ impl PoolProxyState {
 
     pub fn admission(&self) -> &PoolAdmissionController {
         &self.admission
+    }
+
+    pub fn auth_gate(&self) -> Option<&PoolAuthGate> {
+        self.auth.as_ref()
     }
 
     pub fn active_connections(&self) -> u64 {
@@ -270,6 +297,18 @@ impl PoolProxyState {
 
     fn tenant_quota_rejected(&self) {
         self.tenant_quota_rejections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn auth_verified(&self, cache_hit: bool) {
+        self.auth_verified_connections
+            .fetch_add(1, Ordering::Relaxed);
+        if cache_hit {
+            self.auth_cache_hits.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn auth_rejected(&self) {
+        self.auth_rejections.fetch_add(1, Ordering::Relaxed);
     }
 
     fn startup_timeout(&self) {
@@ -382,8 +421,9 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     config.validate()?;
     let proxy_listener = TcpListener::bind(&config.listen_addr)?;
     let admin_listener = TcpListener::bind(&config.admin_addr)?;
-    let state = Arc::new(PoolProxyState::with_admission_config(
+    let state = Arc::new(PoolProxyState::with_config(
         config.admission.clone(),
+        config.auth.clone(),
     )?);
 
     let admin_state = Arc::clone(&state);
@@ -395,7 +435,7 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     });
 
     eprintln!(
-        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {} with client CIDR allowlist {} and max_active_connections {}",
+        "ai-blaise pool proxy listening on {} and forwarding PostgreSQL traffic to {} with client CIDR allowlist {} max_active_connections {} auth_introspection {}",
         config.listen_addr,
         config.upstream_addr,
         if config.client_cidr_allowlist.is_empty() {
@@ -407,7 +447,12 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
             .admission
             .max_active_connections
             .map(|limit| limit.to_string())
-            .unwrap_or_else(|| "<unbounded>".to_string())
+            .unwrap_or_else(|| "<unbounded>".to_string()),
+        config
+            .auth
+            .as_ref()
+            .map(|auth| auth.introspection_url.as_str())
+            .unwrap_or("<disabled>")
     );
     for client in proxy_listener.incoming() {
         let client = client?;
@@ -503,7 +548,22 @@ fn proxy_connection(
         return Err(PoolProxyError::from(error));
     }
 
-    let prefix_bytes = startup_tap.buffered_bytes;
+    if let Some(auth) = state.auth_gate() {
+        match auth.authorize_startup(&startup_tap) {
+            Ok(decision) => {
+                state.auth_verified(decision.cache_hit);
+            }
+            Err(error) => {
+                state.auth_rejected();
+                state.rejected();
+                state.fail_closed_route();
+                let _ = write_postgres_startup_error(&client, "28000", &error.to_string());
+                return Err(PoolProxyError::from(error));
+            }
+        }
+    }
+
+    let prefix_bytes = startup_tap.sanitized_startup_bytes();
     let upstream = connect_upstream(upstream_addr).inspect_err(|_error| {
         state.connect_error();
         state.fail_closed_route();
@@ -703,7 +763,7 @@ fn health_json(
     upstream_ready: bool,
 ) -> String {
     format!(
-        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"overloaded_connections\":{},\"tenant_quota_rejections\":{},\"startup_timeouts\":{},\"fail_closed_routes\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
+        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"overloaded_connections\":{},\"tenant_quota_rejections\":{},\"auth_verified_connections\":{},\"auth_cache_hits\":{},\"auth_rejections\":{},\"startup_timeouts\":{},\"fail_closed_routes\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
         ready,
         upstream_ready,
         escape_json(upstream_addr),
@@ -713,6 +773,9 @@ fn health_json(
         state.rejected_connections.load(Ordering::Relaxed),
         state.overloaded_connections.load(Ordering::Relaxed),
         state.tenant_quota_rejections.load(Ordering::Relaxed),
+        state.auth_verified_connections.load(Ordering::Relaxed),
+        state.auth_cache_hits.load(Ordering::Relaxed),
+        state.auth_rejections.load(Ordering::Relaxed),
         state.startup_timeouts.load(Ordering::Relaxed),
         state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed),
@@ -742,6 +805,15 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
          # HELP ai_blaise_citus_pool_tenant_quota_rejections_total PostgreSQL client connections rejected by tenant quota admission.\n\
          # TYPE ai_blaise_citus_pool_tenant_quota_rejections_total counter\n\
          ai_blaise_citus_pool_tenant_quota_rejections_total {}\n\
+         # HELP ai_blaise_citus_pool_auth_verified_connections_total PostgreSQL client connections admitted by auth introspection.\n\
+         # TYPE ai_blaise_citus_pool_auth_verified_connections_total counter\n\
+         ai_blaise_citus_pool_auth_verified_connections_total {}\n\
+         # HELP ai_blaise_citus_pool_auth_cache_hits_total PostgreSQL client connections admitted from the auth introspection cache.\n\
+         # TYPE ai_blaise_citus_pool_auth_cache_hits_total counter\n\
+         ai_blaise_citus_pool_auth_cache_hits_total {}\n\
+         # HELP ai_blaise_citus_pool_auth_rejections_total PostgreSQL client connections rejected by auth introspection.\n\
+         # TYPE ai_blaise_citus_pool_auth_rejections_total counter\n\
+         ai_blaise_citus_pool_auth_rejections_total {}\n\
          # HELP ai_blaise_citus_pool_startup_timeouts_total PostgreSQL client connections closed before a complete startup envelope arrived.\n\
          # TYPE ai_blaise_citus_pool_startup_timeouts_total counter\n\
          ai_blaise_citus_pool_startup_timeouts_total {}\n\
@@ -770,6 +842,9 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
         state.rejected_connections.load(Ordering::Relaxed),
         state.overloaded_connections.load(Ordering::Relaxed),
         state.tenant_quota_rejections.load(Ordering::Relaxed),
+        state.auth_verified_connections.load(Ordering::Relaxed),
+        state.auth_cache_hits.load(Ordering::Relaxed),
+        state.auth_rejections.load(Ordering::Relaxed),
         state.startup_timeouts.load(Ordering::Relaxed),
         state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed)
@@ -808,6 +883,7 @@ fn escape_prometheus_label(value: &str) -> String {
 #[derive(Debug, Eq, PartialEq)]
 pub enum PoolProxyError {
     Admission(PoolAdmissionError),
+    Auth(PoolAuthError),
     AddressCollision {
         left: &'static str,
         right: &'static str,
@@ -829,6 +905,7 @@ impl fmt::Display for PoolProxyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Admission(error) => write!(formatter, "{error}"),
+            Self::Auth(error) => write!(formatter, "{error}"),
             Self::AddressCollision { left, right } => {
                 write!(formatter, "{left} must differ from {right}")
             }
@@ -860,6 +937,12 @@ impl From<PoolAdmissionError> for PoolProxyError {
     }
 }
 
+impl From<PoolAuthError> for PoolProxyError {
+    fn from(error: PoolAuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
 impl From<io::Error> for PoolProxyError {
     fn from(error: io::Error) -> Self {
         Self::Io(error.to_string())
@@ -885,6 +968,7 @@ mod tests {
             upstream_addr: "127.0.0.1:25432".to_string(),
             client_cidr_allowlist: ClientCidrAllowlist::default(),
             admission: PoolAdmissionConfig::default(),
+            auth: None,
         };
 
         assert_eq!(

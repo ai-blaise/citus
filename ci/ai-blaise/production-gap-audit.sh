@@ -39,6 +39,7 @@ MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
+POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
@@ -227,6 +228,7 @@ for path in (
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
     STORAGE_RUNTIME_SMOKE,
+    POOL_PROXY_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -321,6 +323,18 @@ if (
 
 if "storage-sidecar-runtime-smoke.sh" not in sidecar_workflow:
     fail("ci-sidecar workflow must run storage-sidecar-runtime-smoke.sh")
+
+pool_smoke = read(POOL_PROXY_SMOKE)
+for required in (
+    "AI_BLAISE_POOL_AUTH_INTROSPECTION_URL",
+    "ai_blaise.jwt",
+    "pool auth valid-token admission",
+    "pool auth revoked-token fail-closed",
+    "ai_blaise_citus_pool_auth_verified_connections_total",
+    "ai_blaise_citus_pool_auth_rejections_total",
+):
+    if required not in pool_smoke:
+        fail(f"pool proxy smoke lost Auth3 data-plane assertion: {required}")
 
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
 gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))

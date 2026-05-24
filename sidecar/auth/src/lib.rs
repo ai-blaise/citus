@@ -1702,12 +1702,17 @@ mod tests {
         let engine = fixture_engine();
         let claims = canonical_claims();
         let token = engine.issue_token(claims).expect("issue");
-        // Swap a known base64 character with another so the resulting string
-        // still decodes -- only the signature value changes, not its length.
+        // Swap the first signature character with another base64url character
+        // so the resulting string still decodes -- only the signature value
+        // changes, not its length or the final unpadded-base64 leftover bits.
         let mut bytes = token.as_bytes().to_vec();
-        let last = bytes.len() - 1;
-        let swap = if bytes[last] == b'A' { b'B' } else { b'A' };
-        bytes[last] = swap;
+        let signature_start = token.rfind('.').expect("signature separator") + 1;
+        let swap = if bytes[signature_start] == b'A' {
+            b'B'
+        } else {
+            b'A'
+        };
+        bytes[signature_start] = swap;
         let tampered = String::from_utf8(bytes).expect("utf-8");
         assert_eq!(
             engine.verify_token(&tampered),

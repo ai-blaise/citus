@@ -3,6 +3,7 @@
 pub mod admin;
 pub mod admission;
 pub mod auth_cache;
+pub mod auth_introspection;
 pub mod execution;
 pub mod geoip;
 pub mod htap;
@@ -22,6 +23,10 @@ pub mod virtual_pid;
 
 pub use admin::{AdminAck, AdminCommand, AdminError, AdminState};
 pub use auth_cache::{AuthCacheError, AuthVerificationCache, VerifiedClaims};
+pub use auth_introspection::{
+    token_from_startup, PoolAuthConfig, PoolAuthDecision, PoolAuthError, PoolAuthGate,
+    VerifiedPoolClaims,
+};
 pub use geoip::{
     policy_with_default, route_for_client, ClosestReplicaTable, GeoIpError, RegionReplica,
 };
