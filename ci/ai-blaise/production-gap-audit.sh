@@ -23,11 +23,14 @@ RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
 UPGRADE_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md"
 DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
+PITR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -86,6 +89,10 @@ def number_forms(n: int):
 
 docs = read(DOCS)
 audit = read(AUDIT)
+makefile = read(MAKEFILE)
+dr_runbook = read(DR_RUNBOOK)
+pitr_runbook = read(PITR_RUNBOOK)
+dr_restore_depth_check = read(DR_RESTORE_DEPTH_CHECK)
 source = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", source))
@@ -163,6 +170,7 @@ for path in (
     RUNBOOK,
     UPGRADE_RUNBOOK,
     DR_RUNBOOK,
+    PITR_RUNBOOK,
     E2E_DOC,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
@@ -179,6 +187,58 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+if not (DR_RESTORE_DEPTH_CHECK.stat().st_mode & 0o111):
+    fail("ci/ai-blaise/dr-restore-depth-check.sh must be executable")
+
+for phrase in (
+    "dr-restore-depth-check:",
+    "REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh",
+    "gate-close:",
+    "dr-restore-depth-check",
+):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the DR restore-depth gate: {phrase}")
+
+for phrase in (
+    "cargo test -q -p ai_blaise_citus_e2e dr_restore_depth",
+    "dr_restore_depth_report",
+    "pg_basebackup",
+    "archive_command",
+    "recovery_target_time",
+    "pg_switch_wal",
+    "dr_restore_depth_postgres_smoke",
+):
+    if phrase not in dr_restore_depth_check:
+        fail(f"DR restore-depth check must preserve executable evidence: {phrase}")
+
+for phrase in (
+    "ci/ai-blaise/dr-restore-depth-check.sh",
+    "fail-closed",
+    "WAL archive continuity",
+    "PITR evidence",
+    "dr_restore_depth_postgres_smoke",
+):
+    if compact(phrase) not in compact(pitr_runbook):
+        fail(f"pitr-restore.md must document DR restore-depth evidence: {phrase}")
+
+for phrase in (
+    "ci/ai-blaise/dr-restore-depth-check.sh",
+    "read-only branch",
+    "WAL archive continuity",
+    "PostgreSQL PITR smoke",
+    "not production evidence by itself",
+):
+    if compact(phrase) not in compact(dr_runbook):
+        fail(f"disaster-recovery.md must document DR restore-depth gate: {phrase}")
+
+for phrase in (
+    "restore-depth gate",
+    "ci/ai-blaise/dr-restore-depth-check.sh",
+    "PostgreSQL PITR smoke",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md must mention DR restore-depth correction: {phrase}")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:

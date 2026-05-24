@@ -264,6 +264,14 @@ more production-ready than the artifacts justified.
   artifact restore, sidecar readiness, and conflict-policy evidence is measured
   against real runtime infrastructure. The production gap audit machine-checks
   that guardrail.
+- The backup/PITR runbooks now have a restore-depth gate backed by
+  `ci/ai-blaise/dr-restore-depth-check.sh`. The gate validates fail-closed
+  restore configuration, read-only branch-before-restore policy, destructive
+  plan-id requirements, two-operator approval evidence, KMS evidence, WAL
+  archive continuity, PITR target/replay evidence, and tenant/placement/ledger/
+  search validation query evidence. With `REQUIRE_DOCKER=1`, it also runs a
+  real PostgreSQL PITR smoke using `pg_basebackup`, WAL archiving,
+  `recovery_target_time`, and restored-row verification.
 - Custom component READMEs, CRD/catalog docs, benchmark docs, and image
   overview docs now carry a shared production boundary: unless a feature is
   explicitly `Status: production-ready` in `docs/ai-blaise/NEW_FEATURES.md`,
@@ -524,10 +532,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -588,10 +594,7 @@ Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
 execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
-implemented and live-gated. The
-other 146
-feature headings remain
-`Status: alpha`. There are no remaining source-only feature markers: the
+implemented and live-gated. The other 148 feature headings remain `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,
 but it is not a production claim for the full feature plan.

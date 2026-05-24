@@ -53,6 +53,30 @@ a rollback step from another runbook (`split-brain.md`,
    sign off before proceeding. PITR is destructive when applied to the
    live cluster.
 
+## Restore-depth evidence gate
+
+Run the machine gate before any production PITR drill and attach its output to
+the incident ticket:
+
+```bash
+REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh
+```
+
+The gate requires fail-closed configuration validation for object-store archive
+URIs, KMS evidence, a read-only branch before destructive restore, two distinct
+operator approvals, and a destructive plan id for in-place restore. It also
+requires WAL archive continuity and PITR evidence: target coverage between the
+base backup and latest archived WAL, non-zero LSNs, replay timestamp no later
+than the requested target, promotion after recovery, and tenant/placement/
+ledger/search validation query evidence.
+
+With Docker required, the gate runs a live PostgreSQL restore drill and emits a
+line beginning `dr_restore_depth_postgres_smoke`. That smoke creates a primary,
+takes `pg_basebackup`, archives WAL, restores a copy to `recovery_target_time`,
+and confirms the restored cluster contains only rows committed before the PITR
+target. The smoke is narrow PostgreSQL evidence for the runbook mechanics; it
+does not replace a live Citus cluster drill.
+
 ## Picking the restore target
 
 A PITR has three valid targets. Pick one before running any command.
