@@ -644,7 +644,13 @@ presence, tenant/topic filtering, `postgres_changes` fan-out, and CDC-to-realtim
 Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 `cargo test -p ai_blaise_citus_sidecar_realtime`,
 `ci/ai-blaise/sidecar-cdc-smoke.sh`, and
-`ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
+`ci/ai-blaise/sidecar-realtime-smoke.sh`. The realtime claim is bounded to
+`runtime_boundary=single-node-raw-ws-cdc-ingest` with
+`websocket_network_exercised=true`, `browser_client_exercised=false`,
+`cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and
+`kubernetes_traffic_exercised=false`; browser client behavior, WebSocket
+extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes
+traffic are not promoted by this evidence. External managed broker operations
 (NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
 client operation) remain alpha unless covered by their own feature entry.
 

@@ -26,10 +26,14 @@ pub use hub::{
     HubMetrics, Mailbox, PresenceEntry, PresenceState, RealtimeHub, Subscription,
     SubscriptionFilter,
 };
-pub use live::{handle_cdc_ingest, handle_ws_connection, RealtimeLiveConfig, RealtimeLiveRuntime};
+pub use live::{
+    handle_cdc_ingest, handle_ws_connection, RealtimeLiveConfig, RealtimeLiveRuntime,
+    MAX_CDC_INGEST_FRAME_BYTES,
+};
 pub use phoenix::{PhoenixDecodeError, PhoenixFrame};
 pub use ws::{
     decode_frame, encode_close_frame, encode_text_frame, UpgradeRequest, WsConnection, WsError,
+    MAX_WS_TEXT_FRAME_BYTES,
 };
 
 use ai_blaise_citus_sidecar_cdc::{
@@ -333,6 +337,14 @@ pub struct RealtimeRuntimeState {
 pub struct RealtimeRuntimeReport {
     pub broadcast: RealtimeRuntimeBroadcast,
     pub state: RealtimeRuntimeState,
+    pub runtime_boundary: &'static str,
+    pub websocket_network_exercised: bool,
+    pub cdc_tailing_integrated: bool,
+    pub multi_node_pubsub: bool,
+    pub kubernetes_traffic_exercised: bool,
+    pub browser_client_exercised: bool,
+    pub max_ws_text_frame_bytes: usize,
+    pub max_cdc_ingest_frame_bytes: usize,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -503,6 +515,14 @@ pub fn canonical_realtime_runtime_report() -> Result<RealtimeRuntimeReport, Real
     Ok(RealtimeRuntimeReport {
         broadcast,
         state: runtime.state().clone(),
+        runtime_boundary: "single-node-raw-ws-cdc-ingest",
+        websocket_network_exercised: true,
+        cdc_tailing_integrated: false,
+        multi_node_pubsub: false,
+        kubernetes_traffic_exercised: false,
+        browser_client_exercised: false,
+        max_ws_text_frame_bytes: MAX_WS_TEXT_FRAME_BYTES,
+        max_cdc_ingest_frame_bytes: MAX_CDC_INGEST_FRAME_BYTES,
     })
 }
 
@@ -555,6 +575,14 @@ mod tests {
         assert_eq!(report.state.broadcasts, 1);
         assert_eq!(report.state.delivered_messages, 1);
         assert_eq!(report.state.presence_snapshots, 1);
+        assert_eq!(report.runtime_boundary, "single-node-raw-ws-cdc-ingest");
+        assert!(report.websocket_network_exercised);
+        assert!(!report.cdc_tailing_integrated);
+        assert!(!report.multi_node_pubsub);
+        assert!(!report.kubernetes_traffic_exercised);
+        assert!(!report.browser_client_exercised);
+        assert_eq!(report.max_ws_text_frame_bytes, 64 * 1024);
+        assert_eq!(report.max_cdc_ingest_frame_bytes, 1 << 20);
     }
 
     #[test]

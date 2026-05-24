@@ -72,10 +72,10 @@ fn run_runtime_canonical() {
     let delivery = &report.broadcast.deliveries[0];
 
     println!(
-        "topic\ttenant_id\toperation\tconnection_id\tuser_id\tframe_bytes\tactive_connections\tfiltered_connections\tbroadcasts\tdelivered_messages\tpresence_snapshots\tpresence_users"
+        "topic	tenant_id	operation	connection_id	user_id	frame_bytes	active_connections	filtered_connections	broadcasts	delivered_messages	presence_snapshots	presence_users	runtime_boundary	websocket_network_exercised	cdc_tailing_integrated	multi_node_pubsub	kubernetes_traffic_exercised	browser_client_exercised	max_ws_text_frame_bytes	max_cdc_ingest_frame_bytes"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
         report.broadcast.topic,
         report.broadcast.tenant_id,
         operation_name(&report.broadcast.operation),
@@ -88,6 +88,14 @@ fn run_runtime_canonical() {
         report.state.delivered_messages,
         report.state.presence_snapshots,
         report.broadcast.presence_users.join(","),
+        report.runtime_boundary,
+        report.websocket_network_exercised,
+        report.cdc_tailing_integrated,
+        report.multi_node_pubsub,
+        report.kubernetes_traffic_exercised,
+        report.browser_client_exercised,
+        report.max_ws_text_frame_bytes,
+        report.max_cdc_ingest_frame_bytes,
     );
 }
 

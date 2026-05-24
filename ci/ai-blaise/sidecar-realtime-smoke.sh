@@ -47,6 +47,13 @@ export REALTIME_CDC_INGEST_ADDR="${rt_cdc_addr}"
 # Build both binaries up-front so the runtime starts respond quickly.
 cargo build -q -p ai_blaise_citus_sidecar_cdc -p ai_blaise_citus_sidecar_realtime
 
+runtime_report="$(cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical)"
+grep -F $'single-node-raw-ws-cdc-ingest	true	false	false	false	false	65536	1048576' <<<"${runtime_report}" >/dev/null || {
+  echo "realtime runtime boundary report missing expected conservative flags" >&2
+  echo "${runtime_report}" >&2
+  exit 1
+}
+
 cleanup() {
   rm -f "${rt_cdc_sock:-}"
   for pid in ${cdc_pid:-} ${rt_pid:-}; do
@@ -158,6 +165,25 @@ assert b"ready" in probe("/readyz")
 assert b"ai_blaise_realtime_broadcasts" in probe("/metrics")
 
 # 1. WS upgrade + phx_join.
+ext_sock = socket.create_connection((rt_host, int(rt_ws_port)), timeout=10)
+ext_sock.settimeout(2)
+ext_sock.sendall(
+    "GET /realtime/v1/websocket?vsn=2.0.0 HTTP/1.1\r\n"
+    "Host: localhost\r\n"
+    "Upgrade: websocket\r\n"
+    "Connection: Upgrade\r\n"
+    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+    "Sec-WebSocket-Version: 13\r\n"
+    "Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n".encode("utf-8")
+)
+try:
+    rejected = ext_sock.recv(256)
+except socket.timeout:
+    rejected = b""
+finally:
+    ext_sock.close()
+assert not rejected.startswith(b"HTTP/1.1 101 "), rejected
+
 sock = socket.create_connection((rt_host, int(rt_ws_port)), timeout=10)
 sock.settimeout(10)
 sock.sendall(
@@ -178,6 +204,41 @@ header_text = buffer.split(b"\r\n\r\n", 1)[0].decode("utf-8")
 assert header_text.startswith("HTTP/1.1 101 "), header_text
 assert "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" in header_text, header_text
 buffer = buffer.split(b"\r\n\r\n", 1)[1]
+
+invalid_join = [
+    "bad",
+    "bad",
+    "realtime:public:orders",
+    "phx_join",
+    {
+        "user_id": "user-a",
+        "schema": "public",
+        "table": "orders",
+        "operation": "INSERT",
+    },
+]
+send_ws_frame(sock, json.dumps(invalid_join))
+
+invalid_reply = None
+deadline = time.time() + 5
+while time.time() < deadline and invalid_reply is None:
+    chunk = sock.recv(2048)
+    if not chunk:
+        break
+    buffer += chunk
+    while True:
+        frame, consumed = decode_ws_frame(buffer)
+        if frame is None:
+            break
+        opcode, payload = frame
+        buffer = buffer[consumed:]
+        if opcode != 0x1:
+            continue
+        decoded = json.loads(payload.decode("utf-8"))
+        if decoded[3] == "phx_reply" and decoded[4]["status"] == "error":
+            invalid_reply = decoded
+            break
+assert invalid_reply is not None, "invalid join did not fail closed"
 
 join = [
     "1",
@@ -275,7 +336,8 @@ assert payload["table"] == "orders", payload
 assert payload["type"] == "INSERT", payload
 assert payload["tenant_id"] == "tenant-a", payload
 print(
-    "OK realtime sidecar e2e: phx_join, presence_diff, "
+    "OK realtime sidecar e2e: fail-closed invalid join, extension rejection, "
+    "phx_join, presence_diff, "
     f"postgres_changes (tenant={payload['tenant_id']}, lsn={payload['lsn']})"
 )
 PY

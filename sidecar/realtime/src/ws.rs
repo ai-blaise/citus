@@ -17,10 +17,12 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 
 const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+pub const MAX_WS_TEXT_FRAME_BYTES: usize = 64 * 1024;
 
 /// Decoded HTTP upgrade request.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UpgradeRequest {
+    pub method: String,
     pub path: String,
     pub query: HashMap<String, String>,
     pub headers: HashMap<String, String>,
@@ -32,7 +34,7 @@ impl UpgradeRequest {
         let mut lines = text.lines();
         let request_line = lines.next().ok_or(WsError::InvalidHandshake)?;
         let mut parts = request_line.split_whitespace();
-        let _method = parts.next().ok_or(WsError::InvalidHandshake)?;
+        let method = parts.next().ok_or(WsError::InvalidHandshake)?.to_string();
         let target = parts.next().ok_or(WsError::InvalidHandshake)?;
         let (path, query_string) = match target.find('?') {
             Some(index) => (target[..index].to_string(), &target[index + 1..]),
@@ -64,15 +66,50 @@ impl UpgradeRequest {
             headers.insert(key, value);
         }
         Ok(Self {
+            method,
             path,
             query,
             headers,
         })
     }
 
+    pub fn validate_websocket_upgrade(&self) -> Result<(), WsError> {
+        if self.method != "GET" {
+            return Err(WsError::InvalidHandshake);
+        }
+        let upgrade = self
+            .headers
+            .get("upgrade")
+            .map(|value| value.eq_ignore_ascii_case("websocket"))
+            .unwrap_or(false);
+        let connection = self
+            .headers
+            .get("connection")
+            .map(|value| {
+                value
+                    .split(',')
+                    .any(|token| token.trim().eq_ignore_ascii_case("upgrade"))
+            })
+            .unwrap_or(false);
+        let version = self
+            .headers
+            .get("sec-websocket-version")
+            .map(|value| value == "13")
+            .unwrap_or(false);
+        if !upgrade
+            || !connection
+            || !version
+            || self.headers.contains_key("sec-websocket-extensions")
+        {
+            return Err(WsError::InvalidHandshake);
+        }
+        Ok(())
+    }
+
     /// Compute the `Sec-WebSocket-Accept` header value the server must
     /// return.
     pub fn accept_key(&self) -> Result<String, WsError> {
+        self.validate_websocket_upgrade()?;
         let key = self
             .headers
             .get("sec-websocket-key")
@@ -100,6 +137,8 @@ pub enum WsError {
     InvalidHandshake,
     MissingKey,
     InvalidFrame,
+    FrameTooLarge(usize),
+    UnmaskedClientFrame,
     Closed,
     UnsupportedOpcode(u8),
 }
@@ -110,6 +149,8 @@ impl std::fmt::Display for WsError {
             Self::InvalidHandshake => write!(formatter, "ws handshake malformed"),
             Self::MissingKey => write!(formatter, "ws handshake missing Sec-WebSocket-Key"),
             Self::InvalidFrame => write!(formatter, "ws frame malformed"),
+            Self::FrameTooLarge(size) => write!(formatter, "ws text frame too large: {size} bytes"),
+            Self::UnmaskedClientFrame => write!(formatter, "ws client text frame must be masked"),
             Self::Closed => write!(formatter, "ws connection closed"),
             Self::UnsupportedOpcode(op) => write!(formatter, "ws unsupported opcode {op:#x}"),
         }
@@ -134,6 +175,10 @@ pub fn encode_close_frame(code: u16, reason: &str) -> Vec<u8> {
 /// Decode one frame from the buffer. Returns the opcode and payload bytes.
 /// Returns `Ok(None)` when more bytes are needed.
 pub fn decode_frame(buffer: &[u8]) -> Result<Option<(u8, Vec<u8>, usize)>, WsError> {
+    Ok(decode_frame_parts(buffer)?.map(|parts| (parts.opcode, parts.payload, parts.consumed)))
+}
+
+fn decode_frame_parts(buffer: &[u8]) -> Result<Option<FrameParts>, WsError> {
     if buffer.len() < 2 {
         return Ok(None);
     }
@@ -169,7 +214,20 @@ pub fn decode_frame(buffer: &[u8]) -> Result<Option<(u8, Vec<u8>, usize)>, WsErr
         }
     }
     let consumed = payload_start + payload_len;
-    Ok(Some((opcode, payload, consumed)))
+    Ok(Some(FrameParts {
+        opcode,
+        payload,
+        consumed,
+        masked,
+    }))
+}
+
+#[derive(Debug)]
+struct FrameParts {
+    opcode: u8,
+    payload: Vec<u8>,
+    consumed: usize,
+    masked: bool,
 }
 
 /// Convenience wrapper for the WS connection state.
@@ -227,18 +285,25 @@ impl WsConnection {
     /// Drain one frame from the buffer if one is available.
     pub fn next_text_frame(&mut self) -> Result<Option<String>, WsError> {
         loop {
-            let Some((opcode, payload, consumed)) = decode_frame(&self.buffer)? else {
+            let Some(parts) = decode_frame_parts(&self.buffer)? else {
                 return Ok(None);
             };
-            self.buffer.drain(..consumed);
-            match opcode {
+            self.buffer.drain(..parts.consumed);
+            match parts.opcode {
                 0x1 => {
-                    let text = String::from_utf8(payload).map_err(|_| WsError::InvalidFrame)?;
+                    if !parts.masked {
+                        return Err(WsError::UnmaskedClientFrame);
+                    }
+                    if parts.payload.len() > MAX_WS_TEXT_FRAME_BYTES {
+                        return Err(WsError::FrameTooLarge(parts.payload.len()));
+                    }
+                    let text =
+                        String::from_utf8(parts.payload).map_err(|_| WsError::InvalidFrame)?;
                     return Ok(Some(text));
                 }
                 0x9 => {
                     // ping -> respond with pong
-                    let pong = encode_frame(0xA, &payload);
+                    let pong = encode_frame(0xA, &parts.payload);
                     self.stream.write_all(&pong).map_err(|_| WsError::Closed)?;
                 }
                 0xA => {} // pong, ignore
@@ -382,6 +447,7 @@ mod tests {
                     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
                     Sec-WebSocket-Version: 13\r\n\r\n";
         let request = UpgradeRequest::parse(raw).expect("parse");
+        assert_eq!(request.method, "GET");
         assert_eq!(request.path, "/realtime/v1/websocket");
         assert_eq!(request.query["apikey"], "secret");
         assert_eq!(request.query["vsn"], "2.0.0");
@@ -392,8 +458,7 @@ mod tests {
     fn handshake_response_uses_rfc6455_test_vector() {
         // RFC 6455 §1.3 example: Sec-WebSocket-Key dGhlIHNhbXBsZSBub25jZQ==
         // -> Sec-WebSocket-Accept s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
-        let raw =
-            b"GET / HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n";
+        let raw = b"GET / HTTP/1.1\r\n                    Host: x\r\n                    Upgrade: websocket\r\n                    Connection: Upgrade\r\n                    Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n                    Sec-WebSocket-Version: 13\r\n\r\n";
         let request = UpgradeRequest::parse(raw).expect("parse");
         let accept = request.accept_key().expect("accept");
         assert_eq!(accept, "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
@@ -426,6 +491,13 @@ mod tests {
         assert_eq!(length, 5);
         assert_eq!(&frame[2..4], &1000_u16.to_be_bytes());
         assert_eq!(&frame[4..7], b"bye");
+    }
+
+    #[test]
+    fn handshake_rejects_extension_negotiation() {
+        let raw = b"GET / HTTP/1.1\r\n                    Host: x\r\n                    Upgrade: websocket\r\n                    Connection: Upgrade\r\n                    Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n                    Sec-WebSocket-Version: 13\r\n                    Sec-WebSocket-Extensions: permessage-deflate\r\n\r\n";
+        let request = UpgradeRequest::parse(raw).expect("parse");
+        assert_eq!(request.accept_key(), Err(WsError::InvalidHandshake));
     }
 
     #[test]

@@ -38,6 +38,8 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+SIDECAR_REALTIME_SMOKE = ROOT / "ci/ai-blaise/sidecar-realtime-smoke.sh"
+SIDECAR_REALTIME_README = ROOT / "sidecar/realtime/README.md"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
@@ -227,6 +229,8 @@ for path in (
     MAKEFILE,
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
+    SIDECAR_REALTIME_SMOKE,
+    SIDECAR_REALTIME_README,
     STORAGE_RUNTIME_SMOKE,
     POOL_PROXY_SMOKE,
 ):
@@ -274,6 +278,32 @@ for phrase in (
 ):
     if compact(phrase) not in compact(benchmarks_doc):
         fail(f"BENCHMARKS.md missing performance evidence release wording: {phrase}")
+
+realtime_docs = "\n".join([docs, audit, read(SIDECAR_REALTIME_README)])
+for phrase in (
+    "runtime_boundary=single-node-raw-ws-cdc-ingest",
+    "websocket_network_exercised=true",
+    "browser_client_exercised=false",
+    "cdc_tailing_integrated=false",
+    "multi_node_pubsub=false",
+    "kubernetes_traffic_exercised=false",
+    "browser client behavior",
+    "WebSocket extension negotiation",
+    "live CDC tailing",
+    "multi-node pubsub",
+    "Kubernetes traffic",
+):
+    if phrase not in realtime_docs:
+        fail(f"realtime production boundary caveat missing phrase: {phrase}")
+
+realtime_smoke = read(SIDECAR_REALTIME_SMOKE)
+for phrase in (
+    "single-node-raw-ws-cdc-ingest",
+    "invalid join did not fail closed",
+    "Sec-WebSocket-Extensions: permessage-deflate",
+):
+    if phrase not in realtime_smoke:
+        fail(f"realtime smoke missing fail-closed runtime proof phrase: {phrase}")
 
 sidecar_smoke = read(SIDECAR_API_SMOKE)
 for required in (

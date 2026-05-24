@@ -24,6 +24,8 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+pub const MAX_CDC_INGEST_FRAME_BYTES: usize = 1 << 20;
+
 /// Configuration for the live runtime.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RealtimeLiveConfig {
@@ -260,57 +262,160 @@ struct JoinedChannel {
     mailbox: Arc<crate::hub::Mailbox>,
 }
 
+#[derive(Debug)]
+struct JoinRequest {
+    tenant_id: String,
+    user_id: String,
+    schema: String,
+    table: String,
+    op: Option<CdcOperation>,
+    equals: HashMap<String, String>,
+    online_at: Option<String>,
+}
+
+impl JoinRequest {
+    fn parse(frame: &PhoenixFrame) -> Result<Self, &'static str> {
+        let payload = frame
+            .payload
+            .as_object()
+            .ok_or("join payload must be an object")?;
+        let tenant_id = required_token(payload, "tenant_id")?.to_string();
+        let user_id = required_token(payload, "user_id")?.to_string();
+        let schema = required_identifier(payload, "schema")?.to_string();
+        let table = required_identifier(payload, "table")?.to_string();
+        let expected_topic = format!("realtime:{schema}:{table}");
+        if frame.topic != expected_topic {
+            return Err("topic must match realtime:<schema>:<table>");
+        }
+        let op = match payload.get("operation") {
+            Some(Value::String(raw)) => Some(parse_operation(raw)?),
+            Some(_) => return Err("operation must be a string"),
+            None => None,
+        };
+        let mut equals = HashMap::new();
+        if let Some(filters) = payload.get("filters") {
+            let filters = filters.as_object().ok_or("filters must be an object")?;
+            for (key, value) in filters {
+                if !is_identifier(key) {
+                    return Err("filter column must be an identifier");
+                }
+                let Some(text) = value.as_str() else {
+                    return Err("filter value must be a string");
+                };
+                if text.len() > 512 || text.chars().any(char::is_control) {
+                    return Err("filter value is invalid");
+                }
+                equals.insert(key.clone(), text.to_string());
+            }
+        }
+        let presence = payload
+            .get("presence")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let online_at = if presence {
+            let online_at = payload
+                .get("online_at")
+                .and_then(Value::as_str)
+                .ok_or("online_at is required when presence is enabled")?;
+            if !is_utc_timestamp(online_at) {
+                return Err("online_at must be an RFC3339 UTC timestamp");
+            }
+            Some(online_at.to_string())
+        } else {
+            None
+        };
+        Ok(Self {
+            tenant_id,
+            user_id,
+            schema,
+            table,
+            op,
+            equals,
+            online_at,
+        })
+    }
+}
+
+fn required_token<'a>(
+    payload: &'a serde_json::Map<String, Value>,
+    field: &'static str,
+) -> Result<&'a str, &'static str> {
+    let value = payload
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or("required join field missing")?;
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    {
+        return Err("join token field is invalid");
+    }
+    Ok(value)
+}
+
+fn required_identifier<'a>(
+    payload: &'a serde_json::Map<String, Value>,
+    field: &'static str,
+) -> Result<&'a str, &'static str> {
+    let value = payload
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or("required join field missing")?;
+    if !is_identifier(value) {
+        return Err("join identifier field is invalid");
+    }
+    Ok(value)
+}
+
+fn is_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn is_utc_timestamp(value: &str) -> bool {
+    value.len() >= 20 && value.contains('T') && value.ends_with('Z')
+}
+
+fn parse_operation(raw: &str) -> Result<CdcOperation, &'static str> {
+    match raw.to_ascii_uppercase().as_str() {
+        "INSERT" => Ok(CdcOperation::Insert),
+        "UPDATE" => Ok(CdcOperation::Update),
+        "DELETE" => Ok(CdcOperation::Delete),
+        "TRUNCATE" => Ok(CdcOperation::Truncate),
+        _ => Err("operation is unsupported"),
+    }
+}
+
 fn handle_phx_join(
     conn: &mut WsConnection,
     hub: &RealtimeHub,
     frame: &PhoenixFrame,
     joined: &mut HashMap<String, JoinedChannel>,
 ) -> Result<(), WsError> {
-    let topic = frame.topic.clone();
-    let payload = &frame.payload;
-    let tenant_id = payload
-        .get("tenant_id")
-        .and_then(Value::as_str)
-        .unwrap_or("tenant-a")
-        .to_string();
-    let user_id = payload
-        .get("user_id")
-        .and_then(Value::as_str)
-        .unwrap_or("anonymous")
-        .to_string();
-    let schema = payload
-        .get("schema")
-        .and_then(Value::as_str)
-        .unwrap_or("public")
-        .to_string();
-    let table = payload
-        .get("table")
-        .and_then(Value::as_str)
-        .unwrap_or("orders")
-        .to_string();
-    let op = payload
-        .get("operation")
-        .and_then(Value::as_str)
-        .and_then(|raw| match raw.to_ascii_uppercase().as_str() {
-            "INSERT" => Some(CdcOperation::Insert),
-            "UPDATE" => Some(CdcOperation::Update),
-            "DELETE" => Some(CdcOperation::Delete),
-            "TRUNCATE" => Some(CdcOperation::Truncate),
-            _ => None,
-        });
-    let mut equals = HashMap::new();
-    if let Some(filters) = payload.get("filters").and_then(Value::as_object) {
-        for (key, value) in filters {
-            if let Some(text) = value.as_str() {
-                equals.insert(key.clone(), text.to_string());
+    let request = match JoinRequest::parse(frame) {
+        Ok(request) => request,
+        Err(reason) => {
+            let reply = frame.reply_error(reason);
+            if conn.write_text(&reply.encode()).is_err() {
+                return Err(WsError::Closed);
             }
+            return Ok(());
         }
-    }
+    };
+    let topic = frame.topic.clone();
+    let tenant_id = request.tenant_id;
+    let user_id = request.user_id;
     let filter = SubscriptionFilter {
-        schema,
-        table,
-        op,
-        equals,
+        schema: request.schema,
+        table: request.table,
+        op: request.op,
+        equals: request.equals,
     };
     let connection_id = format!("{}-{}", tenant_id, user_id);
     let (subscription, mailbox) = hub.subscribe(
@@ -334,21 +439,13 @@ fn handle_phx_join(
     if conn.write_text(&reply.encode()).is_err() {
         return Err(WsError::Closed);
     }
-    if payload
-        .get("presence")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+    if let Some(online_at) = request.online_at {
         let diff = hub.presence_join(
             &topic,
             user_id.clone(),
             connection_id.clone(),
             json!({}),
-            payload
-                .get("online_at")
-                .and_then(Value::as_str)
-                .unwrap_or("2026-01-01T00:00:00Z")
-                .to_string(),
+            online_at,
         );
         let presence_frame = PhoenixFrame {
             join_ref: frame.join_ref.clone(),
@@ -398,10 +495,7 @@ pub fn handle_cdc_ingest_stream<R: Read>(
             return Ok(());
         }
         let length = u32::from_be_bytes(header) as usize;
-        if length > 1 << 20 {
-            // Reject frames larger than 1 MiB; that protects against
-            // malicious senders. Real production deployments swap this
-            // for an enforced rate limiter at the operator level.
+        if length > MAX_CDC_INGEST_FRAME_BYTES {
             return Ok(());
         }
         let mut body = vec![0_u8; length];
@@ -511,6 +605,51 @@ mod tests {
         assert_eq!(parsed.schema, "public");
         assert_eq!(parsed.table, "orders");
         assert_eq!(parsed.columns.len(), event.columns.len());
+    }
+
+    #[test]
+    fn join_request_rejects_missing_tenant_and_does_not_subscribe() {
+        let frame = PhoenixFrame {
+            join_ref: Some("1".to_string()),
+            message_ref: Some("1".to_string()),
+            topic: "realtime:public:orders".to_string(),
+            event: "phx_join".to_string(),
+            payload: json!({
+                "user_id": "user-a",
+                "schema": "public",
+                "table": "orders",
+                "operation": "INSERT",
+            }),
+        };
+        assert!(JoinRequest::parse(&frame).is_err());
+    }
+
+    #[test]
+    fn join_request_rejects_invalid_filter_column() {
+        let frame = PhoenixFrame {
+            join_ref: Some("1".to_string()),
+            message_ref: Some("1".to_string()),
+            topic: "realtime:public:orders".to_string(),
+            event: "phx_join".to_string(),
+            payload: json!({
+                "tenant_id": "tenant-a",
+                "user_id": "user-a",
+                "schema": "public",
+                "table": "orders",
+                "operation": "INSERT",
+                "filters": {"status;drop": "paid"},
+            }),
+        };
+        assert!(JoinRequest::parse(&frame).is_err());
+    }
+
+    #[test]
+    fn handle_cdc_ingest_rejects_oversized_frame_before_broadcast() {
+        let hub = Arc::new(RealtimeHub::new());
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&((MAX_CDC_INGEST_FRAME_BYTES as u32) + 1).to_be_bytes());
+        let _ = handle_cdc_ingest_stream(frame.as_slice(), hub.clone());
+        assert_eq!(hub.metrics().broadcasts, 0);
     }
 
     #[test]
