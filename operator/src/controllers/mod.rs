@@ -7,9 +7,12 @@
 //! `controllers::serve_all(client)` spawns every controller on the supplied
 //! tokio runtime and returns once any controller exits.
 
+pub mod backup;
 pub mod citus_cluster;
 pub mod hypertable;
 pub mod migration;
+pub mod region;
+pub mod survival_goal;
 pub mod tenant;
 
 use kube::Client;
@@ -50,16 +53,22 @@ pub enum ControllerError {
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client);
-    info!("operator serving CitusCluster, Migration, Tenant, Hypertable controllers");
+    info!("operator serving CitusCluster, Migration, Tenant, Region, SurvivalGoal, Backup, Hypertable controllers");
 
+    let backup = tokio::spawn(backup::run(ctx.clone()));
     let cluster = tokio::spawn(citus_cluster::run(ctx.clone()));
     let migration = tokio::spawn(migration::run(ctx.clone()));
+    let region = tokio::spawn(region::run(ctx.clone()));
+    let survival_goal = tokio::spawn(survival_goal::run(ctx.clone()));
     let tenant = tokio::spawn(tenant::run(ctx.clone()));
     let hypertable = tokio::spawn(hypertable::run(ctx.clone()));
 
     tokio::select! {
+        result = backup => log_exit("backup", result),
         result = cluster => log_exit("citus_cluster", result),
         result = migration => log_exit("migration", result),
+        result = region => log_exit("region", result),
+        result = survival_goal => log_exit("survival_goal", result),
         result = tenant => log_exit("tenant", result),
         result = hypertable => log_exit("hypertable", result),
     }

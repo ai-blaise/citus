@@ -8,10 +8,12 @@
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
 Rust operator contract model for Citus topology, CRDs, sidecars, and ai-blaise
-feature orchestration. The current production `serve` path exposes only the
-shared health/readiness/metrics runtime; live Kubernetes watches, CRD status
-updates, and controller reconciliation remain alpha until a real controller is
-implemented and live-gated.
+feature orchestration. The `serve` path starts the shared probe runtime and the
+kube-rs controllers that currently have production-grade plan builders:
+`CitusCluster`, `Migration`, `Tenant`, `Region`, `SurvivalGoal`, `Backup`, and
+`Hypertable`. The controllers validate CR shape and build deterministic apply
+plans; live child-resource mutation, SQL execution, and `.status` writes remain
+alpha until they have cluster evidence.
 
 The first implemented specs are `CitusCluster` for `FEATURE: S4` topology
 selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
@@ -38,7 +40,14 @@ plan. The plan creates the `ai_blaise_citus` companion extension, checks
 companion SQL for distributed hypertables, policies, continuous aggregates, and
 time-range shard pruning.
 
+Reconcilers Batch A adds `operator/src/reconcile/{tenant,region,survival_goal,backup}.rs`.
+Those modules produce the tenant schema/quota/config/archive plan, region
+tablespace/affinity/leader-pin plan, survival-goal topology/replication policy
+plan, and backup sidecar/config/KMS/status plan. The companion smoke is
+`ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+
 `cargo run -p ai_blaise_citus_operator -- run-canonical` validates the
-canonical V2 operator surface and emits a deterministic TSV summary covering
-`CitusCluster`, `ShardGroup`, `Hypertable`, the hypertable apply plan, and the
-operator catalog CRDs.
+canonical V2 operator surface and emits the stable deterministic TSV summary
+for repository closure checks. `cargo run -p ai_blaise_citus_operator --
+run-reconcilers-batch-a` emits the deterministic Reconcilers Batch A evidence
+row without changing the closure-contract TSV.

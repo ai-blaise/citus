@@ -1555,14 +1555,25 @@ reads.
 
 ### S10: Schema-Based Tenancy
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Defines the `Tenant` operator spec for one-tenant-per-schema
-layouts on Citus schema-based sharding.
+layouts and reconciles it into a deterministic tenant apply plan.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler validates `Tenant` CRs through the kube-rs controller, emits an
+idempotent `CREATE SCHEMA IF NOT EXISTS` step, binds installable
+`companion_internal.set_tenant_quota(...)` and
+`set_tenant_region_affinity(...)` SQL where applicable, publishes a bounded
+pool ConfigMap name/payload, and produces an archive-safe delete plan that does
+not drop tenant schemas. Executing those SQL steps against a live cluster,
+writing Kubernetes status, and enforcing storage bytes in the pool data plane
+remain alpha.
 
 **Motivation**: SaaS tenancy needs a declarative lifecycle boundary before
 tenant quotas, region affinity, migration, and archive jobs can reconcile.
@@ -1574,18 +1585,32 @@ ship a Kubernetes tenant CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S10` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO1` / `FEATURE: TO2` / `FEATURE: TO5` in
+  `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### S11: Survival Goals
 
-**Overlay**: `operator/src/crds/survival_goal.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/survival_goal.rs`, `operator/src/reconcile/survival_goal.rs`, `operator/src/controllers/survival_goal.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines zone-failure and region-failure survival targets that the
-operator can use to validate placement and replication intent.
+**Summary**: Defines zone-failure and region-failure survival targets and
+reconciles them into topology-spread, pgactive, and CNPG replication policy
+intent.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler rejects duplicate regions, missing region inventory, missing
+ShardGroup topology policies, loose region skew, and insufficient replication
+factor in unit coverage, and the kube-rs `SurvivalGoal` controller validates
+standalone CR shape before building the policy plan. Applying topology spread
+to live StatefulSets/Deployments, mutating CNPG replication, and configuring
+pgactive remain alpha.
 
 **Motivation**: Replication factor alone is ambiguous; users need an explicit
 failure domain goal for topology-aware reconciliation.
@@ -1596,7 +1621,11 @@ failure domain goal for topology-aware reconciliation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
+- In-source: `FEATURE: S11` / `FEATURE: MR2` in
+  `operator/src/reconcile/survival_goal.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### S13: Range-Based Dynamic Sharding
 
@@ -2613,13 +2642,22 @@ emit invariant alarms.
 
 ### MR1: Region CRD
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines named regions with Kubernetes zone and tablespace mapping.
+**Summary**: Defines named regions with Kubernetes zone and tablespace mapping,
+then reconciles them into PostgreSQL tablespace and Kubernetes affinity intent.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The `RegionReconcilePlan` validates CR input, emits a tablespace inspection
+query, renders a separately executable `CREATE TABLESPACE` statement, and
+publishes deterministic node-affinity and optional leader-pinning labels. Live
+PostgreSQL tablespace execution, CNPG primary relocation, and Kubernetes status
+updates remain alpha.
 
 **Motivation**: Multi-region placement and tenant affinity need stable region
 objects rather than repeated stringly typed zone settings.
@@ -2631,18 +2669,28 @@ region CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR1` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR1` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR2: SurvivalGoal CRD
 
-**Overlay**: `operator/src/crds/survival_goal.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/survival_goal.rs`, `operator/src/reconcile/survival_goal.rs`, `operator/src/controllers/survival_goal.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Declares whether the cluster should survive zone or region
 failure and how many replicas must remain available.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler maps region failure to `topology.kubernetes.io/region`, maps
+zone failure to `topology.kubernetes.io/zone`, and validates ShardGroup
+replication/topology inventory in deterministic unit tests. Live topology
+mutation and cross-region replication setup remain alpha.
 
 **Motivation**: The operator must be able to reject impossible survival goals
 before it places shards.
@@ -2653,18 +2701,28 @@ before it places shards.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR2` in `operator/src/crds/survival_goal.rs`
+- In-source: `FEATURE: MR2` in `operator/src/reconcile/survival_goal.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR4: Tablespaces By Region
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Adds a declarative region-to-tablespace mapping for region-affine
 storage placement.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler sanitizes tablespace paths, quotes identifiers and literals, and
+keeps the inspection step separate from `CREATE TABLESPACE` because PostgreSQL
+does not allow `CREATE TABLESPACE` inside a transactional `DO` block. Live
+execution against PostgreSQL and storage-class placement remain alpha.
 
 **Motivation**: Tablespaces are the PostgreSQL primitive, but the operator
 needs a higher-level region policy to keep placements understandable.
@@ -2676,7 +2734,10 @@ manage them as region objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR4` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR5: Pool GeoIP Routing
 
@@ -2703,14 +2764,21 @@ GeoIP and edge-replica behavior can be enforced.
 
 ### MR8: Leader Pinning Per Region
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Carries leader-pinning intent on regions so HA reconcilers can
 constrain primaries to chosen failure domains.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The region reconciler emits the deterministic `ai-blaise.com/leader-region`
+label only when `leader_pinned` is true and the kube-rs controller validates
+the CR before logging the resolved plan. CNPG primary relocation and failover
+orchestration remain alpha.
 
 **Motivation**: Multi-region clusters need explicit write-leader placement to
 control latency and failover behavior.
@@ -2722,7 +2790,10 @@ tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR8` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR8` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ## Backup / PITR
 
@@ -2773,14 +2844,21 @@ tooling.
 
 ### B2: Backup CRD
 
-**Overlay**: `operator/src/crds/backup.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/backup.rs`, `operator/src/reconcile/backup.rs`, `operator/src/controllers/backup.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines backup schedule, retention, object-store target, and
 provider consumed by the backup sidecar reconciler and runtime contracts.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The backup reconciler validates the CR, derives provider-specific archive URIs,
+emits per-resource sidecar Deployment and ConfigMap plan names, registers
+backup status endpoints, and rejects unknown providers. Actual WAL-G execution,
+object-store writes, archive deletion, and restore orchestration remain alpha.
 
 **Motivation**: PITR and backup-as-data-source workflows need an auditable
 declarative schedule.
@@ -2791,7 +2869,10 @@ declarative schedule.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+- In-source: `FEATURE: B2` in `operator/src/reconcile/backup.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### B3: PITR Restore
 
@@ -2892,27 +2973,32 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 
 ### B6: Encrypted Backups
 
-**Overlay**: `operator/src/crds/backup.rs`, `sidecar/backup`
+**Overlay**: `operator/src/crds/backup.rs`, `operator/src/reconcile/backup.rs`, `sidecar/backup`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Validates the backup encryption contract and materializes the
-sidecar WAL-G encryption environment with `WALG_GPG_KEY_ID` before accepting
-encrypted backup work.
+**Summary**: Validates the backup encryption contract from the operator
+backup reconciler through the sidecar WAL-G runtime, including KMS references
+and `WALG_GPG_KEY_ID` materialization before encrypted backup work is accepted.
 
 Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` verifies
 that encrypted plans render `WALG_GPG_KEY_ID`, reject missing encryption
 environment, and keep encrypted-artifact accounting in the runtime report. The
 backup smoke runs the real binary with the canonical encrypted plan and proves
 base backup execution, status, PITR, retention, and queryable branch paths
-preserve the encrypted runtime state.
+preserve the encrypted runtime state. VM proof for Reconcilers Batch A runs
+`cargo test -p ai_blaise_citus_operator` and
+`ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`; the backup reconciler
+validates non-empty KMS references and emits a distinct `KmsBinding` apply step
+into the sidecar configuration plan, while unencrypted plans skip that step
+deterministically.
 
-**Current boundary**: The production-ready claim covers sidecar environment
-validation and encrypted backup orchestration. It does not prove hardware KMS,
-External Secrets, cloud IAM, key rotation, or a Backup CR reconciler applying
-secrets into Kubernetes pods.
+**Current boundary**: The production-ready claim covers operator-side KMS
+binding validation, sidecar environment validation, and encrypted backup
+orchestration. It does not prove hardware KMS, External Secrets, cloud IAM, key
+rotation, or encrypted object-store archives with real WAL-G credentials.
 
 **Motivation**: Backup encryption must be configured with the schedule, not
 attached later by an external script.
@@ -2924,22 +3010,32 @@ deployment-specific tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
+- In-source: `FEATURE: B6` in `operator/src/reconcile/backup.rs`
 - In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ## Tenant Operations
 
 ### TO1: Tenant CRD
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Introduces the tenant lifecycle object used by tenant migration,
 archive, quotas, and region-affinity workflows.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The tenant reconciler validates the CR through kube-rs, emits a quoted
+`CREATE SCHEMA IF NOT EXISTS` step, builds bounded DNS-safe pool ConfigMap
+names, and generates an archive-first delete plan that never drops tenant
+schemas. Live schema execution and status writes remain alpha.
 
 **Motivation**: Tenant operations require a first-class unit of ownership
 rather than interpreting arbitrary schema names.
@@ -2950,17 +3046,27 @@ rather than interpreting arbitrary schema names.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO1` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO1` in `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### TO2: Tenant Quotas
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds connection, QPS, and storage quotas to tenant declarations.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler rejects zero quotas, maps connection/QPS limits to the
+`companion_internal.set_tenant_quota(...)` SQL contract, and carries
+storage bytes in the pool ConfigMap contract for downstream admission control.
+Live pool enforcement of storage bytes remains alpha.
 
 **Motivation**: Pool and sidecar enforcement need a typed quota source before
 runtime admission control is wired in.
@@ -2971,7 +3077,10 @@ runtime admission control is wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO2` in `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### TO3: Tenant Migration Online
 
