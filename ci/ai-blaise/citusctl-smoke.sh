@@ -59,4 +59,48 @@ expect_output \
   "citusctl apply destructive=true requires_plan_id=true steps=5" \
   apply plan-123 apply external/citus-cluster/values-prod.yaml
 
+wal_fixture_dir="$(mktemp -d -t ai-blaise-citusctl-wal.XXXXXX)"
+wal_fixture="${wal_fixture_dir}/fixture.env"
+cat >"${wal_fixture}" <<'FIXTURE'
+source_uri=s3://citus-wal/prod
+timeline=0000000100000000000000A1
+start_time=2026-05-21T09:00:00Z
+end_time=2026-05-21T11:00:00Z
+segments=3
+FIXTURE
+trap 'rm -f "${missing_plan_stdout}" "${missing_plan_stderr}"; rm -rf "${wal_fixture_dir}"' EXIT
+
+expect_output \
+  "wal replay fixture json" \
+  '{"actions":["validate_source","inspect_fixture","bound_target_time","render_replay_plan"],"end_time":"2026-05-21T11:00:00Z","segments":3,"source_uri":"s3://citus-wal/prod","start_time":"2026-05-21T09:00:00Z","target_time":"2026-05-21T10:00:00Z","timeline":"0000000100000000000000A1"}' \
+  plan wal-replay s3://citus-wal/prod 2026-05-21T10:00:00Z --fixture "${wal_fixture}" --json
+
+wal_bad_stdout="${wal_fixture_dir}/bad.out"
+wal_bad_stderr="${wal_fixture_dir}/bad.err"
+if run_citusctl plan wal-replay s3://citus-wal/prod 2026-05-21T12:00:00Z --fixture "${wal_fixture}" --json >"${wal_bad_stdout}" 2>"${wal_bad_stderr}"; then
+  cat "${wal_bad_stdout}" >&2
+  cat "${wal_bad_stderr}" >&2
+  echo "citusctl wal-replay accepted a target_time outside the fixture range" >&2
+  exit 1
+fi
+if ! grep -Fq "citusctl: unknown target_time: outside fixture range" "${wal_bad_stderr}"; then
+  cat "${wal_bad_stdout}" >&2
+  cat "${wal_bad_stderr}" >&2
+  echo "citusctl wal-replay did not fail closed on an out-of-range target_time" >&2
+  exit 1
+fi
+
+if run_citusctl plan wal-replay https://example.invalid/wal 2026-05-21T10:00:00Z --fixture "${wal_fixture}" --json >"${wal_bad_stdout}" 2>"${wal_bad_stderr}"; then
+  cat "${wal_bad_stdout}" >&2
+  cat "${wal_bad_stderr}" >&2
+  echo "citusctl wal-replay accepted an unsupported source_uri" >&2
+  exit 1
+fi
+if ! grep -Fq "citusctl: unknown source_uri: https://example.invalid/wal" "${wal_bad_stderr}"; then
+  cat "${wal_bad_stdout}" >&2
+  cat "${wal_bad_stderr}" >&2
+  echo "citusctl wal-replay did not reject unsupported source_uri schemes" >&2
+  exit 1
+fi
+
 echo "ai_blaise_citusctl plan-id smoke passed"

@@ -421,6 +421,13 @@ more production-ready than the artifacts justified.
   the real binary. This is not evidence for mutating cluster apply execution,
   manifest reconciliation, migrations, backups, PITR, WAL replay, or dev
   cluster lifecycle.
+- The `citusctl` CLI now also has a direct executable smoke for the narrow
+  WF2 fixture-backed WAL replay debugger plan. The smoke creates a
+  local WAL fixture, requires exact deterministic JSON from `citusctl plan
+  wal-replay ... --fixture ... --json`, and verifies unsupported source URI
+  schemes plus out-of-range target times fail closed. This is not evidence for
+  real WAL segment inspection, PostgreSQL `pg_walinspect` execution,
+  restore/replay mutation, or production cluster operations.
 - The `citus-lsp` CLI now has a direct executable smoke for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql

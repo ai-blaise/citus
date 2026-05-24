@@ -5399,24 +5399,38 @@ chart and image refs under review.
 ### WF2: WAL Replay Debugger Command
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_walinspect`
 
-**Summary**: Reserves CLI command planning and validation for WAL replay and
-time-scoped investigation workflows.
+**Summary**: Provides a fixture-backed `citusctl plan wal-replay ... --json`
+debugger command that validates WAL source URI, UTC target time, fixture bounds,
+and emits a deterministic JSON replay plan.
 
 **Motivation**: WAL forensics need to enter through plan/apply machinery so
 replay and restore commands can share preflight and audit behavior.
 
 **Citus comparison**: Vanilla Citus does not ship a WAL replay debugger CLI.
 
+Production evidence: `ci/ai-blaise/citusctl-smoke.sh` runs the real
+`ai_blaise_citusctl` binary against a temporary local WAL fixture. It verifies
+exact deterministic JSON for an in-range target and verifies unsupported source
+URI schemes plus out-of-range target times fail closed.
+
+**Current boundary**: The production-ready claim covers only the local
+fixture-backed debugger plan path exercised by `ci/ai-blaise/citusctl-smoke.sh`:
+it reads a key/value WAL fixture, rejects unsupported source schemes, rejects
+out-of-range target times, and emits exact deterministic JSON. Real WAL segment
+inspection, PostgreSQL `pg_walinspect` execution, restore/replay mutation, and
+production cluster operations remain alpha.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WF2` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- CI: `ci/ai-blaise/citusctl-smoke.sh`
 
 ## Federation
 
