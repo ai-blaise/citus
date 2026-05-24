@@ -181,9 +181,15 @@ if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
 fi
 
 base_digest="$(
-  docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${base_image}" 2>/dev/null |
+  { docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${base_image}" 2>/dev/null || true; } |
     awk 'NR == 1 { print; exit }'
 )"
+if [[ -z "${base_digest}" ]]; then
+  base_digest="$(
+    docker buildx imagetools inspect "${base_image}" 2>/dev/null |
+      awk '/^Digest:/ { print $2; exit }'
+  )" || base_digest=""
+fi
 git_sha="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 command_path="postgres -c shared_preload_libraries=timescaledb,citus -c citus.cohabit_extensions=timescaledb"
 {

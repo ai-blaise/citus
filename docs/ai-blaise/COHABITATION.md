@@ -44,6 +44,25 @@ real Citus+TimescaleDB cohabitation. The broader TS1/TS2/TS3/TS4/TS5/TS12
 distributed Timescale features remain alpha until multi-worker fanout,
 rebalance, and operator reconciliation are proven end to end.
 
+## TS-version Forward-compatibility Matrix
+
+`ci/ai-blaise/ts-version-matrix-smoke.sh` is the forward-compatibility gate for
+TS6 and TS18. It iterates the TS minor lines pinned under `tests/cohab-matrix/`,
+checks each `image-tag.txt` with `docker manifest inspect`, and runs the
+existing non-stubbed cohabitation smoke for every published image. The matrix
+writes `artifacts/ts-version-matrix-smoke.tsv`; each live row also gets a
+per-version cohabitation evidence file under `artifacts/`.
+
+| TS version | Pinned base image                         | Status as of 2026-05-23                | Matrix entry               |
+| ---------- | ----------------------------------------- | -------------------------------------- | -------------------------- |
+| 2.27       | `timescale/timescaledb:2.27.1-pg17`       | load-bearing, VM registry tag present  | `tests/cohab-matrix/2.27/` |
+| 2.28       | `timescale/timescaledb:2.28.0-pg17`       | skip-with-note, VM registry tag absent | `tests/cohab-matrix/2.28/` |
+
+The 2.28 row does not promote TS 2.28 to production-ready. It is a guardrail:
+while the image tag is absent the matrix records `skip-with-note`; once the tag
+exists, the same gate runs live and fails if any `expected-hook-claims.tsv` row
+still says `unknown`.
+
 ## PostgreSQL Version Matrix
 
 The cohabitation contract spans the ai-blaise/citus PG-version matrix:
