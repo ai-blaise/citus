@@ -603,7 +603,7 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 276 source `FEATURE:` markers and 276
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 163 narrow headings
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 164 narrow headings
 are `Status: production-ready`. The authoritative per-feature list is
 `docs/ai-blaise/NEW_FEATURES.md`; the examples below group evidence boundaries
 rather than duplicating every feature id. The group includes `D7`
@@ -672,7 +672,7 @@ enablement remain alpha, and production values keep the MCP sidecar disabled
 until those contracts are implemented and live-gated. `TS19` and `TS20` remain
 alpha: TS19 has a patch-level clock reservation but no live Citus+pg_cron boot
 evidence yet, and TS20 has deterministic companion detection proof but no live
-patched-Citus C API caller yet. The other 113 feature headings remain
+patched-Citus C API caller yet. The other 112 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 
 former V2 addendum rows were promoted to alpha feature headings with
@@ -736,7 +736,7 @@ Production Helm values must also keep alpha sidecars disabled by default.
 sidecar before the corresponding feature is promoted with measured production
 evidence.
 
-- Current inventory: contains 276 source `FEATURE:` markers and 276 feature headings; 163 narrow headings are `Status: production-ready`; the other 113 feature headings remain `Status: alpha`.
+- Current inventory: contains 276 source `FEATURE:` markers and 276 feature headings; 164 narrow headings are `Status: production-ready`; the other 112 feature headings remain `Status: alpha`.
 - The release gate monitor now centralizes the bounded integration contract for
   production wording, executable evidence, V2 domain-command freshness,
   benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
