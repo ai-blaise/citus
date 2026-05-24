@@ -68,6 +68,9 @@ test-sidecar-vectorizer:
 run-vectorizer-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_vectorizer -- run-canonical
 
+sidecar-vectorizer-smoke:
+	@REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-vectorizer-smoke.sh
+
 build-sidecar-cdc:
 	cargo check -p ai_blaise_citus_sidecar_cdc --all-targets
 

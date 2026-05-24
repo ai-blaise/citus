@@ -61,15 +61,14 @@ if [[ -n "${missing_ids}" ]]; then
   exit 1
 fi
 
-added_files="$(git diff --name-only --diff-filter=A "${base}" "${head}" \
-  | grep -E "${feature_paths}" || true)"
+changed_files="$(git diff --name-only "${base}" "${head}")"
+added_files="$(grep -E "${feature_paths}" <<<"${changed_files}" || true)"
 
 if [[ -z "${added_files}" ]]; then
   exit 0
 fi
 
-if git diff --name-only "${base}" "${head}" \
-  | grep -qx 'docs/ai-blaise/NEW_FEATURES.md'; then
+if grep -qx 'docs/ai-blaise/NEW_FEATURES.md' <<<"${changed_files}"; then
   exit 0
 fi
 

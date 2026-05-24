@@ -1,31 +1,51 @@
 # sidecar/vectorizer
 
-> Production boundary: unless a feature is explicitly `Status: production-ready`
-> in `docs/ai-blaise/NEW_FEATURES.md`, the surfaces listed here are alpha
-> contracts. Deterministic canonical reports and local runtime models are CI
-> artifacts, not production evidence; promotion requires live VM/container or
-> Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
-> and guarded by `ci/ai-blaise/production-gap-audit.sh`.
+Rust vectorizer sidecar for the ai-blaise Citus fork. It preserves the
+pgai-compatible SQL shape from the companion extension while running the worker
+runtime as a long-lived Rust service instead of relying on `plpython3u`.
 
-Rust vectorizer worker that will implement the `pgai` vectorizer model without
-the `plpython3u` runtime floor.
+Production-ready surface:
 
-Current implemented surface:
+- PostgreSQL-backed queue polling from `ai.vectorizer_queue` with `FOR UPDATE
+  SKIP LOCKED`, stale in-flight reclamation, worker ownership, and success or
+  failure state transitions.
+- Config-validated provider registry with OpenAI, Azure OpenAI-compatible,
+  Voyage, Cohere, Ollama, vLLM-compatible, and deterministic mock providers.
+- Error classification plus bounded retry/backoff for transient provider
+  transport, rate-limit, and server errors.
+- Per-tenant token budgets in `ai.tenant_budget`, including reservation,
+  refund, overrun rejection, and provider-billed token reconciliation.
+- Durable cost accounting in `ai.usage_log`, using a PostgreSQL table that is
+  TimescaleDB-hypertable-compatible on `recorded_at`.
+- HTTP health, readiness, drain, Prometheus metrics, manual `/vectorize`, and
+  `/queue/status` endpoints.
 
-- `VectorizerJob`
-- `TenantTokenBudget`
-- `TokenReservation`
-- `ProviderRoute`
-- `QueuePollPlan`
-- `DistributedVectorizePlan`
-- `VectorizerWorker`
-- `VectorizerExecutionReport`
-- `EmbeddingProviderClient`
-- `UsageLogRecord`
+Commands:
 
-`cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical` executes a
-deterministic canonical batch and emits usage records as TSV. This is the
-executable local model for `FEATURE: A2` vectorizer execution and `FEATURE: A4`
-per-tenant token budgets, with provider routing for `FEATURE: A3`, usage
-accounting for `FEATURE: A5`, and shard-local execution planning for
-`FEATURE: A6`.
+```bash
+cargo run -p ai_blaise_citus_sidecar_vectorizer -- run-canonical
+AI_BLAISE_VECTORIZER_DATABASE_URL=postgres://postgres@127.0.0.1/postgres   cargo run -p ai_blaise_citus_sidecar_vectorizer -- serve
+bash ci/ai-blaise/sidecar-vectorizer-smoke.sh
+```
+
+`run-canonical` is the deterministic local report used by CI. The smoke script
+builds the real binary, starts PostgreSQL 17 in Docker, launches `serve`, waits
+for `/readyz`, enqueues 100 rows, verifies succeeded queue rows, checks
+`ai.usage_log` rows and budget decrementing, then exercises `/vectorize` and
+`/queue/status`.
+
+Environment:
+
+- `AI_BLAISE_VECTORIZER_DATABASE_URL` is required in `serve` mode.
+- `AI_BLAISE_LISTEN_ADDR` defaults to `0.0.0.0:8080`.
+- `AI_BLAISE_VECTORIZER_PROVIDER_MODE` is `mock`, `live`, or `mixed`.
+- `AI_BLAISE_VECTORIZER_BATCH_SIZE`, `AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS`,
+  `AI_BLAISE_VECTORIZER_VISIBILITY_TIMEOUT_SECONDS`,
+  `AI_BLAISE_VECTORIZER_RETRY_INITIAL_BACKOFF_MS`, and
+  `AI_BLAISE_VECTORIZER_PROVIDER_MAX_ATTEMPTS` tune queue and retry behavior.
+- Live providers are enabled with `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY` plus
+  `AZURE_OPENAI_BASE_URL`, `VOYAGE_API_KEY`, `COHERE_API_KEY`,
+  `OLLAMA_BASE_URL` or `ENABLE_OLLAMA`, and `VLLM_BASE_URL`.
+
+Feature markers: `FEATURE: A2`, `FEATURE: A3`, `FEATURE: A4`, `FEATURE: A5`,
+and `FEATURE: A6`.

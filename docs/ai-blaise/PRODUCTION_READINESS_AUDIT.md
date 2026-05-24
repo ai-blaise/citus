@@ -584,7 +584,10 @@ index-advisor, and webhook trigger queue helpers, plus `Search2`, `Search3`,
 installable SQL search, graph, GraphQL metadata, JSON schema, and geo helper
 runtimes, plus `A1`, `TS9`, `M7`, `T8`, `L9`, `TS13`, `TS14`, `TS15`, `TS16`,
 and `TS17` for installable SQL vectorizer, cohabitation doctor, and Toolkit
-aggregate plan helper runtimes, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
+aggregate plan helper runtimes, plus `A2`, `A3`, `A4`, `A5`, and `A6` for the
+PostgreSQL-backed vectorizer sidecar runtime with provider routing, bounded
+retry/backoff, tenant budget enforcement, `ai.usage_log` cost accounting, and
+`FOR UPDATE SKIP LOCKED` queue processing, plus `C10`, `M2`, `S14`, `TO3`, `TO4`, and
 `TO5` for installable SQL schema-job and tenant lifecycle helper runtimes, plus
 `A7`, `A12`, `C11`, `C12`, `C13`, `EF6`, `F2`, `F5`, `G1`, `Geo1`, `IA1`,
 `IA2`, `JS1`, `L11`, `M6`, `M10`, `M12`, `MR7`, `O7`, `O8`, `O9`, `O11`,
