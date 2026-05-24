@@ -648,6 +648,8 @@ Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 (NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
 client operation) remain alpha unless covered by their own feature entry.
 
+Worker CDC-Sinks production evidence from 2026-05-24 adds `C14` and `C15` to the narrow production-ready set. The evidenced boundary is strict local NATS subject/server URL and Pub/Sub project/topic validation, deterministic NATS `PUB` and Pub/Sub `messages.publish` frame encoding, serve-runtime/canonical stdout exposure, and DLQ retry accounting for live NATS dispatch failures under `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` and `ci/ai-blaise/sidecar-cdc-smoke.sh`. Managed NATS auth/TLS/JetStream and live GCP Pub/Sub auth/IAM/topic operations remain alpha.
+
 
 
 

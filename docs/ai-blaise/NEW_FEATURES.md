@@ -2275,7 +2275,7 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 ### C14: CDC NATS Sink
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2287,7 +2287,9 @@ retry and dead-letter policy as webhook and realtime sinks.
 
 **Citus comparison**: Vanilla Citus does not publish CDC events to NATS.
 
-Current boundary: The production-evidenced surface is the protocol frame, validation, and DLQ-on-dispatch-failure path. Live broker authentication, TLS, JetStream, and managed NATS operations remain alpha.
+Production evidence: VM Worker CDC-Sinks on experiment-playground, 2026-05-24: `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` covers fail-closed NATS subject/auth URL validation, deterministic `PUB` frame encoding, and live-dispatch DLQ retry accounting; `bash ci/ai-blaise/sidecar-cdc-smoke.sh` proves the serve-runtime and canonical stdout paths expose the NATS target and encoded frame.
+
+Current boundary: The production-evidenced surface is the protocol frame, strict local validation, and DLQ-on-dispatch-failure accounting. Live broker authentication, TLS, JetStream, and managed NATS operations remain alpha.
 
 **References**:
 
@@ -2301,7 +2303,7 @@ Current boundary: The production-evidenced surface is the protocol frame, valida
 ### C15: CDC GCP Pub/Sub Sink
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2314,7 +2316,9 @@ the CDC sidecar delivery model.
 **Citus comparison**: Vanilla Citus does not publish CDC events to GCP
 Pub/Sub.
 
-Current boundary: The production-evidenced surface is the deterministic request body and validation. Live GCP authentication, IAM, retries against Pub/Sub, and managed-topic operations remain alpha.
+Production evidence: VM Worker CDC-Sinks on experiment-playground, 2026-05-24: `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` covers fail-closed Pub/Sub project/topic validation and deterministic `messages.publish` request-body encoding; `bash ci/ai-blaise/sidecar-cdc-smoke.sh` proves the serve-runtime and canonical stdout paths expose the Pub/Sub target and encoded frame.
+
+Current boundary: The production-evidenced surface is the deterministic request body and strict local validation. Live GCP authentication, IAM, retries against Pub/Sub, and managed-topic operations remain alpha.
 
 **References**:
 

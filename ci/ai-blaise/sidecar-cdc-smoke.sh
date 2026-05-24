@@ -121,6 +121,10 @@ frame_sinks = sorted({frame["sink"] for frame in event["frames"]})
 assert frame_sinks == expected_kinds, frame_sinks
 for entry in event["frames"]:
     assert entry["bytes"] > 0, entry
+    if entry["sink"] == "nats":
+        assert entry["target"] == "tenant.orders", entry
+    if entry["sink"] == "pubsub":
+        assert entry["target"] == "orders", entry
     # Live dispatch is disabled by default, so every frame is "encoded".
     assert entry["outcome"] == "encoded", entry
 
@@ -143,6 +147,8 @@ PY
 # Also run the deterministic stdout TSV path so the smoke covers both paths.
 tsv=$(cargo run -q -p "${bin}" -- run-live-canonical)
 echo "${tsv}" | head -5
+echo "${tsv}" | grep -q "nats	tenant.orders" || { echo "missing nats row" >&2; exit 1; }
+echo "${tsv}" | grep -q "pubsub	orders" || { echo "missing pubsub row" >&2; exit 1; }
 echo "${tsv}" | grep -q "kafka	cdc.orders" || { echo "missing kafka row" >&2; exit 1; }
 echo "${tsv}" | grep -q "kinesis	cdc-orders" || { echo "missing kinesis row" >&2; exit 1; }
 echo "${tsv}" | grep -q "http2	https://h2.example.com/cdc/orders" || { echo "missing http2 row" >&2; exit 1; }

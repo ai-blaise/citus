@@ -216,14 +216,14 @@ impl CdcSinkPlan {
                 server_url,
                 ..
             } => {
-                validate_required("sink.nats.subject", subject)?;
+                validate_nats_subject("sink.nats.subject", subject)?;
                 validate_nats_url(server_url)
             }
             Self::PubSub {
                 project_id, topic, ..
             } => {
-                validate_required("sink.pubsub.project_id", project_id)?;
-                validate_required("sink.pubsub.topic", topic)
+                validate_pubsub_project_id("sink.pubsub.project_id", project_id)?;
+                validate_pubsub_topic("sink.pubsub.topic", topic)
             }
             Self::Kinesis {
                 stream_name,
@@ -561,6 +561,7 @@ pub enum CdcSidecarError {
     InvalidIdentifier(&'static str),
     InvalidLsn,
     InvalidNatsUrl,
+    InvalidSinkConfig(&'static str),
     InvalidObjectUri(&'static str),
     InvalidPgOutput(String),
     InvalidWal2Json(String),
@@ -586,6 +587,9 @@ impl fmt::Display for CdcSidecarError {
             }
             Self::InvalidLsn => write!(formatter, "LSN must use the PostgreSQL HEX/HEX form"),
             Self::InvalidNatsUrl => write!(formatter, "NATS server URL must start with nats://"),
+            Self::InvalidSinkConfig(field) => {
+                write!(formatter, "{field} contains invalid sink routing syntax")
+            }
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
             Self::InvalidPgOutput(error) => write!(formatter, "invalid pgoutput payload: {error}"),
             Self::InvalidWal2Json(error) => write!(formatter, "invalid wal2json payload: {error}"),
@@ -690,10 +694,74 @@ fn validate_object_uri(field: &'static str, value: &str) -> Result<(), CdcSideca
 
 fn validate_nats_url(value: &str) -> Result<(), CdcSidecarError> {
     validate_required("sink.nats.server_url", value)?;
-    if value.starts_with("nats://") {
+    let Some(host_port) = value.strip_prefix("nats://") else {
+        return Err(CdcSidecarError::InvalidNatsUrl);
+    };
+    if host_port.is_empty()
+        || host_port.contains('@')
+        || host_port.contains('/')
+        || host_port.contains('?')
+        || host_port.chars().any(char::is_whitespace)
+    {
+        Err(CdcSidecarError::InvalidNatsUrl)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_nats_subject(field: &'static str, value: &str) -> Result<(), CdcSidecarError> {
+    validate_required(field, value)?;
+    let tokens = value.split('.').collect::<Vec<_>>();
+    if tokens.iter().any(|token| token.is_empty()) {
+        return Err(CdcSidecarError::InvalidSinkConfig(field));
+    }
+    if value.chars().all(is_nats_subject_char)
+        && !tokens.iter().any(|token| *token == "*" || *token == ">")
+    {
         Ok(())
     } else {
-        Err(CdcSidecarError::InvalidNatsUrl)
+        Err(CdcSidecarError::InvalidSinkConfig(field))
+    }
+}
+
+fn is_nats_subject_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':')
+}
+
+fn validate_pubsub_project_id(field: &'static str, value: &str) -> Result<(), CdcSidecarError> {
+    validate_required(field, value)?;
+    let bytes = value.as_bytes();
+    if !(6..=30).contains(&bytes.len()) {
+        return Err(CdcSidecarError::InvalidSinkConfig(field));
+    }
+    let last = bytes[bytes.len() - 1];
+    if !bytes[0].is_ascii_lowercase() || !(last.is_ascii_lowercase() || last.is_ascii_digit()) {
+        return Err(CdcSidecarError::InvalidSinkConfig(field));
+    }
+    if bytes
+        .iter()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    {
+        Ok(())
+    } else {
+        Err(CdcSidecarError::InvalidSinkConfig(field))
+    }
+}
+
+fn validate_pubsub_topic(field: &'static str, value: &str) -> Result<(), CdcSidecarError> {
+    validate_required(field, value)?;
+    let bytes = value.as_bytes();
+    if !(3..=255).contains(&bytes.len()) || value.starts_with("goog") {
+        return Err(CdcSidecarError::InvalidSinkConfig(field));
+    }
+    if bytes[0].is_ascii_alphabetic()
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.' | b'~' | b'+' | b'%')
+        })
+    {
+        Ok(())
+    } else {
+        Err(CdcSidecarError::InvalidSinkConfig(field))
     }
 }
 
@@ -1125,6 +1193,43 @@ mod tests {
     }
 
     #[test]
+    fn nats_sink_rejects_unsupported_auth_urls() {
+        let sink = CdcSinkPlan::Nats {
+            name: "nats".to_string(),
+            subject: "tenant.orders".to_string(),
+            server_url: "nats://user:pass@nats:4222".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+
+        assert_eq!(sink.validate(), Err(CdcSidecarError::InvalidNatsUrl));
+    }
+
+    #[test]
+    fn nats_sink_rejects_protocol_injection_subjects() {
+        for subject in [
+            "tenant.orders\r\nPING",
+            "tenant orders",
+            "tenant.*",
+            "tenant.>",
+            ".tenant.orders",
+            "tenant..orders",
+        ] {
+            let sink = CdcSinkPlan::Nats {
+                name: "nats".to_string(),
+                subject: subject.to_string(),
+                server_url: "nats://nats:4222".to_string(),
+                retry_policy: canonical_retry_policy(),
+            };
+
+            assert_eq!(
+                sink.validate(),
+                Err(CdcSidecarError::InvalidSinkConfig("sink.nats.subject")),
+                "subject {subject:?} should fail closed"
+            );
+        }
+    }
+
+    #[test]
     fn pubsub_sink_requires_project_id() {
         let sink = CdcSinkPlan::PubSub {
             name: "pubsub".to_string(),
@@ -1138,6 +1243,33 @@ mod tests {
             Err(CdcSidecarError::MissingRequiredField(
                 "sink.pubsub.project_id"
             ))
+        );
+    }
+
+    #[test]
+    fn pubsub_sink_rejects_invalid_project_and_topic_names() {
+        let bad_project = CdcSinkPlan::PubSub {
+            name: "pubsub".to_string(),
+            project_id: "AnalyticsProd".to_string(),
+            topic: "orders".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+
+        assert_eq!(
+            bad_project.validate(),
+            Err(CdcSidecarError::InvalidSinkConfig("sink.pubsub.project_id"))
+        );
+
+        let bad_topic = CdcSinkPlan::PubSub {
+            name: "pubsub".to_string(),
+            project_id: "analytics-prod".to_string(),
+            topic: "googManaged".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+
+        assert_eq!(
+            bad_topic.validate(),
+            Err(CdcSidecarError::InvalidSinkConfig("sink.pubsub.topic"))
         );
     }
 

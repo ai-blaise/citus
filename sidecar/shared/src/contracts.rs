@@ -92,10 +92,10 @@ impl CdcSink {
                 validate_required("cdc.sinks.analytical_mirror.stream_name", stream_name)
             }
             Self::Kafka { topic } => validate_required("cdc.sinks.kafka.topic", topic),
-            Self::Nats { subject } => validate_required("cdc.sinks.nats.subject", subject),
+            Self::Nats { subject } => validate_nats_subject("cdc.sinks.nats.subject", subject),
             Self::PubSub { project_id, topic } => {
-                validate_required("cdc.sinks.pubsub.project_id", project_id)?;
-                validate_required("cdc.sinks.pubsub.topic", topic)
+                validate_pubsub_project_id("cdc.sinks.pubsub.project_id", project_id)?;
+                validate_pubsub_topic("cdc.sinks.pubsub.topic", topic)
             }
         }
     }
@@ -235,6 +235,7 @@ pub enum SidecarContractError {
     InvalidRetryAttempts,
     InvalidTokenTtl,
     InvalidUrl,
+    InvalidCdcSinkConfig(&'static str),
     MissingRequiredField(&'static str),
 }
 
@@ -257,6 +258,12 @@ impl fmt::Display for SidecarContractError {
                 write!(formatter, "token_ttl_seconds must be greater than zero")
             }
             Self::InvalidUrl => write!(formatter, "url must start with http:// or https://"),
+            Self::InvalidCdcSinkConfig(field) => {
+                write!(
+                    formatter,
+                    "{field} contains invalid CDC sink routing syntax"
+                )
+            }
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
             }
@@ -271,6 +278,65 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), SidecarCont
         return Err(SidecarContractError::MissingRequiredField(field));
     }
     Ok(())
+}
+
+fn validate_nats_subject(field: &'static str, value: &str) -> Result<(), SidecarContractError> {
+    validate_required(field, value)?;
+    let tokens = value.split('.').collect::<Vec<_>>();
+    if tokens.iter().any(|token| token.is_empty()) {
+        return Err(SidecarContractError::InvalidCdcSinkConfig(field));
+    }
+    if value.chars().all(is_nats_subject_char)
+        && !tokens.iter().any(|token| *token == "*" || *token == ">")
+    {
+        Ok(())
+    } else {
+        Err(SidecarContractError::InvalidCdcSinkConfig(field))
+    }
+}
+
+fn is_nats_subject_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':')
+}
+
+fn validate_pubsub_project_id(
+    field: &'static str,
+    value: &str,
+) -> Result<(), SidecarContractError> {
+    validate_required(field, value)?;
+    let bytes = value.as_bytes();
+    if !(6..=30).contains(&bytes.len()) {
+        return Err(SidecarContractError::InvalidCdcSinkConfig(field));
+    }
+    let last = bytes[bytes.len() - 1];
+    if !bytes[0].is_ascii_lowercase() || !(last.is_ascii_lowercase() || last.is_ascii_digit()) {
+        return Err(SidecarContractError::InvalidCdcSinkConfig(field));
+    }
+    if bytes
+        .iter()
+        .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    {
+        Ok(())
+    } else {
+        Err(SidecarContractError::InvalidCdcSinkConfig(field))
+    }
+}
+
+fn validate_pubsub_topic(field: &'static str, value: &str) -> Result<(), SidecarContractError> {
+    validate_required(field, value)?;
+    let bytes = value.as_bytes();
+    if !(3..=255).contains(&bytes.len()) || value.starts_with("goog") {
+        return Err(SidecarContractError::InvalidCdcSinkConfig(field));
+    }
+    if bytes[0].is_ascii_alphabetic()
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(*byte, b'-' | b'_' | b'.' | b'~' | b'+' | b'%')
+        })
+    {
+        Ok(())
+    } else {
+        Err(SidecarContractError::InvalidCdcSinkConfig(field))
+    }
 }
 
 fn validate_optional(
@@ -310,6 +376,58 @@ mod tests {
         }];
 
         assert_eq!(contracts.validate(), Err(SidecarContractError::InvalidUrl));
+    }
+
+    #[test]
+    fn cdc_rejects_protocol_breaking_nats_subjects() {
+        for subject in [
+            "tenant.orders\r\nPING",
+            "tenant orders",
+            "tenant.*",
+            "tenant.>",
+            ".tenant.orders",
+            "tenant..orders",
+        ] {
+            let mut contracts = valid_contracts();
+            contracts.cdc.sinks = vec![CdcSink::Nats {
+                subject: subject.to_string(),
+            }];
+
+            assert_eq!(
+                contracts.validate(),
+                Err(SidecarContractError::InvalidCdcSinkConfig(
+                    "cdc.sinks.nats.subject"
+                )),
+                "subject {subject:?} should fail closed"
+            );
+        }
+    }
+
+    #[test]
+    fn cdc_rejects_invalid_pubsub_routes() {
+        let mut contracts = valid_contracts();
+        contracts.cdc.sinks = vec![CdcSink::PubSub {
+            project_id: "AnalyticsProd".to_string(),
+            topic: "orders".to_string(),
+        }];
+        assert_eq!(
+            contracts.validate(),
+            Err(SidecarContractError::InvalidCdcSinkConfig(
+                "cdc.sinks.pubsub.project_id"
+            ))
+        );
+
+        let mut contracts = valid_contracts();
+        contracts.cdc.sinks = vec![CdcSink::PubSub {
+            project_id: "analytics-prod".to_string(),
+            topic: "googManaged".to_string(),
+        }];
+        assert_eq!(
+            contracts.validate(),
+            Err(SidecarContractError::InvalidCdcSinkConfig(
+                "cdc.sinks.pubsub.topic"
+            ))
+        );
     }
 
     #[test]
