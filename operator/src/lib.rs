@@ -93,8 +93,8 @@ pub use reconcile::search_index::{
 };
 pub use reconcile::security::{
     canonical_operator_security_plans, canonical_operator_security_report, AuthBoundaryPlan,
-    ContainerSecurityContextPlan, PodSecurityContextPlan, RbacRulePlan, SecretReferencePlan,
-    WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
+    ContainerSecurityContextPlan, ExternalSecretBindingPlan, PodSecurityContextPlan, RbacRulePlan,
+    SecretReferencePlan, WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
 };
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,

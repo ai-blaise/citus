@@ -7821,9 +7821,11 @@ intent.
 overlay credentials.
 
 **Current boundary**: The operations runner verifies the intended control,
-and the operator security runner rejects inline secret values while requiring
-named Secret references for pool and sidecar workloads. Live External Secrets
-controller reconciliation and rotation evidence remain alpha.
+and the operator security runner rejects inline secret values, requires named
+Secret references for pool and sidecar workloads, and fails closed unless each
+runtime Secret reference has an ExternalSecret binding with a SecretStore,
+target key, remote key, remote property, and positive refresh interval. Live
+External Secrets controller reconciliation and rotation evidence remain alpha.
 
 **Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
 
@@ -7847,9 +7849,10 @@ sidecar-to-sidecar traffic.
 
 **Current boundary**: The security contract is executable; the operator
 security runner requires TLS 1.3, client certificates, certificate Secret
-references, fail-closed auth boundaries, no Secret RBAC grants, and restricted
-pod/container security contexts for pool and sidecar workloads. Certificate
-issuance, actual Kubernetes mounts, mTLS traffic enforcement, and live rotation
+references, ExternalSecret-backed runtime Secret refs, fail-closed auth
+boundaries, no Secret RBAC grants, and restricted pod/container security
+contexts for pool and sidecar workloads. Certificate issuance, actual
+Kubernetes mounts, mTLS traffic enforcement, and live rotation
 tests remain alpha.
 
 **Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
