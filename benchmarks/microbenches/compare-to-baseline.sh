@@ -6,14 +6,16 @@
 # measured run regressed by more than `regression_threshold_pct` (default 10%)
 # from its baseline.
 #
-# Scaffold results (mode=scaffold) are not compared — they only fire when
-# psql or the target Postgres endpoint is unavailable on the runner.
+# Scaffold results (mode=scaffold) are not compared in exploratory mode. In
+# release mode they are explicit failures because they are not production
+# evidence.
 
 set -euo pipefail
 
 HARNESS_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HARNESS_DIR}/../.." && pwd)"
 # shellcheck source=../common/lib.sh
+# shellcheck disable=SC1091
 source "${REPO_ROOT}/benchmarks/common/lib.sh"
 
 bash "${HARNESS_DIR}/run-all.sh" >/dev/null
@@ -25,11 +27,13 @@ fi
 
 python3 - "${HARNESS_DIR}" "${aggregate}" <<'PY'
 import json
+import os
 import pathlib
 import sys
 
 harness_dir = pathlib.Path(sys.argv[1])
 aggregate = pathlib.Path(sys.argv[2])
+release_mode = os.environ.get("AI_BLAISE_RELEASE_MODE") == "1" or os.environ.get("BENCH_REQUIRE_MEASURED") == "1"
 
 report = json.loads(aggregate.read_text())
 results = report.get("results", [])
@@ -88,5 +92,13 @@ if regressions:
     print("regressions:", file=sys.stderr)
     for line in regressions:
         print(f"  - {line}", file=sys.stderr)
+    sys.exit(1)
+
+if release_mode and scaffolds:
+    print(
+        "release mode requires measured microbench results; "
+        f"found {scaffolds} scaffold result(s)",
+        file=sys.stderr,
+    )
     sys.exit(1)
 PY
