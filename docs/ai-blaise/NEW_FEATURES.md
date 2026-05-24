@@ -4196,7 +4196,7 @@ Current boundary: The production-ready claim is limited to the single-node raw W
 ### EF1: Deno Runtime Sidecar
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `deno`
@@ -4204,7 +4204,7 @@ Current boundary: The production-ready claim is limited to the single-node raw W
 **Summary**: Defines Deno runtime launch plans for HTTP, scheduled, and
 CDC-triggered edge functions, plus a runnable canonical launch emitter.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_edge_functions`, verifies Deno launch command rendering through canonical runtime output, lists the canonical `order_created` function over live HTTP, invokes it through `/functions/order_created`, validates DB-callback use, and checks readiness/metrics/drain plus fail-closed startup behavior. This promotes the sidecar runtime orchestration contract, not execution inside a managed Deno sandbox.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` builds the real Rust `ai_blaise_citus_sidecar_edge_functions` binary, verifies Deno launch-command planning with `--no-prompt`, boots the live HTTP sidecar, invokes registered functions as `planned`/`plan_only`, and verifies fail-closed malformed JSON, path, payload-size, timeout, unknown-function, and unsupported `execution_mode=live` requests. EF1 remains alpha because this does not spawn an external Deno process, execute user code, or enforce a production isolate.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -4220,19 +4220,20 @@ runtime.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF2: Bun Runtime Alternative
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `bun`
 
 **Summary**: Adds Bun runtime launch planning for edge-function bundles.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies Bun runtime command formatting through `run-bun-runtime-canonical` and the live edge-functions front door alongside Deno registration/invocation checks. This promotes runtime selection and launch-contract correctness for the sidecar; it does not claim external package-manager availability beyond release image validation.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies Bun launch-command planning through `run-bun-runtime-canonical` and confirms the live Rust sidecar keeps all invocations in `plan_only` mode. EF2 remains alpha because this does not install packages, spawn Bun, or execute user code in an isolated worker.
 
 **Motivation**: Some workloads prefer Bun startup and package compatibility;
 the sidecar needs runtime selection without changing the CRD shape.
@@ -4246,6 +4247,7 @@ the sidecar needs runtime selection without changing the CRD shape.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF3: Function CRD
@@ -4269,8 +4271,8 @@ ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
 row reports `function_apply_steps=6`, `function_sidecar_steps=1`, and
 `function_kubernetes_steps=2`; unit tests cover HTTP, scheduled, and event
 trigger plans plus teardown. Edge-function source execution, runtime sandboxing,
-and gateway traffic remain governed by the edge-functions runtime evidence and
-are not claimed by this CRD/controller promotion.
+and gateway traffic remain alpha and are not claimed by this CRD/controller
+promotion.
 
 **Motivation**: Function deployment needs to be declarative so auth, pool, and
 sidecar runtimes can share the same desired state.
@@ -4289,7 +4291,7 @@ sidecar runtimes can share the same desired state.
 ### EF4: Database Callback Over UDS
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4297,7 +4299,7 @@ sidecar runtimes can share the same desired state.
 **Summary**: Defines Unix-domain-socket callback plans so edge functions can
 call back into Postgres with a bounded statement timeout.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` invokes the canonical edge function over live HTTP and verifies the rendered execution reports `db_callback_used=true`; the Rust unit suite also covers the Unix-domain-socket callback statement boundary in `canonical_edge_function_registry_report`. This promotes the bounded local callback contract and statement accounting, not arbitrary user SQL execution.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the database-callback socket is rendered into the launch plan, canonical HTTP invocation reports `db_callback_used=true`, and Rust unit tests preserve statement-safety and timeout bounds. EF4 remains alpha because this is callback planning/accounting only; it does not open a Unix socket to PostgreSQL or execute arbitrary user SQL.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4312,12 +4314,13 @@ callback path.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF5: Triggered Edge Functions
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4325,7 +4328,7 @@ callback path.
 **Summary**: Defines scheduled and CDC-event invocation contracts for edge
 functions.
 
-Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the live edge-functions front door lists CDC-triggered functions, registers a new inline function with process-local persistence, invokes both registered and canonical functions, and preserves readiness/drain state across requests. Canonical runtime output also covers scheduled-trigger command rendering. This promotes triggered-function registry and invocation boundaries; queue/broker integrations remain separately scoped.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the live Rust HTTP sidecar lists CDC-triggered functions, registers an inline function with validated env-secret refs, invokes registered/canonical functions as `planned`, and fail-closes unsafe runtime requests. EF5 remains alpha because queue/broker integration, live CDC tailing, scheduled dispatch, and external user-code execution are not live-smoked.
 
 **Motivation**: Cron and event-driven functions need the same validation path
 as HTTP functions before queue integration is wired in.
@@ -4340,6 +4343,7 @@ from schedules or CDC events.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ## Security / Auth

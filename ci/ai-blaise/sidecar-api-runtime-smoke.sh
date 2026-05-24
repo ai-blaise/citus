@@ -280,12 +280,14 @@ def smoke_component_front_door(port, label):
         status, body = request(port, "POST", "/functions/hello", body=invoke)
         assert status == 200, body
         assert '"function":"hello"' in body, body
-        assert '"status":"succeeded"' in body, body
+        assert '"status":"planned"' in body, body
+        assert '"execution_mode":"plan_only"' in body, body
 
         status, body = request(port, "POST", "/functions/order_created", body=invoke)
         assert status == 200, body
         assert '"function":"order_created"' in body, body
         assert '"db_callback_used":true' in body, body
+        assert '"execution_mode":"plan_only"' in body, body
         return
 
     fail(f"unknown sidecar API smoke label: {label}")
@@ -347,10 +349,11 @@ def smoke_canonical_reports():
         )
     )
     assert edge_deno["runtime"] == "deno", edge_deno
-    assert edge_deno["command"] == "deno run --allow-env --allow-net=unix inline.ts", edge_deno
+    assert edge_deno["command"] == "deno run --no-prompt --allow-env --allow-net=unix inline.ts", edge_deno
     assert edge_deno["db_callback_used"] == "true", edge_deno
     assert edge_deno["db_callbacks"] == "1", edge_deno
-    assert edge_deno["status"] == "succeeded", edge_deno
+    assert edge_deno["status"] == "planned", edge_deno
+    assert edge_deno["execution_mode"] == "plan_only", edge_deno
 
     edge_bun = parse_tsv(
         run(
@@ -362,7 +365,8 @@ def smoke_canonical_reports():
     assert edge_bun["trigger"] == "scheduled:*/5 * * * *", edge_bun
     assert edge_bun["db_callback_used"] == "false", edge_bun
     assert edge_bun["db_callbacks"] == "0", edge_bun
-    assert edge_bun["status"] == "succeeded", edge_bun
+    assert edge_bun["status"] == "planned", edge_bun
+    assert edge_bun["execution_mode"] == "plan_only", edge_bun
 
 
 require_tool("cargo")

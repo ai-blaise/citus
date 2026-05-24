@@ -521,8 +521,8 @@ more production-ready than the artifacts justified.
   multi-process Raft, MVCC follower-read execution, PostgreSQL-core patch
   integration, Citus executor integration, pool routing, and Kubernetes
   operator reconciliation are live-gated.
-- The auto-API and edge-functions sidecars have bounded process/socket runtime
-  smokes for their canonical API contracts. `sidecar-api-runtime-smoke.sh`
+- The auto-API sidecars and edge-functions Rust boundary now have bounded
+  process/socket smokes for their canonical API contracts. The shared smoke
   builds the real PostgREST, GraphQL, and edge-functions binaries, runs their
   canonical TSV commands directly, starts each `serve` process on loopback,
   verifies health/readiness/metrics/drain behavior persists across HTTP
@@ -531,10 +531,15 @@ more production-ready than the artifacts justified.
   evidence for runtime dependency validation, malformed input handling,
   PostgREST route method rejection, secret-backed config rendering, GraphQL
   missing-claim errors, introspection denial, and subscription-boundary
-  responses. This is not evidence for table-backed PostgREST request serving,
-  live `pg_graphql` execution, external Deno/Bun user-code execution, or
-  Kubernetes deployment; the GraphQL/PostgREST sidecar feature headings remain
-  `Status: alpha` until those live data-plane paths are proven.
+  responses. The dedicated `sidecar-edge-functions-runtime-smoke.sh`
+  additionally proves edge-functions plan-only status, env-secret/path/JSON
+  validation, payload and timeout ceilings, unknown-function handling, and
+  fail-closed rejection of external Deno/Bun execution requests. This is not
+  evidence for table-backed PostgREST request serving, live `pg_graphql`
+  execution, external Deno/Bun user-code execution, real PostgreSQL UDS callback
+  execution, queue/broker dispatch, live CDC tailing, or Kubernetes deployment;
+  the GraphQL/PostGREST sidecar feature headings and EF1, EF2, EF4, and EF5
+  remain alpha until those live data-plane paths are proven.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

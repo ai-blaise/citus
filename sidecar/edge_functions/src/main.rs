@@ -10,7 +10,7 @@ use ai_blaise_citus_sidecar_edge_functions::{
     canonical_bun_edge_function_runtime_report, canonical_edge_function_registry_report,
     canonical_edge_function_report, canonical_edge_function_runtime_report,
     serve_edge_functions_sidecar_http_forever, EdgeFunctionRuntime, EdgeFunctionRuntimeReport,
-    EdgeFunctionTriggerKind, FunctionTrigger, InvocationStatus,
+    EdgeFunctionTriggerKind, FunctionTrigger, InvocationStatus, RuntimeExecutionMode,
 };
 use std::env;
 use std::process;
@@ -81,10 +81,10 @@ fn run_runtime_canonical() {
     });
 
     println!(
-        "function\truntime\tcommand\ttrigger\ttenant_id\tpayload_bytes\tresponse_bytes\tdb_callback_used\tlaunched_functions\tinvocations\tdb_callbacks\tstatus"
+        "function\truntime\tcommand\ttrigger\ttenant_id\tpayload_bytes\tresponse_bytes\tdb_callback_used\tlaunched_functions\tinvocations\tdb_callbacks\tstatus\texecution_mode"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.execution.function_name,
         runtime_name(&report.execution.runtime),
         report.execution.command.join(" "),
@@ -97,6 +97,7 @@ fn run_runtime_canonical() {
         report.state.invocations,
         report.state.db_callbacks,
         status_name(&report.execution.status),
+        execution_mode_name(&report.execution.execution_mode),
     );
 }
 
@@ -110,10 +111,10 @@ fn run_bun_runtime_canonical() {
 
 fn print_runtime_report(report: &EdgeFunctionRuntimeReport) {
     println!(
-        "function	runtime	command	trigger	tenant_id	payload_bytes	response_bytes	db_callback_used	launched_functions	invocations	db_callbacks	status"
+        "function	runtime	command	trigger	tenant_id	payload_bytes	response_bytes	db_callback_used	launched_functions	invocations	db_callbacks	status	execution_mode"
     );
     println!(
-        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
         report.execution.function_name,
         runtime_name(&report.execution.runtime),
         report.execution.command.join(" "),
@@ -126,6 +127,7 @@ fn print_runtime_report(report: &EdgeFunctionRuntimeReport) {
         report.state.invocations,
         report.state.db_callbacks,
         status_name(&report.execution.status),
+        execution_mode_name(&report.execution.execution_mode),
     );
 }
 
@@ -205,6 +207,12 @@ fn runtime_name(runtime: &EdgeFunctionRuntime) -> &'static str {
 
 fn status_name(status: &InvocationStatus) -> &'static str {
     match status {
-        InvocationStatus::Succeeded => "succeeded",
+        InvocationStatus::Planned => "planned",
+    }
+}
+
+fn execution_mode_name(mode: &RuntimeExecutionMode) -> &'static str {
+    match mode {
+        RuntimeExecutionMode::PlanOnly => "plan_only",
     }
 }
