@@ -5,11 +5,12 @@
 //! PBKDF2-SHA256. It runs as a synchronous HTTP service on top of the
 //! `SidecarRuntime` probe machinery shared with the rest of the workspace.
 //!
-//! RS256 issuance, WebAuthn registration, and OIDC client flows remain
-//! alpha-level contracts and are surfaced through their endpoints with
-//! `501 Not Implemented` until the upstream IdP / hardware-key plumbing is
-//! wired. The HS256 wire format is intentionally compatible with the SQL
-//! verifier shipped by Sec2 (`companion_verify_jwt_hs256`).
+//! RS256 issuance, WebAuthn registration, and external OIDC token exchange
+//! remain alpha-level contracts. The runtime does validate OIDC provider
+//! configuration, state, nonce, and redirect URI boundaries before failing
+//! closed at the unimplemented IdP exchange step. The HS256 wire format is
+//! intentionally compatible with the SQL verifier shipped by Sec2
+//! (`companion_verify_jwt_hs256`).
 
 // FEATURE: Auth1
 // FEATURE: Auth2
@@ -144,21 +145,48 @@ impl TokenIntrospectionPlan {
 pub struct OidcProviderConfig {
     pub name: String,
     pub issuer_url: String,
-    pub client_id_secret_ref: String,
+    pub authorization_endpoint: String,
+    pub client_id: String,
     pub client_secret_ref: String,
+    pub redirect_uris: Vec<String>,
     pub scopes: Vec<String>,
 }
 
 impl OidcProviderConfig {
     pub fn validate(&self) -> Result<(), AuthSidecarError> {
         validate_required("oidc.name", &self.name)?;
-        validate_required("oidc.issuer_url", &self.issuer_url)?;
-        if !self.issuer_url.starts_with("https://") {
-            return Err(AuthSidecarError::InvalidIssuerUrl);
+        if !self
+            .name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(AuthSidecarError::InvalidProviderName);
         }
-        validate_required("oidc.client_id_secret_ref", &self.client_id_secret_ref)?;
+        validate_https_url("oidc.issuer_url", &self.issuer_url)?;
+        validate_https_url("oidc.authorization_endpoint", &self.authorization_endpoint)?;
+        if !self.authorization_endpoint.starts_with(&self.issuer_url) {
+            return Err(AuthSidecarError::InvalidAuthorizationEndpoint);
+        }
+        validate_required("oidc.client_id", &self.client_id)?;
+        if self.client_id.chars().any(char::is_whitespace) {
+            return Err(AuthSidecarError::InvalidClientId);
+        }
         validate_required("oidc.client_secret_ref", &self.client_secret_ref)?;
-        validate_required_list("oidc.scopes", &self.scopes)
+        validate_required_list("oidc.redirect_uris", &self.redirect_uris)?;
+        for redirect_uri in &self.redirect_uris {
+            validate_redirect_uri(redirect_uri)?;
+        }
+        validate_required_list("oidc.scopes", &self.scopes)?;
+        if !self.scopes.iter().any(|scope| scope == "openid") {
+            return Err(AuthSidecarError::MissingOpenIdScope);
+        }
+        Ok(())
+    }
+
+    fn allows_redirect_uri(&self, redirect_uri: &str) -> bool {
+        self.redirect_uris
+            .iter()
+            .any(|allowed| allowed == redirect_uri)
     }
 }
 
@@ -203,8 +231,13 @@ impl AuthSidecarPlan {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AuthSidecarError {
+    InvalidAuthorizationEndpoint,
     InvalidCacheTtl,
+    InvalidClientId,
     InvalidIssuerUrl,
+    InvalidProviderName,
+    InvalidRedirectUri,
+    MissingOpenIdScope,
     InvalidMfaAttempts,
     MissingRequiredField(&'static str),
     NoMfaMethodEnabled,
@@ -219,10 +252,15 @@ pub enum AuthSidecarError {
     JwtUnsupportedAlgorithm,
     PasswordVerificationFailed,
     UnknownUser,
+    UnknownProvider,
     UnknownSession,
+    InvalidOidcState,
+    OidcStateExpired,
+    OidcExchangeUnavailable,
     TotpNotEnrolled,
     TotpAlreadyEnrolled,
     TotpCodeInvalid,
+    MfaAttemptsExceeded,
     AlphaSurface(&'static str),
     Runtime(String),
 }
@@ -230,10 +268,24 @@ pub enum AuthSidecarError {
 impl fmt::Display for AuthSidecarError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidAuthorizationEndpoint => write!(
+                formatter,
+                "authorization_endpoint must be https and under issuer_url"
+            ),
             Self::InvalidCacheTtl => {
                 write!(formatter, "cache_ttl_seconds must be greater than zero")
             }
+            Self::InvalidClientId => write!(formatter, "client_id must not contain whitespace"),
             Self::InvalidIssuerUrl => write!(formatter, "issuer_url must start with https://"),
+            Self::InvalidProviderName => write!(
+                formatter,
+                "provider name may only contain ASCII letters, digits, dash, or underscore"
+            ),
+            Self::InvalidRedirectUri => write!(
+                formatter,
+                "redirect_uri must be an allowed https URI without a fragment"
+            ),
+            Self::MissingOpenIdScope => write!(formatter, "oidc.scopes must include openid"),
             Self::InvalidMfaAttempts => write!(formatter, "max_attempts must be greater than zero"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::NoMfaMethodEnabled => {
@@ -250,10 +302,19 @@ impl fmt::Display for AuthSidecarError {
             Self::JwtUnsupportedAlgorithm => write!(formatter, "token algorithm is not supported"),
             Self::PasswordVerificationFailed => write!(formatter, "password does not match"),
             Self::UnknownUser => write!(formatter, "user not found"),
+            Self::UnknownProvider => write!(formatter, "OIDC provider not found"),
             Self::UnknownSession => write!(formatter, "session not found"),
+            Self::InvalidOidcState => {
+                write!(formatter, "OIDC state, nonce, or redirect_uri is invalid")
+            }
+            Self::OidcStateExpired => write!(formatter, "OIDC state has expired"),
+            Self::OidcExchangeUnavailable => {
+                write!(formatter, "OIDC token exchange is not enabled")
+            }
             Self::TotpNotEnrolled => write!(formatter, "user has not enrolled TOTP"),
             Self::TotpAlreadyEnrolled => write!(formatter, "user has already enrolled TOTP"),
             Self::TotpCodeInvalid => write!(formatter, "TOTP code is invalid"),
+            Self::MfaAttemptsExceeded => write!(formatter, "MFA attempts exceeded"),
             Self::AlphaSurface(surface) => {
                 write!(formatter, "{surface} is alpha and not yet runtime-backed")
             }
@@ -296,6 +357,25 @@ fn validate_required_list(field: &'static str, values: &[String]) -> Result<(), 
     Ok(())
 }
 
+fn validate_https_url(field: &'static str, value: &str) -> Result<(), AuthSidecarError> {
+    validate_required(field, value)?;
+    if !value.starts_with("https://") {
+        if field == "oidc.authorization_endpoint" {
+            return Err(AuthSidecarError::InvalidAuthorizationEndpoint);
+        }
+        return Err(AuthSidecarError::InvalidIssuerUrl);
+    }
+    Ok(())
+}
+
+fn validate_redirect_uri(value: &str) -> Result<(), AuthSidecarError> {
+    validate_required("oidc.redirect_uri", value)?;
+    if !value.starts_with("https://") || value.contains('#') {
+        return Err(AuthSidecarError::InvalidRedirectUri);
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AuthCanonicalReport {
     pub sidecar: AuthSidecarPlan,
@@ -331,8 +411,10 @@ pub fn canonical_auth_sidecar_plan() -> AuthSidecarPlan {
         oidc_providers: vec![OidcProviderConfig {
             name: "github".to_string(),
             issuer_url: "https://github.example".to_string(),
-            client_id_secret_ref: "github-client-id".to_string(),
-            client_secret_ref: "github-client-secret".to_string(),
+            authorization_endpoint: "https://github.example/oauth/authorize".to_string(),
+            client_id: "ai-blaise-github".to_string(),
+            client_secret_ref: "k8s://auth/github-client-secret".to_string(),
+            redirect_uris: vec!["https://auth.example.com/auth/oidc/callback".to_string()],
             scopes: vec!["openid".to_string(), "email".to_string()],
         }],
         mfa: Some(MfaPolicy {
@@ -389,6 +471,8 @@ const PBKDF2_HASH_LEN: usize = 32;
 const TOTP_PERIOD_SECONDS: u64 = 30;
 const TOTP_DIGITS: u32 = 6;
 const TOTP_STEP_TOLERANCE: i64 = 1;
+const DEFAULT_MFA_MAX_ATTEMPTS: u32 = 5;
+const OIDC_STATE_TTL_SECONDS: u64 = 10 * 60;
 const REFRESH_TTL_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -454,6 +538,38 @@ pub struct TotpVerifyRequest {
     pub code: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct OidcLoginRequest {
+    pub provider: String,
+    pub redirect_uri: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct OidcLoginResponse {
+    pub provider: String,
+    pub authorization_url: String,
+    pub state: String,
+    pub nonce: String,
+    pub redirect_uri: String,
+    pub expires_in: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct OidcCallbackRequest {
+    pub provider: String,
+    pub redirect_uri: String,
+    pub state: String,
+    pub nonce: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct OidcCallbackValidation {
+    pub provider: String,
+    pub redirect_uri: String,
+    pub nonce: String,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct StoredUser {
     username: String,
@@ -462,6 +578,7 @@ struct StoredUser {
     password_hash: PasswordHash,
     totp_secret: Option<Vec<u8>>,
     mfa_required: bool,
+    failed_totp_attempts: u32,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -486,12 +603,21 @@ struct IntrospectionCacheEntry {
     result: IntrospectionResult,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct PendingOidcLogin {
+    provider: String,
+    redirect_uri: String,
+    nonce: String,
+    expires_at: u64,
+}
+
 #[derive(Debug)]
 struct EngineState {
     users: HashMap<String, StoredUser>,
     sessions: HashMap<String, StoredSession>,
     revoked_jti: HashSet<String>,
     introspection_cache: HashMap<String, IntrospectionCacheEntry>,
+    oidc_states: HashMap<String, PendingOidcLogin>,
     next_jti: u64,
 }
 
@@ -502,6 +628,7 @@ impl EngineState {
             sessions: HashMap::new(),
             revoked_jti: HashSet::new(),
             introspection_cache: HashMap::new(),
+            oidc_states: HashMap::new(),
             next_jti: 0,
         }
     }
@@ -521,6 +648,8 @@ pub struct AuthEngine {
     audience: String,
     token_ttl_seconds: u32,
     hs256_secret: Vec<u8>,
+    oidc_providers: Vec<OidcProviderConfig>,
+    mfa_max_attempts: u32,
     state: Mutex<EngineState>,
 }
 
@@ -539,13 +668,40 @@ impl AuthEngine {
         hs256_secret: Vec<u8>,
         token_ttl_seconds: u32,
     ) -> Self {
-        Self {
+        Self::with_runtime_config(
+            issuer,
+            audience,
+            hs256_secret,
+            token_ttl_seconds,
+            Vec::new(),
+            DEFAULT_MFA_MAX_ATTEMPTS,
+        )
+        .expect("default auth runtime config must validate")
+    }
+
+    pub fn with_runtime_config(
+        issuer: impl Into<String>,
+        audience: impl Into<String>,
+        hs256_secret: Vec<u8>,
+        token_ttl_seconds: u32,
+        oidc_providers: Vec<OidcProviderConfig>,
+        mfa_max_attempts: u32,
+    ) -> Result<Self, AuthSidecarError> {
+        if mfa_max_attempts == 0 {
+            return Err(AuthSidecarError::InvalidMfaAttempts);
+        }
+        for provider in &oidc_providers {
+            provider.validate()?;
+        }
+        Ok(Self {
             issuer: issuer.into(),
             audience: audience.into(),
             token_ttl_seconds,
             hs256_secret,
+            oidc_providers,
+            mfa_max_attempts,
             state: Mutex::new(EngineState::new()),
-        }
+        })
     }
 
     /// Bootstrap a fresh engine seeded from `AI_BLAISE_AUTH_*` environment variables.
@@ -584,7 +740,23 @@ impl AuthEngine {
                 ));
             }
         };
-        Ok(Self::with_ttl(issuer, audience, secret_bytes, ttl))
+        let mfa_max_attempts = match std::env::var("AI_BLAISE_AUTH_MFA_MAX_ATTEMPTS") {
+            Ok(value) => value.parse().map_err(|_| {
+                AuthSidecarError::Runtime(
+                    "AI_BLAISE_AUTH_MFA_MAX_ATTEMPTS must be an integer".to_string(),
+                )
+            })?,
+            Err(_) => DEFAULT_MFA_MAX_ATTEMPTS,
+        };
+        let oidc_providers = oidc_providers_from_env()?;
+        Self::with_runtime_config(
+            issuer,
+            audience,
+            secret_bytes,
+            ttl,
+            oidc_providers,
+            mfa_max_attempts,
+        )
     }
 
     pub fn issuer(&self) -> &str {
@@ -623,6 +795,7 @@ impl AuthEngine {
                 password_hash,
                 totp_secret: None,
                 mfa_required: false,
+                failed_totp_attempts: 0,
             },
         );
         Ok(())
@@ -656,16 +829,29 @@ impl AuthEngine {
                 let secret = user
                     .totp_secret
                     .as_ref()
-                    .ok_or(AuthSidecarError::TotpNotEnrolled)?;
-                if !verify_totp(secret, code, now) {
+                    .ok_or(AuthSidecarError::TotpNotEnrolled)?
+                    .clone();
+                if user.failed_totp_attempts >= self.mfa_max_attempts {
+                    return Err(AuthSidecarError::MfaAttemptsExceeded);
+                }
+                if !verify_totp(&secret, code, now) {
+                    let user = state
+                        .users
+                        .get_mut(&request.username)
+                        .ok_or(AuthSidecarError::UnknownUser)?;
+                    user.failed_totp_attempts = user.failed_totp_attempts.saturating_add(1);
                     return Err(AuthSidecarError::TotpCodeInvalid);
                 }
+                let user = state
+                    .users
+                    .get_mut(&request.username)
+                    .ok_or(AuthSidecarError::UnknownUser)?;
+                user.failed_totp_attempts = 0;
                 true
             } else {
                 false
             };
 
-            let _ = &mut state;
             (user, mfa_verified)
         };
 
@@ -932,6 +1118,7 @@ impl AuthEngine {
         }
         user.totp_secret = Some(secret.clone());
         user.mfa_required = true;
+        user.failed_totp_attempts = 0;
         Ok(TotpEnrollmentResponse {
             username: request.username.clone(),
             secret_base32,
@@ -946,19 +1133,124 @@ impl AuthEngine {
         validate_required("username", &request.username)?;
         validate_required("code", &request.code)?;
         let now = current_unix_time();
-        let state = self.lock_state()?;
+        let mut state = self.lock_state()?;
         let user = state
             .users
-            .get(&request.username)
+            .get_mut(&request.username)
             .ok_or(AuthSidecarError::UnknownUser)?;
         let secret = user
             .totp_secret
             .as_ref()
-            .ok_or(AuthSidecarError::TotpNotEnrolled)?;
-        if !verify_totp(secret, &request.code, now) {
+            .ok_or(AuthSidecarError::TotpNotEnrolled)?
+            .clone();
+        if user.failed_totp_attempts >= self.mfa_max_attempts {
+            return Err(AuthSidecarError::MfaAttemptsExceeded);
+        }
+        if !verify_totp(&secret, &request.code, now) {
+            user.failed_totp_attempts = user.failed_totp_attempts.saturating_add(1);
             return Err(AuthSidecarError::TotpCodeInvalid);
         }
+        user.failed_totp_attempts = 0;
         Ok(())
+    }
+
+    pub fn oidc_login(
+        &self,
+        request: &OidcLoginRequest,
+    ) -> Result<OidcLoginResponse, AuthSidecarError> {
+        validate_required("oidc.provider", &request.provider)?;
+        validate_redirect_uri(&request.redirect_uri)?;
+        let provider = self
+            .oidc_providers
+            .iter()
+            .find(|provider| provider.name == request.provider)
+            .ok_or(AuthSidecarError::UnknownProvider)?;
+        provider.validate()?;
+        if !provider.allows_redirect_uri(&request.redirect_uri) {
+            return Err(AuthSidecarError::InvalidRedirectUri);
+        }
+
+        let state = random_url_token(32)?;
+        let nonce = random_url_token(32)?;
+        let now = current_unix_time();
+        let authorization_url = format!(
+            "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}",
+            provider.authorization_endpoint,
+            url_encode(&provider.client_id),
+            url_encode(&request.redirect_uri),
+            url_encode(&provider.scopes.join(" ")),
+            url_encode(&state),
+            url_encode(&nonce),
+        );
+        self.lock_state()?.oidc_states.insert(
+            state.clone(),
+            PendingOidcLogin {
+                provider: provider.name.clone(),
+                redirect_uri: request.redirect_uri.clone(),
+                nonce: nonce.clone(),
+                expires_at: now + OIDC_STATE_TTL_SECONDS,
+            },
+        );
+
+        Ok(OidcLoginResponse {
+            provider: provider.name.clone(),
+            authorization_url,
+            state,
+            nonce,
+            redirect_uri: request.redirect_uri.clone(),
+            expires_in: OIDC_STATE_TTL_SECONDS,
+        })
+    }
+
+    pub fn validate_oidc_callback(
+        &self,
+        request: &OidcCallbackRequest,
+    ) -> Result<OidcCallbackValidation, AuthSidecarError> {
+        validate_required("oidc.provider", &request.provider)?;
+        validate_required("oidc.state", &request.state)?;
+        validate_required("oidc.nonce", &request.nonce)?;
+        validate_required("oidc.code", &request.code)?;
+        validate_redirect_uri(&request.redirect_uri)?;
+        let provider = self
+            .oidc_providers
+            .iter()
+            .find(|provider| provider.name == request.provider)
+            .ok_or(AuthSidecarError::UnknownProvider)?;
+        if !provider.allows_redirect_uri(&request.redirect_uri) {
+            return Err(AuthSidecarError::InvalidRedirectUri);
+        }
+
+        let now = current_unix_time();
+        let mut state = self.lock_state()?;
+        self.gc_oidc_states(&mut state, now);
+        let pending = state
+            .oidc_states
+            .get(&request.state)
+            .cloned()
+            .ok_or(AuthSidecarError::InvalidOidcState)?;
+        if pending.expires_at <= now {
+            state.oidc_states.remove(&request.state);
+            return Err(AuthSidecarError::OidcStateExpired);
+        }
+        if pending.provider != request.provider
+            || pending.redirect_uri != request.redirect_uri
+            || pending.nonce != request.nonce
+        {
+            return Err(AuthSidecarError::InvalidOidcState);
+        }
+        state.oidc_states.remove(&request.state);
+
+        Ok(OidcCallbackValidation {
+            provider: pending.provider,
+            redirect_uri: pending.redirect_uri,
+            nonce: pending.nonce,
+        })
+    }
+
+    fn gc_oidc_states(&self, state: &mut EngineState, now: u64) {
+        state
+            .oidc_states
+            .retain(|_, pending| pending.expires_at > now);
     }
 
     fn allocate_refresh_token(
@@ -996,6 +1288,43 @@ impl AuthEngine {
     }
 }
 
+fn oidc_providers_from_env() -> Result<Vec<OidcProviderConfig>, AuthSidecarError> {
+    let Ok(name) = std::env::var("AI_BLAISE_AUTH_OIDC_PROVIDER_NAME") else {
+        return Ok(Vec::new());
+    };
+    let provider = OidcProviderConfig {
+        name,
+        issuer_url: required_env("AI_BLAISE_AUTH_OIDC_ISSUER")?,
+        authorization_endpoint: required_env("AI_BLAISE_AUTH_OIDC_AUTHORIZATION_ENDPOINT")?,
+        client_id: required_env("AI_BLAISE_AUTH_OIDC_CLIENT_ID")?,
+        client_secret_ref: required_env("AI_BLAISE_AUTH_OIDC_CLIENT_SECRET_REF")?,
+        redirect_uris: split_env_list("AI_BLAISE_AUTH_OIDC_REDIRECT_URIS")?,
+        scopes: split_env_list("AI_BLAISE_AUTH_OIDC_SCOPES")?,
+    };
+    provider.validate()?;
+    Ok(vec![provider])
+}
+
+fn required_env(name: &str) -> Result<String, AuthSidecarError> {
+    std::env::var(name).map_err(|_| AuthSidecarError::Runtime(format!("{name} is required")))
+}
+
+fn split_env_list(name: &str) -> Result<Vec<String>, AuthSidecarError> {
+    let value = required_env(name)?;
+    let values = value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Err(AuthSidecarError::Runtime(format!(
+            "{name} must not be empty"
+        )));
+    }
+    Ok(values)
+}
+
 fn inactive_introspection(reason: &str) -> IntrospectionResult {
     IntrospectionResult {
         active: false,
@@ -1006,6 +1335,12 @@ fn inactive_introspection(reason: &str) -> IntrospectionResult {
 
 fn blake_like_digest(token: &str) -> String {
     base64_url_encode(&sha256(token.as_bytes()))
+}
+
+fn random_url_token(len: usize) -> Result<String, AuthSidecarError> {
+    let mut bytes = vec![0_u8; len];
+    fill_random_bytes(bytes.as_mut_slice())?;
+    Ok(base64_url_encode(&bytes))
 }
 
 fn current_unix_time() -> u64 {
@@ -1641,8 +1976,10 @@ mod tests {
         let provider = OidcProviderConfig {
             name: "github".to_string(),
             issuer_url: "http://github.example".to_string(),
-            client_id_secret_ref: "github-client-id".to_string(),
-            client_secret_ref: "github-client-secret".to_string(),
+            authorization_endpoint: "http://github.example/oauth/authorize".to_string(),
+            client_id: "ai-blaise-github".to_string(),
+            client_secret_ref: "k8s://auth/github-client-secret".to_string(),
+            redirect_uris: vec!["https://auth.example.com/auth/oidc/callback".to_string()],
             scopes: vec!["openid".to_string()],
         };
 
@@ -1665,6 +2002,23 @@ mod tests {
         assert_eq!(canonical_auth_sidecar_plan().validate(), Ok(()));
     }
 
+    #[test]
+    fn oidc_provider_requires_allowed_https_redirect_and_openid_scope() {
+        let mut provider = oidc_provider();
+        provider.redirect_uris = vec!["http://db.example.com/callback".to_string()];
+        assert_eq!(
+            provider.validate(),
+            Err(AuthSidecarError::InvalidRedirectUri)
+        );
+
+        let mut provider = oidc_provider();
+        provider.scopes = vec!["email".to_string()];
+        assert_eq!(
+            provider.validate(),
+            Err(AuthSidecarError::MissingOpenIdScope)
+        );
+    }
+
     fn fixture_engine() -> AuthEngine {
         AuthEngine::with_ttl(
             "https://auth.example.com",
@@ -1672,6 +2026,30 @@ mod tests {
             b"unit-test-secret-key".to_vec(),
             300,
         )
+    }
+
+    fn oidc_provider() -> OidcProviderConfig {
+        OidcProviderConfig {
+            name: "stub".to_string(),
+            issuer_url: "https://idp.example.com".to_string(),
+            authorization_endpoint: "https://idp.example.com/oauth2/v1/authorize".to_string(),
+            client_id: "ai-blaise-client".to_string(),
+            client_secret_ref: "k8s://auth/idp-client-secret".to_string(),
+            redirect_uris: vec!["https://db.example.com/auth/oidc/callback".to_string()],
+            scopes: vec!["openid".to_string(), "email".to_string()],
+        }
+    }
+
+    fn fixture_engine_with_oidc() -> AuthEngine {
+        AuthEngine::with_runtime_config(
+            "https://auth.example.com",
+            "postgres",
+            b"unit-test-secret-key".to_vec(),
+            300,
+            vec![oidc_provider()],
+            3,
+        )
+        .expect("engine")
     }
 
     #[test]
@@ -1797,6 +2175,63 @@ mod tests {
     }
 
     #[test]
+    fn oidc_login_issues_authorization_url_and_callback_consumes_state() {
+        let engine = fixture_engine_with_oidc();
+        let login = engine
+            .oidc_login(&OidcLoginRequest {
+                provider: "stub".to_string(),
+                redirect_uri: "https://db.example.com/auth/oidc/callback".to_string(),
+            })
+            .expect("oidc login");
+        assert!(login.authorization_url.contains("response_type=code"));
+        assert!(login
+            .authorization_url
+            .contains("client_id=ai-blaise-client"));
+        assert!(login.authorization_url.contains("state="));
+        assert!(login.authorization_url.contains("nonce="));
+
+        let validation = engine
+            .validate_oidc_callback(&OidcCallbackRequest {
+                provider: "stub".to_string(),
+                redirect_uri: "https://db.example.com/auth/oidc/callback".to_string(),
+                state: login.state.clone(),
+                nonce: login.nonce.clone(),
+                code: "stub-code".to_string(),
+            })
+            .expect("callback validation");
+        assert_eq!(validation.provider, "stub");
+        assert_eq!(
+            engine.validate_oidc_callback(&OidcCallbackRequest {
+                provider: "stub".to_string(),
+                redirect_uri: "https://db.example.com/auth/oidc/callback".to_string(),
+                state: login.state,
+                nonce: login.nonce,
+                code: "stub-code".to_string(),
+            }),
+            Err(AuthSidecarError::InvalidOidcState)
+        );
+    }
+
+    #[test]
+    fn oidc_login_rejects_unknown_provider_and_bad_redirect() {
+        let engine = fixture_engine_with_oidc();
+        assert_eq!(
+            engine.oidc_login(&OidcLoginRequest {
+                provider: "missing".to_string(),
+                redirect_uri: "https://db.example.com/auth/oidc/callback".to_string(),
+            }),
+            Err(AuthSidecarError::UnknownProvider)
+        );
+        assert_eq!(
+            engine.oidc_login(&OidcLoginRequest {
+                provider: "stub".to_string(),
+                redirect_uri: "https://evil.example.com/auth/oidc/callback".to_string(),
+            }),
+            Err(AuthSidecarError::InvalidRedirectUri)
+        );
+    }
+
+    #[test]
     fn totp_enroll_and_verify_round_trip() {
         let engine = fixture_engine();
         engine
@@ -1819,6 +2254,43 @@ mod tests {
                 code,
             })
             .expect("verify");
+    }
+
+    #[test]
+    fn totp_policy_locks_after_max_attempts() {
+        let engine = AuthEngine::with_runtime_config(
+            "https://auth.example.com",
+            "postgres",
+            b"unit-test-secret-key".to_vec(),
+            300,
+            Vec::new(),
+            2,
+        )
+        .expect("engine");
+        engine
+            .register_user("bob", "hunter2-correct-horse", "authenticated", "tenant-a")
+            .expect("register");
+        engine
+            .enroll_totp(&TotpEnrollment {
+                username: "bob".to_string(),
+            })
+            .expect("enroll");
+        for _ in 0..2 {
+            assert_eq!(
+                engine.verify_totp(&TotpVerifyRequest {
+                    username: "bob".to_string(),
+                    code: "000000".to_string(),
+                }),
+                Err(AuthSidecarError::TotpCodeInvalid)
+            );
+        }
+        assert_eq!(
+            engine.verify_totp(&TotpVerifyRequest {
+                username: "bob".to_string(),
+                code: "000000".to_string(),
+            }),
+            Err(AuthSidecarError::MfaAttemptsExceeded)
+        );
     }
 
     #[test]

@@ -12,8 +12,8 @@
 //! clear `alpha contract` reason -- they stay alpha until the full runtime is implemented and live-gated.
 
 use crate::{
-    AuthEngine, AuthSidecarError, LoginRequest, RefreshRequest, TotpEnrollment, TotpVerifyRequest,
-    VerifiedClaims,
+    AuthEngine, AuthSidecarError, LoginRequest, OidcCallbackRequest, OidcLoginRequest,
+    RefreshRequest, TotpEnrollment, TotpVerifyRequest, VerifiedClaims,
 };
 use ai_blaise_citus_sidecar_shared::{listen_addr_from_env, HttpProbeResponse, SidecarRuntime};
 use std::io::{Read, Write};
@@ -115,8 +115,8 @@ pub fn handle_http_bytes(engine: &AuthEngine, request: &[u8]) -> HttpProbeRespon
         ("POST", "/auth/mfa/totp/verify") => endpoint_totp_verify(engine, &parsed),
         ("POST", "/auth/mfa/webauthn/register") => alpha_response("/auth/mfa/webauthn/register"),
         ("POST", "/auth/mfa/webauthn/finish") => alpha_response("/auth/mfa/webauthn/finish"),
-        ("GET", "/auth/oidc/login") => alpha_response("/auth/oidc/login"),
-        ("GET", "/auth/oidc/callback") => alpha_response("/auth/oidc/callback"),
+        ("GET", "/auth/oidc/login") => endpoint_oidc_login(engine, &parsed),
+        ("GET", "/auth/oidc/callback") => endpoint_oidc_callback(engine, &parsed),
         ("POST", "/auth/users") => endpoint_register_user(engine, &parsed),
         _ => fall_back_to_probe(&parsed, request),
     }
@@ -126,6 +126,7 @@ pub fn handle_http_bytes(engine: &AuthEngine, request: &[u8]) -> HttpProbeRespon
 struct HttpRequest {
     method: String,
     path: String,
+    query: String,
     body: String,
 }
 
@@ -138,11 +139,13 @@ fn parse_http_request(bytes: &[u8]) -> Result<HttpRequest, AuthSidecarError> {
     let request_line = lines.next().ok_or(AuthSidecarError::JwtMalformed)?;
     let mut parts = request_line.split_whitespace();
     let method = parts.next().ok_or(AuthSidecarError::JwtMalformed)?;
-    let path = parts.next().ok_or(AuthSidecarError::JwtMalformed)?;
+    let target = parts.next().ok_or(AuthSidecarError::JwtMalformed)?;
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
 
     Ok(HttpRequest {
         method: method.to_string(),
         path: path.to_string(),
+        query: query.to_string(),
         body: body.to_string(),
     })
 }
@@ -180,6 +183,7 @@ fn endpoint_login(engine: &AuthEngine, request: &HttpRequest) -> HttpProbeRespon
         }
         Err(AuthSidecarError::TotpCodeInvalid) => unauthorized("invalid totp code"),
         Err(AuthSidecarError::TotpNotEnrolled) => unauthorized("totp not enrolled"),
+        Err(AuthSidecarError::MfaAttemptsExceeded) => unauthorized("mfa attempts exceeded"),
         Err(error) => bad_request(&error.to_string()),
     }
 }
@@ -324,7 +328,86 @@ fn endpoint_totp_verify(engine: &AuthEngine, request: &HttpRequest) -> HttpProbe
         Err(AuthSidecarError::TotpCodeInvalid) | Err(AuthSidecarError::TotpNotEnrolled) => {
             unauthorized("totp rejected")
         }
+        Err(AuthSidecarError::MfaAttemptsExceeded) => unauthorized("mfa attempts exceeded"),
         Err(AuthSidecarError::UnknownUser) => not_found("user not found"),
+        Err(error) => bad_request(&error.to_string()),
+    }
+}
+
+fn endpoint_oidc_login(engine: &AuthEngine, request: &HttpRequest) -> HttpProbeResponse {
+    let provider = match query_param(&request.query, "provider") {
+        Some(value) => value,
+        None => return bad_request("provider query field is required"),
+    };
+    let redirect_uri = match query_param(&request.query, "redirect_uri") {
+        Some(value) => value,
+        None => return bad_request("redirect_uri query field is required"),
+    };
+    match engine.oidc_login(&OidcLoginRequest {
+        provider,
+        redirect_uri,
+    }) {
+        Ok(response) => {
+            let body = format!(
+                r#"{{"provider":"{provider}","authorization_url":"{url}","state":"{state}","nonce":"{nonce}","redirect_uri":"{redirect_uri}","expires_in":{expires}}}
+"#,
+                provider = escape_json(&response.provider),
+                url = escape_json(&response.authorization_url),
+                state = escape_json(&response.state),
+                nonce = escape_json(&response.nonce),
+                redirect_uri = escape_json(&response.redirect_uri),
+                expires = response.expires_in,
+            );
+            HttpProbeResponse::new(200, "application/json", body)
+        }
+        Err(AuthSidecarError::UnknownProvider) => not_found("oidc provider not found"),
+        Err(AuthSidecarError::InvalidRedirectUri) => bad_request("redirect_uri is not allowed"),
+        Err(error) => bad_request(&error.to_string()),
+    }
+}
+
+fn endpoint_oidc_callback(engine: &AuthEngine, request: &HttpRequest) -> HttpProbeResponse {
+    let provider = match query_param(&request.query, "provider") {
+        Some(value) => value,
+        None => return bad_request("provider query field is required"),
+    };
+    let redirect_uri = match query_param(&request.query, "redirect_uri") {
+        Some(value) => value,
+        None => return bad_request("redirect_uri query field is required"),
+    };
+    let state = match query_param(&request.query, "state") {
+        Some(value) => value,
+        None => return bad_request("state query field is required"),
+    };
+    let nonce = match query_param(&request.query, "nonce") {
+        Some(value) => value,
+        None => return bad_request("nonce query field is required"),
+    };
+    let code = match query_param(&request.query, "code") {
+        Some(value) => value,
+        None => return bad_request("code query field is required"),
+    };
+    match engine.validate_oidc_callback(&OidcCallbackRequest {
+        provider,
+        redirect_uri,
+        state,
+        nonce,
+        code,
+    }) {
+        Ok(validation) => {
+            let body = format!(
+                r#"{{"error":"idp_exchange_unavailable","provider":"{provider}","redirect_uri":"{redirect_uri}","detail":"OIDC state, nonce, and redirect_uri validated; token exchange is not enabled"}}
+"#,
+                provider = escape_json(&validation.provider),
+                redirect_uri = escape_json(&validation.redirect_uri),
+            );
+            HttpProbeResponse::new(501, "application/json", body)
+        }
+        Err(AuthSidecarError::UnknownProvider) => not_found("oidc provider not found"),
+        Err(AuthSidecarError::InvalidRedirectUri) => bad_request("redirect_uri is not allowed"),
+        Err(AuthSidecarError::InvalidOidcState) | Err(AuthSidecarError::OidcStateExpired) => {
+            unauthorized("oidc callback rejected")
+        }
         Err(error) => bad_request(&error.to_string()),
     }
 }
@@ -408,6 +491,46 @@ fn not_found(detail: &str) -> HttpProbeResponse {
     HttpProbeResponse::new(404, "application/json", body)
 }
 
+fn query_param(query: &str, key: &str) -> Option<String> {
+    query.split('&').find_map(|pair| {
+        let (name, value) = pair.split_once('=')?;
+        if name == key {
+            url_decode(value)
+        } else {
+            None
+        }
+    })
+}
+
+fn url_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < bytes.len() => {
+                let high = hex_value(bytes[i + 1])?;
+                let low = hex_value(bytes[i + 2])?;
+                out.push((high << 4) | low);
+                i += 2;
+            }
+            byte => out.push(byte),
+        }
+        i += 1;
+    }
+    String::from_utf8(out).ok()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn escape_json(input: &str) -> String {
     input
         .replace('\\', "\\\\")
@@ -459,7 +582,7 @@ fn parse_json_string(body: &str, key: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{canonical_claims, AuthEngine};
+    use crate::{canonical_claims, AuthEngine, OidcProviderConfig};
 
     fn engine() -> AuthEngine {
         AuthEngine::with_ttl(
@@ -468,6 +591,30 @@ mod tests {
             b"http-test-secret".to_vec(),
             300,
         )
+    }
+
+    fn oidc_engine() -> AuthEngine {
+        AuthEngine::with_runtime_config(
+            "https://auth.example.com",
+            "postgres",
+            b"http-test-secret".to_vec(),
+            300,
+            vec![OidcProviderConfig {
+                name: "stub".to_string(),
+                issuer_url: "https://idp.example.com".to_string(),
+                authorization_endpoint: "https://idp.example.com/oauth2/v1/authorize".to_string(),
+                client_id: "ai-blaise-client".to_string(),
+                client_secret_ref: "k8s://auth/idp-client-secret".to_string(),
+                redirect_uris: vec!["https://db.example.com/auth/oidc/callback".to_string()],
+                scopes: vec!["openid".to_string(), "email".to_string()],
+            }],
+            3,
+        )
+        .expect("engine")
+    }
+
+    fn get_request(target: &str) -> Vec<u8> {
+        format!("GET {target} HTTP/1.1\r\nHost: localhost\r\n\r\n").into_bytes()
     }
 
     fn post_request(path: &str, body: &str) -> Vec<u8> {
@@ -534,6 +681,54 @@ mod tests {
         );
         assert_eq!(response.status_code, 200);
         assert!(response.body.contains("\"active\":false"));
+    }
+
+    #[test]
+    fn oidc_routes_validate_login_and_fail_closed_callback() {
+        let engine = oidc_engine();
+        let login = handle_http_bytes(
+            &engine,
+            &get_request("/auth/oidc/login?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback"),
+        );
+        assert_eq!(login.status_code, 200);
+        assert!(login.body.contains("authorization_url"));
+        assert!(login.body.contains("client_id=ai-blaise-client"));
+        let state = parse_json_string(&login.body, "state").expect("state");
+        let nonce = parse_json_string(&login.body, "nonce").expect("nonce");
+
+        let bad_callback = handle_http_bytes(
+            &engine,
+            &get_request(&format!("/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state={state}&nonce=wrong&code=stub-code")),
+        );
+        assert_eq!(bad_callback.status_code, 401);
+
+        let callback = handle_http_bytes(
+            &engine,
+            &get_request(&format!("/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state={state}&nonce={nonce}&code=stub-code")),
+        );
+        assert_eq!(callback.status_code, 501);
+        assert!(callback.body.contains("idp_exchange_unavailable"));
+
+        let replay = handle_http_bytes(
+            &engine,
+            &get_request(&format!("/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state={state}&nonce={nonce}&code=stub-code")),
+        );
+        assert_eq!(replay.status_code, 401);
+    }
+
+    #[test]
+    fn oidc_login_rejects_bad_provider_or_redirect() {
+        let engine = oidc_engine();
+        let missing = handle_http_bytes(
+            &engine,
+            &get_request("/auth/oidc/login?provider=missing&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback"),
+        );
+        assert_eq!(missing.status_code, 404);
+        let redirect = handle_http_bytes(
+            &engine,
+            &get_request("/auth/oidc/login?provider=stub&redirect_uri=https%3A%2F%2Fevil.example.com%2Fcallback"),
+        );
+        assert_eq!(redirect.status_code, 400);
     }
 
     #[test]
