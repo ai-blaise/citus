@@ -6,9 +6,9 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T05:16:56Z",
+    "captured_at": "2026-05-24T05:58:00Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url",
-    "post_landing_note": "PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads."
+    "post_landing_note": "PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads. PRs #87, #96, #98, #101, and #104 are recorded as landed by the direct runtime durability/upgrade/pool batch."
   },
   "checklist": [
     {
@@ -41,7 +41,6 @@
   "expensive_citus_matrix_policy": {
     "default_rule": "Batch meaningful work first. Do not spend a full Citus matrix run on every metadata-only rebase, doc-only conflict, or isolated sidecar smoke if the focused gate covers the changed runtime. Run the matrix at the batch boundaries and high-risk path triggers below.",
     "run_full_matrix_after_batches": [
-      "draft-runtime-durability-upgrade-pool",
       "draft-release-and-patch-audit"
     ],
     "run_immediately_when": [
@@ -64,19 +63,6 @@
   },
   "integration_batches": [
     {
-      "id": "draft-runtime-durability-upgrade-pool",
-      "summary": "Hold cohabitation matrix, sidecar API runtime closure, migration durability, upgrade rollback, and pool load behavior until draft blockers and focused checks clear.",
-      "prs": [
-        87,
-        104,
-        101,
-        96,
-        98
-      ],
-      "run_expensive_citus_matrix_after": true,
-      "matrix_reason": "Cohabitation, sidecar runtime closure, SQL invariants, upgrade, and pool data-plane semantics should receive one batched matrix after focused gates pass."
-    },
-    {
       "id": "draft-release-and-patch-audit",
       "summary": "Merge release, performance, runbook, gap-audit, agentmemory, and canonical integration reconciliation work after their prerequisite runtime evidence is stable.",
       "prs": [
@@ -94,106 +80,8 @@
   ],
   "pull_requests": [
     {
-      "number": 87,
-      "order": 1,
-      "batch": "draft-runtime-durability-upgrade-pool",
-      "title": "[codex] Add Timescale 2.28 cohabitation matrix",
-      "head": "codex/prod-timescale-228-matrix-20260523",
-      "base": "bootstrap-v2",
-      "status": "blocked",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [
-        "PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current bootstrap-v2 tip.",
-        "PR body states Timescale 2.28 evidence depends on the published timescale/timescaledb:2.28.0-pg17 image tag; keep the skip-with-note truthful until upstream publication is verified.",
-        "Full Citus matrix jobs were still pending when metadata was refreshed, and live mergeStateStatus was DIRTY at the post-landing snapshot."
-      ],
-      "watch_paths": [
-        "ci/ai-blaise/ts-version-matrix-smoke.sh",
-        "tests/cohab-matrix",
-        "docs/ai-blaise/COHABITATION.md",
-        ".github/workflows/ci-image.yml"
-      ]
-    },
-    {
-      "number": 104,
-      "order": 2,
-      "batch": "draft-runtime-durability-upgrade-pool",
-      "title": "[codex] Add sidecar API runtime smoke",
-      "head": "codex/sidecar-runtime-contract-smoke-20260524",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
-        "sidecar/shared/src/runtime.rs",
-        "sidecar/edge_functions/src/lib.rs",
-        "sidecar/graphql/README.md",
-        "ci/ai-blaise/production-gap-audit.sh"
-      ]
-    },
-    {
-      "number": 101,
-      "order": 3,
-      "batch": "draft-runtime-durability-upgrade-pool",
-      "title": "[codex] Add migration durability invariant gates",
-      "head": "codex/data-durability-invariants",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/migration-invariants-smoke.sh",
-        "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql",
-        "companion/src/migration.rs",
-        "operator/src/reconcile/migration.rs",
-        "sidecar/schema_job/src/lib.rs"
-      ]
-    },
-    {
-      "number": 96,
-      "order": 4,
-      "batch": "draft-runtime-durability-upgrade-pool",
-      "title": "[codex] Add upgrade rollback guardrails",
-      "head": "codex/upgrade-rollback-guardrails-20260523-235847",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        101
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/upgrade-rollback-guardrails.sh",
-        "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv",
-        "images/citus-pg-overlay/Dockerfile",
-        "docs/ai-blaise/RUNBOOKS/upgrade.md"
-      ]
-    },
-    {
-      "number": 98,
-      "order": 5,
-      "batch": "draft-runtime-durability-upgrade-pool",
-      "title": "[codex] Harden pool load failure behavior",
-      "head": "codex/prod-pool-load-depth-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "pool/src/admission.rs",
-        "pool/src/proxy.rs",
-        "ci/ai-blaise/pool-proxy-smoke.sh",
-        "pool/README.md"
-      ]
-    },
-    {
       "number": 99,
-      "order": 6,
+      "order": 1,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add Citus patch production gate audit",
       "head": "codex/patch-production-integration-audit-20260524020118",
@@ -211,7 +99,7 @@
     },
     {
       "number": 100,
-      "order": 7,
+      "order": 2,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add release environment preflight checks",
       "head": "codex/release-env-preflight",
@@ -230,7 +118,7 @@
     },
     {
       "number": 102,
-      "order": 8,
+      "order": 3,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Harden performance evidence gates",
       "head": "codex/slo-performance-evidence-hardening-20260524015908",
@@ -252,7 +140,7 @@
     },
     {
       "number": 105,
-      "order": 9,
+      "order": 4,
       "batch": "draft-release-and-patch-audit",
       "title": "Add runbook command validation gate",
       "head": "codex/runbook-command-checks-20260524-022745",
@@ -260,7 +148,6 @@
       "status": "ready",
       "is_draft": false,
       "dependency_hints": [
-        96,
         100
       ],
       "known_blockers": [],
@@ -274,7 +161,7 @@
     },
     {
       "number": 103,
-      "order": 10,
+      "order": 5,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Make production gap inventory machine-derived",
       "head": "codex/production-gap-inventory-audit",
@@ -282,8 +169,7 @@
       "status": "ready",
       "is_draft": false,
       "dependency_hints": [
-        102,
-        104
+        102
       ],
       "known_blockers": [],
       "watch_paths": [
@@ -293,7 +179,7 @@
     },
     {
       "number": 109,
-      "order": 11,
+      "order": 6,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Demonstrate production gap audit integration reconciliation",
       "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
@@ -305,7 +191,6 @@
         100,
         102,
         103,
-        104,
         105
       ],
       "known_blockers": [
@@ -325,7 +210,7 @@
     },
     {
       "number": 97,
-      "order": 12,
+      "order": 7,
       "batch": "draft-release-and-patch-audit",
       "title": "Harden ai-blaise release image publishability",
       "head": "codex/release-publishability-20260523-2357",
@@ -333,7 +218,6 @@
       "status": "blocked",
       "is_draft": false,
       "dependency_hints": [
-        96,
         100,
         102,
         103,
@@ -719,6 +603,73 @@
         "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
       ],
       "landed_by": "direct bootstrap-v2 ready-release-evidence batch"
+    },
+    {
+      "number": 87,
+      "title": "[codex] Add Timescale 2.28 cohabitation matrix",
+      "head": "codex/prod-timescale-228-matrix-20260523",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/ts-version-matrix-smoke.sh",
+        "tests/cohab-matrix",
+        "docs/ai-blaise/COHABITATION.md",
+        ".github/workflows/ci-image.yml"
+      ],
+      "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
+    },
+    {
+      "number": 96,
+      "title": "[codex] Add upgrade rollback guardrails",
+      "head": "codex/upgrade-rollback-guardrails-20260523-235847",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/upgrade-rollback-guardrails.sh",
+        "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv",
+        "images/citus-pg-overlay/Dockerfile",
+        "docs/ai-blaise/RUNBOOKS/upgrade.md"
+      ],
+      "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
+    },
+    {
+      "number": 98,
+      "title": "[codex] Harden pool load failure behavior",
+      "head": "codex/prod-pool-load-depth-20260523",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "pool/src/admission.rs",
+        "pool/src/proxy.rs",
+        "ci/ai-blaise/pool-proxy-smoke.sh",
+        "pool/README.md"
+      ],
+      "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
+    },
+    {
+      "number": 101,
+      "title": "[codex] Add migration durability invariant gates",
+      "head": "codex/data-durability-invariants",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/migration-invariants-smoke.sh",
+        "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql",
+        "companion/src/migration.rs",
+        "operator/src/reconcile/migration.rs",
+        "sidecar/schema_job/src/lib.rs"
+      ],
+      "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
+    },
+    {
+      "number": 104,
+      "title": "[codex] Add sidecar API runtime smoke",
+      "head": "codex/sidecar-runtime-contract-smoke-20260524",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
+        "sidecar/shared/src/runtime.rs",
+        "sidecar/edge_functions/src/lib.rs",
+        "sidecar/graphql/README.md",
+        "ci/ai-blaise/production-gap-audit.sh"
+      ],
+      "landed_by": "direct bootstrap-v2 draft-runtime-durability-upgrade-pool batch"
     }
   ]
 }

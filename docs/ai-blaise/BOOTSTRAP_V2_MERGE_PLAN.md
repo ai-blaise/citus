@@ -35,37 +35,31 @@ open PR #70+ is missing from the manifest.
 
 ## Current Snapshot
 
-Captured from GitHub on `2026-05-24T05:16:56Z` for the post-release-evidence manifest:
+Captured from GitHub on `2026-05-24T05:58:00Z` for the post-runtime-durability manifest:
 
-- Open manifest: 12 PRs against `bootstrap-v2`; PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
+- Open manifest: 7 PRs against `bootstrap-v2`; PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #87, #88, #89, #90, #91, #92, #93, #94, #95, #96, #98, #101, #104, #106, #107, and #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
 - Draft blockers: PR #109.
-- Non-draft merge-order blockers: PR #87, PR #97.
-- PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current `bootstrap-v2` tip.
+- Non-draft merge-order blockers: PR #97.
+- PRs #87, #96, #98, #101, and #104 were integrated by the direct runtime durability/upgrade/pool batch after focused VM verification and the Timescale 2.27 Docker cohabitation smoke passed; Timescale 2.28 remains a truthful pass-with-note until `timescale/timescaledb:2.28.0-pg17` exists.
 - CI state is volatile and is not used as a merge-order drift signal. The plan requires title, head branch, base branch, and draft state to match live GitHub metadata.
 
 ## Merge Order
 
 | Order | PR | Status | Batch | Dependency hints |
 | --- | --- | --- | --- | --- |
-| 1 | #87 | blocked | draft-runtime-durability-upgrade-pool | none |
-| 2 | #104 | ready | draft-runtime-durability-upgrade-pool | none |
-| 3 | #101 | ready | draft-runtime-durability-upgrade-pool | none |
-| 4 | #96 | ready | draft-runtime-durability-upgrade-pool | #101 |
-| 5 | #98 | ready | draft-runtime-durability-upgrade-pool | none |
-| 6 | #99 | ready | draft-release-and-patch-audit | none |
-| 7 | #100 | ready | draft-release-and-patch-audit | none |
-| 8 | #102 | ready | draft-release-and-patch-audit | #99, #100 |
-| 9 | #105 | ready | draft-release-and-patch-audit | #96, #100 |
-| 10 | #103 | ready | draft-release-and-patch-audit | #102, #104 |
-| 11 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105 |
-| 12 | #97 | blocked | draft-release-and-patch-audit | #96, #100, #102, #103, #105, #109 |
+| 1 | #99 | ready | draft-release-and-patch-audit | none |
+| 2 | #100 | ready | draft-release-and-patch-audit | none |
+| 3 | #102 | ready | draft-release-and-patch-audit | #99, #100 |
+| 4 | #105 | ready | draft-release-and-patch-audit | #100 |
+| 5 | #103 | ready | draft-release-and-patch-audit | #102 |
+| 6 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #105 |
+| 7 | #97 | blocked | draft-release-and-patch-audit | #100, #102, #103, #105, #109 |
 
 Use the JSON as canonical if this table drifts.
 
 ## Known Blockers
 
-- PR #87 (blocked): PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current bootstrap-v2 tip. PR body states Timescale 2.28 evidence depends on the published timescale/timescaledb:2.28.0-pg17 image tag; keep the skip-with-note truthful until upstream publication is verified. Full Citus matrix jobs were still pending when metadata was refreshed, and live mergeStateStatus was DIRTY at the post-landing snapshot.
-- PR #109 (draft-blocked): Draft as of the post-landing snapshot. Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice. Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path.
+- PR #109 (draft-blocked): Draft as of the post-runtime-durability snapshot. Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice. Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path.
 - PR #97 (blocked): Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan. Release publishability should land last after environment, performance, gap-audit, runbook, upgrade, image, deployment, release-monitor, and integration-reconciliation gates are integrated.
 
 ## Expensive Matrix Rules
