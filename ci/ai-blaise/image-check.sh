@@ -282,6 +282,29 @@ custom_probe_contract_file() {
   esac
 }
 
+has_custom_http_probe() {
+  local main_file="$1"
+  local src_dir="${main_file%/main.rs}"
+  local lib_file="${src_dir}/lib.rs"
+  local runtime_file="${src_dir}/runtime.rs"
+  local probe_files=("${main_file}")
+
+  [[ -f "${lib_file}" ]] && probe_files+=("${lib_file}")
+  [[ -f "${runtime_file}" ]] && probe_files+=("${runtime_file}")
+
+  grep -Eq \
+    'serve_[[:alnum:]_]*http(_forever)?|handle_[[:alnum:]_]*http|runtime::serve|axum::serve' \
+    "${probe_files[@]}" || return 1
+
+  if grep -Eq '/healthz|GET /healthz' "${probe_files[@]}" \
+    && grep -Eq '/readyz|GET /readyz' "${probe_files[@]}" \
+    && grep -Eq '/metrics|GET /metrics' "${probe_files[@]}"; then
+    return 0
+  fi
+
+  grep -Eq 'SidecarRuntime::ready|handle_http_bytes' "${probe_files[@]}"
+}
+
 has_http_probe_contract() {
   local main_file="${1}"
   local probe_file
@@ -315,7 +338,7 @@ for main_file in "${required_serve_mains[@]}"; do
   grep -Fq 'args == ["serve"]' "${main_file}"
   if grep -Fq 'run_probe_server' "${main_file}"; then
     :
-  elif has_custom_http_probe "${main_file}"; then
+  elif has_custom_http_probe "${main_file}" || has_http_probe_contract "${main_file}"; then
     :
   else
     echo "${main_file} must use shared probes or a custom HTTP probe implementation" >&2

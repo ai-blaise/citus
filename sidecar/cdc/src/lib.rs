@@ -23,6 +23,9 @@
 pub mod anon;
 pub mod dlq;
 pub mod live;
+pub mod nats_sink;
+pub mod replication;
+pub mod runtime;
 pub mod sinks;
 pub mod source;
 

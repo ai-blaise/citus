@@ -44,7 +44,7 @@
 use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_cohabit_detection_report,
     canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
-    canonical_operations_readiness_report,
+    canonical_operations_readiness_report, canonical_plan_runtime_report,
 };
 use std::env;
 use std::process;
@@ -218,7 +218,7 @@ fn run_plan_runtime_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }
