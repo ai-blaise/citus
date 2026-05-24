@@ -26,6 +26,7 @@ Conflict: `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
 Resolution: keep #103's machine-derived inventory block and discard #99's stale
 hard-coded `273/125/148` count prose. Preserve #99's Citus patch production
 integration audit paragraph and the new `citus-patch-production-audit` gate.
+Also keep the target in `.PHONY`; it is an integration gate, not just a helper.
 
 ### #102 after #99
 
