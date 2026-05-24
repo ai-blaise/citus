@@ -120,10 +120,13 @@ impl OpenApiPlan {
 pub enum PostgrestSidecarError {
     InvalidIdentifier(&'static str),
     InvalidPath(&'static str),
+    InvalidRuntimeDependency(String),
     InvalidShardCount,
     MalformedHttpRequest,
     MissingRequiredField(&'static str),
+    MissingRuntimeDependency(String),
     Runtime(String),
+    RuntimeDependencyUnavailable(String),
     RouteNotFound(String),
     RlsRequired,
 }
@@ -133,12 +136,21 @@ impl fmt::Display for PostgrestSidecarError {
         match self {
             Self::InvalidIdentifier(field) => write!(formatter, "{field} must be a SQL identifier"),
             Self::InvalidPath(field) => write!(formatter, "{field} must start with /"),
+            Self::InvalidRuntimeDependency(detail) => {
+                write!(formatter, "invalid runtime dependency: {detail}")
+            }
             Self::InvalidShardCount => write!(formatter, "shard_count must be greater than zero"),
             Self::MalformedHttpRequest => {
                 write!(formatter, "malformed PostgREST sidecar HTTP request")
             }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::MissingRuntimeDependency(name) => {
+                write!(formatter, "missing runtime dependency: {name}")
+            }
             Self::Runtime(error) => write!(formatter, "{error}"),
+            Self::RuntimeDependencyUnavailable(detail) => {
+                write!(formatter, "runtime dependency unavailable: {detail}")
+            }
             Self::RouteNotFound(path) => write!(formatter, "no route configured for {path}"),
             Self::RlsRequired => write!(formatter, "RLS must be required for auto-API routes"),
         }
@@ -242,6 +254,9 @@ pub fn canonical_postgrest_execution_plan() -> Result<PostgrestSidecarPlan, Post
     plan.validate()?;
     Ok(plan)
 }
+
+const POSTGREST_BINARY_ENV: &str = "AI_BLAISE_POSTGREST_BINARY";
+const MIN_JWT_SECRET_BYTES: usize = 32;
 
 // =============================================================================
 // Runtime: process supervisor + HTTP front door
@@ -607,6 +622,90 @@ pub fn canonical_postgrest_supervisor_config() -> PostgrestSupervisorConfig {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PostgrestRuntimeDependencyReport {
+    pub db_uri_env: String,
+    pub jwt_secret_env: String,
+    pub binary_path: String,
+    pub config_path: String,
+    pub schemas: Vec<String>,
+    pub route_count: usize,
+}
+
+pub fn postgrest_runtime_dependency_report_from_env(
+) -> Result<PostgrestRuntimeDependencyReport, PostgrestSidecarError> {
+    let plan = canonical_postgrest_execution_plan()?;
+    let mut config = canonical_postgrest_supervisor_config();
+    if let Ok(binary_path) = std::env::var(POSTGREST_BINARY_ENV) {
+        config.binary_path = binary_path;
+    }
+    postgrest_runtime_dependency_report(&plan, &config, |name| std::env::var(name).ok())
+}
+
+pub fn postgrest_runtime_dependency_report<F>(
+    plan: &PostgrestSidecarPlan,
+    config: &PostgrestSupervisorConfig,
+    lookup: F,
+) -> Result<PostgrestRuntimeDependencyReport, PostgrestSidecarError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    plan.validate()?;
+    config.validate()?;
+    let db_uri = require_runtime_env(&lookup, &config.db_uri_secret_ref)?;
+    validate_postgres_url(&config.db_uri_secret_ref, &db_uri)?;
+    let jwt_secret = require_runtime_env(&lookup, &config.jwt_secret_ref)?;
+    validate_jwt_secret(&config.jwt_secret_ref, &jwt_secret)?;
+    let binary_path = std::path::Path::new(&config.binary_path);
+    if !binary_path.is_file() {
+        return Err(PostgrestSidecarError::RuntimeDependencyUnavailable(
+            format!(
+                "PostgREST binary is not available at {}",
+                config.binary_path
+            ),
+        ));
+    }
+
+    let supervisor = PostgrestSupervisor::new(plan.clone(), config.clone())?;
+    Ok(PostgrestRuntimeDependencyReport {
+        db_uri_env: config.db_uri_secret_ref.clone(),
+        jwt_secret_env: config.jwt_secret_ref.clone(),
+        binary_path: config.binary_path.clone(),
+        config_path: supervisor.launch_plan().config_path.clone(),
+        schemas: plan.schemas.clone(),
+        route_count: plan.routes.len(),
+    })
+}
+
+fn require_runtime_env<F>(lookup: &F, name: &str) -> Result<String, PostgrestSidecarError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    lookup(name)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| PostgrestSidecarError::MissingRuntimeDependency(name.to_string()))
+}
+
+fn validate_postgres_url(field: &str, value: &str) -> Result<(), PostgrestSidecarError> {
+    if value.starts_with("postgres://") || value.starts_with("postgresql://") {
+        Ok(())
+    } else {
+        Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{field} must be a PostgreSQL URL"
+        )))
+    }
+}
+
+fn validate_jwt_secret(field: &str, value: &str) -> Result<(), PostgrestSidecarError> {
+    if value.len() >= MIN_JWT_SECRET_BYTES {
+        Ok(())
+    } else {
+        Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{field} must be at least {MIN_JWT_SECRET_BYTES} bytes"
+        )))
+    }
+}
+
 pub fn canonical_postgrest_runtime_report() -> Result<PostgrestRuntimeReport, PostgrestSidecarError>
 {
     let plan = canonical_postgrest_plan();
@@ -659,13 +758,22 @@ fn handle_postgrest_sidecar_http_request(
             supervisor.postgrest_conf().to_string(),
         ));
     }
-    if (method == "GET" || method == "POST") && path.starts_with("/api/") {
+    if path.starts_with("/api/") {
         return match supervisor.resolve_route(&path["/api".len()..]) {
-            Ok(route) => Ok(HttpProbeResponse::new(
-                200,
-                "application/json",
-                render_route_payload(route, method),
-            )),
+            Ok(route) => match rest_method_from_http(method) {
+                Some(rest_method) if route.methods.contains(&rest_method) => {
+                    Ok(HttpProbeResponse::new(
+                        200,
+                        "application/json",
+                        render_route_payload(route, rest_method),
+                    ))
+                }
+                _ => Ok(HttpProbeResponse::new(
+                    405,
+                    "application/json",
+                    "{\"error\":\"method not allowed for route\"}\n".to_string(),
+                )),
+            },
             Err(error) => Ok(HttpProbeResponse::new(
                 404,
                 "application/json",
@@ -677,7 +785,17 @@ fn handle_postgrest_sidecar_http_request(
     Ok(runtime.handle_http_bytes(request.as_bytes())?)
 }
 
-fn render_route_payload(route: &RestRoute, method: &str) -> String {
+fn rest_method_from_http(method: &str) -> Option<RestMethod> {
+    match method {
+        "GET" => Some(RestMethod::Get),
+        "POST" => Some(RestMethod::Post),
+        "PATCH" => Some(RestMethod::Patch),
+        "DELETE" => Some(RestMethod::Delete),
+        _ => None,
+    }
+}
+
+fn render_route_payload(route: &RestRoute, method: RestMethod) -> String {
     let methods = route
         .methods
         .iter()
@@ -696,7 +814,11 @@ fn render_route_payload(route: &RestRoute, method: &str) -> String {
         .unwrap_or_else(|| "null".to_string());
     format!(
         "{{\"schema\":\"{}\",\"table\":\"{}\",\"method\":\"{}\",\"allowed_methods\":[{}],\"distributed_view\":{}}}\n",
-        route.schema, route.table, method, methods, view,
+        route.schema,
+        route.table,
+        method_upper(&method),
+        methods,
+        view,
     )
 }
 
@@ -868,6 +990,66 @@ mod tests {
             Err(PostgrestSidecarError::MissingRequiredField(
                 "supervisor.anon_role",
             ))
+        );
+    }
+
+    #[test]
+    fn runtime_dependency_report_fails_closed_without_db_uri() {
+        let plan = canonical_postgrest_plan();
+        let mut config = canonical_postgrest_supervisor_config();
+        config.binary_path = std::env::current_exe()
+            .expect("current exe")
+            .to_string_lossy()
+            .into_owned();
+
+        assert_eq!(
+            postgrest_runtime_dependency_report(&plan, &config, |_| None),
+            Err(PostgrestSidecarError::MissingRuntimeDependency(
+                "POSTGREST_DB_URI".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn runtime_dependency_report_rejects_invalid_db_uri() {
+        let plan = canonical_postgrest_plan();
+        let mut config = canonical_postgrest_supervisor_config();
+        config.binary_path = std::env::current_exe()
+            .expect("current exe")
+            .to_string_lossy()
+            .into_owned();
+
+        let err = postgrest_runtime_dependency_report(&plan, &config, |name| match name {
+            "POSTGREST_DB_URI" => Some("http://postgres".to_string()),
+            "POSTGREST_JWT_SECRET" => Some("01234567890123456789012345678901".to_string()),
+            _ => None,
+        })
+        .expect_err("invalid db uri");
+        assert!(err.to_string().contains("must be a PostgreSQL URL"));
+    }
+
+    #[test]
+    fn runtime_dependency_report_uses_binary_and_secret_env_names() {
+        let plan = canonical_postgrest_plan();
+        let mut config = canonical_postgrest_supervisor_config();
+        config.binary_path = std::env::current_exe()
+            .expect("current exe")
+            .to_string_lossy()
+            .into_owned();
+
+        let report = postgrest_runtime_dependency_report(&plan, &config, |name| match name {
+            "POSTGREST_DB_URI" => Some("postgresql://postgres@127.0.0.1/postgres".to_string()),
+            "POSTGREST_JWT_SECRET" => Some("01234567890123456789012345678901".to_string()),
+            _ => None,
+        })
+        .expect("runtime dependencies");
+
+        assert_eq!(report.db_uri_env, "POSTGREST_DB_URI");
+        assert_eq!(report.jwt_secret_env, "POSTGREST_JWT_SECRET");
+        assert_eq!(report.route_count, 1);
+        assert_eq!(
+            report.schemas,
+            vec!["public".to_string(), "api".to_string()]
         );
     }
 

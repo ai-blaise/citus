@@ -5,7 +5,8 @@
 
 use ai_blaise_citus_sidecar_postgrest::{
     canonical_postgrest_execution_plan, canonical_postgrest_runtime_report,
-    serve_postgrest_sidecar_http_forever, RestMethod, SupervisorState,
+    postgrest_runtime_dependency_report_from_env, serve_postgrest_sidecar_http_forever, RestMethod,
+    SupervisorState,
 };
 use std::env;
 use std::process;
@@ -24,6 +25,11 @@ fn main() {
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["check-runtime-dependencies"] {
+        run_dependency_check();
         return;
     }
 
@@ -63,7 +69,9 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: postgrest [serve|run-canonical|run-runtime-canonical]");
+    println!(
+        "usage: postgrest [serve|run-canonical|run-runtime-canonical|check-runtime-dependencies]"
+    );
     println!("serves the PostgREST sidecar HTTP front door or emits a deterministic TSV plan");
 }
 
@@ -113,4 +121,21 @@ fn supervisor_state_name(state: &SupervisorState) -> &'static str {
         SupervisorState::CrashedAndRestarted => "crashed_and_restarted",
         SupervisorState::Drained => "drained",
     }
+}
+
+fn run_dependency_check() {
+    let report = postgrest_runtime_dependency_report_from_env().unwrap_or_else(|error| {
+        eprintln!("postgrest: runtime dependency check failed: {error}");
+        process::exit(1);
+    });
+    println!("binary	config_path	db_uri_env	jwt_secret_env	schemas	route_count");
+    println!(
+        "{}	{}	{}	{}	{}	{}",
+        report.binary_path,
+        report.config_path,
+        report.db_uri_env,
+        report.jwt_secret_env,
+        report.schemas.join(","),
+        report.route_count,
+    );
 }

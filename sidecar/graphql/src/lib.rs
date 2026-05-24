@@ -89,10 +89,12 @@ impl GraphqlAuthPolicy {
 pub enum GraphqlSidecarError {
     InvalidIdentifier(&'static str),
     InvalidPath(&'static str),
+    InvalidRuntimeDependency(String),
     IntrospectionDisabled,
     MalformedHttpRequest,
     MalformedQuery(String),
     MissingRequiredField(&'static str),
+    MissingRuntimeDependency(String),
     PlanResolutionFailed(String),
     Runtime(String),
     TenantClaimMissing,
@@ -104,6 +106,9 @@ impl fmt::Display for GraphqlSidecarError {
         match self {
             Self::InvalidIdentifier(field) => write!(formatter, "{field} must be a SQL identifier"),
             Self::InvalidPath(field) => write!(formatter, "{field} must start with /"),
+            Self::InvalidRuntimeDependency(detail) => {
+                write!(formatter, "invalid runtime dependency: {detail}")
+            }
             Self::IntrospectionDisabled => {
                 write!(formatter, "GraphQL introspection is disabled by policy")
             }
@@ -112,6 +117,9 @@ impl fmt::Display for GraphqlSidecarError {
             }
             Self::MalformedQuery(detail) => write!(formatter, "malformed GraphQL query: {detail}"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::MissingRuntimeDependency(name) => {
+                write!(formatter, "missing runtime dependency: {name}")
+            }
             Self::PlanResolutionFailed(detail) => {
                 write!(formatter, "plan resolution failed: {detail}")
             }
@@ -218,6 +226,74 @@ pub fn canonical_graphql_execution_plan() -> Result<GraphqlSidecarPlan, GraphqlS
     let plan = canonical_graphql_plan();
     plan.validate()?;
     Ok(plan)
+}
+
+pub const GRAPHQL_DATABASE_URL_ENV: &str = "AI_BLAISE_GRAPHQL_DATABASE_URL";
+pub const GRAPHQL_JWT_SECRET_ENV: &str = "AI_BLAISE_GRAPHQL_JWT_SECRET";
+const MIN_JWT_SECRET_BYTES: usize = 32;
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GraphqlRuntimeDependencyReport {
+    pub database_url_env: String,
+    pub jwt_secret_env: String,
+    pub endpoint_path: String,
+    pub pg_graphql_extension_required: bool,
+}
+
+pub fn graphql_runtime_dependency_report_from_env(
+) -> Result<GraphqlRuntimeDependencyReport, GraphqlSidecarError> {
+    let plan = canonical_graphql_execution_plan()?;
+    graphql_runtime_dependency_report(&plan, |name| std::env::var(name).ok())
+}
+
+pub fn graphql_runtime_dependency_report<F>(
+    plan: &GraphqlSidecarPlan,
+    lookup: F,
+) -> Result<GraphqlRuntimeDependencyReport, GraphqlSidecarError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    plan.validate()?;
+    let database_url = require_runtime_env(&lookup, GRAPHQL_DATABASE_URL_ENV)?;
+    validate_postgres_url(GRAPHQL_DATABASE_URL_ENV, &database_url)?;
+    let jwt_secret = require_runtime_env(&lookup, GRAPHQL_JWT_SECRET_ENV)?;
+    validate_jwt_secret(GRAPHQL_JWT_SECRET_ENV, &jwt_secret)?;
+
+    Ok(GraphqlRuntimeDependencyReport {
+        database_url_env: GRAPHQL_DATABASE_URL_ENV.to_string(),
+        jwt_secret_env: GRAPHQL_JWT_SECRET_ENV.to_string(),
+        endpoint_path: plan.endpoint_path.clone(),
+        pg_graphql_extension_required: true,
+    })
+}
+
+fn require_runtime_env<F>(lookup: &F, name: &str) -> Result<String, GraphqlSidecarError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    lookup(name)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| GraphqlSidecarError::MissingRuntimeDependency(name.to_string()))
+}
+
+fn validate_postgres_url(field: &str, value: &str) -> Result<(), GraphqlSidecarError> {
+    if value.starts_with("postgres://") || value.starts_with("postgresql://") {
+        Ok(())
+    } else {
+        Err(GraphqlSidecarError::InvalidRuntimeDependency(format!(
+            "{field} must be a PostgreSQL URL"
+        )))
+    }
+}
+
+fn validate_jwt_secret(field: &str, value: &str) -> Result<(), GraphqlSidecarError> {
+    if value.len() >= MIN_JWT_SECRET_BYTES {
+        Ok(())
+    } else {
+        Err(GraphqlSidecarError::InvalidRuntimeDependency(format!(
+            "{field} must be at least {MIN_JWT_SECRET_BYTES} bytes"
+        )))
+    }
 }
 
 // =============================================================================
@@ -905,6 +981,48 @@ mod tests {
             plan.validate(),
             Err(GraphqlSidecarError::InvalidPath("endpoint_path"))
         );
+    }
+
+    #[test]
+    fn runtime_dependency_report_fails_closed_without_database_url() {
+        let plan = canonical_graphql_plan();
+
+        assert_eq!(
+            graphql_runtime_dependency_report(&plan, |_| None),
+            Err(GraphqlSidecarError::MissingRuntimeDependency(
+                "AI_BLAISE_GRAPHQL_DATABASE_URL".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn runtime_dependency_report_rejects_invalid_database_url() {
+        let plan = canonical_graphql_plan();
+        let err = graphql_runtime_dependency_report(&plan, |name| match name {
+            GRAPHQL_DATABASE_URL_ENV => Some("http://postgres".to_string()),
+            GRAPHQL_JWT_SECRET_ENV => Some("01234567890123456789012345678901".to_string()),
+            _ => None,
+        })
+        .expect_err("invalid database url");
+        assert!(err.to_string().contains("must be a PostgreSQL URL"));
+    }
+
+    #[test]
+    fn runtime_dependency_report_names_pg_graphql_boundary() {
+        let plan = canonical_graphql_plan();
+        let report = graphql_runtime_dependency_report(&plan, |name| match name {
+            GRAPHQL_DATABASE_URL_ENV => {
+                Some("postgresql://postgres@127.0.0.1/postgres".to_string())
+            }
+            GRAPHQL_JWT_SECRET_ENV => Some("01234567890123456789012345678901".to_string()),
+            _ => None,
+        })
+        .expect("runtime dependencies");
+
+        assert_eq!(report.database_url_env, GRAPHQL_DATABASE_URL_ENV);
+        assert_eq!(report.jwt_secret_env, GRAPHQL_JWT_SECRET_ENV);
+        assert_eq!(report.endpoint_path, "/graphql/v1");
+        assert!(report.pg_graphql_extension_required);
     }
 
     #[test]

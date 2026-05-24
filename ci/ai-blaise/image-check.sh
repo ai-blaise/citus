@@ -405,7 +405,7 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'runtime::serve' "${main_file}"
     continue
   fi
-  if has_http_probe_contract "${main_file}"; then
+  if has_custom_http_probe "${main_file}" || has_http_probe_contract "${main_file}"; then
     continue
   fi
   echo "${main_file} must expose serve-mode HTTP probes through run_probe_server, a custom HTTP probe implementation, or a custom runtime::serve implementation" >&2
