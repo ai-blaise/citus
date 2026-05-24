@@ -27,6 +27,7 @@ members = [
     "tools/citus-lsp",
     "tools/citus-schema-designer",
     "tools/citus-tui",
+    "tools/citus-tool-runtime",
     "tools/citus-watch",
     "tools/citusctl",
 ]

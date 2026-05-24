@@ -10,6 +10,12 @@
 Terminal UI fork target based on rainfrog.
 
 The current Rust contract covers `FEATURE: D3` by validating required live
-panels, read-only actions, and safe-mode blocking for mutating workflows.
+panels, read-only actions, and safe-mode blocking for mutating workflows. The
+runtime path now renders deterministic terminal frames from the shared tools
+snapshot TSV and previews operator actions with safe-mode and `CONFIRM`
+guards.
+
 Use `cargo run -p ai_blaise_citus_tui -- run-canonical` to emit the
 deterministic session TSV report.
+Use `cargo run -p ai_blaise_citus_tui -- render-frame --snapshot <snapshot.tsv> --panel shards`
+to render a concrete frame.

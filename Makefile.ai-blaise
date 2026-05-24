@@ -371,6 +371,9 @@ test-admin:
 run-admin-canonical:
 	cargo run -q -p ai_blaise_citus_admin -- run-canonical
 
+tools-ui-runtime-smoke:
+	@bash ci/ai-blaise/tools-ui-runtime-smoke.sh
+
 kind-smoke:
 	@tests/e2e/kind-timescale-citus-smoke.sh
 

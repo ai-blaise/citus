@@ -3,6 +3,7 @@
 // FEATURE: O13
 // FEATURE: D12
 
+use ai_blaise_citus_tool_runtime::{terminal_table, ToolRuntimeError, ToolSnapshot};
 use std::error::Error;
 use std::fmt;
 
@@ -212,9 +213,184 @@ pub fn canonical_watch_dashboard() -> WatchDashboardPlan {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WatchRuntime {
+    snapshot: ToolSnapshot,
+    dashboard: WatchDashboardPlan,
+}
+
+impl WatchRuntime {
+    pub fn new(snapshot: ToolSnapshot) -> Result<Self, WatchRuntimeError> {
+        snapshot.validate().map_err(WatchRuntimeError::from)?;
+        let dashboard = canonical_watch_dashboard();
+        dashboard
+            .validate()
+            .map_err(|error| WatchRuntimeError::InvalidDashboard(error.to_string()))?;
+        Ok(Self {
+            snapshot,
+            dashboard,
+        })
+    }
+
+    pub fn signals(&self) -> Vec<WatchSignal> {
+        let mut signals = Vec::new();
+        match &self.snapshot.pool {
+            Some(pool) if pool.is_ready() => signals.push(WatchSignal::ok(
+                "pool",
+                format!(
+                    "{} active clients, {} waiting",
+                    pool.active_clients, pool.waiting_clients
+                ),
+            )),
+            Some(pool) => signals.push(WatchSignal::critical(
+                "pool",
+                format!(
+                    "state={} upstream_errors={}",
+                    pool.state, pool.upstream_errors
+                ),
+            )),
+            None => signals.push(WatchSignal::warning("pool", "snapshot has no pool row")),
+        }
+
+        let backlog = self
+            .snapshot
+            .vectorizers
+            .iter()
+            .map(|vectorizer| vectorizer.backlog_jobs)
+            .max()
+            .unwrap_or(0);
+        if backlog > 100 {
+            signals.push(WatchSignal::warning(
+                "vectorizer-backlog",
+                format!("max backlog {backlog} jobs"),
+            ));
+        } else {
+            signals.push(WatchSignal::ok(
+                "vectorizer-backlog",
+                format!("max backlog {backlog} jobs"),
+            ));
+        }
+
+        let active_shards = self
+            .snapshot
+            .shards
+            .iter()
+            .filter(|shard| shard.state == "active")
+            .count();
+        signals.push(WatchSignal::ok(
+            "shards",
+            format!(
+                "{active_shards}/{} placements active",
+                self.snapshot.shards.len()
+            ),
+        ));
+
+        signals.push(WatchSignal::ok(
+            "tenants",
+            format!("{} tenants tracked", self.snapshot.tenants.len()),
+        ));
+        signals
+    }
+
+    pub fn render_frame(&self) -> Result<String, WatchRuntimeError> {
+        let queries = self
+            .dashboard
+            .queries()
+            .map_err(|error| WatchRuntimeError::InvalidDashboard(error.to_string()))?;
+        let signal_rows = self
+            .signals()
+            .into_iter()
+            .map(|signal| vec![signal.name, signal.level, signal.detail])
+            .collect::<Vec<_>>();
+        let query_rows = queries
+            .iter()
+            .map(|query| match query {
+                WatchQuery::CompanionSql { name, sql } => {
+                    vec![
+                        name.to_string(),
+                        "companion-sql".to_string(),
+                        sql.to_string(),
+                    ]
+                }
+                WatchQuery::Prometheus { name, expr } => {
+                    vec![name.to_string(), "prometheus".to_string(), expr.to_string()]
+                }
+            })
+            .collect::<Vec<_>>();
+
+        Ok(format!(
+            "citus-watch | cluster={} | refresh={}s | generated_at={}\n{}\n{}",
+            self.snapshot.cluster_name,
+            self.dashboard.refresh_interval_seconds,
+            self.snapshot.generated_at,
+            terminal_table(&["signal", "level", "detail"], &signal_rows),
+            terminal_table(&["query", "source", "statement"], &query_rows),
+        ))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WatchSignal {
+    pub name: String,
+    pub level: String,
+    pub detail: String,
+}
+
+impl WatchSignal {
+    fn ok(name: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            level: "ok".to_string(),
+            detail: detail.into(),
+        }
+    }
+
+    fn warning(name: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            level: "warning".to_string(),
+            detail: detail.into(),
+        }
+    }
+
+    fn critical(name: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            level: "critical".to_string(),
+            detail: detail.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum WatchRuntimeError {
+    InvalidDashboard(String),
+    InvalidSnapshot(String),
+}
+
+impl From<ToolRuntimeError> for WatchRuntimeError {
+    fn from(error: ToolRuntimeError) -> Self {
+        Self::InvalidSnapshot(error.to_string())
+    }
+}
+
+impl fmt::Display for WatchRuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDashboard(detail) => {
+                write!(formatter, "watch dashboard invalid: {detail}")
+            }
+            Self::InvalidSnapshot(detail) => write!(formatter, "watch snapshot invalid: {detail}"),
+        }
+    }
+}
+
+impl Error for WatchRuntimeError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_blaise_citus_tool_runtime::canonical_snapshot;
 
     #[test]
     fn dashboard_plan_covers_unified_live_view() {
@@ -246,5 +422,26 @@ mod tests {
         let panel = WatchPanel::Shards { max_rows: 0 };
 
         assert_eq!(panel.validate(), Err(WatchError::InvalidRowLimit));
+    }
+
+    #[test]
+    fn watch_runtime_renders_snapshot_frame() {
+        let runtime = WatchRuntime::new(canonical_snapshot()).unwrap();
+
+        let frame = runtime.render_frame().unwrap();
+
+        assert!(frame.contains("citus-watch | cluster=prod-east"));
+        assert!(frame.contains("vectorizer-backlog"));
+        assert!(frame.contains("companion.shard_placements"));
+    }
+
+    #[test]
+    fn watch_runtime_warns_on_vectorizer_backlog() {
+        let runtime = WatchRuntime::new(canonical_snapshot()).unwrap();
+
+        assert!(runtime
+            .signals()
+            .iter()
+            .any(|signal| signal.level == "warning"));
     }
 }

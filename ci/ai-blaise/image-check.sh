@@ -313,6 +313,15 @@ has_http_probe_contract() {
 
 for main_file in "${required_serve_mains[@]}"; do
   grep -Fq 'args == ["serve"]' "${main_file}"
+  if grep -Fq 'run_probe_server' "${main_file}"; then
+    :
+  elif has_custom_http_probe "${main_file}"; then
+    :
+  else
+    echo "${main_file} must use shared probes or a custom HTTP probe implementation" >&2
+    exit 1
+  fi
+
   if [[ "${main_file}" == "sidecar/mcp/src/main.rs" ]]; then
     grep -Fq 'serve_mcp_sidecar_http_forever' "${main_file}"
     grep -Fq 'handle_mcp_sidecar_http_bytes' sidecar/mcp/src/lib.rs
