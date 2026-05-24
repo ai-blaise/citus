@@ -37,12 +37,47 @@ runners, and smoke-test scaffolding from being misread as production evidence
 unless the corresponding feature entry has measured runtime evidence and an
 explicit status promotion.
 
+Before publishing images, run the lightweight release-operator packaging gate:
+
+```bash
+make -f Makefile.ai-blaise release-publishability-check
+```
+
+That gate does not run the full upstream Citus matrix. It verifies the custom
+Rust app image matrix, rejects mutable release tags, requires explicit registry
+and tag inputs for pushes, and validates the generated digest manifest when one
+is present. For the final release candidate, make the manifest mandatory:
+
+```bash
+REQUIRE_PUBLISHED_DIGESTS=1 \
+  RELEASE_DIGEST_MANIFEST=artifacts/ai-blaise-image-digests.tsv \
+  ci/ai-blaise/release-publishability-check.sh
+```
+
+Publish the app image matrix only with explicit source and image identity:
+
+```bash
+IMAGE_REGISTRY=ghcr.io/ai-blaise \
+  TAG="${RELEASE_TAG}" \
+  SOURCE_REVISION="$(git rev-parse --verify HEAD)" \
+  DIGEST_FILE=artifacts/ai-blaise-image-digests.tsv \
+  PUSH=true \
+  scripts/citus-scale/build-app-images.sh
+```
+
+`scripts/citus-scale/build-app-images.sh` fails a push that omits
+`IMAGE_REGISTRY` or `TAG`, uses a mutable tag such as `latest`, or cannot record
+an immutable `sha256:` digest for every pushed image. The generated manifest is
+the command-center image handoff: it contains `source_revision`, repository,
+full image tag, immutable digest, package, binary, and push status for every app
+image consumed by the command-center chart.
+
 Release artifacts must include:
 
 - source tag
 - overlay images
-- `artifacts/ai-blaise-image-digests.tsv` from
-  `scripts/citus-scale/build-app-images.sh`
+- `artifacts/ai-blaise-image-digests.tsv` from the explicit publish command
+  above, verified with `REQUIRE_PUBLISHED_DIGESTS=1`
 - SBOMs
 - signed container images
 - updated `NEW_FEATURES.md`
