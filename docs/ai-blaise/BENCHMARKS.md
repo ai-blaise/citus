@@ -22,10 +22,14 @@ cluster recording.
 | Timescale ingest     | `benchmarks/timescale-ingest/`    | `make -f Makefile.ai-blaise bench-timescale-ingest` | `psql COPY` driver        |
 | Kubernetes chaos     | `benchmarks/chaos/`               | `make -f Makefile.ai-blaise bench-chaos`      | `kubectl` + `tc` + `NetworkPolicy` |
 | Bundled-ext microbenches | `benchmarks/microbenches/<ext>/` | `make -f Makefile.ai-blaise microbench-smoke` | `psql` driver + per-ext SQL fixtures |
+| Router planner patch smoke | `benchmarks/router-planner/` | `make -f Makefile.ai-blaise bench-router-planner` | portable Python algorithm harness |
 
-All harnesses share `benchmarks/common/lib.sh` for the quick-mode toggle,
-results-directory layout, and the soft-skip pattern when a driver binary or
-target cluster is missing.
+All production benchmark harnesses share `benchmarks/common/lib.sh` for the
+quick-mode toggle, results-directory layout, and the soft-skip pattern when a
+driver binary or target cluster is missing. The router planner patch smoke is a
+portable algorithm harness and intentionally does not soft-skip; it fails if the
+hashed intersection changes legacy semantics or misses the minimum quick-mode
+speedup floor.
 
 ## Per-extension microbenches (26 always-on bundled extensions)
 
@@ -135,7 +139,9 @@ Full-mode results are attached to the release record and tracked in
 ## Other measured surfaces (separate runners)
 
 The TPC-C / sysbench / ingest / chaos harnesses cover gates 10 and 11. The
-remaining release gates are exercised by other runners:
+router planner patch smoke covers only the patch-level algorithm boundary for
+T3/T4; full release performance evidence still requires a live Citus cluster.
+The remaining release gates are exercised by other runners:
 
 - distributed BM25 search latency: `cargo run -p ai_blaise_citus_e2e --bin
   release_gate_report` reports the modeled p95.
