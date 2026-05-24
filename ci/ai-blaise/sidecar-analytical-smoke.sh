@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+server_pid=""
+tmp_dir="$(mktemp -d)"
+cleanup() {
+  if [[ -n "${server_pid}" ]]; then
+    kill "${server_pid}" >/dev/null 2>&1 || true
+    wait "${server_pid}" >/dev/null 2>&1 || true
+  fi
+  rm -rf "${tmp_dir}"
+}
+trap cleanup EXIT
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
@@ -48,4 +59,43 @@ IFS=$'\t' read -r mirror engine table format object_uri pushdown_plan projected_
 [[ "${query_engine_executed}" == "false" ]]
 [[ "${evidence_boundary}" == "deterministic-runtime-report-only" ]]
 
+addr="127.0.0.1:$((19000 + ($$ % 1000)))"
+AI_BLAISE_LISTEN_ADDR="${addr}" cargo run -q -p ai_blaise_citus_sidecar_analytical -- serve \
+  >"${tmp_dir}/server.stdout" \
+  2>"${tmp_dir}/server.stderr" &
+server_pid="$!"
+
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 1 "http://${addr}/healthz" >"${tmp_dir}/healthz.json" 2>/dev/null; then
+    break
+  fi
+  if ! kill -0 "${server_pid}" >/dev/null 2>&1; then
+    echo "analytical probe server exited before healthz became ready" >&2
+    cat "${tmp_dir}/server.stderr" >&2 || true
+    exit 1
+  fi
+  sleep 1
+done
+
+if [[ ! -s "${tmp_dir}/healthz.json" ]]; then
+  echo "analytical probe server did not answer healthz" >&2
+  cat "${tmp_dir}/server.stderr" >&2 || true
+  exit 1
+fi
+
+healthz="$(cat "${tmp_dir}/healthz.json")"
+readyz="$(curl -fsS --max-time 2 "http://${addr}/readyz")"
+metrics="$(curl -fsS --max-time 2 "http://${addr}/metrics")"
+drain="$(curl -fsS --max-time 2 -X POST "http://${addr}/drain")"
+readyz_after_drain_status="$(curl -sS --max-time 2 -o "${tmp_dir}/readyz-after-drain.json" -w '%{http_code}' "http://${addr}/readyz")"
+
+[[ "${healthz}" == *'"component":"analytical"'* ]]
+[[ "${healthz}" == *'"state":"ready"'* ]]
+[[ "${readyz}" == *'"ready":true'* ]]
+[[ "${metrics}" == *'ai_blaise_sidecar_ready{component="analytical"} 1'* ]]
+[[ "${drain}" == *'"accepting_new_work":false'* ]]
+[[ "${drain}" == *'"drained":true'* ]]
+[[ "${readyz_after_drain_status}" == "503" ]]
+
 printf 'sidecar_analytical_smoke\tengine=%s\texternal_io_attempted=%s\tquery_engine_executed=%s\tevidence_boundary=%s\n' "${engine}" "${external_io_attempted}" "${query_engine_executed}" "${evidence_boundary}"
+printf 'sidecar_analytical_probe_smoke\taddr=%s\thealthz=200\treadyz_after_drain=%s\n' "${addr}" "${readyz_after_drain_status}"
