@@ -1,6 +1,22 @@
 -- FEATURE: TS18
 
 CREATE SCHEMA IF NOT EXISTS companion_internal;
+CREATE SCHEMA IF NOT EXISTS companion;
+
+
+CREATE TABLE IF NOT EXISTS companion_internal.txn_status_records (
+    txn_id text PRIMARY KEY,
+    coordinator text NOT NULL,
+    status text NOT NULL CHECK (status IN ('staging', 'committed', 'aborted')),
+    staging_physical_ms bigint NOT NULL CHECK (staging_physical_ms > 0),
+    observed_physical_ms bigint,
+    intents jsonb NOT NULL CHECK (jsonb_typeof(intents) = 'array'),
+    raft_index bigserial UNIQUE,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS txn_status_records_status_updated_idx
+    ON companion_internal.txn_status_records(status, updated_at);
 
 CREATE TABLE IF NOT EXISTS companion_internal.timescale_bridge_state (
     bridge_id bigserial PRIMARY KEY,
@@ -5469,3 +5485,181 @@ SELECT
 FROM companion_internal.worker_schema_lease
 WHERE expires_at > now()
 GROUP BY job_name;
+
+
+-- FEATURE: T5
+
+CREATE FUNCTION companion_internal.validate_txn_intents(p_intents jsonb)
+RETURNS void
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+    intent jsonb;
+BEGIN
+    IF p_intents IS NULL OR jsonb_typeof(p_intents) <> 'array' THEN
+        RAISE EXCEPTION 'intents must be a jsonb array';
+    END IF;
+    IF jsonb_array_length(p_intents) = 0 THEN
+        RAISE EXCEPTION 'intents must not be empty';
+    END IF;
+    FOR intent IN SELECT value FROM jsonb_array_elements(p_intents) LOOP
+        IF COALESCE((intent->>'shard_id')::bigint, 0) <= 0 THEN
+            RAISE EXCEPTION 'intent shard_id must be greater than zero';
+        END IF;
+        IF btrim(COALESCE(intent->>'key_range', '')) = '' THEN
+            RAISE EXCEPTION 'intent key_range must not be empty';
+        END IF;
+        IF COALESCE((intent->>'required_acks')::integer, 0) <= 0 THEN
+            RAISE EXCEPTION 'intent required_acks must be greater than zero';
+        END IF;
+        IF COALESCE((intent->>'replica_acks')::integer, 0) < 0 THEN
+            RAISE EXCEPTION 'intent replica_acks must be non-negative';
+        END IF;
+    END LOOP;
+END;
+$$;
+
+CREATE FUNCTION companion.txn_stage(
+    p_txn_id text,
+    p_coordinator text,
+    p_staging_physical_ms bigint,
+    p_intents jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    inserted companion_internal.txn_status_records%ROWTYPE;
+BEGIN
+    IF p_txn_id IS NULL OR btrim(p_txn_id) = '' THEN
+        RAISE EXCEPTION 'txn_id must not be empty';
+    END IF;
+    IF p_coordinator IS NULL OR btrim(p_coordinator) = '' THEN
+        RAISE EXCEPTION 'coordinator must not be empty';
+    END IF;
+    IF p_staging_physical_ms IS NULL OR p_staging_physical_ms <= 0 THEN
+        RAISE EXCEPTION 'staging_physical_ms must be greater than zero';
+    END IF;
+    PERFORM companion_internal.validate_txn_intents(p_intents);
+    IF EXISTS (
+        SELECT 1 FROM companion_internal.txn_status_records
+        WHERE txn_id = btrim(p_txn_id)
+    ) THEN
+        RAISE EXCEPTION 'txn_id already staged: %', p_txn_id;
+    END IF;
+
+    INSERT INTO companion_internal.txn_status_records(
+        txn_id, coordinator, status, staging_physical_ms, intents
+    )
+    VALUES (
+        btrim(p_txn_id), btrim(p_coordinator), 'staging', p_staging_physical_ms, p_intents
+    )
+    RETURNING * INTO inserted;
+
+    RETURN jsonb_build_object(
+        'txn_id', inserted.txn_id,
+        'coordinator', inserted.coordinator,
+        'status', inserted.status,
+        'raft_index', inserted.raft_index,
+        'intent_count', jsonb_array_length(inserted.intents)
+    );
+END;
+$$;
+
+CREATE FUNCTION companion.txn_finalize(
+    p_txn_id text,
+    p_observed_physical_ms bigint
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    record companion_internal.txn_status_records%ROWTYPE;
+    max_staging_ms bigint := 5000;
+    all_evidence boolean;
+    decision text;
+    next_status text;
+BEGIN
+    IF p_txn_id IS NULL OR btrim(p_txn_id) = '' THEN
+        RAISE EXCEPTION 'txn_id must not be empty';
+    END IF;
+    IF p_observed_physical_ms IS NULL OR p_observed_physical_ms <= 0 THEN
+        RAISE EXCEPTION 'observed_physical_ms must be greater than zero';
+    END IF;
+
+    SELECT * INTO record
+    FROM companion_internal.txn_status_records
+    WHERE txn_id = btrim(p_txn_id)
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'unknown txn_id: %', p_txn_id;
+    END IF;
+
+    IF record.status = 'committed' THEN
+        decision := 'already_committed';
+        next_status := 'committed';
+    ELSIF record.status = 'aborted' THEN
+        decision := 'already_aborted';
+        next_status := 'aborted';
+    ELSIF p_observed_physical_ms > record.staging_physical_ms + max_staging_ms THEN
+        decision := 'abort_stale_staging_record';
+        next_status := 'aborted';
+    ELSE
+        SELECT bool_and(
+            COALESCE((intent->>'replica_acks')::integer, 0)
+              >= COALESCE((intent->>'required_acks')::integer, 0)
+        )
+        INTO all_evidence
+        FROM jsonb_array_elements(record.intents) AS intent;
+        IF all_evidence THEN
+            decision := 'commit';
+            next_status := 'committed';
+        ELSE
+            decision := 'wait_for_replication_evidence';
+            next_status := 'staging';
+        END IF;
+    END IF;
+
+    UPDATE companion_internal.txn_status_records
+    SET status = next_status,
+        observed_physical_ms = p_observed_physical_ms,
+        updated_at = now()
+    WHERE txn_id = record.txn_id
+    RETURNING * INTO record;
+
+    RETURN jsonb_build_object(
+        'txn_id', record.txn_id,
+        'decision', decision,
+        'status', record.status,
+        'raft_index', record.raft_index,
+        'observed_physical_ms', record.observed_physical_ms
+    );
+END;
+$$;
+
+CREATE FUNCTION companion_txn_stage(
+    p_txn_id text,
+    p_coordinator text,
+    p_staging_physical_ms bigint,
+    p_intents jsonb
+)
+RETURNS jsonb
+LANGUAGE sql
+VOLATILE
+AS $$
+    SELECT companion.txn_stage($1, $2, $3, $4)
+$$;
+
+CREATE FUNCTION companion_txn_finalize(
+    p_txn_id text,
+    p_observed_physical_ms bigint
+)
+RETURNS jsonb
+LANGUAGE sql
+VOLATILE
+AS $$
+    SELECT companion.txn_finalize($1, $2)
+$$;

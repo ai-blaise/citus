@@ -230,6 +230,9 @@ test-sidecar-hlc:
 run-hlc-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_hlc -- run-canonical
 
+run-hlc-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical
+
 build-sidecar-raft:
 	cargo check -p ai_blaise_citus_sidecar_raft --all-targets
 
@@ -238,6 +241,15 @@ test-sidecar-raft:
 
 run-raft-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_raft -- run-canonical
+
+run-raft-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_raft -- run-runtime-canonical
+
+run-raft-durable-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_raft -- run-durable-canonical
+
+sidecar-raft-smoke:
+	@bash ci/ai-blaise/sidecar-raft-smoke.sh
 
 build-sidecar-repack:
 	cargo check -p ai_blaise_citus_sidecar_repack --all-targets
@@ -265,6 +277,15 @@ test-sidecar-txn-status:
 
 run-txn-status-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_txn_status -- run-canonical
+
+run-txn-status-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_txn_status -- run-runtime-canonical
+
+run-txn-status-parallel-commit-microbench:
+	cargo run -q -p ai_blaise_citus_sidecar_txn_status -- run-parallel-commit-microbench 5
+
+parallel-commits-smoke:
+	@bash ci/ai-blaise/parallel-commits-smoke.sh
 
 build-e2e-model:
 	cargo check -p ai_blaise_citus_e2e

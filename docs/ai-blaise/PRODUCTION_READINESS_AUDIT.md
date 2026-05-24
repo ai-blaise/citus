@@ -405,6 +405,17 @@ more production-ready than the artifacts justified.
   evidence for JSON-RPC language-server protocol integration, editor
   transport, workspace indexing, automatic file rewrites, or full PostgreSQL
   grammar coverage.
+- The Raft/HLC/transaction-status triad now has executable sidecar runtime
+  evidence: `sidecar-raft-smoke.sh` proves deterministic election,
+  AppendEntries replication, quorum commit, durable log replay, and snapshot
+  watermarking; HLC runtime canonical output proves peer clock exchange and
+  closed-timestamp derivation; `parallel-commits-smoke.sh` proves staging,
+  finalize, and modeled fast-path step count; and `sql-extension-smoke.sh`
+  installs `companion.txn_stage`/`companion.txn_finalize` into real PostgreSQL.
+  S5, S9, MR6, and T5 remain alpha for the broader distributed-database
+  behavior until networked multi-process Raft, MVCC follower-read execution,
+  PostgreSQL-core patch integration, Citus executor integration, and Kubernetes
+  operator reconciliation are live-gated.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

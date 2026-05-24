@@ -24,6 +24,7 @@ pub mod search_bridge;
 pub mod tenants;
 pub mod toolkit_distributed;
 pub mod trace_context;
+pub mod txn_coord;
 pub mod vector;
 pub mod webhooks;
 
@@ -120,6 +121,10 @@ pub use toolkit_distributed::{
 };
 pub use trace_context::{
     render_projection_sql, CompanionTraceContextError, CompanionTraceContextPlan,
+};
+pub use txn_coord::{
+    canonical_txn_coord_request, canonical_txn_coord_routing_plan, TxnCoordDecision, TxnCoordError,
+    TxnCoordRoutingPlan, TxnCoordSqlPlan, TxnFinalizeRequest, TxnStageIntent, TxnStageRequest,
 };
 pub use vector::{
     ChunkingPlan, EmbeddingPlan, VectorDestinationPlan, VectorProvider, VectorizerDefinition,
