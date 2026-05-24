@@ -53,6 +53,7 @@ K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
 DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
 K8S_GUARDRAIL_CHECK = ROOT / "ci/ai-blaise/k8s-guardrails-check.sh"
 KIND_PRODUCTION_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
+K8S_PRODUCTION_VALUES_LIVE_SMOKE = ROOT / "ci/ai-blaise/k8s-production-values-live-smoke.sh"
 LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
 DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
@@ -591,6 +592,31 @@ for phrase in ("REQUIRE_CHART", "REQUIRE_HELM", "dry-run"):
 for phrase in ("REAL_K8S", "LIVE_K8S_MODE=kind", "REQUIRE_HTTP", "REQUIRE_SQL"):
     if phrase not in kind_smoke:
         fail(f"kind production smoke wrapper missing required contract phrase: {phrase}")
+
+if not (K8S_PRODUCTION_VALUES_LIVE_SMOKE.stat().st_mode & 0o111):
+    fail("ci/ai-blaise/k8s-production-values-live-smoke.sh must be executable")
+
+k8s_prod_values_live = read(K8S_PRODUCTION_VALUES_LIVE_SMOKE)
+for phrase in (
+    "@sha256:",
+    "alphaSidecarsEnabled: false",
+    "mutableImagesAllowed: false",
+    "helm template",
+    "kubectl apply --dry-run=client",
+    "kind create cluster",
+    'kubectl -n "${namespace}" rollout status',
+    "traffic=sql-service status=ok",
+    "claim_boundary=postgres_substrate_only",
+    "no_operator_pool_or_citus_data_plane_claim=true",
+):
+    if phrase not in k8s_prod_values_live:
+        fail(f"k8s production-values live smoke lost contract phrase: {phrase}")
+
+if "k8s-production-values-live-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose k8s-production-values-live-smoke")
+
+if "PRODUCTION_VALUES_STRICT" not in live_k8s:
+    fail("live Kubernetes e2e harness must expose PRODUCTION_VALUES_STRICT")
 
 for phrase in (
     "ci/ai-blaise/live-k8s-e2e.sh",

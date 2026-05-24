@@ -5507,7 +5507,8 @@ queries.
 install surface while the actual chart lives in `ai-blaise/command-center`.
 This repository no longer owns `deploy/k8s/`; it owns the render and traffic
 harness that points at the external chart and fails real mode when image refs,
-HTTP probes, or SQL service traffic are missing.
+strict production-values guardrails, or required SQL service traffic are missing.
+HTTP probes are exercised only when the rendered chart exposes an HTTP surface.
 
 **Motivation**: A direct `helm upgrade --install` command should be validated
 against the real chart and real images, not against in-repo stubs or synthetic
@@ -5530,11 +5531,28 @@ Production evidence: `ci/ai-blaise/deploy-check.sh` runs the CI-safe dry-run
 entrypoint for the external command-center chart. When `CHART_DIR` or
 `COMMAND_CENTER_DIR` is supplied, it runs Helm lint/template, records the
 rendered image set, and can run client-side Kubernetes validation when
-`KUBECTL_CLIENT_DRY_RUN=1` is set. Dry-run mode is not runtime evidence. `ci/ai-blaise/kind-production-smoke.sh` switches to real
-traffic only with `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real`; in those modes
-it requires a chart, explicit image availability, Kubernetes readiness, live
-HTTP probes, live `psql` traffic through port-forwarded services, failure
-log/event collection, and safe teardown.
+`KUBECTL_CLIENT_DRY_RUN=1` is set. Dry-run mode is not runtime evidence.
+`ci/ai-blaise/kind-production-smoke.sh` switches to real traffic only with
+`LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real`; in those modes it now enables
+`PRODUCTION_VALUES_STRICT=1`, rejects mutable/latest image refs and alpha
+sidecar render leaks, waits for Kubernetes readiness, and requires live SQL
+traffic through a Kubernetes service by default. HTTP probes are opt-in because
+the current command-center chart can expose a PostgreSQL service on port 5432
+without an HTTP surface.
+
+Fallback substrate evidence: `ci/ai-blaise/k8s-production-values-live-smoke.sh`
+is the VM-runnable live production-values substrate smoke for this repository.
+It creates an ephemeral Helm chart and `values-production.yaml`, pins the
+PostgreSQL operand by immutable `@sha256` digest, keeps alpha sidecars disabled,
+renders and client-validates the manifests, installs into a real kind cluster,
+waits for the StatefulSet and Ready pod condition, runs a separate in-cluster
+SQL client Job through the Kubernetes Service DNS path, records
+Helm/kubectl/log/image evidence under `artifacts/k8s-production-values-live/`,
+and writes `claim_boundary=postgres_substrate_only`. This proves the live
+Kubernetes harness and production-values guardrails only; it is not proof of
+unpublished Citus application container behavior, operator reconciliation, pool
+routing, or the command-center production chart unless the caller supplies the
+exact digest-pinned Citus chart values and images to `live-k8s-e2e.sh`.
 
 **References**:
 
@@ -5542,6 +5560,7 @@ log/event collection, and safe teardown.
 - Helm chart: `ai-blaise/command-center: helm/charts/citus-cluster`
 - CI: `ci/ai-blaise/deploy-check.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Production-values live smoke: `ci/ai-blaise/k8s-production-values-live-smoke.sh`
 - Gate: `make -f Makefile.ai-blaise gate-close`
 
 ### D8: Infrastructure Deploy Wrapper
@@ -5567,18 +5586,24 @@ boundary or external-chart traffic harness.
 
 Production evidence: `scripts/citus-scale/deploy.sh` exits nonzero with a
 clear command-center handoff instead of rendering removed manifests.
-`ci/ai-blaise/deploy-check.sh` and `ci/ai-blaise/kind-production-smoke.sh` are
-the supported validation entrypoints in this repo. Real mode requires external
-chart input and image refs that are published or locally loaded; if branch
-images are unpublished, the harness reports that explicitly and tells the
-operator to pass `AI_BLAISE_STACK_IMAGE_REF`, `HELM_SET_ARGS`, and
-`LOCAL_IMAGE_REFS` rather than faking traffic.
+`ci/ai-blaise/deploy-check.sh`, `ci/ai-blaise/kind-production-smoke.sh`, and
+`ci/ai-blaise/k8s-production-values-live-smoke.sh` are the supported validation
+entrypoints in this repo. Real chart mode requires external chart input,
+strict production render validation, and image refs that are published or
+locally loaded; if branch images are unpublished, the harness reports that
+explicitly and tells the operator to pass `AI_BLAISE_STACK_IMAGE_REF`,
+`HELM_SET_ARGS`, and `LOCAL_IMAGE_REFS` rather than faking traffic. The
+self-contained live smoke covers only the VM/kind production-values substrate
+path with a pinned PostgreSQL image and SQL service traffic. Full
+Citus app-container production evidence still requires the exact command-center
+release chart and immutable Citus image digests.
 
 **References**:
 
 - In-source: `FEATURE: D8` in `scripts/citus-scale/deploy.sh`
 - CI: `ci/ai-blaise/deploy-check.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Production-values live smoke: `ci/ai-blaise/k8s-production-values-live-smoke.sh`
 - Gate: `make -f Makefile.ai-blaise gate-close`
 
 ### D13: Production Runtime Image Matrix
@@ -5593,58 +5618,46 @@ operator to pass `AI_BLAISE_STACK_IMAGE_REF`, `HELM_SET_ARGS`, and
 sidecars, and `citusctl`, with service images defaulting to long-running
 `serve` commands and the `citusctl` tool image defaulting to `plan inspect
 cluster`. The live Kubernetes harness validates whatever command-center chart
-is supplied, waits for the rendered workloads, probes HTTP services through
-port-forwarding, sends SQL through a port-forwarded PostgreSQL service, and
-collects diagnostics on failure. The harness does not create stand-in traffic
-or pretend a dry-run is runtime evidence.
+is supplied, waits for the rendered workloads, probes HTTP services when the
+chart exposes an HTTP surface, sends SQL through a PostgreSQL service, and
+collects diagnostics on failure. The harness does not pretend a dry-run is
+runtime evidence, and the self-contained VM smoke marks its PostgreSQL-only
+substrate boundary explicitly.
 
-**Motivation**: Production Kubernetes verification must exercise actual app
-containers and PostgreSQL traffic paths rather than synthetic responder images
-or chart-only tests.
+**Motivation**: Production Kubernetes verification must exercise the exact app
+containers and PostgreSQL traffic paths under review rather than chart-only
+tests. When those app images are unavailable, the VM smoke proves only the live
+Kubernetes harness and SQL service path, with that boundary called out.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
-
-Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
-passed local and VM verification of the kind production smoke using the real
-Rust image matrix, live operator and sidecar `/healthz`, `/readyz`, and
-`/metrics` probes, real PostgreSQL traffic through the pool service, per-pod
-pool request metric aggregation, and a separate `values-prod.yaml` profile
-with alpha workloads disabled. Production values now require immutable
-operator and pool image digests for release rendering; kind disables that
-requirement only for locally loaded smoke images, so the smoke proves runtime
-behavior but not release image-pinning evidence. Release image builds write
-`artifacts/ai-blaise-image-digests.tsv` and fail if pushed images do not report
-immutable repo digests. The deploy workflow and `gate-close` run
-`ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
-the Makefile smoke targets set `REQUIRE_DOCKER=1` so missing Docker fails the
-release gate instead of silently skipping live evidence. `gate-close` also runs
-the image/deploy contract checks directly; after the chart fold, this repo's
-`deploy-check` validates the Citus-side HPA, PodDisruptionBudget, and
-NetworkPolicy contract while command-center owns full Helm render evidence. The
-deploy wrapper install path is now live-gated by the
-`values-prod.yaml` phase of the kind smoke through `MODE=install`, while the
-optional tools Deployment remains dev-only and is not production evidence. The
-kind smoke also runs the built `citusctl` image and
-requires the `plan inspect cluster` output so tool images are executed, not
-merely built or loaded. The
-`ai-blaise/command-center: gitops/apps/13-citus-cluster.yaml` targets the `main` release branch and
-`values-prod.yaml` for GitOps deployment with namespace creation and pruning
-enabled; the Argo application is a GitOps render contract, not live controller
-evidence.
 
 Production evidence: `scripts/citus-scale/build-app-images.sh` builds and, for
 release runs, pushes the Rust image matrix while writing
 `artifacts/ai-blaise-image-digests.tsv` and failing if pushed images do not
 report immutable digests. `ci/ai-blaise/kind-production-smoke.sh` defaults to a
 CI-safe dry-run, but `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real` turns it into
-a fail-closed live test: render the external chart, verify image availability
-or load `LOCAL_IMAGE_REFS` into kind, install into a namespace, wait for
-rollouts and ready pods, probe `/healthz`, `/readyz`, and `/metrics`, run a
-write/read `psql` script through an exposed PostgreSQL service, collect
-logs/events/Helm state on failure, and tear down unless debugging opts out.
-This is runtime evidence only when the real mode completes against the exact
-chart and image refs under review.
+a fail-closed chart test: render the external chart, run strict production
+values validation, reject mutable/latest image refs and alpha sidecar leaks,
+verify image availability or load `LOCAL_IMAGE_REFS` into kind, install into a
+namespace, wait for rollouts and ready pods, run SQL traffic through an exposed
+PostgreSQL service, collect logs/events/Helm state on failure, and tear down
+unless debugging opts out. This is runtime evidence only when real mode
+completes against the exact chart and image refs under review.
+
+Fallback substrate evidence: `ci/ai-blaise/k8s-production-values-live-smoke.sh`
+closes the repo-local VM evidence gap without inventing a fake Citus data-plane
+claim. It runs a real kind deployment from a generated Helm chart and
+`values-production.yaml`, pins the operand image as
+`docker.io/library/postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229`,
+keeps alpha sidecars disabled, waits for Kubernetes readiness, executes an
+in-cluster SQL client Job through the Service DNS path, writes evidence
+artifacts, and records `claim_boundary=postgres_substrate_only`. That proves the
+Kubernetes production-values substrate, immutable-image guardrail, and live SQL
+network path only. It does not prove unpublished Citus app container behavior,
+operator reconciliation, pool routing, Citus data-plane semantics, or
+command-center release chart production readiness unless the caller supplies
+those digest-pinned images and values to the strict real chart harness.
 
 **References**:
 
@@ -5654,6 +5667,7 @@ chart and image refs under review.
   `images/rust-runtime/Dockerfile`
 - Live SQL smoke: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Kubernetes smoke: `ci/ai-blaise/kind-production-smoke.sh`
+- Production-values live smoke: `ci/ai-blaise/k8s-production-values-live-smoke.sh`
 - CI: `.github/workflows/ci-deploy.yml`
 - Gate: `make -f Makefile.ai-blaise gate-close`
 - CI: `ci/ai-blaise/image-check.sh`

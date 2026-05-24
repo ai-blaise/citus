@@ -20,6 +20,7 @@ require_http="${REQUIRE_HTTP:-0}"
 require_sql="${REQUIRE_SQL:-0}"
 check_image_published="${CHECK_IMAGE_PUBLISHED:-1}"
 allow_unpublished_images="${ALLOW_UNPUBLISHED_IMAGES:-0}"
+production_values_strict="${PRODUCTION_VALUES_STRICT:-0}"
 artifact_dir="${ARTIFACT_DIR:-artifacts/live-k8s-e2e/$(date -u +%Y%m%dT%H%M%SZ)}"
 
 rendered_manifest="${artifact_dir}/rendered.yaml"
@@ -55,6 +56,7 @@ Image handling:
   HELM_SET_ARGS='--set-string key=value ...'    Chart-specific image/value overrides.
   LOCAL_IMAGE_REFS='repo/name:tag ...'          Images to load into kind before install.
   ALLOW_UNPUBLISHED_IMAGES=1                    Skip docker manifest/local image preflight.
+  PRODUCTION_VALUES_STRICT=1                    Reject mutable/latest image refs, placeholder/local production images, alpha sidecar leaks, and imagePullPolicy Always before install.
 
 Traffic handling:
   REQUIRE_HTTP=1 requires at least one HTTP probe target.
@@ -234,6 +236,46 @@ render_chart() {
     need_cmd kubectl
     kubectl apply --dry-run=client --validate=false -f "${rendered_manifest}" >/dev/null
   fi
+}
+
+
+validate_production_values_render() {
+  [[ "${production_values_strict}" == "1" ]] || return 0
+  [[ -n "${chart_dir}" ]] || return 0
+  need_cmd python3
+  python3 - "${rendered_manifest}" "${artifact_dir}/production-values-guardrails.txt" <<'PYSCRIPT'
+import re
+import sys
+from pathlib import Path
+manifest = Path(sys.argv[1])
+report = Path(sys.argv[2])
+text = manifest.read_text()
+errors = []
+images = re.findall(r'^\s*image:\s*["\']?([^"\'\s]+)', text, flags=re.MULTILINE)
+if not images:
+    errors.append('rendered chart contains no images')
+for image in images:
+    if ':latest' in image or image.endswith(':latest'):
+        errors.append(f'latest image ref is not allowed in production values: {image}')
+    if not re.search(r'@sha256:[a-f0-9]{64}$', image):
+        errors.append(f'image must be pinned by immutable sha256 digest in production values: {image}')
+    if image.startswith('example.invalid/') or image.startswith('localhost/'):
+        errors.append(f'placeholder/local image is not production-values evidence: {image}')
+alpha_true = re.findall(r'(?im)^\s*[^#\n]*(?:alpha|experimental|preview)[^:\n]*:\s*["\']?(?:true|enabled)["\']?\s*$', text)
+for line in alpha_true:
+    errors.append(f'alpha/experimental toggle enabled in production values: {line.strip()}')
+if re.search(r'(?im)^\s*imagePullPolicy:\s*Always\s*$', text):
+    errors.append('imagePullPolicy Always is rejected for strict production-values evidence')
+if re.search(r'(?i)(sidecar-(analytical|auth|backup|cdc|coldtier|edge-functions|graphql|hlc|mcp|postgrest|raft|realtime|repack|schema-job|storage|txn-status|vectorizer))', text):
+    errors.append('alpha sidecar workload rendered in production values')
+report.parent.mkdir(parents=True, exist_ok=True)
+if errors:
+    report.write_text('status=failed\n' + '\n'.join(errors) + '\n')
+    for error in errors:
+        print(error, file=sys.stderr)
+    sys.exit(1)
+report.write_text('status=ok\nimages=' + ','.join(sorted(set(images))) + '\nmutable_images=false\nalpha_sidecars=false\n')
+PYSCRIPT
 }
 
 check_rendered_images() {
@@ -587,6 +629,7 @@ if [[ -z "${chart_dir}" ]]; then
 fi
 
 render_chart
+validate_production_values_render
 check_rendered_images
 
 if [[ "${mode}" == "dry-run" ]]; then
