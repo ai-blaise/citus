@@ -29,6 +29,9 @@ cohabit-detection-smoke:
 run-companion-operations-canonical:
 	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
 
+companion-runtime-depth-a-smoke:
+	@bash ci/ai-blaise/companion-runtime-depth-a-smoke.sh
+
 build-operator:
 	cargo check -p ai_blaise_citus_operator --all-targets
 

@@ -31,3 +31,5 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical
       - name: Run canonical operations readiness report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
+      - name: Run companion runtime depth A smoke
+        run: bash ci/ai-blaise/companion-runtime-depth-a-smoke.sh

@@ -1,5 +1,28 @@
 # companion Modifications
 
+## 2026-05-23 -- companion runtime depth A
+
+`src/migration.rs` now includes a guarded `MigrationRuntime` state machine in
+addition to SQL rendering. It walks migrations through expand, backfill,
+zero-diff validation, explicit cutover approval, publish, completion, failure,
+and rollback decisions instead of presenting the gh-ost command list as one
+undifferentiated script.
+
+`src/queue.rs` adds a companion-owned durable queue runtime for the queue
+substrate: idempotent enqueue, `FOR UPDATE SKIP LOCKED` lease SQL, visibility
+expiry, retry backoff, ack token validation, and dead-letter handling. This is
+runtime evidence for the queue contract, not a claim that packaged pgmq/pgque
+binaries are fully installed by the operand image.
+
+`src/replication_conflict.rs` adds a fail-closed seven-class replication
+conflict resolver with monotonic-clock validation, home-region/origin-priority
+policies, deterministic last-writer behavior, rejection for apply errors and
+unsafe unique conflicts, and durable audit SQL emission.
+
+`src/runtime_depth_a.rs`, `src/bin/companion_runtime_depth_a.rs`, and
+`ci/ai-blaise/companion-runtime-depth-a-smoke.sh` provide the canonical TSV
+report and focused VM smoke for this companion runtime batch.
+
 ## 2026-05-22 — gh-ost executor SQL surface
 
 `src/migration.rs` — `MigrationPlan::to_sql_plan` no longer emits the

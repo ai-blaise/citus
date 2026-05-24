@@ -18,7 +18,10 @@ pub mod migration;
 pub mod observability;
 pub mod ops_contracts;
 pub mod plan_freeze;
+pub mod queue;
+pub mod replication_conflict;
 pub mod router_assist;
+pub mod runtime_depth_a;
 pub mod schema_jobs;
 pub mod search_bridge;
 pub mod tenants;
@@ -79,7 +82,11 @@ pub use log_view::{
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
-pub use migration::{MigrationError, MigrationOperation, MigrationPlan, MigrationSqlPlan};
+pub use migration::{
+    canonical_migration_runtime_report, MigrationError, MigrationOperation, MigrationPlan,
+    MigrationRuntime, MigrationRuntimeAction, MigrationRuntimeDecision,
+    MigrationRuntimeObservation, MigrationRuntimePhase, MigrationRuntimeReport, MigrationSqlPlan,
+};
 pub use observability::{
     IdleTransactionDetectorPlan, LatencyPercentile, LocalActivityStatPlan, ObservabilityError,
     OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,
@@ -93,10 +100,25 @@ pub use plan_freeze::{
     PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,
     PlanRegressionSample,
 };
+pub use queue::{
+    canonical_queue_runtime_report, DurableQueueRuntime, QueueAckOutcome, QueueEnqueueOutcome,
+    QueueLeaseBatch, QueueMessage, QueueMessageState, QueueRetryOutcome, QueueRuntimeConfig,
+    QueueRuntimeError, QueueRuntimeReport, QueueRuntimeSnapshot, QueueSqlPlan,
+};
+pub use replication_conflict::{
+    canonical_conflict_cases, canonical_conflict_policy, canonical_replication_conflict_report,
+    ConflictPolicy, ConflictResolution, ConflictResolutionStrategy, ConflictWinner,
+    ReplicationConflict, ReplicationConflictClass, ReplicationConflictError,
+    ReplicationConflictReport, ReplicationConflictResolver, RowVersion,
+};
 pub use router_assist::{
     InvalidationHint, LocalPlacementCheck, PlacementGenerationQuery, PlacementGenerationSample,
     PlacementGenerationSubscriber, RouterAssistError, RouterAssistSqlPlan, ShardForValuePlan,
     ShardRoutingStrategy,
+};
+pub use runtime_depth_a::{
+    canonical_companion_runtime_depth_a_report, CompanionRuntimeDepthAError,
+    CompanionRuntimeDepthAReport,
 };
 pub use schema_jobs::{
     controller::{
