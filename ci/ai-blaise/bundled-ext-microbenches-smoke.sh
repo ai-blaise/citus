@@ -77,4 +77,9 @@ if [[ "${failures}" -ne 0 ]]; then
   exit 1
 fi
 
+PERF_EVIDENCE_MODE=exploratory \
+  PERF_EVIDENCE_SCOPE=microbench \
+  BENCH_RESULT_TAG="${BENCH_RESULT_TAG}" \
+  bash ci/ai-blaise/performance-evidence-check.sh exploratory
+
 echo "[microbench-smoke] ok (26 microbenches, ${count} result files)"

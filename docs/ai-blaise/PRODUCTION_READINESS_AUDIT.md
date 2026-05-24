@@ -163,6 +163,10 @@ more production-ready than the artifacts justified.
     backed by the maintained PostgreSQL driver, native TLS support, read-only
     transactions, bounded result materialization, row/timeout ceilings,
     `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
+40. Benchmark smokes emitted JSON artifacts and docs listed SLO targets, but
+    the production path lacked one thresholded, fail-closed evidence checker.
+    Scaffold results, missing baselines, or missing driver data could therefore
+    look like benchmark coverage unless a human inspected the artifacts.
 
 ## Corrections
 
@@ -447,6 +451,15 @@ more production-ready than the artifacts justified.
 
 ## Verification Standard
 
+- Benchmark evidence now has a checked-in threshold manifest and a reusable
+  checker. Quick smoke runs call `ci/ai-blaise/performance-evidence-check.sh`
+  in exploratory mode, while release promotion must run
+  `make -f Makefile.ai-blaise performance-evidence-release-check` with
+  `PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release`. Release mode fails
+  closed on missing artifacts, scaffold notes, missing baselines, malformed
+  JSON, and SLO/capacity threshold misses without rerunning the expensive
+  benchmark jobs.
+
 Rule 10 completion for this branch requires local and VM verification of:
 
 - Rust formatting and compile/test gates for all changed packages.
@@ -524,10 +537,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,7 +600,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

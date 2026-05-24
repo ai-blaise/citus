@@ -12,6 +12,7 @@ cd "${repo_root}"
 # moved with the chart to ai-blaise/command-center.
 
 python3 <<'PY'
+import json
 import pathlib
 import re
 import sys
@@ -26,8 +27,12 @@ DR_RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/disaster-recovery.md"
 E2E_DOC = ROOT / "docs/ai-blaise/E2E.md"
 ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
+BENCHMARKS_DOC = ROOT / "docs/ai-blaise/BENCHMARKS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+PERF_THRESHOLDS = ROOT / "benchmarks/performance-evidence-thresholds.json"
+PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
+MAKEFILE_AI_BLAISE = ROOT / "Makefile.ai-blaise"
 
 SOURCE_ROOTS = [
     "companion",
@@ -166,6 +171,7 @@ for path in (
     E2E_DOC,
     ARCHITECTURE_DOC,
     BUNDLED_EXTENSIONS_DOC,
+    BENCHMARKS_DOC,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
 ):
@@ -179,6 +185,40 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+thresholds = json.loads(read(PERF_THRESHOLDS))
+for key in ("tpcc", "sysbench", "timescale_ingest", "chaos"):
+    if key not in thresholds.get("core_harnesses", {}):
+        fail(f"performance threshold manifest missing core harness: {key}")
+if thresholds.get("microbenches", {}).get("minimum_count") != 26:
+    fail("performance threshold manifest must require all 26 microbenches")
+
+perf_check = read(PERF_CHECK)
+for phrase in (
+    "scaffold evidence is not production evidence",
+    "release evidence requires",
+    "PERF_EVIDENCE_SCOPE",
+):
+    if phrase not in perf_check:
+        fail(f"performance evidence checker lost fail-closed phrase: {phrase}")
+
+makefile = read(MAKEFILE_AI_BLAISE)
+for target in (
+    "performance-evidence-check:",
+    "performance-evidence-release-check:",
+    "performance-evidence-smoke:",
+):
+    if target not in makefile:
+        fail(f"Makefile.ai-blaise missing performance evidence target: {target}")
+
+benchmarks_doc = read(BENCHMARKS_DOC)
+for phrase in (
+    "benchmarks/performance-evidence-thresholds.json",
+    "PERF_EVIDENCE_MODE=release",
+    "fails closed on missing artifacts",
+):
+    if compact(phrase) not in compact(benchmarks_doc):
+        fail(f"BENCHMARKS.md missing performance evidence release wording: {phrase}")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:
