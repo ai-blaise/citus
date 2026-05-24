@@ -25,3 +25,7 @@ DROP FUNCTION IF EXISTS pg_catalog.worker_apply_sequence_command(text, regtype);
 
 -- cohabit clock-reservation UDF for pg_cron startup proof (FEATURE: TS19)
 #include "udfs/citus_cohabit_clock_tick_reserved/15.0-1.sql"
+
+-- cohabit extension classifier/configuration UDFs (FEATURE: TS20)
+#include "udfs/citus_cohabit_extension_role/15.0-1.sql"
+#include "udfs/citus_cohabit_extension_configured/15.0-1.sql"

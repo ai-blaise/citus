@@ -69,13 +69,16 @@ so this evidence remains a subset proof rather than a complete initdb path promo
 boots PostgreSQL with `shared_preload_libraries=pg_cron,citus` and
 `citus.cohabit_extensions=pg_cron`. It creates real `citus`, `pg_cron`, and
 `ai_blaise_citus` extensions, verifies `citus_cohabit_clock_tick_reserved()`,
-waits for a scheduled pg_cron worker to write clock-reserved evidence rows,
-records `artifacts/pg-cron-cohabitation-evidence.tsv`, and proves the SQL-visible
-cohabit detector fails closed when the `pg_cron` allowlist entry is omitted.
+verifies SQL-visible Citus classifier/configuration UDFs for `pg_cron`,
+`timescaledb`, `pg_partman`, and unknown names, waits for a scheduled pg_cron
+worker to write clock-reserved evidence rows, records
+`artifacts/pg-cron-cohabitation-evidence.tsv`, and proves both the Citus UDF and
+SQL cohabit detectors fail closed when the `pg_cron` allowlist entry is omitted.
 
 This smoke does not promote Bundle1 as a whole: it does not run the complete
 `00-ai-blaise-extensions.sql` initdb path, does not cover plrust, and does not
-make `pg_cron` a trusted hook-chain coextension.
+make `pg_cron` a trusted hook-chain coextension, and does not prove live
+TimescaleDB or pg_partman extension execution.
 
 ## Required Bundle
 

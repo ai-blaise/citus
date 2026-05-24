@@ -61,6 +61,8 @@ ORDER BY 1;
  function citus_cluster_changes_block_status()
  function citus_cluster_changes_unblock()
  function citus_cohabit_clock_tick_reserved()
+ function citus_cohabit_extension_configured(text)
+ function citus_cohabit_extension_role(text)
  function citus_conninfo_cache_invalidate()
  function citus_coordinator_nodeid()
  function citus_copy_shard_placement(bigint,integer,integer,citus.shard_transfer_mode)

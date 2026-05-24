@@ -559,6 +559,22 @@ COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
     IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
 GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
 
+CREATE FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
+    RETURNS text
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_role$$;
+COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
+    IS 'classifies a supported Citus cohabiting extension as trusted-hook, clock-worker, partition-manager, or unsupported';
+GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text) TO PUBLIC;
+
+CREATE FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
+    RETURNS boolean
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_configured$$;
+COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
+    IS 'returns true when citus.cohabit_extensions contains a supported cohabiting extension name';
+GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text) TO PUBLIC;
+
 CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
 	RETURNS void
 	LANGUAGE C STRICT

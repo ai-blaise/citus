@@ -39,6 +39,7 @@
 #include "replication/walsender.h"
 #include "storage/ipc.h"
 #include "tcop/tcopprot.h"
+#include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/guc_tables.h"
 #include "utils/inval.h"
@@ -129,6 +130,9 @@ ColumnarSupportsIndexAM_type extern_ColumnarSupportsIndexAM = NULL;
 CompressionTypeStr_type extern_CompressionTypeStr = NULL;
 IsColumnarTableAmTable_type extern_IsColumnarTableAmTable = NULL;
 ReadColumnarOptions_type extern_ReadColumnarOptions = NULL;
+
+PG_FUNCTION_INFO_V1(citus_cohabit_extension_role);
+PG_FUNCTION_INFO_V1(citus_cohabit_extension_configured);
 
 /*
  * Define "pass-through" functions so that a SQL function defined as one of
@@ -1154,6 +1158,84 @@ CitusCohabitExtensionConfigured(const char *extensionName)
 	pfree(cohabitExtensions);
 
 	return configured;
+}
+
+
+static const char *
+CitusCohabitExtensionKindName(CitusCohabitExtensionKind kind)
+{
+	switch (kind)
+	{
+		case CITUS_COHABIT_EXTENSION_TRUSTED_HOOK:
+		{
+			return "trusted-hook";
+		}
+
+		case CITUS_COHABIT_EXTENSION_CLOCK:
+		{
+			return "clock-worker";
+		}
+
+		case CITUS_COHABIT_EXTENSION_PARTITION_MANAGER:
+		{
+			return "partition-manager";
+		}
+
+		case CITUS_COHABIT_EXTENSION_UNSUPPORTED:
+		default:
+		{
+			return "unsupported";
+		}
+	}
+}
+
+
+/*
+ * FEATURE: TS20
+ *
+ * SQL-visible cohabit classifier. This lets production smoke tests and
+ * operators verify that the Citus extension is calling the same C API exposed
+ * to in-process cohabitants, rather than relying only on companion-side mirror
+ * logic or documentation.
+ */
+Datum
+citus_cohabit_extension_role(PG_FUNCTION_ARGS)
+{
+	char *extensionName = NULL;
+	CitusCohabitExtensionKind kind = CITUS_COHABIT_EXTENSION_UNSUPPORTED;
+	const char *roleName = NULL;
+
+	CheckCitusVersion(ERROR);
+
+	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	kind = ClassifyCitusCohabitExtension(extensionName);
+	roleName = CitusCohabitExtensionKindName(kind);
+	pfree(extensionName);
+
+	PG_RETURN_TEXT_P(cstring_to_text(roleName));
+}
+
+
+/*
+ * FEATURE: TS20
+ *
+ * SQL-visible allowlist check for supported cohabitants. Unsupported extension
+ * names remain false even if an operator accidentally lists them in
+ * citus.cohabit_extensions.
+ */
+Datum
+citus_cohabit_extension_configured(PG_FUNCTION_ARGS)
+{
+	char *extensionName = NULL;
+	bool configured = false;
+
+	CheckCitusVersion(ERROR);
+
+	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	configured = CitusCohabitExtensionConfigured(extensionName);
+	pfree(extensionName);
+
+	PG_RETURN_BOOL(configured);
 }
 
 

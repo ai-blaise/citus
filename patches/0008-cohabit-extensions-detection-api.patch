@@ -8,7 +8,9 @@ FEATURE: TS20
 Expose a small Citus-side classifier for supported cohabiting extensions. The
 classifier distinguishes TimescaleDB trusted hook cohabitation from pg_cron
 clock-worker cohabitation and pg_partman partition-management cohabitation, so
-callers can detect supported neighbors without granting blanket hook trust.
+callers can detect supported neighbors without granting blanket hook trust. The
+patch also exposes SQL-visible role/configuration UDFs so live deployments can
+verify the same C API from the Citus extension process.
 ---
 diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
 index 1571d986c..6601d4071 100644
@@ -110,3 +112,189 @@ index 3764b52fd..267716004 100644
 +extern CitusCohabitExtensionKind ClassifyCitusCohabitExtension(const char *extensionName);
 +extern bool CitusCohabitExtensionConfigured(const char *extensionName);
  
+diff --git a/src/backend/distributed/shared_library_init.c b/src/backend/distributed/shared_library_init.c
+index 6601d4071..31687922d 100644
+--- a/src/backend/distributed/shared_library_init.c
++++ b/src/backend/distributed/shared_library_init.c
+@@ -39,6 +39,7 @@
+ #include "replication/walsender.h"
+ #include "storage/ipc.h"
+ #include "tcop/tcopprot.h"
++#include "utils/builtins.h"
+ #include "utils/guc.h"
+ #include "utils/guc_tables.h"
+ #include "utils/inval.h"
+@@ -130,6 +131,9 @@ CompressionTypeStr_type extern_CompressionTypeStr = NULL;
+ IsColumnarTableAmTable_type extern_IsColumnarTableAmTable = NULL;
+ ReadColumnarOptions_type extern_ReadColumnarOptions = NULL;
+ 
++PG_FUNCTION_INFO_V1(citus_cohabit_extension_role);
++PG_FUNCTION_INFO_V1(citus_cohabit_extension_configured);
++
+ /*
+  * Define "pass-through" functions so that a SQL function defined as one of
+  * these symbols in the citus module can use the definition in the columnar
+@@ -1157,6 +1161,84 @@ CitusCohabitExtensionConfigured(const char *extensionName)
+ }
+ 
+ 
++static const char *
++CitusCohabitExtensionKindName(CitusCohabitExtensionKind kind)
++{
++	switch (kind)
++	{
++		case CITUS_COHABIT_EXTENSION_TRUSTED_HOOK:
++		{
++			return "trusted-hook";
++		}
++
++		case CITUS_COHABIT_EXTENSION_CLOCK:
++		{
++			return "clock-worker";
++		}
++
++		case CITUS_COHABIT_EXTENSION_PARTITION_MANAGER:
++		{
++			return "partition-manager";
++		}
++
++		case CITUS_COHABIT_EXTENSION_UNSUPPORTED:
++		default:
++		{
++			return "unsupported";
++		}
++	}
++}
++
++
++/*
++ * FEATURE: TS20
++ *
++ * SQL-visible cohabit classifier. This lets production smoke tests and
++ * operators verify that the Citus extension is calling the same C API exposed
++ * to in-process cohabitants, rather than relying only on companion-side mirror
++ * logic or documentation.
++ */
++Datum
++citus_cohabit_extension_role(PG_FUNCTION_ARGS)
++{
++	char *extensionName = NULL;
++	CitusCohabitExtensionKind kind = CITUS_COHABIT_EXTENSION_UNSUPPORTED;
++	const char *roleName = NULL;
++
++	CheckCitusVersion(ERROR);
++
++	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
++	kind = ClassifyCitusCohabitExtension(extensionName);
++	roleName = CitusCohabitExtensionKindName(kind);
++	pfree(extensionName);
++
++	PG_RETURN_TEXT_P(cstring_to_text(roleName));
++}
++
++
++/*
++ * FEATURE: TS20
++ *
++ * SQL-visible allowlist check for supported cohabitants. Unsupported extension
++ * names remain false even if an operator accidentally lists them in
++ * citus.cohabit_extensions.
++ */
++Datum
++citus_cohabit_extension_configured(PG_FUNCTION_ARGS)
++{
++	char *extensionName = NULL;
++	bool configured = false;
++
++	CheckCitusVersion(ERROR);
++
++	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
++	configured = CitusCohabitExtensionConfigured(extensionName);
++	pfree(extensionName);
++
++	PG_RETURN_BOOL(configured);
++}
++
++
+ /*
+  * FEATURE: TS19
+  *
+diff --git a/src/backend/distributed/sql/citus--8.0-1.sql b/src/backend/distributed/sql/citus--8.0-1.sql
+index d76c27e93..74b0f8b7d 100644
+--- a/src/backend/distributed/sql/citus--8.0-1.sql
++++ b/src/backend/distributed/sql/citus--8.0-1.sql
+@@ -559,6 +559,22 @@ COMMENT ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
+     IS 'returns true when Citus reserved its logical-clock tick slot for an operator-approved pg_cron cohabitant';
+ GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved() TO PUBLIC;
+ 
++CREATE FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    RETURNS text
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_role$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    IS 'classifies a supported Citus cohabiting extension as trusted-hook, clock-worker, partition-manager, or unsupported';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text) TO PUBLIC;
++
++CREATE FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_configured$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    IS 'returns true when citus.cohabit_extensions contains a supported cohabiting extension name';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text) TO PUBLIC;
++
+ CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
+ 	RETURNS void
+ 	LANGUAGE C STRICT
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/14.0-1.sql b/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/14.0-1.sql
+new file mode 100644
+index 000000000..812beb813
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/14.0-1.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    RETURNS text
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_role$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    IS 'classifies a supported Citus cohabiting extension as trusted-hook, clock-worker, partition-manager, or unsupported';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text) TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/latest.sql b/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/latest.sql
+new file mode 100644
+index 000000000..812beb813
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_extension_role/latest.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    RETURNS text
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_role$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text)
++    IS 'classifies a supported Citus cohabiting extension as trusted-hook, clock-worker, partition-manager, or unsupported';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_role(extension_name text) TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/14.0-1.sql b/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/14.0-1.sql
+new file mode 100644
+index 000000000..c642dd245
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/14.0-1.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_configured$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    IS 'returns true when citus.cohabit_extensions contains a supported cohabiting extension name';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text) TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/latest.sql b/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/latest.sql
+new file mode 100644
+index 000000000..c642dd245
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/latest.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    RETURNS boolean
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_cohabit_extension_configured$$;
++COMMENT ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text)
++    IS 'returns true when citus.cohabit_extensions contains a supported cohabiting extension name';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_cohabit_extension_configured(extension_name text) TO PUBLIC;

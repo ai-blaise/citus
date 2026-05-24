@@ -129,6 +129,24 @@ BEGIN
   IF NOT pg_catalog.citus_cohabit_clock_tick_reserved() THEN
     RAISE EXCEPTION 'Citus did not reserve the pg_cron cohabit clock tick';
   END IF;
+  IF pg_catalog.citus_cohabit_extension_role('pg_cron') <> 'clock-worker' THEN
+    RAISE EXCEPTION 'Citus did not classify pg_cron as a clock-worker cohabitant';
+  END IF;
+  IF NOT pg_catalog.citus_cohabit_extension_configured('pg_cron') THEN
+    RAISE EXCEPTION 'Citus did not report pg_cron as configured';
+  END IF;
+  IF pg_catalog.citus_cohabit_extension_role('timescaledb') <> 'trusted-hook' THEN
+    RAISE EXCEPTION 'Citus did not classify timescaledb as trusted-hook';
+  END IF;
+  IF pg_catalog.citus_cohabit_extension_role('pg_partman') <> 'partition-manager' THEN
+    RAISE EXCEPTION 'Citus did not classify pg_partman as partition-manager';
+  END IF;
+  IF pg_catalog.citus_cohabit_extension_role('unknown_extension') <> 'unsupported' THEN
+    RAISE EXCEPTION 'Citus did not classify unknown extensions as unsupported';
+  END IF;
+  IF pg_catalog.citus_cohabit_extension_configured('unknown_extension') THEN
+    RAISE EXCEPTION 'Citus reported an unsupported cohabitant as configured';
+  END IF;
 END;
 $$;
 CREATE TABLE public.ai_blaise_pg_cron_cohabit_runs(
@@ -176,6 +194,16 @@ wait_for_cron_clock_run "${positive_container}"
   docker exec "${positive_container}" psql -U postgres -Atqc \
     "SELECT 'pg_cron_detection' || E'\t' || role || ':' || ready || ':' || coalesce(reason, 'ok') FROM companion_internal.cohabit_extension_detection_report() WHERE extension_name = 'pg_cron'"
   docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'citus_cohabit_pg_cron_role' || E'\t' || pg_catalog.citus_cohabit_extension_role('pg_cron')"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'citus_cohabit_pg_cron_configured' || E'\t' || pg_catalog.citus_cohabit_extension_configured('pg_cron')"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'citus_cohabit_timescaledb_role' || E'\t' || pg_catalog.citus_cohabit_extension_role('timescaledb')"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'citus_cohabit_pg_partman_role' || E'\t' || pg_catalog.citus_cohabit_extension_role('pg_partman')"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
+    "SELECT 'citus_cohabit_unknown_role' || E'\t' || pg_catalog.citus_cohabit_extension_role('unknown_extension')"
+  docker exec "${positive_container}" psql -U postgres -Atqc \
     "SELECT 'clock_tick_reserved' || E'\t' || pg_catalog.citus_cohabit_clock_tick_reserved()"
   docker exec "${positive_container}" psql -U postgres -Atqc \
     "SELECT 'cron_job_registered' || E'\t' || count(*) FROM cron.job WHERE jobname = 'ai_blaise_pg_cron_cohabit_smoke'"
@@ -186,6 +214,11 @@ wait_for_cron_clock_run "${positive_container}"
 } >"${evidence_file}"
 
 grep -Fq $'pg_cron_detection\tclock-worker:true:ok' "${evidence_file}"
+grep -Fq $'citus_cohabit_pg_cron_role\tclock-worker' "${evidence_file}"
+grep -Fq $'citus_cohabit_pg_cron_configured\tt' "${evidence_file}"
+grep -Fq $'citus_cohabit_timescaledb_role\ttrusted-hook' "${evidence_file}"
+grep -Fq $'citus_cohabit_pg_partman_role\tpartition-manager' "${evidence_file}"
+grep -Fq $'citus_cohabit_unknown_role\tunsupported' "${evidence_file}"
 grep -Fq $'clock_tick_reserved\tt' "${evidence_file}"
 grep -Fq $'cron_job_registered\t1' "${evidence_file}"
 grep -Eq $'^cron_clock_reserved_runs\t[1-9][0-9]*$' "${evidence_file}"
@@ -210,11 +243,23 @@ BEGIN
   IF pg_catalog.citus_cohabit_clock_tick_reserved() THEN
     RAISE EXCEPTION 'Citus reserved the pg_cron cohabit clock tick without allowlist';
   END IF;
+  IF pg_catalog.citus_cohabit_extension_role('pg_cron') <> 'clock-worker' THEN
+    RAISE EXCEPTION 'Citus lost the pg_cron role classifier without allowlist';
+  END IF;
+  IF pg_catalog.citus_cohabit_extension_configured('pg_cron') THEN
+    RAISE EXCEPTION 'Citus reported pg_cron as configured without allowlist';
+  END IF;
 END;
 $$;
 SQL
 
+docker exec "${negative_container}" psql -U postgres -Atqc \
+  "SELECT 'negative_pg_cron_citus_role' || E'\t' || pg_catalog.citus_cohabit_extension_role('pg_cron')" >>"${evidence_file}"
+docker exec "${negative_container}" psql -U postgres -Atqc \
+  "SELECT 'negative_pg_cron_citus_configured' || E'\t' || pg_catalog.citus_cohabit_extension_configured('pg_cron')" >>"${evidence_file}"
 printf 'negative_clock_tick_reserved\tfalse\n' >>"${evidence_file}"
+grep -Fq $'negative_pg_cron_citus_role\tclock-worker' "${evidence_file}"
+grep -Fq $'negative_pg_cron_citus_configured\tf' "${evidence_file}"
 
 if docker exec "${negative_container}" psql -U postgres -v ON_ERROR_STOP=1 -c \
   "SELECT companion_internal.assert_cohabit_extension_ready('pg_cron');" >/tmp/pg-cron-negative-$$.out 2>&1; then

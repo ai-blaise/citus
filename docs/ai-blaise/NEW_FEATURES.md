@@ -1034,8 +1034,8 @@ flag, waits for a scheduled pg_cron worker to insert clock-reserved evidence
 rows using `citus_get_node_clock()`, and proves the missing-allowlist case
 keeps the reservation false and rejects `assert_cohabit_extension_ready('pg_cron')`.
 This production claim is limited to the pg_cron clock-reservation path; it does
-not make `pg_cron` a trusted hook-chain coextension, does not promote TS20's
-broader role-aware C API, and does not claim all Bundle1 cohabitation behavior.
+not make `pg_cron` a trusted hook-chain coextension, and does not claim
+all Bundle1 cohabitation behavior.
 
 **References**:
 
@@ -1055,11 +1055,13 @@ broader role-aware C API, and does not claim all Bundle1 cohabitation behavior.
 - `patches/0008-cohabit-extensions-detection-api.patch`
 - `src/include/distributed/shared_library_init.h`
 - `src/backend/distributed/shared_library_init.c`
+- `src/backend/distributed/sql/udfs/citus_cohabit_extension_role/latest.sql`
+- `src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/latest.sql`
 - `companion/src/extension_catalog.rs`
 - `companion/src/citus_timescale.rs`
 - `ci/ai-blaise/cohabit-detection-smoke.sh`
 
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`, `pg_cron`, `pg_partman`
@@ -1079,12 +1081,19 @@ owner.
 **Citus comparison**: Vanilla Citus has a binary first-hook check and no
 role-aware cohabitation classifier.
 
-Boundary: the deterministic companion smoke covers TimescaleDB, pg_cron, and
-pg_partman detection and fail-closed handling of unknown names. The pg_cron
-cohabitation smoke also exercises the SQL-visible `ai_blaise_citus` runtime
-caller against a real Citus+pg_cron server and verifies a missing
-`citus.cohabit_extensions` allowlist fails closed. TS20 remains alpha as a
-whole because the C API itself is not yet called by a live extension or SQL UDF.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
+builds this Citus fork into a PG17 image, starts a real postmaster with
+`shared_preload_libraries=pg_cron,citus` and `citus.cohabit_extensions=pg_cron`,
+and calls `pg_catalog.citus_cohabit_extension_role(text)` plus
+`pg_catalog.citus_cohabit_extension_configured(text)` from the Citus extension
+itself. The evidence records `pg_cron` as `clock-worker` and configured,
+`timescaledb` as `trusted-hook`, `pg_partman` as `partition-manager`, an unknown
+name as `unsupported`, and a negative boot where `pg_cron` remains classified but
+not configured without the allowlist. The deterministic companion smoke still
+covers the mirrored `ai_blaise_citus` SQL detector. This production claim covers
+the role/configuration classifier boundary only; it does not prove live
+TimescaleDB or pg_partman extension execution, grant hook-chain trust to
+`pg_cron`, or make Bundle1 cohabitation production-ready as a whole.
 
 **References**:
 
@@ -1094,11 +1103,14 @@ whole because the C API itself is not yet called by a live extension or SQL UDF.
   `src/backend/distributed/shared_library_init.c`
 - In-source: `FEATURE: TS20` in `companion/src/extension_catalog.rs`
 - In-source: `FEATURE: TS20` in `companion/src/citus_timescale.rs`
+- SQL UDF: `pg_catalog.citus_cohabit_extension_role(text)`
+- SQL UDF: `pg_catalog.citus_cohabit_extension_configured(text)`
 - SQL runtime: `companion_internal.cohabit_extension_detection_report(...)`
 - SQL runtime: `companion_internal.assert_cohabit_extension_ready(...)`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-cohabit-detection-canonical`
 - CI: `ci/ai-blaise/cohabit-detection-smoke.sh`
 - CI: `ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
+- Evidence file: `artifacts/pg-cron-cohabitation-evidence.tsv`
 
 ### TS13: Distributed time_bucket_gapfill
 

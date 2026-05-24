@@ -374,7 +374,7 @@ SELECT * FROM multi_extension.print_extension_changes();
                  | view citus_stat_statements
                  | view citus_worker_stat_activity
                  | view pg_dist_shard_placement
-(186 rows)
+(188 rows)
 
 -- Test downgrade to 9.2-2 from 9.2-4
 ALTER EXTENSION citus UPDATE TO '9.2-4';
@@ -1403,6 +1403,8 @@ SELECT * FROM multi_extension.print_extension_changes();
  function worker_append_table_to_shard(text,text,text,integer) void                                                                                                                                                                                                                     |
  function worker_split_shard_replication_setup(split_shard_info[]) SETOF replication_slot_info                                                                                                                                                                                          |
                                                                                                                                                                                                                                                                                         | function citus_cohabit_clock_tick_reserved() boolean
+                                                                                                                                                                                                                                                                                        | function citus_cohabit_extension_configured(text) boolean
+                                                                                                                                                                                                                                                                                        | function citus_cohabit_extension_role(text) text
                                                                                                                                                                                                                                                                                         | function citus_copy_shard_placement(bigint,integer,integer,citus.shard_transfer_mode) void
                                                                                                                                                                                                                                                                                         | function citus_get_node_clock() cluster_clock
                                                                                                                                                                                                                                                                                         | function citus_get_transaction_clock() cluster_clock

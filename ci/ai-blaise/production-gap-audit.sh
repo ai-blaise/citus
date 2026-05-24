@@ -331,7 +331,7 @@ for phrase in (
     "not evidence for real WAL segment inspection",
     "pg_cron cohabitation smoke is production evidence for the TS19 clock-reservation",
     "does not make broad Bundle1 cohabitation production-ready",
-    "TS20 C API being called by a live C extension",
+    "TS20 SQL-visible C API proof remains limited to role/configuration classification",
 ):
     if compact(phrase) not in audit_compact:
         fail(
@@ -1081,17 +1081,24 @@ pg_cron_cohabitation_smoke = read(PG_CRON_COHABITATION_SMOKE)
 pg_cron_truth = compact(docs + "\n" + audit + "\n" + pg_cron_cohabitation_smoke)
 if status_by_id.get("TS19") != "production-ready":
     fail("TS19 pg_cron clock cohabitation must be production-ready after live clock-reservation worker evidence")
-if status_by_id.get("TS20") != "alpha":
-    fail("TS20 must remain alpha until the role-aware C API is called by a live extension")
+if status_by_id.get("TS20") != "production-ready":
+    fail("TS20 cohabit role/configuration classifier must be production-ready after SQL-visible C API live proof")
 for phrase in (
     "citus_cohabit_clock_tick_reserved",
     "clock_tick_reserved",
     "cron_clock_reserved_runs",
     "cron_node_clock_samples",
     "negative_clock_tick_reserved",
+    "citus_cohabit_pg_cron_role",
+    "citus_cohabit_pg_cron_configured",
+    "citus_cohabit_timescaledb_role",
+    "citus_cohabit_pg_partman_role",
+    "citus_cohabit_unknown_role",
+    "negative_pg_cron_citus_role",
+    "negative_pg_cron_citus_configured",
     "scheduled pg_cron worker",
     "does not make `pg_cron` a trusted hook-chain coextension",
-    "does not promote the TS20 C API",
+    "role/configuration classifier boundary only",
 ):
     if compact(phrase) not in pg_cron_truth:
         fail(f"pg_cron TS19 production boundary must preserve phrase: {phrase}")
@@ -1103,6 +1110,18 @@ for required_path in (
     sql = read(required_path)
     if "citus_cohabit_clock_tick_reserved" not in sql or "MODULE_PATHNAME" not in sql:
         fail(f"TS19 clock-reservation UDF SQL contract missing required function in {required_path}")
+
+for required_path, required_symbol in (
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_role/14.0-1.sql", "citus_cohabit_extension_role"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_role/15.0-1.sql", "citus_cohabit_extension_role"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_role/latest.sql", "citus_cohabit_extension_role"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/14.0-1.sql", "citus_cohabit_extension_configured"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/15.0-1.sql", "citus_cohabit_extension_configured"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_cohabit_extension_configured/latest.sql", "citus_cohabit_extension_configured"),
+):
+    sql = read(required_path)
+    if required_symbol not in sql or "MODULE_PATHNAME" not in sql:
+        fail(f"TS20 cohabit classifier UDF SQL contract missing {required_symbol} in {required_path}")
 
 for path in (
     K8S_GUARDRAIL_RENDERER,

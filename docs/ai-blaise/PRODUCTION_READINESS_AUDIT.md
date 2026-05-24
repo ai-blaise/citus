@@ -236,7 +236,8 @@ more production-ready than the artifacts justified.
   pg_cron cohabitation smoke is production evidence for the TS19 clock-reservation
   path in a real PG17 Citus+pg_cron boot, including SQL-visible reservation,
   scheduled worker execution, and missing-allowlist fail-closed behavior. The
-  complete operand initdb contract
+  TS20 role/configuration classifier is now also proved through SQL-visible Citus
+  UDFs in that live server. The complete operand initdb contract
   remains alpha until the plrust upstream PG17 blocker and full-bundle image
   smoke are closed. The source-build subset now has a structured lockfile and
   contract checker that cross-validates manifest rows, Dockerfile pins/labels,
@@ -397,9 +398,13 @@ more production-ready than the artifacts justified.
   pg_cron worker to insert evidence rows using `citus_get_node_clock()`, records
   `artifacts/pg-cron-cohabitation-evidence.tsv`, and verifies the missing-
   allowlist path leaves the reservation false and fails closed. This does not
-  make `pg_cron` a trusted hook-chain coextension, does not promote the TS20 C
-  API being called by a live C extension, and does not make broad Bundle1
-  cohabitation production-ready.
+  make `pg_cron` a trusted hook-chain coextension, and does not make broad
+  Bundle1 cohabitation production-ready. The same smoke now separately proves
+  the TS20 SQL-visible C API role/configuration classifier boundary by recording
+  `citus_cohabit_pg_cron_role`, `citus_cohabit_pg_cron_configured`,
+  `citus_cohabit_timescaledb_role`, `citus_cohabit_pg_partman_role`,
+  `citus_cohabit_unknown_role`, and the negative configured=false path. TS20
+  SQL-visible C API proof remains limited to role/configuration classification.
 - `TS18` now has real Citus+TimescaleDB cohabitation evidence without a stubbed
   distribution entrypoint. The VM run built
   `ai-blaise-citus-timescale-cohabitation:local` from
