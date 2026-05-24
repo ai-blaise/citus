@@ -304,7 +304,14 @@ verify_cluster_access() {
 
 install_release() {
   need_cmd helm
+  if kube get namespace "${namespace}" >/dev/null 2>&1; then
+    created_namespace=0
+  else
+    created_namespace=1
+  fi
+
   log "installing release=${release_name} namespace=${namespace} chart=${chart_dir}"
+  ran_install=1
   helm_run upgrade --install "${release_name}" "${chart_dir}" \
     --namespace "${namespace}" \
     --create-namespace \
@@ -312,8 +319,6 @@ install_release() {
     --timeout "${rollout_timeout}" \
     "${helm_value_args[@]}" \
     "${helm_extra_args[@]}"
-  ran_install=1
-  created_namespace=1
 }
 
 selector_resources() {
@@ -351,6 +356,7 @@ wait_for_rollout() {
 }
 
 write_services_json() {
+  need_cmd jq
   if kube -n "${namespace}" get svc -l "app.kubernetes.io/instance=${release_name}" -o json >"${services_json}" 2>/dev/null; then
     if jq -e '.items | length > 0' "${services_json}" >/dev/null; then
       return 0

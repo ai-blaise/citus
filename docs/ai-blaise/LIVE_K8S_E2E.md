@@ -51,3 +51,5 @@ release-specific SQL workload.
 On failure, the harness collects namespace events, workload descriptions,
 service state, pod logs, port-forward logs, and `helm get all`. It tears down by
 default; use `KEEP_NAMESPACE_ON_FAILURE=1` while debugging a live cluster.
+Namespace deletion is limited to namespaces that did not exist before the
+harness invoked Helm, so a failed test cannot remove a pre-existing namespace.

@@ -91,8 +91,10 @@ only a CI-safe dry-run; it validates rendering when a chart is supplied but does
 not send HTTP or SQL traffic. Runtime evidence requires `LIVE_K8S_MODE=kind` or
 `LIVE_K8S_MODE=real`, successful workload readiness, live HTTP probe traffic,
 live PostgreSQL `psql` traffic through a port-forwarded service, and captured
-failure diagnostics. The Argo application manifest is a GitOps render contract
-unless an Argo controller-backed sync is run and recorded.
+failure diagnostics. The harness tears down only namespaces it created during
+the run; pre-existing namespaces must be cleaned up by the operator. The Argo
+application manifest is a GitOps render contract unless an Argo
+controller-backed sync is run and recorded.
 
 The Makefile smoke targets set `REQUIRE_DOCKER=1` for the Docker-backed live
 smokes, including pool proxy, SQL extension, real TimescaleDB bridge, real
