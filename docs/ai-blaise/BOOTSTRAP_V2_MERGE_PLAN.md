@@ -35,9 +35,9 @@ open PR #70+ is missing from the manifest.
 
 ## Current Snapshot
 
-Captured from GitHub on `2026-05-24T03:26:26Z` for the post-landing manifest:
+Captured from GitHub on `2026-05-24T03:45:23Z` for the post-landing manifest:
 
-- Open manifest: 37 PRs against `bootstrap-v2`; PR #106, #107, #108 are recorded as landed by this direct `bootstrap-v2` merge batch and are no longer open-plan work.
+- Open manifest: 34 PRs against `bootstrap-v2`; PR #77, #78, #81, #106, #107, #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
 - Draft blockers: PR #109.
 - Non-draft merge-order blockers: PR #87, PR #97.
 - PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current `bootstrap-v2` tip.
@@ -47,43 +47,40 @@ Captured from GitHub on `2026-05-24T03:26:26Z` for the post-landing manifest:
 
 | Order | PR | Status | Batch | Dependency hints |
 | --- | --- | --- | --- | --- |
-| 1 | #78 | ready | source-patch-foundation | none |
-| 2 | #77 | ready | source-patch-foundation | #78 |
-| 3 | #70 | ready | ready-runtime-foundation | none |
-| 4 | #71 | ready | ready-runtime-foundation | none |
-| 5 | #72 | ready | ready-runtime-foundation | none |
-| 6 | #73 | ready | ready-runtime-foundation | none |
-| 7 | #74 | ready | ready-runtime-foundation | #73 |
-| 8 | #75 | ready | ready-runtime-foundation | none |
-| 9 | #76 | ready | ready-runtime-foundation | none |
-| 10 | #79 | ready | ready-operator-k8s | none |
-| 11 | #80 | ready | ready-operator-k8s | #79 |
-| 12 | #81 | ready | source-patch-foundation | #78, #77 |
-| 13 | #82 | ready | ready-runtime-foundation | none |
-| 14 | #83 | ready | ready-operator-k8s | #79, #80 |
-| 15 | #84 | ready | ready-runtime-foundation | none |
-| 16 | #85 | ready | ready-runtime-foundation | none |
-| 17 | #86 | ready | ready-runtime-foundation | #82 |
-| 18 | #89 | ready | ready-operator-k8s | #79, #80, #83 |
-| 19 | #90 | ready | ready-operator-k8s | #84, #89 |
-| 20 | #93 | ready | ready-operator-k8s | #89 |
-| 21 | #91 | ready | ready-operator-k8s | #89, #90, #93 |
-| 22 | #92 | ready | ready-operator-k8s | #91 |
-| 23 | #88 | ready | ready-release-evidence | #70, #71, #72, #73, #74, #75, #76, #79, #80, #81, #82, #83, #84, #85, #86, #89, #90, #91, #92, #93 |
-| 24 | #94 | ready | ready-release-evidence | #70, #71, #72, #73, #74, #75, #76, #82, #84, #86, #89, #90, #91, #92, #93 |
-| 25 | #95 | ready | ready-release-evidence | #70 |
-| 26 | #87 | blocked | draft-runtime-durability-upgrade-pool | #77, #81 |
-| 27 | #104 | ready | draft-runtime-durability-upgrade-pool | #74 |
-| 28 | #101 | ready | draft-runtime-durability-upgrade-pool | #76, #83, #89 |
-| 29 | #96 | ready | draft-runtime-durability-upgrade-pool | #76, #81, #101 |
-| 30 | #98 | ready | draft-runtime-durability-upgrade-pool | #72 |
-| 31 | #99 | ready | draft-release-and-patch-audit | #78, #77 |
-| 32 | #100 | ready | draft-release-and-patch-audit | #88 |
-| 33 | #102 | ready | draft-release-and-patch-audit | #88, #99, #100 |
-| 34 | #105 | ready | draft-release-and-patch-audit | #95, #96, #100 |
-| 35 | #103 | ready | draft-release-and-patch-audit | #88, #102, #104 |
-| 36 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105 |
-| 37 | #97 | blocked | draft-release-and-patch-audit | #81, #88, #91, #96, #100, #102, #103, #105, #109 |
+| 1 | #70 | ready | ready-runtime-foundation | none |
+| 2 | #71 | ready | ready-runtime-foundation | none |
+| 3 | #72 | ready | ready-runtime-foundation | none |
+| 4 | #73 | ready | ready-runtime-foundation | none |
+| 5 | #74 | ready | ready-runtime-foundation | #73 |
+| 6 | #75 | ready | ready-runtime-foundation | none |
+| 7 | #76 | ready | ready-runtime-foundation | none |
+| 8 | #79 | ready | ready-operator-k8s | none |
+| 9 | #80 | ready | ready-operator-k8s | #79 |
+| 10 | #82 | ready | ready-runtime-foundation | none |
+| 11 | #83 | ready | ready-operator-k8s | #79, #80 |
+| 12 | #84 | ready | ready-runtime-foundation | none |
+| 13 | #85 | ready | ready-runtime-foundation | none |
+| 14 | #86 | ready | ready-runtime-foundation | #82 |
+| 15 | #89 | ready | ready-operator-k8s | #79, #80, #83 |
+| 16 | #90 | ready | ready-operator-k8s | #84, #89 |
+| 17 | #93 | ready | ready-operator-k8s | #89 |
+| 18 | #91 | ready | ready-operator-k8s | #89, #90, #93 |
+| 19 | #92 | ready | ready-operator-k8s | #91 |
+| 20 | #88 | ready | ready-release-evidence | #70, #71, #72, #73, #74, #75, #76, #79, #80, #82, #83, #84, #85, #86, #89, #90, #91, #92, #93 |
+| 21 | #94 | ready | ready-release-evidence | #70, #71, #72, #73, #74, #75, #76, #82, #84, #86, #89, #90, #91, #92, #93 |
+| 22 | #95 | ready | ready-release-evidence | #70 |
+| 23 | #87 | blocked | draft-runtime-durability-upgrade-pool | none |
+| 24 | #104 | ready | draft-runtime-durability-upgrade-pool | #74 |
+| 25 | #101 | ready | draft-runtime-durability-upgrade-pool | #76, #83, #89 |
+| 26 | #96 | ready | draft-runtime-durability-upgrade-pool | #76, #101 |
+| 27 | #98 | ready | draft-runtime-durability-upgrade-pool | #72 |
+| 28 | #99 | ready | draft-release-and-patch-audit | none |
+| 29 | #100 | ready | draft-release-and-patch-audit | #88 |
+| 30 | #102 | ready | draft-release-and-patch-audit | #88, #99, #100 |
+| 31 | #105 | ready | draft-release-and-patch-audit | #95, #96, #100 |
+| 32 | #103 | ready | draft-release-and-patch-audit | #88, #102, #104 |
+| 33 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105 |
+| 34 | #97 | blocked | draft-release-and-patch-audit | #88, #91, #96, #100, #102, #103, #105, #109 |
 
 Use the JSON as canonical if this table drifts.
 

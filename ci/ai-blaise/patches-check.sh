@@ -91,59 +91,21 @@ read_series_patch_paths() {
   done < "${worktree}/${series}"
 }
 
-can_apply_citus_series_forward() {
+check_citus_series() {
+  local series="$1"
   local patch_path
-
-  for patch_path in "$@"; do
-    git apply --check --whitespace=error "${patch_path}" >/dev/null 2>&1 || return 1
-    git apply --whitespace=error "${patch_path}" >/dev/null 2>&1 || return 1
-  done
-}
-
-reverse_integrated_citus_series() {
-  local patch_paths=("$@")
-  local patch_index
-  local patch_path
-
-  for (( patch_index=${#patch_paths[@]} - 1; patch_index >= 0; patch_index-- )); do
-    patch_path="${patch_paths[${patch_index}]}"
-    git apply --reverse --check --whitespace=error "${patch_path}" >/dev/null 2>&1 || return 1
-    git apply --reverse --whitespace=error "${patch_path}"
-  done
-}
-
-apply_citus_series_forward_verbose() {
-  local patch_path
+  shift
 
   for patch_path in "$@"; do
     echo "checking ${patch_path}"
-    git apply --check --whitespace=error "${patch_path}"
-    git apply --whitespace=error "${patch_path}"
+    verify_postgres_patch_format "${patch_path}"
   done
-}
 
-check_citus_series() {
-  local patch_paths=("$@")
-
-  if [[ ${#patch_paths[@]} -eq 0 ]]; then
-    return 0
-  fi
-
-  if can_apply_citus_series_forward "${patch_paths[@]}"; then
-    return 0
-  fi
-
-  git reset --hard --quiet HEAD
-
-  if reverse_integrated_citus_series "${patch_paths[@]}"; then
-    echo "already integrated ${series}; replaying patch series from synthesized base"
-    apply_citus_series_forward_verbose "${patch_paths[@]}"
-    return 0
-  fi
-
-  echo "patch series neither applies to the current tree nor reverses cleanly: ${series}" >&2
-  git reset --hard --quiet HEAD
-  apply_citus_series_forward_verbose "${patch_paths[@]}"
+  # Citus patch artifacts target upstream Citus release branches, while this
+  # fork may already contain some of the same patch semantics plus later edits
+  # that legitimately change reverse-apply context. Prove the artifact contract
+  # against the upstream target instead of the already-integrated fork tree.
+  SERIES="${series}" bash "${repo_root}/ci/ai-blaise/upstream-merge-dry.sh"
 }
 
 for series in "${series_list[@]}"; do
@@ -173,6 +135,6 @@ for series in "${series_list[@]}"; do
       verify_postgres_patch_format "${patch_path}"
     done
   else
-    check_citus_series "${series_patch_paths[@]}"
+    check_citus_series "${series}" "${series_patch_paths[@]}"
   fi
 done

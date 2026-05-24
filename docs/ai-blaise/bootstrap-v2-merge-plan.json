@@ -6,9 +6,9 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T03:26:26Z",
+    "captured_at": "2026-05-24T03:45:23Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url",
-    "post_landing_note": "PRs #106, #107, and #108 are removed from the open-PR manifest because this merge lands their heads directly on bootstrap-v2."
+    "post_landing_note": "PRs #77, #78, #81, #106, #107, and #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads."
   },
   "checklist": [
     {
@@ -41,7 +41,6 @@
   "expensive_citus_matrix_policy": {
     "default_rule": "Batch meaningful work first. Do not spend a full Citus matrix run on every metadata-only rebase, doc-only conflict, or isolated sidecar smoke if the focused gate covers the changed runtime. Run the matrix at the batch boundaries and high-risk path triggers below.",
     "run_full_matrix_after_batches": [
-      "source-patch-foundation",
       "ready-runtime-foundation",
       "ready-operator-k8s",
       "ready-release-evidence",
@@ -67,17 +66,6 @@
     ]
   },
   "integration_batches": [
-    {
-      "id": "source-patch-foundation",
-      "summary": "Merge shared PG18 CDC diagnostics, upstream-targetable Citus patch artifacts, and the operand extension build substrate before higher-level production evidence depends on them.",
-      "prs": [
-        78,
-        77,
-        81
-      ],
-      "run_expensive_citus_matrix_after": true,
-      "matrix_reason": "PRs in this batch touch Citus patch series, distributed source, installable extension packaging, and PG17/PG18 operand image assumptions."
-    },
     {
       "id": "ready-runtime-foundation",
       "summary": "Merge non-draft sidecar, pool, companion, auth, API, vectorizer, tool, and transaction-runtime surfaces after the patch foundation is stable.",
@@ -155,48 +143,8 @@
   ],
   "pull_requests": [
     {
-      "number": 78,
-      "order": 1,
-      "batch": "source-patch-foundation",
-      "title": "Add router planner Citus patch artifacts",
-      "head": "codex/prod-citus-patches-0004-0006-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "patches/series",
-        "patches/0004-hashtable-on-planner-hotpath.patch",
-        "patches/0006-fast-path-router-no-coord-rt.patch",
-        "companion/src/router_assist.rs",
-        "ci/ai-blaise/patches-check.sh"
-      ]
-    },
-    {
-      "number": 77,
-      "order": 2,
-      "batch": "source-patch-foundation",
-      "title": "Add cohabit clock and detection patches",
-      "head": "codex/prod-citus-patches-0007-0008-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        78
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "patches/series",
-        "patches/0007-citus-clock-cohabit-pg-cron.patch",
-        "patches/0008-cohabit-extensions-detection-api.patch",
-        "src/backend/distributed/clock",
-        "src/include/distributed"
-      ]
-    },
-    {
       "number": 70,
-      "order": 3,
+      "order": 1,
       "batch": "ready-runtime-foundation",
       "title": "Add production backup WAL-G runtime",
       "head": "codex/prod-backup-walg-runtime-20260523",
@@ -214,7 +162,7 @@
     },
     {
       "number": 71,
-      "order": 4,
+      "order": 2,
       "batch": "ready-runtime-foundation",
       "title": "Harden CDC and realtime runtimes",
       "head": "codex/prod-cdc-realtime-runtime-20260523",
@@ -233,7 +181,7 @@
     },
     {
       "number": 72,
-      "order": 5,
+      "order": 3,
       "batch": "ready-runtime-foundation",
       "title": "Harden pool runtime depth",
       "head": "codex/prod-pool-depth-hardening-20260523",
@@ -251,7 +199,7 @@
     },
     {
       "number": 73,
-      "order": 6,
+      "order": 4,
       "batch": "ready-runtime-foundation",
       "title": "Add production auth sidecar runtime",
       "head": "codex/prod-auth-runtime-20260523",
@@ -269,7 +217,7 @@
     },
     {
       "number": 74,
-      "order": 7,
+      "order": 5,
       "batch": "ready-runtime-foundation",
       "title": "Add production API trio runtime gates",
       "head": "codex/prod-api-trio-runtime-20260523",
@@ -290,7 +238,7 @@
     },
     {
       "number": 75,
-      "order": 8,
+      "order": 6,
       "batch": "ready-runtime-foundation",
       "title": "[codex] Add production vectorizer runtime",
       "head": "codex/prod-vectorizer-runtime-20260523",
@@ -308,7 +256,7 @@
     },
     {
       "number": 76,
-      "order": 9,
+      "order": 7,
       "batch": "ready-runtime-foundation",
       "title": "Harden Raft HLC txn-status runtimes",
       "head": "codex/prod-raft-hlc-txn-20260523",
@@ -327,7 +275,7 @@
     },
     {
       "number": 79,
-      "order": 10,
+      "order": 8,
       "batch": "ready-operator-k8s",
       "title": "Add production reconcilers batch A",
       "head": "codex/prod-reconcilers-a-20260523",
@@ -345,7 +293,7 @@
     },
     {
       "number": 80,
-      "order": 11,
+      "order": 9,
       "batch": "ready-operator-k8s",
       "title": "Add production reconcilers batch B",
       "head": "codex/prod-reconcilers-b-20260523",
@@ -364,29 +312,8 @@
       ]
     },
     {
-      "number": 81,
-      "order": 12,
-      "batch": "source-patch-foundation",
-      "title": "[codex] Add Bundle1 PG17 source-build path",
-      "head": "codex/prod-bundle1-source-build-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [
-        78,
-        77
-      ],
-      "known_blockers": [],
-      "watch_paths": [
-        "images/citus-pg-overlay/Dockerfile",
-        "images/citus-pg-overlay/extensions",
-        "docs/ai-blaise/BUNDLED_EXTENSIONS.md",
-        "ci/ai-blaise/sql-extension-smoke.sh"
-      ]
-    },
-    {
       "number": 82,
-      "order": 13,
+      "order": 10,
       "batch": "ready-runtime-foundation",
       "title": "Add companion runtime depth A",
       "head": "codex/prod-companion-runtime-depth-a-20260523",
@@ -404,7 +331,7 @@
     },
     {
       "number": 83,
-      "order": 14,
+      "order": 11,
       "batch": "ready-operator-k8s",
       "title": "Add Batch C operator reconcilers",
       "head": "codex/prod-reconcilers-c-20260523",
@@ -425,7 +352,7 @@
     },
     {
       "number": 84,
-      "order": 15,
+      "order": 12,
       "batch": "ready-runtime-foundation",
       "title": "[codex] Add sidecar HA retarget primitives",
       "head": "codex/prod-sidecar-ha-retarget-20260523",
@@ -443,7 +370,7 @@
     },
     {
       "number": 85,
-      "order": 16,
+      "order": 13,
       "batch": "ready-runtime-foundation",
       "title": "[codex] Add snapshot-backed tools UI runtimes",
       "head": "codex/prod-tools-ui-runtime-20260523",
@@ -462,7 +389,7 @@
     },
     {
       "number": 86,
-      "order": 17,
+      "order": 14,
       "batch": "ready-runtime-foundation",
       "title": "[codex] add companion plan runtime depth B",
       "head": "codex/prod-companion-runtime-depth-b-20260523",
@@ -482,7 +409,7 @@
     },
     {
       "number": 89,
-      "order": 18,
+      "order": 15,
       "batch": "ready-operator-k8s",
       "title": "[codex] Harden operator execution boundary",
       "head": "codex/prod-operator-status-boundary-20260523",
@@ -504,7 +431,7 @@
     },
     {
       "number": 90,
-      "order": 19,
+      "order": 16,
       "batch": "ready-operator-k8s",
       "title": "Add sidecar EndpointSlice retarget contract",
       "head": "codex/prod-endpointslice-retarget-20260523",
@@ -525,7 +452,7 @@
     },
     {
       "number": 93,
-      "order": 20,
+      "order": 17,
       "batch": "ready-operator-k8s",
       "title": "Add operator security enforcement contracts",
       "head": "codex/prod-security-enforcement-20260523",
@@ -545,7 +472,7 @@
     },
     {
       "number": 91,
-      "order": 21,
+      "order": 18,
       "batch": "ready-operator-k8s",
       "title": "[codex] Add Kubernetes deployment guardrail contract",
       "head": "codex/prod-k8s-deployment-guardrails-20260523",
@@ -567,7 +494,7 @@
     },
     {
       "number": 92,
-      "order": 22,
+      "order": 19,
       "batch": "ready-operator-k8s",
       "title": "Add live Kubernetes e2e harness",
       "head": "codex/prod-live-k8s-e2e-20260523",
@@ -587,7 +514,7 @@
     },
     {
       "number": 88,
-      "order": 23,
+      "order": 20,
       "batch": "ready-release-evidence",
       "title": "Add production release gate monitor",
       "head": "codex/prod-release-gate-monitor-20260523",
@@ -604,7 +531,6 @@
         76,
         79,
         80,
-        81,
         82,
         83,
         84,
@@ -626,7 +552,7 @@
     },
     {
       "number": 94,
-      "order": 24,
+      "order": 21,
       "batch": "ready-release-evidence",
       "title": "Add observability contract smoke",
       "head": "codex/prod-observability-contracts-20260523",
@@ -660,7 +586,7 @@
     },
     {
       "number": 95,
-      "order": 25,
+      "order": 22,
       "batch": "ready-release-evidence",
       "title": "Add DR restore depth verification gate",
       "head": "codex/prod-dr-restore-depth-20260523",
@@ -680,17 +606,14 @@
     },
     {
       "number": 87,
-      "order": 26,
+      "order": 23,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add Timescale 2.28 cohabitation matrix",
       "head": "codex/prod-timescale-228-matrix-20260523",
       "base": "bootstrap-v2",
       "status": "blocked",
       "is_draft": false,
-      "dependency_hints": [
-        77,
-        81
-      ],
+      "dependency_hints": [],
       "known_blockers": [
         "PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current bootstrap-v2 tip.",
         "PR body states Timescale 2.28 evidence depends on the published timescale/timescaledb:2.28.0-pg17 image tag; keep the skip-with-note truthful until upstream publication is verified.",
@@ -705,7 +628,7 @@
     },
     {
       "number": 104,
-      "order": 27,
+      "order": 24,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add sidecar API runtime smoke",
       "head": "codex/sidecar-runtime-contract-smoke-20260524",
@@ -726,7 +649,7 @@
     },
     {
       "number": 101,
-      "order": 28,
+      "order": 25,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add migration durability invariant gates",
       "head": "codex/data-durability-invariants",
@@ -749,7 +672,7 @@
     },
     {
       "number": 96,
-      "order": 29,
+      "order": 26,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add upgrade rollback guardrails",
       "head": "codex/upgrade-rollback-guardrails-20260523-235847",
@@ -758,7 +681,6 @@
       "is_draft": false,
       "dependency_hints": [
         76,
-        81,
         101
       ],
       "known_blockers": [],
@@ -771,7 +693,7 @@
     },
     {
       "number": 98,
-      "order": 30,
+      "order": 27,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Harden pool load failure behavior",
       "head": "codex/prod-pool-load-depth-20260523",
@@ -791,17 +713,14 @@
     },
     {
       "number": 99,
-      "order": 31,
+      "order": 28,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add Citus patch production gate audit",
       "head": "codex/patch-production-integration-audit-20260524020118",
       "base": "bootstrap-v2",
       "status": "ready",
       "is_draft": false,
-      "dependency_hints": [
-        78,
-        77
-      ],
+      "dependency_hints": [],
       "known_blockers": [],
       "watch_paths": [
         "benchmarks/citus-patches/production-gates.json",
@@ -812,7 +731,7 @@
     },
     {
       "number": 100,
-      "order": 32,
+      "order": 29,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add release environment preflight checks",
       "head": "codex/release-env-preflight",
@@ -833,7 +752,7 @@
     },
     {
       "number": 102,
-      "order": 33,
+      "order": 30,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Harden performance evidence gates",
       "head": "codex/slo-performance-evidence-hardening-20260524015908",
@@ -856,7 +775,7 @@
     },
     {
       "number": 105,
-      "order": 34,
+      "order": 31,
       "batch": "draft-release-and-patch-audit",
       "title": "Add runbook command validation gate",
       "head": "codex/runbook-command-checks-20260524-022745",
@@ -879,7 +798,7 @@
     },
     {
       "number": 103,
-      "order": 35,
+      "order": 32,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Make production gap inventory machine-derived",
       "head": "codex/production-gap-inventory-audit",
@@ -899,7 +818,7 @@
     },
     {
       "number": 109,
-      "order": 36,
+      "order": 33,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Demonstrate production gap audit integration reconciliation",
       "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
@@ -931,7 +850,7 @@
     },
     {
       "number": 97,
-      "order": 37,
+      "order": 34,
       "batch": "draft-release-and-patch-audit",
       "title": "Harden ai-blaise release image publishability",
       "head": "codex/release-publishability-20260523-2357",
@@ -939,7 +858,6 @@
       "status": "blocked",
       "is_draft": false,
       "dependency_hints": [
-        81,
         88,
         91,
         96,
@@ -962,6 +880,50 @@
     }
   ],
   "landed_pull_requests": [
+    {
+      "number": 77,
+      "title": "Add cohabit clock and detection patches",
+      "head": "codex/prod-citus-patches-0007-0008-20260523",
+      "base": "bootstrap-v2",
+      "landed_by": "direct bootstrap-v2 source-patch-foundation batch with PRs #78 and #81",
+      "watch_paths": [
+        "patches/series",
+        "patches/0007-citus-clock-cohabit-pg-cron.patch",
+        "patches/0008-cohabit-extensions-detection-api.patch",
+        "src/backend/distributed/clock",
+        "src/include/distributed",
+        "ci/ai-blaise/cohabit-detection-smoke.sh"
+      ]
+    },
+    {
+      "number": 78,
+      "title": "Add router planner Citus patch artifacts",
+      "head": "codex/prod-citus-patches-0004-0006-20260523",
+      "base": "bootstrap-v2",
+      "landed_by": "direct bootstrap-v2 source-patch-foundation batch with PRs #77 and #81",
+      "watch_paths": [
+        "patches/series",
+        "patches/0004-hashtable-on-planner-hotpath.patch",
+        "patches/0006-fast-path-router-no-coord-rt.patch",
+        "companion/src/router_assist.rs",
+        "ci/ai-blaise/patches-check.sh",
+        "ci/ai-blaise/router-patch-smoke.sh"
+      ]
+    },
+    {
+      "number": 81,
+      "title": "[codex] Add Bundle1 PG17 source-build path",
+      "head": "codex/prod-bundle1-source-build-20260523",
+      "base": "bootstrap-v2",
+      "landed_by": "direct bootstrap-v2 source-patch-foundation batch with PRs #78 and #77",
+      "watch_paths": [
+        "images/citus-pg-overlay/Dockerfile",
+        "images/citus-pg-overlay/extensions/pg_warm.control",
+        "images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql",
+        "ci/ai-blaise/sql-extension-smoke.sh",
+        "ci/ai-blaise/image-check.sh"
+      ]
+    },
     {
       "number": 106,
       "title": "[codex] Document agentmemory VM recovery",
