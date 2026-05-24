@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected=$'ai-blaise-citus-repack-weekly-orders	pg_repack	5	users-add-display-name	6	write_only	update_origin_differs	apply_remote_if_newer	3	ai-blaise-citus-sidecar-primary-realtime	2	4'
+expected=$'ai-blaise-citus-repack-weekly-orders	pg_repack	5	users-add-display-name	8	write_only	update_origin_differs	apply_remote_if_newer	3	ai-blaise-citus-sidecar-primary-realtime	2	4'
 
 cargo test -q -p ai_blaise_citus_operator
 

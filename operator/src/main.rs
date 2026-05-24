@@ -932,7 +932,8 @@ fn canonical_sidecar_deployment_spec() -> SidecarDeploymentSpec {
 fn canonical_migration_spec() -> MigrationSpec {
     MigrationSpec {
         migration_type: MigrationType::Pgroll,
-        yaml: "operations:\n  - add_column:\n      table: users".to_string(),
+        yaml: "twoVersionInvariantPrecheck: companion_internal.verify_two_version_invariant()\nrollback:\n  operation: companion_internal.schema_job_rollback_to\n  targetPhase: write_only\noperations:\n  - addColumn:\n      table: public.users\n      column: display_name\n      sqlType: text\n  - backfill:\n      statement: UPDATE public.users SET display_name = email"
+            .to_string(),
         on_conflict: MigrationConflictAction::ManualReview,
     }
 }
@@ -1143,7 +1144,7 @@ mod tests {
                 repack_strategy: "pg_repack".to_string(),
                 repack_apply_steps: 5,
                 migration_name: "users-add-display-name".to_string(),
-                migration_apply_steps: 6,
+                migration_apply_steps: 8,
                 migration_target_state: "write_only".to_string(),
                 conflict_policy_class: "update_origin_differs".to_string(),
                 conflict_policy_resolution: "apply_remote_if_newer".to_string(),

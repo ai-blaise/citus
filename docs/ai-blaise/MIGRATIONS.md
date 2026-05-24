@@ -227,7 +227,7 @@ no rollback driven from the sidecar. Worker leases keep refreshing.
 | Rollback planner + SQL helpers | production-ready (`FEATURE: M14`) |
 | Data durability invariant registry + targeted smoke | production-ready for companion SQL helpers |
 | Sidecar tokio loop (real polling) | alpha |
-| Migration CRD reconciler (kube-rs client) | alpha; implemented plan/status controller, with live DDL execution sidecar-gated |
+| Migration CRD validation + apply-plan rendering | production-ready (`FEATURE: C9`, `FEATURE: M3`) for fail-closed dry-run plans; live DDL execution remains sidecar-gated alpha |
 | Trigger-enforced phase invariants (e.g. WRITE_ONLY returns NULL) | alpha — planner-hook track |
 | Distributed backfill workers | alpha — see C11 |
 

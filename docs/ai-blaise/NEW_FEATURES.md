@@ -2130,13 +2130,21 @@ created and suspended the branch, so status and ownership stay consistent.
 ### C9: Migration Framework
 
 **Overlay**: `operator/src/crds/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the migration CRD surface for pgroll-style and gh-ost
 style online DDL workflows.
+
+Production evidence: Local and VM proof run `cargo test -p ai_blaise_citus_operator migration`
+and `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`. The promoted boundary is
+fail-closed CRD/controller validation and deterministic reconcile/apply-plan rendering: invalid
+YAML, unknown migration types, unknown conflict actions, unsafe backfill SQL, missing
+`companion_internal.verify_two_version_invariant()` prechecks, missing rollback references,
+missing worker lists, and unverified PUBLIC cutovers are rejected before any apply plan is emitted.
+Live Kubernetes sidecar invocation and data-plane DDL execution remain alpha-blocked.
 
 **Motivation**: Expand/contract schema changes need an operator-visible unit
 that can coordinate validation, retries, and conflict handling.
@@ -2410,13 +2418,21 @@ gh-ost-style online DDL state machinery.
 ### M3: Migration CRD
 
 **Overlay**: `operator/src/crds/migration.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds typed migration declarations with inline YAML DSL and
 conflict handling mode.
+
+Production evidence: Local and VM proof run `cargo test -p ai_blaise_citus_operator migration`
+and `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`. The production-ready boundary is the
+CRD validation and dry-run reconcile contract only: the YAML DSL is parsed structurally,
+operation names and required fields are checked, unsafe multi-statement/commented SQL fragments
+are refused, the 2VI precheck and rollback SQL references are mandatory, and the rendered apply
+plan starts with an idempotent 2VI preflight step. Live migration execution, dual-write triggers,
+and distributed backfill workers remain alpha.
 
 **Motivation**: Migration runs need to be reviewed and reconciled as desired
 state instead of launched imperatively.
