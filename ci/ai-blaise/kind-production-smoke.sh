@@ -21,7 +21,8 @@ case "${LIVE_K8S_MODE}" in
     ;;
   real|kind)
     export REQUIRE_CHART="${REQUIRE_CHART:-1}"
-    export REQUIRE_HTTP="${REQUIRE_HTTP:-1}"
+    export PRODUCTION_VALUES_STRICT="${PRODUCTION_VALUES_STRICT:-1}"
+    export REQUIRE_HTTP="${REQUIRE_HTTP:-0}"
     export REQUIRE_SQL="${REQUIRE_SQL:-1}"
     ;;
   *)

@@ -190,13 +190,15 @@ more production-ready than the artifacts justified.
 - The pool now runs a byte-transparent PostgreSQL TCP proxy on the service
   port and a separate admin server for probes and metrics. Readiness checks the
   configured upstream before Kubernetes can route clients to the pod.
-- The Kubernetes production smoke now port-forwards into the live operator and
-  every sidecar deployment and verifies `/healthz`, `/readyz`, and `/metrics`
-  from the real pods before it runs the pool SQL traffic job.
-- After the SQL smoke, the same Kubernetes smoke port-forwards every pool pod
-  and aggregates `ai_blaise_citus_pool_requests_total` across replicas, avoiding
-  a false failure when the admin service selects a pool pod that did not handle
-  the SQL connection.
+- The Kubernetes production-values lane now separates strict render evidence
+  from live runtime evidence. `ci/ai-blaise/live-k8s-e2e.sh` rejects strict
+  real-mode renders that use mutable/latest images or alpha sidecars, while
+  `ci/ai-blaise/k8s-production-values-live-smoke.sh` proves a real kind
+  StatefulSet, Ready pod, and in-cluster SQL client Job through Service DNS with
+  an immutable image. It writes `claim_boundary=postgres_substrate_only` and
+  does not claim live Rust app-image, operator, pool, or Citus data-plane
+  behavior unless the exact command-center chart and digest-pinned Citus images
+  are supplied.
 - CI checks now assert the real image matrix, `serve` support, Helm probe
   contracts, live sidecar probe coverage, loopback `serve` probes and metrics
   for the operator, shared runtime, every sidecar, and the pool admin surface,
@@ -247,21 +249,16 @@ more production-ready than the artifacts justified.
   rendered by `values-exhaustive.yaml` only for non-production contract
   coverage. Deploy checks and the production gap audit reject those RBAC
   resources in default/prod renders.
-- The Kubernetes production smoke now runs three live Helm profiles in kind.
-  The explicit `values-exhaustive.yaml` image-matrix profile still proves every
-  Rust app image can serve probes and pool SQL traffic, the default
-  `values.yaml` profile proves direct Helm installs fail closed to the
-  production-safe operator/pool surface, and a separate `values-prod.yaml`
-  profile proves that production values install with operator/pool replicas, no
-  alpha sidecar or tools deployments, no controller-grade operator RBAC,
-  monitoring CRDs present, and live SQL through the pool.
-- The Argo application now uses `values-prod.yaml` so GitOps deployment matches
-  the production profile, targets the `main` release branch, and the deploy
-  workflow plus `gate-close` now invoke the live kind production smoke instead
-  of leaving D13 as VM-only evidence.
-- The Argo application now prunes stale rendered resources, self-heals drift,
-  creates the target namespace, and prunes last so disabled alpha sidecars or
-  tools cannot persist merely because they were created by a previous profile.
+- After the chart fold, full Helm profiles and Argo application behavior are
+  command-center-owned release evidence. This repo now verifies the Citus-side
+  contract: strict real-mode chart renders must be digest-pinned and alpha-free,
+  and the self-contained VM smoke proves only the live kind/SQL-service substrate
+  path without pretending to install the unpublished command-center release
+  profile.
+- Argo application pruning, self-heal, namespace creation, and production
+  profile selection remain command-center deployment concerns. They must be
+  proven in that repository before they can be cited as release-controller
+  evidence for this overlay.
 - The Timescale bridge smoke now waits for the TimescaleDB image init process
   to complete before it runs bridge SQL, preventing CI from racing the image's
   own `timescaledb` extension creation.
@@ -353,23 +350,22 @@ more production-ready than the artifacts justified.
   table, and then executed the bridge apply functions against the cohabiting
   server. The generated evidence file is
   `artifacts/timescale-cohabitation-evidence.tsv`.
-- The D8 deploy wrapper install path is now live-gated: the `values-prod.yaml`
-  phase of `kind-production-smoke.sh` installs through
-  `scripts/citus-scale/deploy.sh MODE=install` instead of bypassing the wrapper.
-  The optional tools Deployment remains dev-only; production evidence executes
-  the built `citusctl` image through a smoke Job. The Argo application is a
-  GitOps render contract, not live controller evidence.
+- The D8 deploy wrapper install path now fails closed in this repo and points to
+  command-center for the chart. Live Citus app-container install evidence must
+  run through the external chart with strict digest-pinned values; this branch's
+  self-contained kind smoke covers only the production-values Kubernetes harness
+  and SQL Service path. The Argo application is a GitOps render contract until a
+  live controller run is recorded in the chart-owning repository.
 - The O5 register entry and shared sidecar README now describe only the
   implemented sidecar deployment contract. They explicitly state that tracing
   and OpenTelemetry export, configuration loading, and PostgreSQL connection
   helpers are not implemented, and the production gap audit rejects
   reintroduced claims until real runtime code and live evidence exist.
-- The D7 direct Helm install path now fails closed by default. `values.yaml`
-  requires immutable operator and pool image digests, disables alpha sidecars,
-  disables the optional tools Deployment, and disables alpha runtime/security
-  intent. The old exhaustive alpha profile moved to the explicit
-  `values-exhaustive.yaml` file, and the kind smoke installs both that explicit
-  image-matrix profile and the default production-safe chart profile.
+- The D7 direct Helm install path now fails closed at the Citus-side harness
+  boundary. Strict real-mode renders require immutable `@sha256` images and no
+  alpha sidecar workloads, while the actual production chart profiles remain in
+  command-center. The kind smoke no longer treats an exhaustive local profile as
+  production evidence from this repository.
 - The observability dashboard and alert templates now query
   `ai_blaise_sidecar_ready`, the metric emitted by the sidecar runtime, and
   the live kind production smoke requires the installed dashboard ConfigMap and
@@ -534,17 +530,22 @@ Rule 10 completion for this branch requires local and VM verification of:
 - SQL extension smoke against a real Postgres container.
 - SQL smoke commands must be fed into the Postgres container with stdin
   attached; static image checks reject the old false-positive pattern.
-- Helm render and Kubernetes rollout with the real app images.
-- Live operator and sidecar `/healthz`, `/readyz`, and `/metrics` responses
-  through Kubernetes port-forwarding.
-- Live PostgreSQL traffic through the pool service data port, plus `/readyz`
-  and `/metrics` verification on the pool admin port and per-pod pool metrics.
-- Live default `values.yaml` and explicit `values-prod.yaml` Helm rollouts that
-  keep alpha workloads disabled while the production operator and pool
-  deployments become available and serve SQL/admin traffic.
-- Production Helm render/install must use immutable operator and pool image
-  digests; local kind smokes that disable the digest requirement are runtime
-  smoke evidence only, not release image-pinning evidence.
+- Strict Helm render validation for any external command-center chart supplied
+  to the Citus-side live harness: mutable/latest image refs, placeholder/local
+  production images, `imagePullPolicy: Always`, and alpha sidecar render leaks
+  fail closed when `PRODUCTION_VALUES_STRICT=1`.
+- A real VM kind deployment through
+  `ci/ai-blaise/k8s-production-values-live-smoke.sh`: generated Helm
+  `values-production.yaml`, immutable `@sha256` operand image, alpha sidecars
+  disabled, Kubernetes readiness waits, an in-cluster SQL client Job that
+  reaches PostgreSQL through Service DNS, captured Helm/kubectl/log/image
+  evidence artifacts, and `claim_boundary=postgres_substrate_only`.
+- Full command-center/Citus app-container release evidence still requires the
+  exact release chart values and immutable Citus image digests. The
+  self-contained VM live smoke is Kubernetes production-values substrate
+  evidence, not proof of unpublished Citus app behavior, operator reconciliation,
+  pool routing, Citus data-plane semantics, or multi-component command-center
+  readiness.
 - Every production-promoted SQL runtime smoke must be part of the GitHub image
   workflow, `gate-close`, and static production gap audit guards; Makefile
   release smoke targets must set `REQUIRE_DOCKER=1` so missing Docker is a
@@ -611,9 +612,12 @@ Rule 10 completion for this branch requires local and VM verification of:
 ## Whole-Repo Production Readiness Audit
 
 The deployment corrections above close the most dangerous false-positive path:
-the chart now proves real Rust app images, real pods, sidecar probes, and live
-SQL through the pool. The broader repository is still not production-ready as a
-whole.
+strict render checks now reject mutable image and alpha-sidecar leaks, and the
+VM kind smoke proves a real production-values Kubernetes SQL Service substrate
+path. Full Rust app-image, pool-routing, operator, Citus data-plane, and
+command-center release-controller proof still requires the exact chart and
+digest-pinned Citus images. The broader repository is still not production-ready
+as a whole.
 
 The current feature inventory is machine-derived by
 `ci/ai-blaise/production-readiness-check.sh` and
@@ -683,9 +687,11 @@ that omit the shared production boundary for deterministic canonical reports,
 benchmark targets, and local runtime models.
 
 Production Helm values must also keep alpha sidecars disabled by default.
-`values-prod.yaml` can carry replica/resource intent for those components, but
-`ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
-sidecar before the corresponding feature is promoted with measured production
+`ci/ai-blaise/live-k8s-e2e.sh` enforces that boundary in strict real modes, and
+`ci/ai-blaise/k8s-production-values-live-smoke.sh` proves the same guardrail in
+a VM kind deployment with immutable images and live SQL service traffic. A
+command-center render that enables an alpha sidecar, uses `latest`, or omits
+`@sha256` image pinning is rejected before it can be cited as production
 evidence.
 
 The release gate monitor now centralizes the bounded integration contract for
