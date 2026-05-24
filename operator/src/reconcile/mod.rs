@@ -10,6 +10,7 @@ pub mod scheduled_repack;
 pub mod search_index;
 pub mod shard_group;
 pub mod sidecar;
+pub mod sidecar_endpoint;
 pub mod survival_goal;
 pub mod tenant;
 pub mod webhook;

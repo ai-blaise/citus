@@ -45,13 +45,13 @@ use ai_blaise_citus_operator::{
     MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec,
     RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind,
     SearchColumnSpec, SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
-    SidecarDeploymentSpec, SidecarDeploymentType, SidecarReconcilePlan, SidecarSpec, SidecarType,
+    SidecarDeploymentSpec, SidecarDeploymentType, SidecarEndpointCandidate, SidecarEndpointRetargetPlan, SidecarReconcilePlan, SidecarSpec, SidecarType,
     SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
     TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
     WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
 };
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_sidecar_shared::{run_probe_server, EndpointRegistry, RetargetConfig};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -79,6 +79,9 @@ fn main() {
         [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
         [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
         [command] if command == "run-controller-boundary" => run_controller_boundary(),
+        [command] if command == "run-endpointslice-retarget-canonical" => {
+            run_endpointslice_retarget_canonical()
+        }
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -115,7 +118,89 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-endpointslice-retarget-canonical]");
+}
+
+fn run_endpointslice_retarget_canonical() {
+    let mut registry = EndpointRegistry::new(
+        RetargetConfig::parse(
+            "id=primary,target=http://realtime-primary:8080,priority=1,failover_after=1;\
+             id=standby,target=http://realtime-standby:8080,priority=2,failover_after=1",
+        )
+        .expect("canonical retarget config"),
+    );
+
+    println!("phase	status	generation	selected	endpoints	slice");
+    emit_endpoint_retarget_phase("initial", &registry);
+    registry
+        .record_failure("primary", "connection refused")
+        .expect("record primary failure");
+    emit_endpoint_retarget_phase("primary_failed", &registry);
+    registry
+        .record_failure("standby", "timeout")
+        .expect("record standby failure");
+    let fail_closed = emit_endpoint_retarget_phase("all_failed", &registry);
+
+    println!("--- endpoint_slice_yaml");
+    print!(
+        "{}",
+        fail_closed
+            .endpoint_slice_manifest_yaml()
+            .expect("canonical EndpointSlice manifest")
+    );
+    println!("--- service_merge_patch_json");
+    print!(
+        "{}",
+        fail_closed
+            .service_merge_patch_json()
+            .expect("canonical Service merge patch")
+    );
+}
+
+fn emit_endpoint_retarget_phase(
+    phase: &str,
+    registry: &EndpointRegistry,
+) -> SidecarEndpointRetargetPlan {
+    let plan = SidecarEndpointRetargetPlan::from_decision(
+        "ai-blaise-realtime",
+        "realtime",
+        &registry.select(),
+        canonical_endpoint_candidates(),
+    )
+    .expect("canonical EndpointSlice retarget plan");
+    println!(
+        "{}	{}	{}	{}	{}	{}",
+        phase,
+        plan.status.as_str(),
+        plan.generation,
+        plan.selected_endpoint_id.as_deref().unwrap_or("none"),
+        plan.endpoint_count(),
+        plan.endpoint_slice_name,
+    );
+    plan
+}
+
+fn canonical_endpoint_candidates() -> Vec<SidecarEndpointCandidate> {
+    vec![
+        SidecarEndpointCandidate {
+            endpoint_id: "primary".to_string(),
+            target_ref_name: "realtime-primary-0".to_string(),
+            addresses: vec!["10.0.0.10".to_string()],
+            port_name: "http".to_string(),
+            port: 8080,
+            zone: Some("us-east1-b".to_string()),
+            ready: true,
+        },
+        SidecarEndpointCandidate {
+            endpoint_id: "standby".to_string(),
+            target_ref_name: "realtime-standby-0".to_string(),
+            addresses: vec!["10.0.1.10".to_string()],
+            port_name: "http".to_string(),
+            port: 8080,
+            zone: Some("us-east1-c".to_string()),
+            ready: true,
+        },
+    ]
 }
 
 fn run_reconcile_plans() {

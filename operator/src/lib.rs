@@ -91,7 +91,6 @@ pub use reconcile::search_index::{
     SearchIndexApplyPlan, SearchIndexApplyStep, SearchIndexReconcileError,
     SearchIndexReconcilePlan, PG_SEARCH_ACCESS_METHOD, SEARCH_METADATA_TABLES_SQL,
 };
-};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
@@ -101,6 +100,10 @@ pub use reconcile::sidecar::{
     SidecarDeletionPlan, SidecarDeletionStep, SidecarReconcileError, SidecarReconcilePlan,
     SidecarRuntimeProfile, SidecarStatusProbeUrls, SIDECAR_DEFAULT_PORT,
     SIDECAR_DELETION_GRACE_SECONDS, SIDECAR_DEPLOYMENT_NAME_PREFIX,
+};
+pub use reconcile::sidecar_endpoint::{
+    EndpointSliceAddressType, SidecarEndpointCandidate, SidecarEndpointRetargetError,
+    SidecarEndpointRetargetPlan, SidecarEndpointRetargetStatus,
 };
 pub use reconcile::survival_goal::{
     SurvivalGoalApplyStep, SurvivalGoalApplyStepKind, SurvivalGoalReconcileError,

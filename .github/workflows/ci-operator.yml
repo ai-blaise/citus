@@ -25,3 +25,5 @@ jobs:
         run: bash ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh
       - name: Run controller boundary smoke
         run: bash ci/ai-blaise/operator-boundary-smoke.sh
+      - name: Run EndpointSlice retarget smoke
+        run: bash ci/ai-blaise/endpointslice-retarget-smoke.sh
