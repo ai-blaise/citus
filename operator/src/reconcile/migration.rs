@@ -12,8 +12,8 @@
 //! module is the operator's view of "what do we want to happen next".
 
 use ai_blaise_citus_companion::{
-    verify_two_version_invariant_sql, SchemaJobOperation, SchemaJobPlan, SchemaJobState,
-    TransitionGate,
+    assert_migration_data_invariants_sql, verify_two_version_invariant_sql, SchemaJobOperation,
+    SchemaJobPlan, SchemaJobState, TransitionGate,
 };
 use std::error::Error;
 use std::fmt;
@@ -34,6 +34,8 @@ pub struct MigrationReconcilePlan {
     pub gate: TransitionGate,
     pub expected_workers: Vec<String>,
     pub invariant_check_sql: String,
+    pub data_invariants_verified: bool,
+    pub data_invariant_check_sql: String,
 }
 
 impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
@@ -66,6 +68,12 @@ impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
             });
         }
 
+        if target_state == SchemaJobState::Public && !command.data_invariants_verified {
+            return Err(MigrationReconcileError::DataInvariantsNotVerified(
+                command.job_name.clone(),
+            ));
+        }
+
         let gate = gate_from_conflict(command.spec.on_conflict);
 
         Ok(Self {
@@ -75,7 +83,10 @@ impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
             target_state,
             gate,
             expected_workers: command.workers.clone(),
+            data_invariants_verified: command.data_invariants_verified,
             invariant_check_sql: verify_two_version_invariant_sql().to_string(),
+            data_invariant_check_sql: assert_migration_data_invariants_sql(&command.job_name)
+                .map_err(|error| MigrationReconcileError::PlanInvalid(error.to_string()))?,
         })
     }
 }
@@ -85,6 +96,12 @@ impl MigrationReconcilePlan {
     /// the sidecar always verifies the 2VI before acting.
     pub fn invariant_preflight_sql(&self) -> &str {
         &self.invariant_check_sql
+    }
+
+    /// SQL that must pass before the sidecar can publish a data-preserving
+    /// migration through the final BACKFILL -> PUBLIC boundary.
+    pub fn data_invariant_preflight_sql(&self) -> &str {
+        &self.data_invariant_check_sql
     }
 }
 
@@ -99,6 +116,7 @@ pub struct MigrationCommand {
     pub operations: Vec<SchemaJobOperation>,
     pub lease_seconds: u32,
     pub workers: Vec<String>,
+    pub data_invariants_verified: bool,
 }
 
 fn next_state_after(current: SchemaJobState) -> Option<SchemaJobState> {
@@ -130,6 +148,7 @@ pub enum MigrationReconcileError {
     },
     NoForwardTransition(SchemaJobState),
     NoWorkers,
+    DataInvariantsNotVerified(String),
 }
 
 impl fmt::Display for MigrationReconcileError {
@@ -149,6 +168,10 @@ impl fmt::Display for MigrationReconcileError {
                 state.as_canonical()
             ),
             Self::NoWorkers => write!(formatter, "no workers attached to migration"),
+            Self::DataInvariantsNotVerified(job_name) => write!(
+                formatter,
+                "data invariants are not verified for migration {job_name}"
+            ),
         }
     }
 }
@@ -181,6 +204,7 @@ mod tests {
             }],
             lease_seconds: 60,
             workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+            data_invariants_verified: true,
         }
     }
 
@@ -207,6 +231,9 @@ mod tests {
         .unwrap();
         assert_eq!(plan.target_state, SchemaJobState::Public);
         assert_eq!(plan.gate, TransitionGate::RollbackOnTimeout);
+        assert!(plan
+            .data_invariant_preflight_sql()
+            .contains("migration_assert_invariants"));
     }
 
     #[test]
@@ -240,6 +267,19 @@ mod tests {
         assert_eq!(
             MigrationReconcilePlan::try_from(&cmd),
             Err(MigrationReconcileError::NoWorkers)
+        );
+    }
+
+    #[test]
+    fn publish_requires_verified_data_invariants() {
+        let mut cmd = command(SchemaJobState::Backfill, MigrationConflictAction::Replace);
+        cmd.data_invariants_verified = false;
+
+        assert_eq!(
+            MigrationReconcilePlan::try_from(&cmd),
+            Err(MigrationReconcileError::DataInvariantsNotVerified(
+                "users-display-name".to_string()
+            ))
         );
     }
 }

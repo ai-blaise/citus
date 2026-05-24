@@ -75,7 +75,10 @@ pub use log_view::{
 pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
-pub use migration::{MigrationError, MigrationOperation, MigrationPlan, MigrationSqlPlan};
+pub use migration::{
+    assert_migration_data_invariants_sql, MigrationDataInvariant, MigrationError,
+    MigrationOperation, MigrationPlan, MigrationSqlPlan,
+};
 pub use observability::{
     IdleTransactionDetectorPlan, LatencyPercentile, LocalActivityStatPlan, ObservabilityError,
     OperationsGuardrailPlan, QueryPercentileViewPlan, ReplicationLagPlan,

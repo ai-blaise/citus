@@ -15,6 +15,7 @@ two-version invariant (2VI) runtime described in
 | Worker Lease Registry | Per-worker schema-version acknowledgement | `companion/src/schema_jobs/worker_lease.rs` |
 | Rollback Planner | Phase reversal + partial-backfill cleanup | `companion/src/schema_jobs/rollback.rs` |
 | Phase Log | Audit trail of every transition | `companion.schema_job_phase_log` |
+| Durability Invariants | Read-only row-count/checksum gates for destructive schema changes | `companion.migration_invariant_checks` |
 | Cluster Alarms | 2VI violations | `companion.cluster_alarms` |
 | Sidecar Controller | tokio loop that polls the controller | `sidecar/schema_job/src/controller.rs` |
 | SQL surface | Tables, views, functions installed by `ai_blaise_citus` | `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` |
@@ -75,6 +76,47 @@ spec:
     acknowledged. Use only when a worker is permanently lost.
   * `Replace` / `ManualReview` → `WaitForever` — strict 2VI semantics.
 
+## Data durability invariant gates
+
+Any operation that can rewrite or remove user-visible data must register a
+read-only data invariant before the operation is recorded. This includes
+`drop_column`, `rename_column`, and `online_type_change`. The invariant SQL
+must be a single `SELECT` or `WITH` query that returns exactly one row with a
+boolean `passed` column, plus any evidence columns the reviewer needs, such as
+`rows_checked`, `source_checksum`, or `shadow_checksum`.
+
+Example:
+
+```sql
+SELECT companion_internal.migrate_start(
+  'orders-total-bigint', 'public.orders', 500, 1000
+);
+
+SELECT companion_internal.migration_register_invariant(
+  'orders-total-bigint',
+  'row-count-and-sum',
+  $check$
+  SELECT
+    count(*) = 2500000 AS passed,
+    count(*) AS rows_checked,
+    sum(total_cents)::text AS source_checksum
+  FROM public.orders
+  $check$
+);
+
+SELECT companion_internal.migration_online_type_change(
+  'total_cents', 'integer', 'bigint', 'total_cents::bigint'
+);
+
+SELECT companion_internal.migration_assert_invariants('orders-total-bigint');
+SELECT companion_internal.migrate_complete('orders-total-bigint');
+```
+
+`migrate_complete` reruns every registered invariant and refuses to complete
+when any check is missing or returns `passed = false`. Replaying the same
+operation is idempotent; replaying the same migration name with a different
+table, lock timeout, batch size, or operation payload fails closed.
+
 ## Operator runbook
 
 ### Starting a migration
@@ -105,6 +147,13 @@ SELECT * FROM companion_worker_schema_lease
 
 SELECT * FROM companion_two_version_invariant_state
   WHERE job_name = 'users-add-display-name';
+```
+
+### Durability invariant evidence
+
+```sql
+SELECT * FROM companion_migration_invariant_checks
+  WHERE migration_name = 'orders-total-bigint';
 ```
 
 A worker is *delinquent* when its `expires_at` is in the past or it never
@@ -164,6 +213,7 @@ no rollback driven from the sidecar. Worker leases keep refreshing.
 | Worker times out before acknowledging | `WaitForAcknowledgement` decision, sidecar retries | Either restart the worker or set the CR `onConflict: Skip`. |
 | Worker disagrees on the schema version | `StalePhase { observed }` status, controller stays put | Inspect `companion_worker_schema_lease`; revoke the stale lease. |
 | 2VI violation | `companion.cluster_alarms` row with `severity=critical` | Pause migration, inspect leases, clear conflicting versions. |
+| Missing durability invariant | `migration_*` helper raises before recording destructive operation or completing | Register a read-only row-count/checksum invariant and rerun the helper. |
 | Sidecar pod restart | Controller cursor reloads from `companion.schema_jobs` | No action; transitions resume on the next poll. |
 | Backfill row corruption | Forward progress impossible | Rollback to `DELETE_ONLY` and re-author the Migration. |
 
@@ -175,13 +225,15 @@ no rollback driven from the sidecar. Worker leases keep refreshing.
 | Worker lease registry + SQL surface | production-ready (`FEATURE: M14`) |
 | 2VI verifier + continuous monitor wiring | production-ready (`FEATURE: M15`) |
 | Rollback planner + SQL helpers | production-ready (`FEATURE: M14`) |
+| Data durability invariant registry + targeted smoke | production-ready for companion SQL helpers |
 | Sidecar tokio loop (real polling) | alpha |
 | Migration CRD reconciler (kube-rs client) | alpha |
 | Trigger-enforced phase invariants (e.g. WRITE_ONLY returns NULL) | alpha — planner-hook track |
 | Distributed backfill workers | alpha — see C11 |
 
 The companion SQL extension and the in-process controller logic are
-production-ready and exercised by `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`.
+production-ready and exercised by `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
+and `ci/ai-blaise/migration-invariants-smoke.sh`.
 The runtime that actually executes DDL against placements, drains traffic,
 and reconciles K8s state remains alpha and is gated behind the existing
 sidecar/operator alpha boundaries.

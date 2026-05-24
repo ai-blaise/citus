@@ -5,12 +5,13 @@ use crate::{
     GeoDistributionPlan, GeoGrid, GeoPruningPlan, GraphDistributionPlan, HmacAlgorithm,
     HybridRankPlan, IndexAdvisorPlan, IndexCandidate, IndexMethod, JsonSchemaDistributedPlan,
     JwtVerificationPlan, LedgerChain, LedgerChainEntry, LedgerSealPlan, LedgerTransferPlan,
-    LocalPlacementCheck, MigrationOperation, MigrationPlan, PlanFreezePlan, PlanPromotionPolicy,
-    PlanRegressionPolicy, PlanRegressionSample, RerankerPlan, SearchColumnPlan,
-    SearchIndexDistributedPlan, SessionClaims, ShardForValuePlan, ShardRoutingStrategy,
-    TenantArchivePlan, TenantMovePlan, TenantRlsPolicyPlan, ToolkitAggregateKind,
-    ToolkitDistributedPlan, ValidationTiming, VectorDestinationPlan, VectorProvider,
-    VectorizerDefinition, VectorizerSchedule, WebhookEvent, WebhookHeader, WebhookRegistrationPlan,
+    LocalPlacementCheck, MigrationDataInvariant, MigrationOperation, MigrationPlan, PlanFreezePlan,
+    PlanPromotionPolicy, PlanRegressionPolicy, PlanRegressionSample, RerankerPlan,
+    SearchColumnPlan, SearchIndexDistributedPlan, SessionClaims, ShardForValuePlan,
+    ShardRoutingStrategy, TenantArchivePlan, TenantMovePlan, TenantRlsPolicyPlan,
+    ToolkitAggregateKind, ToolkitDistributedPlan, ValidationTiming, VectorDestinationPlan,
+    VectorProvider, VectorizerDefinition, VectorizerSchedule, WebhookEvent, WebhookHeader,
+    WebhookRegistrationPlan,
 };
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -278,6 +279,11 @@ fn record_migration_contracts(
                 cast_expression: "total_cents::bigint".to_string(),
             },
         ],
+        data_invariants: vec![MigrationDataInvariant {
+            check_name: "orders-total-checksum".to_string(),
+            check_sql: "SELECT true AS passed, count(*) AS rows_checked FROM public.orders"
+                .to_string(),
+        }],
         lock_timeout_ms: 500,
         backfill_batch_size: 1000,
     }
@@ -631,7 +637,7 @@ mod tests {
 
         assert_eq!(report.sql_plan_count, 22);
         assert_eq!(report.validation_count, 10);
-        assert_eq!(report.command_count, 44);
+        assert_eq!(report.command_count, 51);
         for feature_id in [
             "A1", "API4", "Auth2", "G2", "G3", "Geo2", "Geo3", "IA3", "JS2", "L9", "M1", "M11",
             "M13", "M2", "M7", "PM3", "PM4", "S13", "S14", "S6", "Search2", "Search3", "Search9",

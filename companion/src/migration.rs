@@ -9,6 +9,7 @@ pub struct MigrationPlan {
     pub name: String,
     pub table: String,
     pub operations: Vec<MigrationOperation>,
+    pub data_invariants: Vec<MigrationDataInvariant>,
     pub lock_timeout_ms: u32,
     pub backfill_batch_size: u32,
 }
@@ -19,6 +20,17 @@ impl MigrationPlan {
         validate_required("table", &self.table)?;
         if self.operations.is_empty() {
             return Err(MigrationError::MissingRequiredField("operations"));
+        }
+        if self
+            .operations
+            .iter()
+            .any(MigrationOperation::requires_data_invariant)
+            && self.data_invariants.is_empty()
+        {
+            return Err(MigrationError::MissingDataInvariant);
+        }
+        for invariant in &self.data_invariants {
+            invariant.validate()?;
         }
         for operation in &self.operations {
             operation.validate()?;
@@ -44,6 +56,11 @@ impl MigrationPlan {
             lock_timeout = self.lock_timeout_ms,
             batch_size = self.backfill_batch_size
         )];
+        commands.extend(
+            self.data_invariants
+                .iter()
+                .map(|invariant| invariant.to_sql(&self.name)),
+        );
         commands.push(format!(
             "SELECT citus_admin.shadow_table_create({name}, {table});",
             name = sql_literal(&self.name),
@@ -66,6 +83,12 @@ impl MigrationPlan {
             name = sql_literal(&self.name),
             table = sql_literal(&self.table)
         ));
+        if !self.data_invariants.is_empty() {
+            commands.push(format!(
+                "SELECT companion_internal.migration_assert_invariants({});",
+                sql_literal(&self.name)
+            ));
+        }
         commands.push(format!(
             "SELECT citus_admin.shadow_table_publish({name}, {table});",
             name = sql_literal(&self.name),
@@ -77,6 +100,42 @@ impl MigrationPlan {
         ));
         MigrationSqlPlan::new("M1", commands)
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MigrationDataInvariant {
+    pub check_name: String,
+    pub check_sql: String,
+}
+
+impl MigrationDataInvariant {
+    pub fn validate(&self) -> Result<(), MigrationError> {
+        validate_required("data_invariant.check_name", &self.check_name)?;
+        validate_required("data_invariant.check_sql", &self.check_sql)?;
+        if !is_select_only_sql(&self.check_sql) {
+            return Err(MigrationError::InvalidInvariantSql);
+        }
+        Ok(())
+    }
+
+    fn to_sql(&self, migration_name: &str) -> String {
+        format!(
+            "SELECT companion_internal.migration_register_invariant({}, {}, {});",
+            sql_literal(migration_name),
+            sql_literal(&self.check_name),
+            sql_literal(normalize_invariant_sql(&self.check_sql))
+        )
+    }
+}
+
+pub fn assert_migration_data_invariants_sql(
+    migration_name: &str,
+) -> Result<String, MigrationError> {
+    validate_required("migration_name", migration_name)?;
+    Ok(format!(
+        "SELECT companion_internal.migration_assert_invariants({});",
+        sql_literal(migration_name)
+    ))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -102,6 +161,13 @@ pub enum MigrationOperation {
 }
 
 impl MigrationOperation {
+    pub fn requires_data_invariant(&self) -> bool {
+        matches!(
+            self,
+            Self::DropColumn { .. } | Self::RenameColumn { .. } | Self::AlterColumnType { .. }
+        )
+    }
+
     fn validate(&self) -> Result<(), MigrationError> {
         match self {
             Self::AddColumn {
@@ -203,8 +269,10 @@ impl MigrationSqlPlan {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum MigrationError {
     InvalidBackfillBatch,
+    InvalidInvariantSql,
     InvalidLockTimeout,
     MissingRequiredField(&'static str),
+    MissingDataInvariant,
     NoTypeChange,
 }
 
@@ -217,7 +285,15 @@ impl fmt::Display for MigrationError {
             Self::InvalidLockTimeout => {
                 write!(formatter, "lock_timeout_ms must be greater than zero")
             }
+            Self::InvalidInvariantSql => write!(
+                formatter,
+                "data invariant SQL must be a single read-only SELECT or WITH query"
+            ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::MissingDataInvariant => write!(
+                formatter,
+                "destructive migration operations require at least one data invariant check"
+            ),
             Self::NoTypeChange => write!(formatter, "from_type and to_type must differ"),
         }
     }
@@ -250,6 +326,17 @@ fn optional_sql_literal(value: &Option<String>) -> String {
         .unwrap_or_else(|| "NULL".to_string())
 }
 
+fn normalize_invariant_sql(value: &str) -> &str {
+    value.trim().trim_end_matches(';').trim()
+}
+
+fn is_select_only_sql(value: &str) -> bool {
+    let normalized = normalize_invariant_sql(value);
+    let lowercase = normalized.to_ascii_lowercase();
+    matches!(lowercase.split_whitespace().next(), Some("select" | "with"))
+        && !normalized.contains(';')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +359,11 @@ mod tests {
                     cast_expression: "total_cents::bigint".to_string(),
                 },
             ],
+            data_invariants: vec![MigrationDataInvariant {
+                check_name: "orders-total-checksum".to_string(),
+                check_sql: "SELECT true AS passed, count(*) AS rows_checked FROM public.orders"
+                    .to_string(),
+            }],
             lock_timeout_ms: 500,
             backfill_batch_size: 1000,
         }
@@ -281,6 +373,8 @@ mod tests {
         assert_eq!(plan.feature_id, "M1");
         assert!(plan.script().contains("migrate_start"));
         assert!(plan.script().contains("migration_online_type_change"));
+        assert!(plan.script().contains("migration_register_invariant"));
+        assert!(plan.script().contains("migration_assert_invariants"));
     }
 
     #[test]
@@ -306,6 +400,7 @@ mod tests {
                 default_expression: None,
             }],
             lock_timeout_ms: 500,
+            data_invariants: Vec::new(),
             backfill_batch_size: 1000,
         }
         .to_sql_plan()
@@ -321,5 +416,59 @@ mod tests {
         assert!(script.contains("citus_admin.row_diff_verify"));
         assert!(script.contains("citus_admin.shadow_table_publish"));
         assert!(script.contains("citus_admin.migrate_complete"));
+    }
+
+    #[test]
+    fn destructive_operations_require_data_invariant() {
+        let result = MigrationPlan {
+            name: "orders-drop-legacy-column".to_string(),
+            table: "public.orders".to_string(),
+            operations: vec![MigrationOperation::DropColumn {
+                column: "legacy_total".to_string(),
+            }],
+            data_invariants: Vec::new(),
+            lock_timeout_ms: 500,
+            backfill_batch_size: 1000,
+        }
+        .to_sql_plan();
+
+        assert_eq!(result, Err(MigrationError::MissingDataInvariant));
+    }
+
+    #[test]
+    fn data_invariant_sql_must_be_read_only() {
+        let result = MigrationDataInvariant {
+            check_name: "bad-check".to_string(),
+            check_sql: "UPDATE public.orders SET total = total".to_string(),
+        }
+        .validate();
+
+        assert_eq!(result, Err(MigrationError::InvalidInvariantSql));
+    }
+
+    #[test]
+    fn data_invariant_assertion_sql_is_escaped() {
+        assert_eq!(
+            assert_migration_data_invariants_sql("orders'v2").unwrap(),
+            "SELECT companion_internal.migration_assert_invariants('orders''v2');"
+        );
+    }
+
+    #[test]
+    fn invariant_sql_allows_terminal_semicolon_only() {
+        let invariant = MigrationDataInvariant {
+            check_name: "count-check".to_string(),
+            check_sql: "SELECT true AS passed;".to_string(),
+        };
+        assert_eq!(invariant.validate(), Ok(()));
+
+        let injected = MigrationDataInvariant {
+            check_name: "count-check".to_string(),
+            check_sql: "SELECT true AS passed; DROP TABLE public.orders".to_string(),
+        };
+        assert_eq!(
+            injected.validate(),
+            Err(MigrationError::InvalidInvariantSql)
+        );
     }
 }
