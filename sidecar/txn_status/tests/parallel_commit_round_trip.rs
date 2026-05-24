@@ -1,7 +1,7 @@
 //! End-to-end parallel-commit round-trip test.
 //!
 //! Drives the in-process txn-status runtime through stage -> ack ->
-//! finalize for a three-shard transaction and checks every voter agrees.
+//! finalize for a three-shard transaction and checks the local state-machine boundary.
 
 use ai_blaise_citus_sidecar_hlc::HlcTimestamp;
 use ai_blaise_citus_sidecar_txn_status::{

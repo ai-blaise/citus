@@ -22,8 +22,8 @@ use crate::SchemaJobSidecarError;
 use ai_blaise_citus_companion::{
     verify_two_version_invariant_sql, PhaseCheckpoint, PhaseTransitionDecision,
     PhaseTransitionPlan, RollbackPlan, SchemaJobController, SchemaJobControllerError,
-    SchemaJobPlan, SchemaJobState, TransitionGate, WorkerLease, WorkerLeaseRegistry,
-    WorkerLeaseStatus,
+    SchemaJobOperation, SchemaJobPlan, SchemaJobState, TransitionGate, WorkerLease,
+    WorkerLeaseRegistry, WorkerLeaseStatus,
 };
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -211,6 +211,79 @@ impl From<ControllerError> for SchemaJobSidecarError {
     fn from(error: ControllerError) -> Self {
         SchemaJobSidecarError::Companion(error.to_string())
     }
+}
+
+/// Deterministic controller scenarios used by the CLI and smoke tests.
+pub fn canonical_controller_tick_reports() -> Result<Vec<ControllerTickReport>, ControllerError> {
+    let advance = ControllerTickInput {
+        plan: canonical_plan(SchemaJobState::DeleteOnly),
+        target_state: SchemaJobState::WriteOnly,
+        expected_workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+        leases: vec![
+            canonical_lease(
+                "worker-a",
+                SchemaJobState::DeleteOnly,
+                "2026-05-22T14:00:00Z",
+            )?,
+            canonical_lease(
+                "worker-b",
+                SchemaJobState::DeleteOnly,
+                "2026-05-22T14:00:00Z",
+            )?,
+        ],
+        now: "2026-05-22T13:50:00Z".to_string(),
+        started_at: "2026-05-22T13:49:30Z".to_string(),
+        gate: TransitionGate::WaitForever,
+    };
+    let wait = ControllerTickInput {
+        plan: canonical_plan(SchemaJobState::WriteOnly),
+        target_state: SchemaJobState::Backfill,
+        expected_workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+        leases: vec![canonical_lease(
+            "worker-a",
+            SchemaJobState::WriteOnly,
+            "2026-05-22T14:00:00Z",
+        )?],
+        now: "2026-05-22T13:50:00Z".to_string(),
+        started_at: "2026-05-22T13:49:30Z".to_string(),
+        gate: TransitionGate::WaitForever,
+    };
+    let rollback = ControllerTickInput {
+        plan: canonical_plan(SchemaJobState::Backfill),
+        target_state: SchemaJobState::Public,
+        expected_workers: vec!["worker-a".to_string()],
+        leases: vec![canonical_lease(
+            "worker-a",
+            SchemaJobState::Backfill,
+            "2026-05-22T13:00:00Z",
+        )?],
+        now: "2026-05-22T15:00:00Z".to_string(),
+        started_at: "2026-05-22T14:30:00Z".to_string(),
+        gate: TransitionGate::RollbackOnTimeout,
+    };
+    Ok(vec![tick(&advance)?, tick(&wait)?, tick(&rollback)?])
+}
+
+fn canonical_plan(state: SchemaJobState) -> SchemaJobPlan {
+    SchemaJobPlan {
+        name: "users-display-name".to_string(),
+        table: "public.users".to_string(),
+        state,
+        operations: vec![SchemaJobOperation::AddColumn {
+            column: "display_name".to_string(),
+            sql_type: "text".to_string(),
+        }],
+        lease_seconds: 30,
+    }
+}
+
+fn canonical_lease(
+    worker_id: &str,
+    phase: SchemaJobState,
+    expires: &str,
+) -> Result<WorkerLease, ControllerError> {
+    WorkerLease::new(worker_id, "users-display-name", "schema-v2", phase, expires)
+        .map_err(|error| ControllerError::Companion(error.to_string()))
 }
 
 /// Snapshot of one expected worker as the controller sees it. Useful for

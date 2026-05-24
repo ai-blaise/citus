@@ -515,12 +515,22 @@ more production-ready than the artifacts justified.
   timestamp follower-read serve/reject gates; HLC runtime canonical output
   proves peer clock exchange and closed-timestamp derivation;
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
-  step count; and `sql-extension-smoke.sh` installs `companion.txn_stage`/
+  step count; `schema-txn-runtime-smoke.sh` drives the real txn-status HTTP
+  server through stage -> wait -> ack -> commit with malformed/unknown-field
+  rejection; and `sql-extension-smoke.sh` installs `companion.txn_stage`/
   `companion.txn_finalize` into real PostgreSQL. S4, S5, S9, MR6, and T5
   remain alpha for the broader distributed-database behavior until networked
   multi-process Raft, MVCC follower-read execution, PostgreSQL-core patch
   integration, Citus executor integration, pool routing, and Kubernetes
   operator reconciliation are live-gated.
+- The schema-job sidecar now has an explicit runtime-boundary smoke for the
+  narrow C10/M2 sidecar surface. `schema-txn-runtime-smoke.sh` runs the real
+  binary canonical worker output, controller advance/wait/rollback output,
+  manifest validator, unsafe SQL/apply-boundary rejection, malformed JSON
+  rejection, and loopback probe behavior. This is still not evidence for live
+  Kubernetes reconciliation, lock orchestration, dual-write triggers, or actual
+  DDL/backfill execution workers beyond the SQL catalog state machine already
+  proven by `sql-extension-smoke.sh`.
 - The auto-API sidecars and edge-functions Rust boundary now have bounded
   process/socket smokes for their canonical API contracts. The shared smoke
   builds the real PostgREST, GraphQL, and edge-functions binaries, runs their

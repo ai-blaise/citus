@@ -3,10 +3,12 @@
 
 use ai_blaise_citus_companion::{SchemaJobOperation, SchemaJobState};
 use ai_blaise_citus_sidecar_schema_job::{
-    canonical_schema_job_report, SchemaJobAction, SchemaJobWorkerPlan,
+    canonical_controller_tick_reports, canonical_schema_job_report, parse_worker_plan_manifest,
+    ControllerTickDecision, SchemaJobAction, SchemaJobWorkerPlan,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
+use std::fs;
 use std::process;
 
 fn main() {
@@ -21,6 +23,16 @@ fn main() {
         return;
     }
 
+    if args == ["run-controller-canonical"] {
+        emit_controller_canonical();
+        return;
+    }
+
+    if args.first().map(String::as_str) == Some("validate-manifest") && args.len() == 2 {
+        validate_manifest(&args[1]);
+        return;
+    }
+
     if !args.is_empty() && args != ["run-canonical"] {
         eprintln!("schema-job: unknown command");
         print_usage();
@@ -31,35 +43,92 @@ fn main() {
         eprintln!("schema-job: canonical report failed: {error}");
         process::exit(1);
     });
-    let shadow = report.worker.shadow.as_ref();
+    emit_worker_report(&report.worker, &report.action);
+}
+
+fn emit_worker_report(worker: &SchemaJobWorkerPlan, action: &SchemaJobAction) {
+    let shadow = worker.shadow.as_ref();
 
     println!(
         "job\ttable\tstate\toperation\tworker_id\tlease_holder\tlease_epoch\taction\tbatch_size\tmax_parallel_shards\tthrottle_ms\tmax_lock_ms\tallow_blocking_cutover\tshadow_table"
     );
     println!(
         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-        report.worker.job.name,
-        report.worker.job.table,
-        state_name(&report.worker.job.state),
-        operation_name(&report.worker),
-        report.worker.worker_id,
-        report.worker.lease.holder,
-        report.worker.lease.epoch,
-        action_name(&report.action),
-        report.worker.backfill.batch_size,
-        report.worker.backfill.max_parallel_shards,
-        report.worker.backfill.throttle_ms,
-        report.worker.safety.max_lock_ms,
-        report.worker.safety.allow_blocking_cutover,
+        worker.job.name,
+        worker.job.table,
+        state_name(&worker.job.state),
+        operation_name(worker),
+        worker.worker_id,
+        worker.lease.holder,
+        worker.lease.epoch,
+        action_name(action),
+        worker.backfill.batch_size,
+        worker.backfill.max_parallel_shards,
+        worker.backfill.throttle_ms,
+        worker.safety.max_lock_ms,
+        worker.safety.allow_blocking_cutover,
         shadow
             .map(|plan| plan.shadow_table.as_str())
             .unwrap_or("none"),
     );
 }
 
+fn validate_manifest(path: &str) {
+    let raw = fs::read_to_string(path).unwrap_or_else(|error| {
+        eprintln!("schema-job: could not read manifest {path}: {error}");
+        process::exit(1);
+    });
+    let worker = parse_worker_plan_manifest(&raw).unwrap_or_else(|error| {
+        eprintln!("schema-job: manifest validation failed: {error}");
+        process::exit(1);
+    });
+    let action = worker.next_action().unwrap_or_else(|error| {
+        eprintln!("schema-job: manifest action failed: {error}");
+        process::exit(1);
+    });
+    emit_worker_report(&worker, &action);
+}
+
+fn emit_controller_canonical() {
+    let reports = canonical_controller_tick_reports().unwrap_or_else(|error| {
+        eprintln!("schema-job: controller canonical report failed: {error}");
+        process::exit(1);
+    });
+    println!(
+        "scenario\tjob\tfrom_state\ttarget_state\tdecision\tsql_count\ttwo_version_check\tdelinquent_workers\trollback_steps"
+    );
+    for report in reports {
+        let (scenario, delinquent_workers, rollback_steps) = match &report.decision {
+            ControllerTickDecision::Advance(_) => ("advance", String::new(), 0),
+            ControllerTickDecision::Wait { delinquent_workers } => {
+                ("wait", delinquent_workers.join(","), 0)
+            }
+            ControllerTickDecision::Rollback { rollback, .. } => {
+                ("rollback", String::new(), rollback.steps.len())
+            }
+        };
+        println!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            scenario,
+            report.job_name,
+            state_name(&report.from_state),
+            state_name(&report.target_state),
+            report.decision.as_canonical(),
+            report.sql_statements.len(),
+            report
+                .two_version_invariant_check_sql
+                .contains("verify_two_version_invariant"),
+            delinquent_workers,
+            rollback_steps,
+        );
+    }
+}
+
 fn print_usage() {
-    println!("usage: schema-job [serve|run-canonical]");
-    println!("runs the deterministic canonical schema-job sidecar plan and emits TSV");
+    println!(
+        "usage: schema-job [serve|run-canonical|run-controller-canonical|validate-manifest PATH]"
+    );
+    println!("runs deterministic schema-job sidecar plans, controller ticks, or manifest validation and emits TSV");
 }
 
 fn run_server(component: &str, default_addr: &str) {

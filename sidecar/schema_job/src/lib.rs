@@ -6,11 +6,14 @@
 pub mod controller;
 
 pub use controller::{
-    tick, worker_status_snapshot, ControllerError, ControllerTickDecision, ControllerTickInput,
-    ControllerTickReport, WorkerStatusSnapshot,
+    canonical_controller_tick_reports, tick, worker_status_snapshot, ControllerError,
+    ControllerTickDecision, ControllerTickInput, ControllerTickReport, WorkerStatusSnapshot,
 };
 
-use ai_blaise_citus_companion::{SchemaJobError, SchemaJobPlan, SchemaJobState};
+use ai_blaise_citus_companion::{
+    SchemaJobError, SchemaJobOperation, SchemaJobPlan, SchemaJobState,
+};
+use serde::Deserialize;
 use std::error::Error;
 use std::fmt;
 
@@ -27,6 +30,7 @@ pub struct SchemaJobWorkerPlan {
 impl SchemaJobWorkerPlan {
     pub fn validate(&self) -> Result<(), SchemaJobSidecarError> {
         self.job.validate()?;
+        validate_job_apply_boundary(&self.job)?;
         validate_required("worker_id", &self.worker_id)?;
         self.lease.validate()?;
         self.backfill.validate()?;
@@ -64,7 +68,8 @@ impl SchemaJobWorkerPlan {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SchemaJobLease {
     pub holder: String,
     pub epoch: u64,
@@ -81,7 +86,8 @@ impl SchemaJobLease {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BackfillPlan {
     pub batch_size: u32,
     pub max_parallel_shards: u32,
@@ -100,7 +106,8 @@ impl BackfillPlan {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OnlineDdlSafetyPlan {
     pub max_replication_lag_bytes: u64,
     pub max_lock_ms: u32,
@@ -121,7 +128,8 @@ impl OnlineDdlSafetyPlan {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GhOstShadowPlan {
     pub source_table: String,
     pub shadow_table: String,
@@ -139,6 +147,103 @@ impl GhOstShadowPlan {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SchemaJobManifest {
+    pub job: ManifestJob,
+    pub worker_id: String,
+    pub lease: SchemaJobLease,
+    pub backfill: BackfillPlan,
+    pub safety: OnlineDdlSafetyPlan,
+    pub shadow: Option<GhOstShadowPlan>,
+}
+
+impl SchemaJobManifest {
+    pub fn into_worker_plan(self) -> Result<SchemaJobWorkerPlan, SchemaJobSidecarError> {
+        let job = self.job.into_plan()?;
+        let worker = SchemaJobWorkerPlan {
+            job,
+            worker_id: self.worker_id,
+            lease: self.lease,
+            backfill: self.backfill,
+            safety: self.safety,
+            shadow: self.shadow,
+        };
+        worker.validate()?;
+        Ok(worker)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestJob {
+    pub name: String,
+    pub table: String,
+    pub state: String,
+    pub operations: Vec<ManifestSchemaJobOperation>,
+    pub lease_seconds: u32,
+}
+
+impl ManifestJob {
+    fn into_plan(self) -> Result<SchemaJobPlan, SchemaJobSidecarError> {
+        Ok(SchemaJobPlan {
+            name: self.name,
+            table: self.table,
+            state: SchemaJobState::from_canonical(&self.state)?,
+            operations: self
+                .operations
+                .into_iter()
+                .map(ManifestSchemaJobOperation::into_operation)
+                .collect(),
+            lease_seconds: self.lease_seconds,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ManifestSchemaJobOperation {
+    AddColumn {
+        column: String,
+        sql_type: String,
+    },
+    Backfill {
+        statement: String,
+    },
+    SwapColumn {
+        old_column: String,
+        new_column: String,
+    },
+    DropColumn {
+        column: String,
+    },
+}
+
+impl ManifestSchemaJobOperation {
+    fn into_operation(self) -> SchemaJobOperation {
+        match self {
+            Self::AddColumn { column, sql_type } => {
+                SchemaJobOperation::AddColumn { column, sql_type }
+            }
+            Self::Backfill { statement } => SchemaJobOperation::Backfill { statement },
+            Self::SwapColumn {
+                old_column,
+                new_column,
+            } => SchemaJobOperation::SwapColumn {
+                old_column,
+                new_column,
+            },
+            Self::DropColumn { column } => SchemaJobOperation::DropColumn { column },
+        }
+    }
+}
+
+pub fn parse_worker_plan_manifest(raw: &str) -> Result<SchemaJobWorkerPlan, SchemaJobSidecarError> {
+    let manifest: SchemaJobManifest = serde_json::from_str(raw)
+        .map_err(|error| SchemaJobSidecarError::ManifestJson(error.to_string()))?;
+    manifest.into_worker_plan()
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -165,6 +270,8 @@ pub enum SchemaJobSidecarError {
     InvalidParallelism,
     InvalidReplicationLagBudget,
     InvalidTimestamp(&'static str),
+    InvalidSqlBoundary(&'static str),
+    ManifestJson(String),
     MissingRequiredField(&'static str),
     DataInvariantsNotVerified { job_name: String },
 }
@@ -189,6 +296,11 @@ impl fmt::Display for SchemaJobSidecarError {
             Self::InvalidTimestamp(field) => {
                 write!(formatter, "{field} must be an RFC3339 UTC timestamp")
             }
+            Self::InvalidSqlBoundary(field) => write!(
+                formatter,
+                "{field} contains SQL that is outside the schema-job apply boundary"
+            ),
+            Self::ManifestJson(error) => write!(formatter, "manifest JSON invalid: {error}"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::DataInvariantsNotVerified { job_name } => write!(
                 formatter,
@@ -224,13 +336,83 @@ fn validate_timestamp(field: &'static str, value: &str) -> Result<(), SchemaJobS
 
 fn validate_identifier(field: &'static str, value: &str) -> Result<(), SchemaJobSidecarError> {
     validate_required(field, value)?;
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(SchemaJobSidecarError::MissingRequiredField(field));
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return Err(SchemaJobSidecarError::InvalidIdentifier(field));
+    }
+    if chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
         Ok(())
     } else {
         Err(SchemaJobSidecarError::InvalidIdentifier(field))
+    }
+}
+
+fn validate_job_apply_boundary(job: &SchemaJobPlan) -> Result<(), SchemaJobSidecarError> {
+    validate_qualified_name("job.table", &job.table)?;
+    for operation in &job.operations {
+        match operation {
+            SchemaJobOperation::AddColumn { column, sql_type } => {
+                validate_identifier("operations.column", column)?;
+                validate_safe_sql_fragment("operations.sql_type", sql_type)?;
+            }
+            SchemaJobOperation::Backfill { statement } => {
+                validate_backfill_statement(statement)?;
+            }
+            SchemaJobOperation::SwapColumn {
+                old_column,
+                new_column,
+            } => {
+                validate_identifier("operations.old_column", old_column)?;
+                validate_identifier("operations.new_column", new_column)?;
+            }
+            SchemaJobOperation::DropColumn { column } => {
+                validate_identifier("operations.column", column)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_safe_sql_fragment(
+    field: &'static str,
+    value: &str,
+) -> Result<(), SchemaJobSidecarError> {
+    validate_required(field, value)?;
+    let lower = value.to_ascii_lowercase();
+    if [";", "--", "/*", "*/", "'", "\"", "$$"]
+        .iter()
+        .any(|token| lower.contains(token))
+    {
+        return Err(SchemaJobSidecarError::InvalidSqlBoundary(field));
+    }
+    if value.chars().all(|ch| {
+        ch.is_ascii_alphanumeric()
+            || matches!(
+                ch,
+                '_' | ' ' | '(' | ')' | ',' | '[' | ']' | '.' | '+' | '-' | '=' | '<' | '>'
+            )
+    }) {
+        Ok(())
+    } else {
+        Err(SchemaJobSidecarError::InvalidSqlBoundary(field))
+    }
+}
+
+fn validate_backfill_statement(statement: &str) -> Result<(), SchemaJobSidecarError> {
+    validate_safe_sql_fragment("operations.statement", statement)?;
+    if statement
+        .trim_start()
+        .to_ascii_lowercase()
+        .starts_with("update ")
+    {
+        Ok(())
+    } else {
+        Err(SchemaJobSidecarError::InvalidSqlBoundary(
+            "operations.statement",
+        ))
     }
 }
 
@@ -353,6 +535,82 @@ mod tests {
         assert_eq!(
             plan.validate(),
             Err(SchemaJobSidecarError::InvalidReplicationLagBudget)
+        );
+    }
+
+    #[test]
+    fn manifest_parser_accepts_valid_manifest() {
+        let raw = r#"{
+          "job": {
+            "name": "users-display-name",
+            "table": "public.users",
+            "state": "backfill",
+            "lease_seconds": 30,
+            "operations": [
+              {"kind":"add_column","column":"display_name","sql_type":"text"},
+              {"kind":"backfill","statement":"UPDATE public.users SET display_name = name WHERE display_name IS NULL"}
+            ]
+          },
+          "worker_id": "schema-worker-a",
+          "lease": {"holder":"schema-worker-a","epoch":1,"expires_at":"2026-05-19T12:00:00Z"},
+          "backfill": {"batch_size":1000,"max_parallel_shards":4,"throttle_ms":50},
+          "safety": {"max_replication_lag_bytes":16777216,"max_lock_ms":500,"allow_blocking_cutover":false,"require_data_invariants":true,"data_invariants_verified":true},
+          "shadow": {"source_table":"public.users","shadow_table":"public._users_new","changelog_table":"public._users_changelog","cutover_lock_timeout_ms":500}
+        }"#;
+
+        let plan = parse_worker_plan_manifest(raw).expect("manifest");
+        assert_eq!(plan.job.state, SchemaJobState::Backfill);
+        assert_eq!(
+            plan.next_action().expect("action"),
+            SchemaJobAction::RunBackfill {
+                batch_size: 1000,
+                max_parallel_shards: 4
+            }
+        );
+    }
+
+    #[test]
+    fn manifest_parser_fails_closed_on_unverified_public_cutover() {
+        let raw = r#"{
+          "job": {"name":"users-display-name","table":"public.users","state":"public","lease_seconds":30,"operations":[{"kind":"add_column","column":"display_name","sql_type":"text"}]},
+          "worker_id": "schema-worker-a",
+          "lease": {"holder":"schema-worker-a","epoch":1,"expires_at":"2026-05-19T12:00:00Z"},
+          "backfill": {"batch_size":1000,"max_parallel_shards":4,"throttle_ms":50},
+          "safety": {"max_replication_lag_bytes":16777216,"max_lock_ms":500,"allow_blocking_cutover":false,"require_data_invariants":true,"data_invariants_verified":false},
+          "shadow": null
+        }"#;
+
+        assert_eq!(
+            parse_worker_plan_manifest(raw).and_then(|plan| plan.next_action()),
+            Err(SchemaJobSidecarError::DataInvariantsNotVerified {
+                job_name: "users-display-name".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn apply_boundary_rejects_unsafe_sql_fragments() {
+        let mut plan = valid_worker_plan();
+        plan.job.operations = vec![SchemaJobOperation::AddColumn {
+            column: "display_name".to_string(),
+            sql_type: "text; drop table public.users".to_string(),
+        }];
+
+        assert_eq!(
+            plan.validate(),
+            Err(SchemaJobSidecarError::InvalidSqlBoundary(
+                "operations.sql_type"
+            ))
+        );
+    }
+
+    #[test]
+    fn identifiers_must_start_with_letter_or_underscore() {
+        assert_eq!(
+            validate_identifier("operations.column", "1bad"),
+            Err(SchemaJobSidecarError::InvalidIdentifier(
+                "operations.column"
+            ))
         );
     }
 
