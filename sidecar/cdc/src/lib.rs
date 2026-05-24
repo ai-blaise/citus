@@ -289,6 +289,95 @@ impl SchemaCapturePlan {
         validate_qualified_name("schema_capture.ddl_stream_table", &self.ddl_stream_table)?;
         validate_required_list("schema_capture.include_schemas", &self.include_schemas)
     }
+
+    /// FEATURE: C2 -- parse rows from the configured DDL stream table after
+    /// they traverse the same wal2json/pgoutput replication boundary as row
+    /// changes. Missing or malformed DDL rows fail closed when the plan asks
+    /// for strict parsing, so consumers do not silently miss schema changes.
+    pub fn parse_ddl_stream_event(
+        &self,
+        event: &CdcEventEnvelope,
+    ) -> Result<Option<DdlStreamEvent>, CdcSidecarError> {
+        self.validate()?;
+        let Some((stream_schema, stream_table)) = self.ddl_stream_table.split_once('.') else {
+            return Err(CdcSidecarError::InvalidIdentifier(
+                "schema_capture.ddl_stream_table",
+            ));
+        };
+        if event.schema != stream_schema || event.table != stream_table {
+            return Ok(None);
+        }
+
+        let parsed = DdlStreamEvent::from_cdc_event(event, &self.ddl_stream_table);
+        match parsed {
+            Ok(ddl_event) => {
+                if self
+                    .include_schemas
+                    .iter()
+                    .any(|schema| schema == &ddl_event.object_schema)
+                {
+                    Ok(Some(ddl_event))
+                } else {
+                    Ok(None)
+                }
+            }
+            Err(error) if self.fail_on_parse_error => Err(error),
+            Err(_) => Ok(None),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DdlStreamEvent {
+    pub lsn: String,
+    pub ddl_stream_table: String,
+    pub command_tag: String,
+    pub object_schema: String,
+    pub object_identity: String,
+    pub ddl: String,
+    pub occurred_at: String,
+}
+
+impl DdlStreamEvent {
+    fn from_cdc_event(
+        event: &CdcEventEnvelope,
+        ddl_stream_table: &str,
+    ) -> Result<Self, CdcSidecarError> {
+        let ddl_event = Self {
+            lsn: event.lsn.clone(),
+            ddl_stream_table: ddl_stream_table.to_string(),
+            command_tag: required_column(event, "command_tag")?,
+            object_schema: required_column(event, "object_schema")?,
+            object_identity: required_column(event, "object_identity")?,
+            ddl: required_column(event, "ddl")?,
+            occurred_at: required_column(event, "occurred_at")?,
+        };
+        ddl_event.validate()?;
+        Ok(ddl_event)
+    }
+
+    fn validate(&self) -> Result<(), CdcSidecarError> {
+        validate_lsn(&self.lsn)?;
+        validate_qualified_name("ddl_event.ddl_stream_table", &self.ddl_stream_table)?;
+        validate_required("ddl_event.command_tag", &self.command_tag)?;
+        validate_identifier("ddl_event.object_schema", &self.object_schema)?;
+        validate_required("ddl_event.object_identity", &self.object_identity)?;
+        validate_required("ddl_event.ddl", &self.ddl)?;
+        validate_required("ddl_event.occurred_at", &self.occurred_at)
+    }
+}
+
+fn required_column(
+    event: &CdcEventEnvelope,
+    name: &'static str,
+) -> Result<String, CdcSidecarError> {
+    event
+        .columns
+        .iter()
+        .find(|column| column.name == name)
+        .and_then(|column| column.value.clone())
+        .filter(|value| !value.trim().is_empty())
+        .ok_or(CdcSidecarError::MissingRequiredField(name))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1287,5 +1376,55 @@ mod tests {
                 "schema_capture.ddl_stream_table"
             ))
         );
+    }
+
+    #[test]
+    fn schema_capture_parses_ddl_stream_event() {
+        let plan = SchemaCapturePlan {
+            ddl_stream_table: "cdc.ddl_events".to_string(),
+            include_schemas: vec!["public".to_string()],
+            fail_on_parse_error: true,
+        };
+        let event = CdcEventEnvelope {
+            lsn: "16/B374DA00".to_string(),
+            schema: "cdc".to_string(),
+            table: "ddl_events".to_string(),
+            tenant_id: "schema-capture".to_string(),
+            operation: CdcOperation::Insert,
+            columns: vec![
+                CdcColumnValue {
+                    name: "tenant_id".to_string(),
+                    value: Some("schema-capture".to_string()),
+                },
+                CdcColumnValue {
+                    name: "command_tag".to_string(),
+                    value: Some("CREATE TABLE".to_string()),
+                },
+                CdcColumnValue {
+                    name: "object_schema".to_string(),
+                    value: Some("public".to_string()),
+                },
+                CdcColumnValue {
+                    name: "object_identity".to_string(),
+                    value: Some("public.cdc_schema_smoke".to_string()),
+                },
+                CdcColumnValue {
+                    name: "ddl".to_string(),
+                    value: Some("CREATE TABLE public.cdc_schema_smoke(id bigint)".to_string()),
+                },
+                CdcColumnValue {
+                    name: "occurred_at".to_string(),
+                    value: Some("2026-05-24T18:00:00Z".to_string()),
+                },
+            ],
+        };
+
+        let parsed = plan
+            .parse_ddl_stream_event(&event)
+            .expect("parse")
+            .expect("ddl event");
+        assert_eq!(parsed.command_tag, "CREATE TABLE");
+        assert_eq!(parsed.object_schema, "public");
+        assert_eq!(parsed.object_identity, "public.cdc_schema_smoke");
     }
 }

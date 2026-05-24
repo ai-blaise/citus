@@ -38,6 +38,9 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+SIDECAR_CDC_SMOKE = ROOT / "ci/ai-blaise/sidecar-cdc-smoke.sh"
+SIDECAR_CDC_README = ROOT / "sidecar/cdc/README.md"
+SIDECAR_CDC_MODIFICATION = ROOT / "sidecar/cdc/MODIFICATION.md"
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
@@ -380,6 +383,9 @@ for path in (
     MAKEFILE,
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
+    SIDECAR_CDC_SMOKE,
+    SIDECAR_CDC_README,
+    SIDECAR_CDC_MODIFICATION,
     STRUCTURED_LOG_INGESTION_SMOKE,
     OBSERVABILITY_WORKFLOW,
     SIDECAR_REALTIME_SMOKE,
@@ -582,6 +588,52 @@ for phrase in (
 ):
     if phrase not in realtime_smoke:
         fail(f"realtime smoke missing fail-closed runtime proof phrase: {phrase}")
+
+sidecar_cdc_smoke = read(SIDECAR_CDC_SMOKE)
+cdc_truth = compact(
+    docs
+    + "\n"
+    + audit
+    + "\n"
+    + sidecar_cdc_smoke
+    + "\n"
+    + read(SIDECAR_CDC_README)
+    + "\n"
+    + read(SIDECAR_CDC_MODIFICATION)
+)
+if status_by_id.get("C2") != "production-ready":
+    fail("C2 must be production-ready after live PostgreSQL DDL capture parsing evidence")
+for phrase in (
+    "postgres:17-bookworm",
+    "CREATE EVENT TRIGGER ai_blaise_capture_ddl",
+    "CREATE TABLE public.cdc_schema_smoke",
+    "ddl_events_total",
+    "ddl_stream_table",
+    "command_tag",
+    "object_schema",
+    "object_identity",
+    "ddl_event",
+    "same /ingest",
+    "long-running logical replication slot tailing",
+):
+    if compact(phrase) not in cdc_truth:
+        fail(f"C2 DDL capture production boundary must preserve phrase: {phrase}")
+cdc_executable_truth = (
+    sidecar_cdc_smoke
+    + "\n"
+    + read(ROOT / "sidecar/cdc/src/lib.rs")
+    + "\n"
+    + read(ROOT / "sidecar/cdc/src/live.rs")
+)
+for phrase in (
+    "DdlStreamEvent",
+    "parse_ddl_stream_event",
+    "POSTGRES_HOST_AUTH_METHOD=trust",
+    "command_tag = 'CREATE TABLE'",
+    "OK cdc-sidecar live Postgres DDL capture parsed through /ingest",
+):
+    if phrase not in cdc_executable_truth:
+        fail(f"C2 DDL capture executable proof must preserve phrase: {phrase}")
 
 sidecar_smoke = read(SIDECAR_API_SMOKE)
 for required in (

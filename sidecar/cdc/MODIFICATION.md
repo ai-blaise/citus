@@ -30,3 +30,7 @@ Added under `serve`:
 Regression coverage: unit tests in `replication::tests` cover env target
 parsing, `PgoutputRowChange::into_event` validation, and the header set the
 sink emits. Existing canonical contract tests in `lib.rs` are untouched.
+
+## 2026-05-24 - C2 DDL stream parser live evidence
+
+Added bounded production evidence for schema-aware CDC DDL streams. The runtime now parses rows from the configured `schema_capture.ddl_stream_table` into `DdlStreamEvent` records and includes them in `/ingest` reports. `ci/ai-blaise/sidecar-cdc-smoke.sh` can run with `REQUIRE_DOCKER=1` to boot a live `postgres:17-bookworm` event-trigger harness, capture `CREATE TABLE public.cdc_schema_smoke` into `cdc.ddl_events`, and post the captured row through the normal wal2json `/ingest` path.

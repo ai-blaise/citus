@@ -429,6 +429,11 @@ for main_file in "${required_serve_mains[@]}"; do
   elif [[ "${main_file}" == "sidecar/cdc/src/main.rs" ]]; then
     grep -Fq 'runtime::serve' "${main_file}"
     grep -Fq 'serve("cdc", default_addr)' "${main_file}"
+    grep -Fq 'DdlStreamEvent' sidecar/cdc/src/lib.rs
+    grep -Fq 'parse_ddl_stream_event' sidecar/cdc/src/lib.rs
+    grep -Fq 'ddl_events_total' "${main_file}"
+    grep -Fq 'CREATE EVENT TRIGGER ai_blaise_capture_ddl' ci/ai-blaise/sidecar-cdc-smoke.sh
+    grep -Fq 'OK cdc-sidecar live Postgres DDL capture parsed through /ingest' ci/ai-blaise/sidecar-cdc-smoke.sh
     grep -Fq 'route("/healthz", get(healthz))' sidecar/cdc/src/runtime.rs
     grep -Fq 'route("/readyz", get(readyz))' sidecar/cdc/src/runtime.rs
     grep -Fq 'route("/metrics", get(metrics))' sidecar/cdc/src/runtime.rs

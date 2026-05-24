@@ -16,8 +16,8 @@ use crate::sinks::{encode_sink_frame, CdcEventPayload, SinkDispatchReport, SinkW
 use crate::source::{decode_replication_frame, ReplicationFrame};
 use crate::{
     anon, build_dlq_record, decode_wal2json_frame, CdcDeliveryPlan, CdcEventEnvelope, CdcRuntime,
-    CdcSidecarError, CdcSidecarPlan, CdcSinkPlan, Dlq, DlqRecord, LogicalReplicationFrame,
-    SinkDeliveryOutcome, WalOutputPlugin,
+    CdcSidecarError, CdcSidecarPlan, CdcSinkPlan, DdlStreamEvent, Dlq, DlqRecord,
+    LogicalReplicationFrame, SinkDeliveryOutcome, WalOutputPlugin,
 };
 
 /// Source of replication frames. The default is wal2json over a logical
@@ -55,6 +55,7 @@ impl CdcRuntimeConfig {
 pub struct CdcDispatchedEvent {
     pub event: CdcEventEnvelope,
     pub anonymized_columns: Vec<String>,
+    pub ddl_event: Option<DdlStreamEvent>,
     pub plan: CdcDeliveryPlan,
     pub frames: Vec<SinkWireFrame>,
     pub outcomes: Vec<SinkDeliveryOutcome>,
@@ -67,6 +68,7 @@ pub struct CdcDispatchReport {
     pub start_lsn: String,
     pub end_lsn: String,
     pub events: Vec<CdcDispatchedEvent>,
+    pub ddl_events: Vec<DdlStreamEvent>,
     pub dlq_total: usize,
     pub bytes_total: u64,
 }
@@ -158,10 +160,21 @@ impl CdcLiveRuntime {
     ) -> Result<CdcDispatchReport, CdcSidecarError> {
         let batch = self.runtime.advance_with_events(frame, &raw_events)?;
         let mut dispatched = Vec::with_capacity(raw_events.len());
+        let mut ddl_events = Vec::new();
         let mut dlq_total = 0_usize;
         let mut bytes_total = 0_u64;
         for (event, delivery_report) in raw_events.into_iter().zip(batch.deliveries.iter()) {
             let mut event = event;
+            let ddl_event = self
+                .plan
+                .schema_capture
+                .as_ref()
+                .map(|schema_capture| schema_capture.parse_ddl_stream_event(&event))
+                .transpose()?
+                .flatten();
+            if let Some(ddl_event) = &ddl_event {
+                ddl_events.push(ddl_event.clone());
+            }
             let applied = anon::apply_anonymization(&self.plan.anonymization, &mut event);
             let payload = CdcEventPayload::encode(&event, &applied);
             let mut frames = Vec::with_capacity(self.plan.sinks.len());
@@ -190,6 +203,7 @@ impl CdcLiveRuntime {
             dispatched.push(CdcDispatchedEvent {
                 event,
                 anonymized_columns: applied,
+                ddl_event,
                 plan: delivery_report.delivery.clone(),
                 frames,
                 outcomes,
@@ -201,6 +215,7 @@ impl CdcLiveRuntime {
             start_lsn: batch.start_lsn,
             end_lsn: batch.end_lsn,
             events: dispatched,
+            ddl_events,
             dlq_total,
             bytes_total,
         })
@@ -348,6 +363,29 @@ mod tests {
         assert_eq!(
             report.events[0].anonymized_columns,
             vec!["email".to_string()]
+        );
+    }
+
+    #[test]
+    fn live_runtime_surfaces_ddl_stream_events() {
+        let config = CdcRuntimeConfig::canonical();
+        let mut runtime = CdcLiveRuntime::new(config).expect("runtime");
+        let frame = LogicalReplicationFrame {
+            start_lsn: "16/B374D900".to_string(),
+            end_lsn: "16/B374DA00".to_string(),
+            payload: r#"{"change":[{"kind":"insert","schema":"cdc","table":"ddl_events","columnnames":["tenant_id","command_tag","object_schema","object_identity","ddl","occurred_at"],"columnvalues":["schema-capture","CREATE TABLE","public","public.cdc_schema_smoke","CREATE TABLE public.cdc_schema_smoke(id bigint)","2026-05-24T18:00:00Z"]}]}"#.to_string(),
+        };
+
+        let report = runtime.ingest_wal2json(&frame).expect("ingest");
+        assert_eq!(report.ddl_events.len(), 1);
+        assert_eq!(report.ddl_events[0].command_tag, "CREATE TABLE");
+        assert_eq!(
+            report.ddl_events[0].object_identity,
+            "public.cdc_schema_smoke"
+        );
+        assert_eq!(
+            report.events[0].ddl_event,
+            Some(report.ddl_events[0].clone())
         );
     }
 

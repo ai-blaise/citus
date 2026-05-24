@@ -10,7 +10,8 @@ use ai_blaise_citus_sidecar_cdc::{
     canonical_cdc_event, canonical_cdc_plan, canonical_cdc_runtime_report, canonical_delivery_plan,
     canonical_wal2json_frame, encode_sink_frame, runtime::serve, CdcDispatchReport,
     CdcEventEnvelope, CdcEventPayload, CdcLiveRuntime, CdcOperation, CdcReplicationSource,
-    CdcRuntimeConfig, CdcSidecarError, LogicalReplicationFrame, SinkDeliveryOutcome,
+    CdcRuntimeConfig, CdcSidecarError, DdlStreamEvent, LogicalReplicationFrame,
+    SinkDeliveryOutcome,
 };
 use ai_blaise_citus_sidecar_shared::listen_addr_from_env;
 use serde_json::Value;
@@ -463,18 +464,34 @@ fn dispatch_report_json(report: &CdcDispatchReport) -> String {
                 "table": format!("{}.{}", event.event.schema, event.event.table),
                 "operation": operation_name(&event.event.operation),
                 "anonymized_columns": event.anonymized_columns,
+                "ddl_event": event.ddl_event.as_ref().map(ddl_event_json),
                 "frames": frames,
             })
         })
         .collect();
+    let ddl_events: Vec<serde_json::Value> = report.ddl_events.iter().map(ddl_event_json).collect();
     serde_json::json!({
         "start_lsn": report.start_lsn,
         "end_lsn": report.end_lsn,
+        "ddl_events_total": report.ddl_events.len(),
+        "ddl_events": ddl_events,
         "dlq_total": report.dlq_total,
         "bytes_total": report.bytes_total,
         "events": events,
     })
     .to_string()
+}
+
+fn ddl_event_json(event: &DdlStreamEvent) -> serde_json::Value {
+    serde_json::json!({
+        "lsn": event.lsn,
+        "ddl_stream_table": event.ddl_stream_table,
+        "command_tag": event.command_tag,
+        "object_schema": event.object_schema,
+        "object_identity": event.object_identity,
+        "ddl": event.ddl,
+        "occurred_at": event.occurred_at,
+    })
 }
 
 fn bridge_realtime(addr: &str, report: &CdcDispatchReport) {

@@ -2513,7 +2513,7 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 ### C2: Schema-Aware CDC Sinks
 
 **Overlay**: `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2526,7 +2526,7 @@ timeline so consumers do not decode WAL against stale table metadata.
 **Citus comparison**: Vanilla Citus does not ship schema-aware CDC sink
 coordination.
 
-Current boundary: Production evidence currently covers schema-qualified row-event delivery and sink wire encoding. Live DDL stream parsing remains alpha until a PostgreSQL DDL capture harness is wired into the replication client.
+Production evidence: `cargo test -p ai_blaise_citus_sidecar_cdc --lib` covers the schema-capture parser and live-runtime report path, and `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-cdc-smoke.sh` boots the real CDC sidecar plus a live `postgres:17-bookworm` DDL capture harness. The smoke creates a `cdc.ddl_events` stream table, installs `CREATE EVENT TRIGGER ai_blaise_capture_ddl`, executes `CREATE TABLE public.cdc_schema_smoke`, converts the captured row into a wal2json frame, posts it through the same `/ingest` replication boundary, and asserts `ddl_events_total`, `ddl_stream_table`, `command_tag`, `object_schema`, `object_identity`, and per-event `ddl_event` JSON. This makes C2 production-ready for schema-qualified row-event delivery, sink wire encoding, and DDL stream-table parsing through the sidecar runtime; it does not claim managed broker delivery, multi-node Kubernetes traffic, or long-running logical replication slot tailing beyond the existing CDC consumer contract.
 
 **References**:
 

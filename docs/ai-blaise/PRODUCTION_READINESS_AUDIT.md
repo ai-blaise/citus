@@ -856,17 +856,26 @@ any new source `FEATURE:` marker must land with a corresponding feature heading
 and evidence line before the audit passes. This keeps the catalog auditable, but
 alpha contract evidence is not independently sufficient for production signoff.
 
-Worker D CDC/realtime production evidence from 2026-05-23 adds `C1`, `C3`,
-`WH3`, `RT1`, `RT2`, `RT3`, `RT4`, and `RT5` to the narrow
-production-ready set. The evidence is limited to the CDC/realtime sidecar
-runtime boundary: wal2json ingest, pgoutput logical-frame decoder boundary,
-checkpoint/ack state, health/readiness/metrics, PII anonymization before sink
-encoding, file/in-memory DLQ records, raw WebSocket Phoenix channel join,
+Worker D CDC/realtime production evidence from 2026-05-23 and the C2 DDL
+capture follow-up from 2026-05-24 add `C1`, `C2`, `C3`, `WH3`, `RT1`, `RT2`,
+`RT3`, `RT4`, and `RT5` to the narrow production-ready set. The evidence is
+limited to the CDC/realtime sidecar runtime boundary: wal2json ingest, pgoutput
+logical-frame decoder boundary, checkpoint/ack state, health/readiness/metrics,
+PII anonymization before sink encoding, file/in-memory DLQ records,
+schema-qualified row-event delivery, DDL stream-table parsing from a live
+PostgreSQL event-trigger capture harness, raw WebSocket Phoenix channel join,
 presence, tenant/topic filtering, `postgres_changes` fan-out, and CDC-to-realtime
 Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 `cargo test -p ai_blaise_citus_sidecar_realtime`,
 `ci/ai-blaise/sidecar-cdc-smoke.sh`, and
-`ci/ai-blaise/sidecar-realtime-smoke.sh`. The realtime claim is bounded to
+`ci/ai-blaise/sidecar-realtime-smoke.sh`. The C2 DDL claim is bounded to a live
+`postgres:17-bookworm` harness that creates `cdc.ddl_events`, installs
+`CREATE EVENT TRIGGER ai_blaise_capture_ddl`, captures
+`CREATE TABLE public.cdc_schema_smoke`, and verifies `ddl_events_total`,
+`ddl_stream_table`, `command_tag`, `object_schema`, `object_identity`, and
+per-event `ddl_event` JSON through the same `/ingest` runtime path; managed
+broker delivery, multi-node Kubernetes traffic, and long-running logical
+replication slot tailing remain outside this promoted evidence. The realtime claim is bounded to
 `runtime_boundary=single-node-raw-ws-cdc-ingest` with
 `websocket_network_exercised=true`, `browser_client_exercised=false`,
 `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and
