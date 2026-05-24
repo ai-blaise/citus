@@ -27,6 +27,7 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       ai-blaise.citus.pg-core-patch-targets="logical-commit-clock per-subtrans-commit-ts"
 
 COPY extension-manifest.tsv /usr/local/share/ai-blaise/citus/extension-manifest.tsv
+COPY extensions/ai_blaise_citus-upgrade-manifest.tsv /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv
 COPY shared-preload-libraries.conf /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf
 COPY extensions/ai_blaise_citus.control /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control
 COPY extensions/ai_blaise_citus--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql
@@ -46,7 +47,8 @@ RUN set -eux; \
     cp /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf /etc/postgresql/ai-blaise/shared-preload-libraries.conf; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
-    sed -n '1,120p' /usr/local/share/ai-blaise/citus/extension-manifest.tsv >/usr/local/share/ai-blaise/citus/required-extension-preview.tsv
+    sed -n '1,120p' /usr/local/share/ai-blaise/citus/extension-manifest.tsv >/usr/local/share/ai-blaise/citus/required-extension-preview.tsv; \
+    test -s /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD pg_isready -U "${POSTGRES_USER:-postgres}" || exit 1

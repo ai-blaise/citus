@@ -6513,10 +6513,13 @@ catalog.
 **Bundled extension dep**: none
 
 **Summary**: Tracks the canary-upgrade rehearsal artifact as a required
-operations contract.
+operations contract and adds a fail-closed static guard for companion extension
+transition manifests, bounded Citus upgrade/downgrade SQL, and version-skew
+rollback wording.
 
-**Current boundary**: The operations runner verifies the runbook contract, but
-an automated canary cluster upgrade with rollback evidence is still alpha.
+**Current boundary**: The operations runner verifies the runbook contract and
+`ci/ai-blaise/upgrade-rollback-guardrails.sh` verifies static artifacts, but an
+automated canary cluster upgrade with rollback evidence is still alpha.
 
 **Citus comparison**: Vanilla Citus does not include this canary upgrade
 runbook.
@@ -6524,6 +6527,7 @@ runbook.
 **References**:
 
 - In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
+- CI: `ci/ai-blaise/upgrade-rollback-guardrails.sh`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 
 ### D10: Release Hardening Runbook
