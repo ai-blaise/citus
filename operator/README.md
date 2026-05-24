@@ -76,3 +76,8 @@ deterministic TSV summary for the Batch C reconcile plans: scheduled repack,
 online migration/schema job handoff, replication conflict policy, and sidecar
 deployment/deletion planning. `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 guards that contract in addition to the Rust tests.
+
+`cargo run -p ai_blaise_citus_operator -- run-controller-boundary` emits typed
+controller boundary Conditions for dry-run mode, and
+`ci/ai-blaise/operator-boundary-smoke.sh` proves apply mode fails closed while
+Kubernetes apply, direct SQL execution, and `.status` mutation are still alpha.

@@ -1,6 +1,11 @@
 //! `Hypertable` controller.
 
-use super::{Context, ControllerError};
+use super::{
+    boundary::{
+        retry_class_for_error, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    },
+    Context, ControllerError,
+};
 use crate::crds::hypertable::{
     CompressionPolicy, ContinuousAggregateSpec, HypertableSpec, RetentionPolicy,
 };
@@ -124,16 +129,40 @@ async fn reconcile(
     hypertable: Arc<Hypertable>,
     ctx: Arc<Context>,
 ) -> Result<Action, ControllerError> {
+    let resource_name = hypertable
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| authoritative_resource_name(&hypertable.spec.table));
     let authoritative = hypertable.spec.to_authoritative();
     let plan = HypertableReconcilePlan::try_from(&authoritative)
         .map_err(|error| ControllerError::Companion(error.to_string()))?;
+    let boundary = ControllerBoundaryPlan::try_new(
+        "Hypertable",
+        &resource_name,
+        ctx.execution_mode,
+        vec![
+            BoundaryOperation::render_plan("render_hypertable_apply_plan"),
+            BoundaryOperation::alpha("execute_hypertable_sql", BoundaryOperationKind::DirectSql),
+            BoundaryOperation::alpha(
+                "patch_hypertable_status",
+                BoundaryOperationKind::StatusMutation,
+            ),
+        ],
+        ctx.default_requeue,
+    )?;
     info!(
-        hypertable = ?hypertable.metadata.name,
+        hypertable = %resource_name,
         sql_plans = plan.sql_plans.len(),
         apply_steps = plan.apply_plan().steps.len(),
-        "Hypertable reconciled"
+        boundary = %boundary.render_tsv(),
+        "Hypertable reconciled in bounded dry-run/apply contract"
     );
     Ok(Action::requeue(ctx.default_requeue))
+}
+
+fn authoritative_resource_name(table: &str) -> String {
+    table.trim().replace('.', "-")
 }
 
 fn error_policy(
@@ -141,6 +170,11 @@ fn error_policy(
     error: &ControllerError,
     ctx: Arc<Context>,
 ) -> Action {
-    error!(?error, "Hypertable controller backoff");
-    Action::requeue(ctx.default_requeue)
+    let retry_class = retry_class_for_error(error);
+    error!(
+        ?error,
+        retry_class = retry_class.as_str(),
+        "Hypertable controller classified reconcile error"
+    );
+    retry_class.action(ctx.default_requeue)
 }

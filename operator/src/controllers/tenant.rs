@@ -1,6 +1,11 @@
 //! `Tenant` controller.
 
-use super::{Context, ControllerError};
+use super::{
+    boundary::{
+        retry_class_for_error, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    },
+    Context, ControllerError,
+};
 use crate::crds::tenant::{TenantQuotas, TenantSpec};
 use crate::reconcile::tenant::TenantReconcilePlan;
 use futures::StreamExt;
@@ -64,24 +69,47 @@ pub async fn run(ctx: Arc<Context>) -> Result<(), ControllerError> {
 }
 
 async fn reconcile(tenant: Arc<Tenant>, ctx: Arc<Context>) -> Result<Action, ControllerError> {
+    let resource_name = tenant
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| tenant.spec.name.clone());
     let authoritative = tenant.spec.to_authoritative();
     let plan = TenantReconcilePlan::try_from(&authoritative)
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let boundary = ControllerBoundaryPlan::try_new(
+        "Tenant",
+        &resource_name,
+        ctx.execution_mode,
+        vec![
+            BoundaryOperation::render_plan("render_tenant_plan"),
+            BoundaryOperation::alpha("execute_tenant_sql", BoundaryOperationKind::DirectSql),
+            BoundaryOperation::alpha("patch_tenant_status", BoundaryOperationKind::StatusMutation),
+        ],
+        ctx.default_requeue,
+    )?;
     info!(
-        tenant = ?tenant.metadata.name,
+        tenant = %resource_name,
         max_qps = authoritative.quotas.max_qps,
         apply_steps = plan.steps.len(),
         sql_steps = plan.sql_step_count(),
         pool_configmap = %plan.pool_configmap_name(),
-        "Tenant reconcile plan built"
+        boundary = %boundary.render_tsv(),
+        "Tenant reconcile plan built within bounded dry-run/apply contract"
     );
     Ok(Action::requeue(ctx.default_requeue))
 }
 
 fn error_policy(_tenant: Arc<Tenant>, error: &ControllerError, ctx: Arc<Context>) -> Action {
-    error!(?error, "Tenant controller backoff");
-    Action::requeue(ctx.default_requeue)
+    let retry_class = retry_class_for_error(error);
+    error!(
+        ?error,
+        retry_class = retry_class.as_str(),
+        "Tenant controller classified reconcile error"
+    );
+    retry_class.action(ctx.default_requeue)
 }
+
 
 #[cfg(test)]
 mod tests {

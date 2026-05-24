@@ -1,7 +1,18 @@
 //! `Migration` controller.
+//!
+//! Runs each `MigrationSpec` through the schema-job handoff model and records
+//! the controller execution boundary for Kubernetes/status side effects.
 
-use super::{Context, ControllerError};
-use crate::crds::migration::{MigrationConflictAction, MigrationSpec, MigrationType};
+use super::{
+    boundary::{
+        retry_class_for_error, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    },
+    Context, ControllerError,
+};
+use crate::crds::migration::{
+    state_machine::{transition, PhaseEvidence},
+    MigrationConflictAction, MigrationPhase, MigrationSpec, MigrationType,
+};
 use crate::reconcile::migration::{MigrationCommand, MigrationReconcilePlan};
 use ai_blaise_citus_companion::{SchemaJobOperation, SchemaJobState};
 use futures::StreamExt;
@@ -30,6 +41,14 @@ pub struct MigrationCrSpec {
     pub yaml: String,
     #[serde(default = "default_conflict")]
     pub on_conflict: String,
+    #[serde(default)]
+    pub shadow_table_built: bool,
+    #[serde(default)]
+    pub write_triggers_installed: bool,
+    #[serde(default)]
+    pub backfill_complete: bool,
+    #[serde(default)]
+    pub row_diff_verified: bool,
     #[serde(default)]
     pub table: Option<String>,
     #[serde(default = "default_current_state")]
@@ -97,6 +116,15 @@ impl MigrationCrSpec {
                 "replace" => MigrationConflictAction::Replace,
                 _ => MigrationConflictAction::ManualReview,
             },
+        }
+    }
+
+    pub fn evidence(&self) -> PhaseEvidence {
+        PhaseEvidence {
+            shadow_table_built: self.shadow_table_built,
+            write_triggers_installed: self.write_triggers_installed,
+            backfill_complete: self.backfill_complete,
+            row_diff_verified: self.row_diff_verified,
         }
     }
 
@@ -205,30 +233,78 @@ async fn reconcile(
     migration: Arc<Migration>,
     ctx: Arc<Context>,
 ) -> Result<Action, ControllerError> {
-    let resource_name = migration.metadata.name.as_deref().unwrap_or("migration");
+    let resource_name = migration
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| "migration".to_string());
     let command = migration
         .spec
-        .command_for_resource(resource_name, &migration.status)
+        .command_for_resource(&resource_name, &migration.status)
         .map_err(ControllerError::InvalidSpec)?;
     let plan = MigrationReconcilePlan::try_from(&command)
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let authoritative = migration.spec.to_authoritative();
+    authoritative
+        .validate()
+        .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let evidence = migration.spec.evidence();
+    let current_phase = current_phase(&migration.status);
+    let next = transition(current_phase, &evidence)
+        .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let boundary = ControllerBoundaryPlan::try_new(
+        "Migration",
+        &resource_name,
+        ctx.execution_mode,
+        vec![
+            BoundaryOperation::render_plan("render_migration_state_transition"),
+            BoundaryOperation::alpha(
+                "invoke_schema_job_sidecar",
+                BoundaryOperationKind::KubernetesApply,
+            ),
+            BoundaryOperation::alpha(
+                "patch_migration_status",
+                BoundaryOperationKind::StatusMutation,
+            ),
+        ],
+        ctx.default_requeue,
+    )?;
     info!(
-        migration = ?migration.metadata.name,
+        migration = %resource_name,
         table = %plan.schema_job.table,
         current_state = %plan.schema_job.state.as_canonical(),
         target_state = %plan.target_state.as_canonical(),
+        from = ?current_phase,
+        to = ?next,
         operations = plan.schema_job.operations.len(),
         workers = plan.expected_workers.len(),
         apply_steps = plan.apply_plan().steps.len(),
-        "Migration reconcile plan built"
+        boundary = %boundary.render_tsv(),
+        "Migration reconcile plan built within bounded dry-run/apply contract"
     );
     Ok(Action::requeue(ctx.default_requeue))
 }
 
-fn error_policy(_migration: Arc<Migration>, error: &ControllerError, ctx: Arc<Context>) -> Action {
-    error!(?error, "Migration controller backoff");
-    Action::requeue(ctx.default_requeue)
+fn current_phase(status: &Option<MigrationStatus>) -> MigrationPhase {
+    match status.as_ref().map(|status| normalize_phase(&status.phase)) {
+        Some(phase) if phase == "write_only" => MigrationPhase::WriteOnly,
+        Some(phase) if phase == "backfill" => MigrationPhase::Backfill,
+        Some(phase) if phase == "public" => MigrationPhase::Public,
+        Some(phase) if phase == "complete" => MigrationPhase::Complete,
+        _ => MigrationPhase::DeleteOnly,
+    }
 }
+
+fn error_policy(_migration: Arc<Migration>, error: &ControllerError, ctx: Arc<Context>) -> Action {
+    let retry_class = retry_class_for_error(error);
+    error!(
+        ?error,
+        retry_class = retry_class.as_str(),
+        "Migration controller classified reconcile error"
+    );
+    retry_class.action(ctx.default_requeue)
+}
+
 
 #[cfg(test)]
 mod tests {
