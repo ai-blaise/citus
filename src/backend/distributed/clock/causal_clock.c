@@ -672,15 +672,13 @@ ReserveCohabitClockTick(void)
 bool
 IsClockTickCohabitReserved(void)
 {
-	bool reserved = false;
-
 	if (LogicalClockShmem == NULL)
 	{
 		return false;
 	}
 
 	LWLockAcquire(&LogicalClockShmem->clockLock, LW_SHARED);
-	reserved = LogicalClockShmem->cohabitClockTickReserved;
+	bool reserved = LogicalClockShmem->cohabitClockTickReserved;
 	LWLockRelease(&LogicalClockShmem->clockLock);
 
 	return reserved;
