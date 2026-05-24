@@ -23,16 +23,18 @@ Production deployments must run through the continuous gates before release.
 15. License.
 16. Production-readiness audit.
 17. Production gap audit.
+18. Docs evidence boundary audit.
 
-The first 15 gates are not a blanket production certification for every custom
-feature. They verify the V2 acceptance model and the current deployment path.
-Before any production promotion, run the production-readiness audit in release
-mode and block promotion while alpha or contract-only features remain in
-release scope:
+These gates are not a blanket production certification for every custom
+feature. They verify the V2 acceptance model, the current deployment path, and
+the docs evidence boundaries. Before any production promotion, run the
+production-readiness audit in release mode and block promotion while alpha or
+contract-only features remain in release scope:
 
 ```bash
 ci/ai-blaise/production-readiness-check.sh production-release
 ci/ai-blaise/production-gap-audit.sh
+ci/ai-blaise/docs-evidence-boundary-check.sh
 ```
 
 The production-gap-audit gate is intentionally conservative: it asserts that

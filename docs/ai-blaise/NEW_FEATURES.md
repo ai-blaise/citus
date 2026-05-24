@@ -5243,7 +5243,7 @@ sampling drift.
 **Citus comparison**: Vanilla Citus does not propagate W3C trace-context
 through libpq.
 
-Production evidence: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
+Evidence boundary: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
 real `postgres:17` container, runs the pool proxy against it, sends a
 traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
 log line reports the exact traceparent and that
@@ -5252,6 +5252,8 @@ connection without a traceparent increments
 `ai_blaise_citus_pool_traceparent_absent_total`. With `REQUIRE_KIND=1` the
 script additionally boots a 3-node kind cluster with Jaeger and asserts the
 trace lands at Jaeger.
+This remains alpha until sidecar/companion propagation and release dashboard
+correlation are measured end to end and the feature status is promoted.
 
 **References**:
 
@@ -5287,11 +5289,14 @@ cannot plan against the JSON column.
 **Citus comparison**: Vanilla Citus emits unstructured Postgres log lines;
 no per-sidecar JSON schema exists.
 
-Production evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
+Evidence boundary: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
 validate every canonical schema, prove no extension field shadows a common
 field, and confirm the schema catalog covers all 17 sidecars. Companion's
 `log_view` tests render the deterministic SQL bundle and assert per-sidecar
 projections cast each extension field to its declared SQL type.
+These deterministic tests are contract evidence only while O15 is alpha;
+production evidence requires live log ingestion from promoted sidecars into the
+documented downstream view path.
 
 **References**:
 

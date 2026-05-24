@@ -524,11 +524,11 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
-are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
+are `Status: production-ready`. The authoritative per-feature list is
+`docs/ai-blaise/NEW_FEATURES.md`; the examples below group evidence boundaries
+rather than duplicating every feature id. The group includes `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
 shared sidecar health/readiness/metrics runtime, `O1` for the installable
@@ -588,8 +588,7 @@ Kubernetes sidecar traffic proof, while `MCP4` covers only read-only database
 execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
-implemented and live-gated. The
-other 146
+implemented and live-gated. The other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with

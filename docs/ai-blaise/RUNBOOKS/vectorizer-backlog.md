@@ -14,8 +14,10 @@ tenants has stale rows.
 
 - The `Vectorizer` CR exists for the affected source table
   (`operator/src/crds/vectorizer.rs`, `FEATURE: A8`).
-- `sidecar/vectorizer` is enabled in `values-prod.yaml`
-  (`sidecars[name=vectorizer].enabled: true`).
+- `sidecar/vectorizer` is explicitly enabled by a promoted command-center
+  release overlay for the affected source table. The default production profile
+  keeps alpha sidecars disabled until their feature status and measured evidence
+  are promoted in `docs/ai-blaise/NEW_FEATURES.md`.
 - Per-tenant token budgets are configured (`TenantTokenBudget` in
   `sidecar/vectorizer/src/lib.rs`).
 - The provider secret referenced by `Vectorizer.spec.secret_ref` exists

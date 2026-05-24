@@ -26,5 +26,13 @@ This repository keeps:
 ## Deploying
 
 Use the command-center chart with Helm or via Argo CD against
-`ai-blaise/command-center/gitops/apps/13-citus-cluster.yaml`. Operand images are
-still published from this repository.
+`ai-blaise/command-center/gitops/apps/13-citus-cluster.yaml`.
+
+Operand image source stays in this repository, but source presence is not proof
+of publication. A production handoff requires the release image build/push to
+write `artifacts/ai-blaise-image-digests.tsv` and the command-center deploy
+overlay to consume immutable `sha256:` rows from that manifest. At minimum,
+carry the operator and pool rows through `OPERATOR_IMAGE_DIGEST` and
+`POOL_IMAGE_DIGEST` or their equivalent Helm values before installing a release
+candidate. Mutable tags or locally loaded images are valid only for local smoke
+runs and must not be cited as release image-pinning evidence.

@@ -9,6 +9,10 @@ The sync job intentionally starts as a dry-run gate. Once the first overlay
 release stabilizes, it should be extended to open a PR on
 `chore/upstream-sync-YYYY-MM-DD` with:
 
+Status snapshot: 2026-05-24. The patch and PR tables below are a dated planning
+snapshot, not live PR evidence. Refresh this date before a release and whenever
+an upstream or fork PR opens, closes, merges, or changes target branch.
+
 - upstream Citus changes
 - refreshed patch applicability output
 - any patch rebases needed to keep `patches/series` clean

@@ -18,8 +18,10 @@ a rollback step from another runbook (`split-brain.md`,
 - The WAL archive at `BackupTarget.bucket / BackupTarget.prefix` is
   contiguous between the base backup's start time and the target
   timestamp.
-- `sidecar/backup` is enabled in `values-prod.yaml`
-  (`sidecars[name=backup].enabled: true`).
+- `sidecar/backup` is explicitly enabled by a promoted command-center release
+  overlay for the restore scope. The default production profile keeps alpha
+  sidecars disabled until their feature status and measured evidence are
+  promoted in `docs/ai-blaise/NEW_FEATURES.md`.
 - The KMS key referenced by `BackupEncryption.kms_key_ref` is reachable
   from the restore environment.
 - An incident ticket exists with the requested RPO and RTO.

@@ -15,8 +15,10 @@ still in `running` state.
 - A rebalance job has been started by the operator's
   `ShardGroup` reconciler or manually with
   `SELECT citus_rebalance_start();`.
-- `sidecar/raft` is enabled for every shard group involved
-  (`operator/src/crds/shard_group.rs`, `sidecar/raft/src/lib.rs`).
+- `sidecar/raft` is explicitly enabled by a promoted command-center release
+  overlay for every shard group involved. Default production values keep alpha
+  sidecars disabled until their feature status and measured evidence are
+  promoted in `docs/ai-blaise/NEW_FEATURES.md`.
 - Replication slots used by the rebalance are healthy
   (`pg_stat_replication`).
 - No active `pitr-restore.md` operation is running against the source
