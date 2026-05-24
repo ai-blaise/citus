@@ -22,7 +22,7 @@ impl RegionSpec {
         validate_region_name("name", &self.name)?;
         validate_zone_name("kubernetes_zone", &self.kubernetes_zone)?;
         validate_tablespace_name("tablespace_name", &self.tablespace_name)?;
-        if !self.kubernetes_zone.starts_with(&format!("{}", self.name)) {
+        if !self.kubernetes_zone.starts_with(&self.name) {
             return Err(RegionSpecError::ZoneRegionMismatch);
         }
         Ok(())

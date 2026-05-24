@@ -23,7 +23,44 @@ impl VectorizerSpec {
         validate_required("secret_ref", &self.secret_ref)?;
         self.destination.validate()?;
         self.chunking.validate()?;
-        self.scheduling.validate()
+        self.scheduling.validate()?;
+        self.validate_runtime_dimension_contract()
+    }
+
+    pub fn runtime_contract(&self) -> Result<VectorizerRuntimeContract, VectorizerSpecError> {
+        validate_required("source_table", &self.source_table)?;
+        validate_required("source_column", &self.source_column)?;
+        validate_required("embedding_model", &self.embedding_model)?;
+        validate_required("secret_ref", &self.secret_ref)?;
+        self.destination.validate()?;
+        self.chunking.validate()?;
+        self.scheduling.validate()?;
+        self.validate_runtime_dimension_contract()?;
+        Ok(VectorizerRuntimeContract {
+            provider: self.embedding_provider.runtime_name()?.to_string(),
+            model: self.embedding_model.clone(),
+            dimensions: self.destination.dimensions,
+        })
+    }
+
+    fn validate_runtime_dimension_contract(&self) -> Result<(), VectorizerSpecError> {
+        let provider = self.embedding_provider.runtime_name()?;
+        let expected =
+            known_model_dimensions(provider, &self.embedding_model).ok_or_else(|| {
+                VectorizerSpecError::UnsupportedModelDimension {
+                    provider: provider.to_string(),
+                    model: self.embedding_model.clone(),
+                }
+            })?;
+        if self.destination.dimensions != expected {
+            return Err(VectorizerSpecError::DimensionModelMismatch {
+                provider: provider.to_string(),
+                model: self.embedding_model.clone(),
+                expected,
+                got: self.destination.dimensions,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -36,6 +73,60 @@ pub enum EmbeddingProvider {
     Voyage,
     Ollama,
     Vertex,
+}
+
+impl EmbeddingProvider {
+    fn runtime_name(self) -> Result<&'static str, VectorizerSpecError> {
+        match self {
+            Self::OpenAi => Ok("openai"),
+            Self::AzureOpenAi => Ok("azure_openai"),
+            Self::Cohere => Ok("cohere"),
+            Self::Voyage => Ok("voyage"),
+            Self::Ollama => Ok("ollama"),
+            Self::Anthropic | Self::Vertex => {
+                Err(VectorizerSpecError::UnsupportedRuntimeProvider(self))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct VectorizerRuntimeContract {
+    pub provider: String,
+    pub model: String,
+    pub dimensions: u32,
+}
+
+impl VectorizerRuntimeContract {
+    pub fn env_vars(&self) -> Vec<(String, String)> {
+        vec![
+            (
+                "AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER".to_string(),
+                self.provider.clone(),
+            ),
+            (
+                "AI_BLAISE_VECTORIZER_CONTRACT_MODEL".to_string(),
+                self.model.clone(),
+            ),
+            (
+                "AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS".to_string(),
+                self.dimensions.to_string(),
+            ),
+        ]
+    }
+}
+
+fn known_model_dimensions(provider: &str, model: &str) -> Option<u32> {
+    match (provider, model) {
+        ("openai" | "azure_openai", "text-embedding-3-large") => Some(3_072),
+        ("openai" | "azure_openai", "text-embedding-3-small" | "text-embedding-ada-002") => {
+            Some(1_536)
+        }
+        ("voyage", "voyage-3-large" | "voyage-3.5" | "voyage-3.5-lite") => Some(1_024),
+        ("cohere", "embed-english-v3.0" | "embed-multilingual-v3.0") => Some(1_024),
+        ("ollama", "nomic-embed-text") => Some(768),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -119,8 +210,19 @@ pub enum VectorizerSpecError {
     InvalidChunkOverlap,
     InvalidChunkSize,
     InvalidConcurrency,
+    DimensionModelMismatch {
+        provider: String,
+        model: String,
+        expected: u32,
+        got: u32,
+    },
     InvalidDimension,
     MissingRequiredField(&'static str),
+    UnsupportedModelDimension {
+        provider: String,
+        model: String,
+    },
+    UnsupportedRuntimeProvider(EmbeddingProvider),
 }
 
 impl fmt::Display for VectorizerSpecError {
@@ -133,9 +235,28 @@ impl fmt::Display for VectorizerSpecError {
             Self::InvalidConcurrency => {
                 write!(formatter, "max_concurrency must be greater than zero")
             }
+            Self::DimensionModelMismatch {
+                provider,
+                model,
+                expected,
+                got,
+            } => write!(
+                formatter,
+                "{provider}/{model} requires {expected} dimensions, got {got}"
+            ),
             Self::InvalidDimension => write!(formatter, "dimensions must be greater than zero"),
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
+            }
+            Self::UnsupportedModelDimension { provider, model } => write!(
+                formatter,
+                "unsupported vectorizer provider/model dimension contract: {provider}/{model}"
+            ),
+            Self::UnsupportedRuntimeProvider(provider) => {
+                write!(
+                    formatter,
+                    "unsupported vectorizer runtime provider: {provider:?}"
+                )
             }
         }
     }
@@ -200,6 +321,63 @@ mod tests {
         };
 
         assert_eq!(spec.validate(), Ok(()));
+    }
+
+    #[test]
+    fn runtime_contract_emits_sidecar_env() {
+        let spec = minimal_spec();
+        let contract = spec.runtime_contract().expect("runtime contract");
+
+        assert_eq!(contract.provider, "voyage");
+        assert_eq!(contract.model, "voyage-3-large");
+        assert_eq!(contract.dimensions, 1_024);
+        assert_eq!(
+            contract.env_vars(),
+            vec![
+                (
+                    "AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER".to_string(),
+                    "voyage".to_string(),
+                ),
+                (
+                    "AI_BLAISE_VECTORIZER_CONTRACT_MODEL".to_string(),
+                    "voyage-3-large".to_string(),
+                ),
+                (
+                    "AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS".to_string(),
+                    "1024".to_string(),
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn vectorizer_rejects_dimension_model_mismatch() {
+        let mut spec = minimal_spec();
+        spec.destination.dimensions = 768;
+
+        assert_eq!(
+            spec.validate(),
+            Err(VectorizerSpecError::DimensionModelMismatch {
+                provider: "voyage".to_string(),
+                model: "voyage-3-large".to_string(),
+                expected: 1_024,
+                got: 768,
+            })
+        );
+    }
+
+    #[test]
+    fn vectorizer_rejects_unsupported_runtime_provider() {
+        let mut spec = minimal_spec();
+        spec.embedding_provider = EmbeddingProvider::Anthropic;
+        spec.embedding_model = "claude-embedding".to_string();
+
+        assert_eq!(
+            spec.validate(),
+            Err(VectorizerSpecError::UnsupportedRuntimeProvider(
+                EmbeddingProvider::Anthropic,
+            ))
+        );
     }
 
     #[test]

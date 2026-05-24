@@ -1511,15 +1511,36 @@ workers.
 
 ### A8: Vector Dimension Via CRD
 
-**Overlay**: `operator/src/crds/vectorizer.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/vectorizer.rs`, `sidecar/vectorizer`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgvector`
 
 **Summary**: Defines the `Vectorizer` operator spec for source columns,
 embedding provider/model selection, destination vector dimensions, chunking,
-scheduling, and secret binding.
+scheduling, and secret binding. The CRD validator now checks supported
+provider/model dimension pairs, renders the sidecar runtime contract as
+`AI_BLAISE_VECTORIZER_CONTRACT_*` values, and the sidecar consumes that
+contract to fail closed when queue rows or manual `/vectorize` requests use a
+different provider/model or when a provider returns an embedding with the wrong
+dimension.
+
+Production evidence: VM tests run the operator vectorizer CRD tests, the
+sidecar runtime contract tests, `cargo run -q -p ai_blaise_citus_operator --
+run-canonical`, and `REQUIRE_DOCKER=1 ci/ai-blaise/sidecar-vectorizer-smoke.sh`.
+The smoke starts PostgreSQL 17 and the real vectorizer binary with the A8
+contract set to `mock/embed-v1/8`, proves successful rows store eight-dimensional
+embeddings, proves manual and queued model mismatches fail before budget or
+usage writes, and proves startup rejects an inconsistent mock dimension
+contract.
+
+**Current boundary**: The production-ready claim covers supported CRD
+provider/model dimension validation, operator-rendered sidecar env contracts,
+and local sidecar enforcement in the PostgreSQL-backed mock-provider runtime.
+It does not claim live external provider credentials, GPU inference, production
+pgvector index creation, or Kubernetes admission/webhook enforcement for every
+possible provider model.
 
 **Motivation**: Vectorizer workers need a declarative contract before they can
 fan embedding jobs across Citus workers safely.
@@ -1530,7 +1551,10 @@ fan embedding jobs across Citus workers safely.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: A8` in `operator/src/crds/vectorizer.rs`
+- Runtime: `FEATURE: A8` in `sidecar/vectorizer/src/runtime/contract.rs` and
+  `sidecar/vectorizer/src/runtime/worker.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- CI: `ci/ai-blaise/sidecar-vectorizer-smoke.sh`
 
 ## Topology
 

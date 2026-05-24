@@ -22,6 +22,11 @@ Production-ready surface (bounded to the local Rust sidecar runtime verified by 
   TimescaleDB-hypertable-compatible on `recorded_at`.
 - HTTP health, readiness, drain, Prometheus metrics, manual `/vectorize`, and
   `/queue/status` endpoints.
+- Optional `FEATURE: A8` CRD-derived runtime contract that binds a sidecar
+  instance to one provider, model, and destination dimension. When configured,
+  manual requests and queue rows with another provider/model fail before budget
+  reservation, and provider embeddings with the wrong dimension are rejected
+  before queue success or usage accounting.
 
 Commands:
 
@@ -35,14 +40,19 @@ bash ci/ai-blaise/sidecar-vectorizer-smoke.sh
 builds the real binary, starts PostgreSQL 17 in Docker, launches `serve` on a
 fresh ephemeral loopback port, waits for `/readyz`, enqueues 100 rows, verifies
 succeeded queue rows, checks `ai.usage_log` rows, budget decrementing, metrics,
-manual `/vectorize` success, fail-closed invalid `/vectorize` requests, and
-`/queue/status`.
+manual `/vectorize` success, fail-closed invalid `/vectorize` requests,
+CRD contract provider/model mismatch rejection, startup rejection for mismatched
+mock dimensions, and `/queue/status`.
 
 Environment:
 
 - `AI_BLAISE_VECTORIZER_DATABASE_URL` is required in `serve` mode.
 - `AI_BLAISE_LISTEN_ADDR` defaults to `0.0.0.0:8080`.
 - `AI_BLAISE_VECTORIZER_PROVIDER_MODE` is `mock`, `live`, or `mixed`.
+- `AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER`,
+  `AI_BLAISE_VECTORIZER_CONTRACT_MODEL`, and
+  `AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS` are the optional operator-rendered
+  A8 contract. If any one is set, all three are required.
 - `AI_BLAISE_VECTORIZER_BATCH_SIZE`, `AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS`,
   `AI_BLAISE_VECTORIZER_VISIBILITY_TIMEOUT_SECONDS`,
   `AI_BLAISE_VECTORIZER_RETRY_INITIAL_BACKOFF_MS`, and
@@ -54,4 +64,4 @@ Environment:
   smoke does not claim successful external provider operation.
 
 Feature markers: `FEATURE: A2`, `FEATURE: A3`, `FEATURE: A4`, `FEATURE: A5`,
-and `FEATURE: A6`.
+`FEATURE: A6`, and `FEATURE: A8`.

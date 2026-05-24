@@ -18,8 +18,9 @@ use super::ControllerError;
 
 pub const EXECUTION_MODE_ENV: &str = "AI_BLAISE_OPERATOR_EXECUTION_MODE";
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub enum ExecutionMode {
+    #[default]
     DryRun,
     Apply,
 }
@@ -30,12 +31,6 @@ impl ExecutionMode {
             Self::DryRun => "dry-run",
             Self::Apply => "apply",
         }
-    }
-}
-
-impl Default for ExecutionMode {
-    fn default() -> Self {
-        Self::DryRun
     }
 }
 

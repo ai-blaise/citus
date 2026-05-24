@@ -200,6 +200,7 @@ pub struct VectorizeResponse {
     pub embedding: Vec<f32>,
     pub tokens: u64,
     pub cost_micros: u64,
+    pub dimensions: usize,
 }
 
 async fn vectorize(
@@ -211,6 +212,11 @@ async fn vectorize(
     }
     if let Err(error) = request.validate() {
         return json_error(StatusCode::BAD_REQUEST, error);
+    }
+    if let Some(contract) = state.runtime.dimension_contract() {
+        if let Err(error) = contract.assert_route(&request.provider, &request.model) {
+            return json_error(StatusCode::BAD_REQUEST, error.to_string());
+        }
     }
 
     // Reserve tokens and call the provider directly so test harnesses can
@@ -268,6 +274,17 @@ async fn vectorize(
         );
     };
 
+    if let Some(contract) = state.runtime.dimension_contract() {
+        if let Err(error) = contract.assert_embeddings(std::slice::from_ref(&embedding)) {
+            let _ = state
+                .runtime
+                .budgets()
+                .refund_tokens(&request.tenant_id, estimate)
+                .await;
+            return json_error(StatusCode::BAD_GATEWAY, error.to_string());
+        }
+    }
+
     let billed_tokens = response.total_tokens.max(estimate).max(1);
     if billed_tokens > estimate {
         if let Err(error) = state
@@ -308,6 +325,7 @@ async fn vectorize(
             .await;
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
+    let dimensions = embedding.len();
     let body = serde_json::to_string(&VectorizeResponse {
         tenant_id: request.tenant_id,
         provider: provider.name().to_string(),
@@ -316,6 +334,7 @@ async fn vectorize(
         embedding,
         tokens: entry.tokens,
         cost_micros: entry.cost_micros,
+        dimensions,
     })
     .unwrap();
     response_json(StatusCode::OK, body)
@@ -555,6 +574,7 @@ mod tests {
             provider_max_attempts: 3,
             mock_dimensions: 4,
             provider_mode: "mock".into(),
+            dimension_contract: None,
         };
         let runtime = Arc::new(VectorizerRuntime::new(
             config,
@@ -642,6 +662,61 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn vectorize_endpoint_rejects_contract_mismatch_before_budget() {
+        let queue = Arc::new(InMemoryQueueStore::new());
+        let budgets = Arc::new(InMemoryBudgetStore::new());
+        budgets.seed("tenant-a", 100).await;
+        let usage_log = Arc::new(InMemoryUsageLog::new());
+        let mut registry = ProviderRegistry::new();
+        registry.insert(Arc::new(MockProvider::new("mock", 8, 7)));
+        let providers = Arc::new(registry);
+        let cost = Arc::new(StaticCostTable::new(7).with("mock", 7));
+        let config = RuntimeConfig {
+            database_url: "postgres://test".into(),
+            queue_table: "ai.vectorizer_queue".into(),
+            budget_table: "ai.tenant_budget".into(),
+            usage_log_table: "ai.usage_log".into(),
+            listen_addr: "127.0.0.1:0".into(),
+            batch_size: 4,
+            poll_interval: Duration::from_millis(5),
+            visibility_timeout: Duration::from_secs(30),
+            retry_initial_backoff: Duration::from_millis(1),
+            provider_max_attempts: 3,
+            mock_dimensions: 8,
+            provider_mode: "mock".into(),
+            dimension_contract: Some(crate::runtime::contract::VectorizerRuntimeContract::new(
+                "mock", "embed-v1", 8,
+            )),
+        };
+        let runtime = Arc::new(VectorizerRuntime::new(
+            config,
+            queue,
+            budgets.clone(),
+            usage_log,
+            providers,
+            cost,
+            "worker-1",
+        ));
+        let state = AppState::new(runtime);
+
+        let response = vectorize(
+            State(state),
+            Json(VectorizeRequest {
+                tenant_id: "tenant-a".into(),
+                provider: "mock".into(),
+                model: "embed-v2".into(),
+                source_table: "public.documents".into(),
+                source_pk: "manual-1".into(),
+                source_text: "manual smoke embedding".into(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 100);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn vectorize_endpoint_refunds_budget_when_usage_log_fails() {
         let queue = Arc::new(InMemoryQueueStore::new());
         let budgets = Arc::new(InMemoryBudgetStore::new());
@@ -663,6 +738,7 @@ mod tests {
             provider_max_attempts: 3,
             mock_dimensions: 4,
             provider_mode: "mock".into(),
+            dimension_contract: None,
         };
         let runtime = Arc::new(VectorizerRuntime::new(
             config,

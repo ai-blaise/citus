@@ -433,13 +433,15 @@ more production-ready than the artifacts justified.
   tenant scoping, and citus-watch dashboard/TUI contracts. The production gap
   audit rejects the stale phrases so alpha contracts stay visibly
   non-production.
-- A2/A3/A4/A5/A6 vectorizer production-ready evidence is bounded to the local
-  Rust sidecar runtime: mock-provider queue processing, explicit live-provider
-  opt-in policy, fail-closed manual request validation, PostgreSQL-backed queue,
+- A2/A3/A4/A5/A6/A8 vectorizer production-ready evidence is bounded to the
+  local Rust sidecar runtime: mock-provider queue processing, explicit
+  live-provider opt-in policy, CRD-derived provider/model/dimension contract
+  enforcement, fail-closed manual request validation, PostgreSQL-backed queue,
   budget and usage tables, health/readiness/drain endpoints, metrics, and the
   Docker PostgreSQL smoke. It does not claim real external embedding-provider
   calls, GPU inference, production-scale queue throughput, tenant billing
-  integration, or broad semantic-search correctness.
+  integration, Kubernetes admission/webhook enforcement for every provider
+  model, or broad semantic-search correctness.
 - Alpha wording cleanup now also covers the former addendum entries and tool
   READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, O5, and
   O12 wording uses versioned, operator, release, or measured-evidence language
