@@ -606,6 +606,7 @@ Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 client operation) remain alpha unless covered by their own feature entry.
 
 
+
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:
 
@@ -643,4 +644,11 @@ Production Helm values must also keep alpha sidecars disabled by default.
 sidecar before the corresponding feature is promoted with measured production
 evidence.
 
-- Current inventory: contains 273 source `feature:` markers and 273 feature headings; 125 narrow headings are `Status: production-ready`; the other 148 feature headings remain `Status: alpha`.
+The Citus patch production integration audit keeps custom patch artifacts
+`0004`, `0006`, `0007`, and `0008` explicitly not production-ready until their
+measured gates exist. `ci/ai-blaise/citus-patch-production-audit.sh` fails
+closed unless each artifact is listed in `patches/series`, future patch roster
+entries stay documented as roster-only until artifacts land, and any production
+claim has a measured non-scaffold result with thresholds in
+`benchmarks/citus-patches/production-gates.json`. This is negative evidence for
+the current branch, not a runtime signoff for those patch IDs.
