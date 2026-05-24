@@ -17,6 +17,11 @@ runs:
         src/test/**/tmp_check/master/log
         src/test/**/tmp_check/worker.57638/log
         src/test/**/tmp_check/worker.57637/log
+        src/test/**/tmp_check/**/log
+        src/test/**/tmp_check/**/*.log
+        src/test/**/log/*.log
+        src/test/**/log/**/*.log
+        src/test/**/log/regress_log_*
         src/test/**/*.diffs
         src/test/**/out/ddls.sql
         src/test/**/out/queries.sql

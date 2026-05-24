@@ -288,13 +288,129 @@ sub connect_cdc_client_to_workers_publication {
     }
 }
 
+sub cdc_node_label {
+    my ($node, $fallback_name) = @_;
+
+    my $name = eval { $node->name(); };
+    $name = $fallback_name if !defined($name) || $name eq "";
+
+    my $port = eval { $node->port(); };
+    $port = "unknown" if !defined($port) || $port eq "";
+
+    return "$name on port $port";
+}
+
+sub print_cdc_log_tail {
+    my ($node, $label) = @_;
+
+    my $logfile = eval { $node->logfile(); };
+    if (!defined($logfile) || $logfile eq "") {
+        print "# CDC diagnostic: no logfile path available for $label\n";
+        return;
+    }
+
+    if (!-f $logfile) {
+        print "# CDC diagnostic: logfile for $label does not exist: $logfile\n";
+        return;
+    }
+
+    my $fh;
+    if (!open($fh, "<", $logfile)) {
+        print "# CDC diagnostic: could not open logfile for $label: $logfile: $!\n";
+        return;
+    }
+
+    my @lines = <$fh>;
+    close($fh);
+
+    my $start = @lines > 120 ? @lines - 120 : 0;
+    print "# CDC diagnostic: last " . (@lines - $start) . " log lines for $label from $logfile\n";
+    for my $line (@lines[$start .. $#lines]) {
+        chomp($line);
+        print "# $line\n";
+    }
+}
+
+sub print_cdc_query_diagnostic {
+    my ($node, $label, $title, $sql) = @_;
+
+    my ($ret, $stdout, $stderr);
+    my $ok = eval {
+        ($ret, $stdout, $stderr) = $node->psql(
+            "postgres",
+            $sql,
+            timeout => 5,
+            on_error_stop => 0);
+        1;
+    };
+
+    print "# CDC diagnostic: $title on $label\n";
+    if (!$ok) {
+        my $err = $@ || "unknown psql invocation failure";
+        chomp($err);
+        print "# $err\n";
+        return;
+    }
+
+    print "# psql exit code: $ret\n" if defined($ret) && $ret != 0;
+
+    if (defined($stdout) && $stdout ne "") {
+        for my $line (split /\n/, $stdout) {
+            print "# $line\n";
+        }
+    }
+    else {
+        print "# <empty stdout>\n";
+    }
+
+    if (defined($stderr) && $stderr ne "") {
+        print "# stderr:\n";
+        for my $line (split /\n/, $stderr) {
+            print "# $line\n";
+        }
+    }
+}
+
+sub print_cdc_node_diagnostics {
+    my ($node, $fallback_name) = @_;
+    my $label = cdc_node_label($node, $fallback_name);
+
+    print "# CDC diagnostic: collecting publisher state for $label\n";
+    print_cdc_query_diagnostic($node, $label, "pg_stat_replication",
+        "SELECT application_name, state, sent_lsn, write_lsn, flush_lsn, replay_lsn, sync_state FROM pg_catalog.pg_stat_replication ORDER BY application_name");
+    print_cdc_query_diagnostic($node, $label, "pg_replication_slots",
+        "SELECT slot_name, plugin, slot_type, active, restart_lsn, confirmed_flush_lsn FROM pg_catalog.pg_replication_slots ORDER BY slot_name");
+    print_cdc_query_diagnostic($node, $label, "replication activity",
+        q{SELECT pid, backend_type, application_name, state, wait_event_type, wait_event FROM pg_catalog.pg_stat_activity WHERE backend_type LIKE '%walsender%' OR application_name LIKE 'cdc_subscription%' OR application_name = 'walreceiver' ORDER BY pid});
+    print_cdc_log_tail($node, $label);
+}
+
+sub wait_for_cdc_subscription_catchup {
+    my ($publisher_node, $subscription, $fallback_name) = @_;
+
+    my $ok = eval {
+        $publisher_node->wait_for_catchup($subscription);
+        1;
+    };
+
+    if (!$ok) {
+        my $err = $@ || "unknown wait_for_catchup failure";
+        chomp($err);
+        print "# CDC diagnostic: wait_for_catchup failed for subscription $subscription on " .
+              cdc_node_label($publisher_node, $fallback_name) . "\n";
+        print "# CDC diagnostic: original failure: $err\n";
+        print_cdc_node_diagnostics($publisher_node, $fallback_name);
+        die "$err\n";
+    }
+}
+
 sub wait_for_cdc_client_to_catch_up_with_citus_cluster {
         my $node_coordinator = $_[0];
         my ($workersref) = $_[1];
 
         my $subscription = 'cdc_subscription';
         print "coordinator: waiting for cdc client subscription $subscription to catch up\n";
-        $node_coordinator->wait_for_catchup($subscription);
+        wait_for_cdc_subscription_catchup($node_coordinator, $subscription, "coordinator");
         wait_for_cdc_client_to_catch_up_with_workers($workersref);
 }
 
@@ -302,7 +418,7 @@ sub wait_for_cdc_client_to_catch_up_with_coordinator {
         my $node_coordinator = $_[0];
         my $subscription = 'cdc_subscription';
         print "coordinator: waiting for cdc client subscription $subscription to catch up\n";
-        $node_coordinator->wait_for_catchup($subscription);
+        wait_for_cdc_subscription_catchup($node_coordinator, $subscription, "coordinator");
 }
 
 sub wait_for_cdc_client_to_catch_up_with_workers {
@@ -311,7 +427,7 @@ sub wait_for_cdc_client_to_catch_up_with_workers {
         for (@$workersref) {
             my $subscription = 'cdc_subscription_' . $i;
             print "node$i: waiting for cdc client subscription $subscription to catch up\n";
-            $_->wait_for_catchup($subscription);
+            wait_for_cdc_subscription_catchup($_, $subscription, "node$i");
             $i++;
         }
 }
