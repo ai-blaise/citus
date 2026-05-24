@@ -517,6 +517,16 @@ more production-ready than the artifacts justified.
   external secret resolution, key rotation, hardware-backed signing, tenant
   workflow authorization, or migration/operator integration.
 
+- The SQL extension now installs the bounded `FEATURE: Sto2` storage metadata
+  runtime: `storage.file_attachment` is a jsonb domain with fail-closed
+  validation for object shape, bucket names, traversal-safe object keys,
+  content type, bounded non-negative `size_bytes`, lowercase 64-hex SHA-256,
+  and optional object metadata. The PostgreSQL extension smoke also proves the
+  constructor/accessors/URI helper and `storage.file_attachment_refs` tenant and
+  owner metadata persistence. This is not evidence for object storage
+  upload/download, retention automation, malware scanning, pool or RLS
+  authorization, or sidecar integration.
+
 ## Verification Standard
 
 - Benchmark evidence now has a checked-in threshold manifest and a reusable

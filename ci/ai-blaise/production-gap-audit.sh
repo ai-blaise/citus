@@ -40,6 +40,7 @@ SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
+SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
@@ -313,6 +314,23 @@ for required in (
 ):
     if required not in storage_smoke:
         fail(f"storage sidecar runtime smoke lost required assertion: {required}")
+
+
+sql_extension_smoke = read(SQL_EXTENSION_SMOKE)
+for required in (
+    "storage.file_attachment(",
+    "storage.file_attachment_refs",
+    "storage.file_attachment_uri",
+    "Sto2 accepted invalid bucket",
+    "Sto2 accepted path traversal",
+    "Sto2 accepted malformed sha256",
+    "Sto2 accepted negative size_bytes",
+):
+    if required not in sql_extension_smoke:
+        fail(f"SQL extension smoke lost Sto2 assertion: {required}")
+
+if "'Sto2'" not in sql_extension_smoke or "<> 44" not in sql_extension_smoke:
+    fail("SQL extension smoke must count Sto2 as a sql-runtime feature")
 
 sidecar_workflow = read(SIDECAR_WORKFLOW)
 if (

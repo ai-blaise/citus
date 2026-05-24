@@ -7887,24 +7887,36 @@ attestations.
 
 ### Sto2: file_attachment Domain Type
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` and `companion/src/advanced_planner.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the file attachment storage domain and backing table
-contract.
+**Summary**: Installs the `storage.file_attachment` SQL domain, constructor,
+accessors, URI helper, and `storage.file_attachment_refs` metadata table for
+tenant/owner-scoped file reference records.
 
-**Current boundary**: The advanced-planner runner validates the domain record;
-object storage wiring, retention policy, and authorization remain alpha.
+**Current boundary**: Production-ready for the SQL domain and metadata runtime
+only. The domain validates JSON object shape, bucket names, object keys,
+content types, bounded non-negative `size_bytes`, lowercase 64-hex SHA-256,
+and optional object metadata; the refs table persists tenant/owner metadata
+with useful lookup indexes. Object storage upload/download, retention
+automation, malware scanning, and authorization remain separately scoped.
+
+Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`storage.file_attachment`, exercises valid constructor/accessors/URI/table
+persistence, and verifies invalid bucket, path traversal, malformed SHA-256,
+and negative `size_bytes` fail closed against real PostgreSQL containers.
 
 **Citus comparison**: Vanilla Citus does not include a storage domain type.
 
 **References**:
 
+- In-source: `FEATURE: Sto2` in `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - In-source: `FEATURE: Sto2` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `REQUIRE_DOCKER=1 SQL_EXTENSION_SMOKE_PG_MAJORS=17 bash ci/ai-blaise/sql-extension-smoke.sh`
 
 ### T4: Hash-Table Planner Hot Path
 
