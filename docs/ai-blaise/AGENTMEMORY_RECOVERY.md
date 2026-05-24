@@ -69,18 +69,23 @@ WorkingDirectory=%h/.agentmemory-scaleable-database-infra
 ExecStart=/usr/bin/python3 %h/.agentmemory-scaleable-database-infra/server.py --host 127.0.0.1 --port 3911 --memory %h/.agentmemory-scaleable-database-infra/standalone.json
 Restart=on-failure
 RestartSec=2
+UMask=0077
 NoNewPrivileges=true
 
 [Install]
 WantedBy=default.target
 ```
 
-Enable persistence and start the service:
+Enable persistence and start the service. Keep `UMask=0077` in the user
+unit because `server.py` atomically rewrites `standalone.json` on memory writes;
+without the unit umask, future writes can recreate the JSON file with broader
+default permissions.
 
 ```bash
 sudo loginctl enable-linger spencer
 systemctl --user daemon-reload
 systemctl --user enable --now agentmemory-scaleable-database-infra.service
+chmod 600 "$HOME/.agentmemory-scaleable-database-infra/standalone.json"
 ```
 
 ## Verification
@@ -93,6 +98,8 @@ systemctl --user is-enabled agentmemory-scaleable-database-infra.service
 loginctl show-user spencer -p Linger
 curl -fsS http://127.0.0.1:3911/agentmemory/health
 curl -fsS http://127.0.0.1:3911/agentmemory/mcp/tools
+stat -c "%a %U %G %n" \
+  "$HOME/.agentmemory-scaleable-database-infra/standalone.json"
 ```
 
 For preservation, snapshot all pre-existing `mem:memories` IDs and content
