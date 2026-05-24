@@ -2996,6 +2996,11 @@ manage them as region objects.
 **Summary**: Defines the pool region-routing contract from CIDR/GeoIP region
 resolution to nearest preferred replicas.
 
+**Current boundary**: This remains alpha. The multi-region contracts smoke
+intentionally does not touch pool runtime behavior; MR5 still needs live pool
+routing evidence for client IP/CIDR classification, replica choice, fallback,
+and cross-region traffic behavior before promotion.
+
 **Motivation**: Multi-region reads need a pool-side routing contract before
 GeoIP and edge-replica behavior can be enforced.
 
@@ -7536,6 +7541,8 @@ binding.
 
 - In-source: `FEATURE: A9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### A10: Streaming Chat Completion UDF
 
@@ -7624,6 +7631,8 @@ runbook.
 - In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
 - CI: `ci/ai-blaise/upgrade-rollback-guardrails.sh`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### D10: Release Hardening Runbook
 
@@ -7647,6 +7656,8 @@ gates.
 
 - In-source: `FEATURE: D10` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### D11: MCP Developer Workflow
 
@@ -7673,6 +7684,8 @@ Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-bla
 - Executable: `cargo run -p ai_blaise_citus_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_mcp -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/mcp-stdio-smoke.sh`
 - CI: `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`
 - CI: `ci/ai-blaise/mcp-sidecar-http-smoke.sh`
@@ -7836,7 +7849,8 @@ drift.
 
 ### MR3: Regional Row Placement
 
-**Overlay**: `companion/src/advanced_planner.rs`
+**Overlay**: `companion/src/advanced_planner.rs`, `operator/src/crds/region.rs`,
+`operator/src/reconcile/region.rs`
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -7846,14 +7860,25 @@ drift.
 placement policy.
 
 **Current boundary**: Contract validation is executable; row placement
-enforcement, repartitioning, and regional admission control remain alpha.
+enforcement, repartitioning, and regional admission control remain alpha. VM
+proof run `bash ci/ai-blaise/operator-multiregion-contracts-smoke.sh` exercises
+`RegionalRowPlacementPlan` against deterministic Region and ShardGroup inventory,
+requiring declared regions, distinct allowed regions, matching table and
+distribution key, sufficient replication factor, and
+`topology.kubernetes.io/region` spread with `max_skew=1`. The canonical output
+sets `live_k8s_exercised=false`; this is admission-plan evidence only, not live
+row movement or regional traffic enforcement.
 
 **Citus comparison**: Vanilla Citus does not encode region in key policy.
 
 **References**:
 
 - In-source: `FEATURE: MR3` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: MR3` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR3` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### MR6: Closed-Timestamp Time Travel
 
@@ -7895,7 +7920,12 @@ artifact.
 
 **Current boundary**: The operations runner validates the runbook reference;
 live multi-region failover, PITR restore, and backup artifact restore remain
-alpha.
+alpha. VM proof run `bash ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+adds deterministic survival-contract checks for duplicate region inventory,
+declared Region CRs, required region topology spread, replication factor, and
+`live_k8s_exercised=false`. This supports runbook admission readiness only; it
+does not prove a regional failover drill, DNS cutover, backup restore, PITR
+restore, or client traffic recovery.
 
 **Citus comparison**: Vanilla Citus does not ship this regional DR runbook.
 
@@ -7903,6 +7933,8 @@ alpha.
 
 - In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
 - CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 - Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
@@ -7994,6 +8026,8 @@ Current boundary: The production-ready claim is limited to the single-node raw W
 
 - In-source: `FEATURE: RT5` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - In-source: `FEATURE: RT5` in `sidecar/realtime/src/live.rs`
 - In-source: `FEATURE: RT5` in `sidecar/realtime/src/hub.rs`
 - CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
@@ -8062,6 +8096,8 @@ alpha.
 
 - In-source: `FEATURE: S7` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### S8: Locality-Prefixed PKs
 
@@ -8132,6 +8168,8 @@ External Secrets controller reconciliation and rotation evidence remain alpha.
 - In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
 - In-source: `FEATURE: Sec7` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec8: TLS Everywhere
@@ -8161,6 +8199,8 @@ contract.
 - In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
 - In-source: `FEATURE: Sec8` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec9: SBOM And Cosign Attestation
@@ -8185,6 +8225,8 @@ attestations.
 
 - In-source: `FEATURE: Sec9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 
 ### Sto2: file_attachment Domain Type
 
@@ -8280,6 +8322,8 @@ emit a multi-PG-major operand image from a single overlay contract.
 
 - In-source: `FEATURE: T6` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `make -f Makefile.ai-blaise sql-extension-smoke` (runs PG17 and PG18 matrix)
 - Executable: `make -f Makefile.ai-blaise build-image-matrix` (builds PG17 and PG18 overlay images)
 
@@ -8319,6 +8363,8 @@ surfaces until they have equivalent raw-wire data-plane evidence.
 - In-source: `FEATURE: T7` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 
 ### T10: Bulk Protocol Fetch Path

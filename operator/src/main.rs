@@ -12,6 +12,7 @@
 // FEATURE: M3
 // FEATURE: MR1
 // FEATURE: MR2
+// FEATURE: MR3
 // FEATURE: MR4
 // FEATURE: MR8
 // FEATURE: O5
@@ -46,15 +47,15 @@ use ai_blaise_citus_operator::{
     FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger,
     HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction,
     MigrationReconcilePlan, MigrationSpec, MigrationType, PlacementPolicy, PoolSpec,
-    RegionReconcilePlan, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
-    ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec,
-    SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan,
-    ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType, SidecarEndpointCandidate,
-    SidecarEndpointRetargetPlan, SidecarReconcilePlan, SidecarSpec, SidecarType,
-    SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
-    TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
-    VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
-    WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
+    RegionReconcilePlan, RegionSpec, RegionalRowPlacementPlan, RegionalRowPlacementSpec,
+    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackReconcilePlan,
+    ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexReconcilePlan,
+    SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec,
+    SidecarDeploymentType, SidecarEndpointCandidate, SidecarEndpointRetargetPlan,
+    SidecarReconcilePlan, SidecarSpec, SidecarType, SurvivalGoalReconcilePlan, SurvivalGoalSpec,
+    SurvivalGoalType, TenantQuotas, TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction,
+    VectorDestinationSpec, VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec,
+    WebhookEvent, WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::{run_probe_server, EndpointRegistry, RetargetConfig};
 use std::env;
@@ -81,6 +82,9 @@ fn main() {
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
         [command] if command == "run-reconcilers-batch-a" => run_reconcilers_batch_a(),
+        [command] if command == "run-multiregion-contracts-canonical" => {
+            run_multiregion_contracts_canonical()
+        }
         [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
         [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
         [command] if command == "run-controller-boundary" => run_controller_boundary(),
@@ -127,7 +131,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical]");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -324,6 +328,30 @@ fn run_reconcilers_batch_a() {
         report.backup_status_endpoints,
         report.survival_topology_key,
         report.backup_archive_scheme,
+    );
+}
+
+fn run_multiregion_contracts_canonical() {
+    let report = canonical_multiregion_contracts_report().unwrap_or_else(|error| {
+        eprintln!("operator: multi-region contracts execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!("surface	status	steps	topology_key	declared_regions	leader_region	live_k8s_exercised");
+    println!(
+        "region	ready	{}	topology.kubernetes.io/zone	{}	{}	false",
+        report.region_steps, report.declared_regions, report.leader_region
+    );
+    println!(
+        "placement	ready	{}	topology.kubernetes.io/region	{}	{}	false",
+        report.placement_steps, report.declared_regions, report.leader_region
+    );
+    println!(
+        "survival	ready	{}	{}	{}	{}	false",
+        report.survival_steps,
+        report.survival_topology_key,
+        report.declared_regions,
+        report.leader_region
     );
 }
 
@@ -556,6 +584,16 @@ struct ReconcilePlansBatchCReport {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+struct MultiRegionContractsReport {
+    region_steps: usize,
+    placement_steps: usize,
+    survival_steps: usize,
+    survival_topology_key: String,
+    declared_regions: usize,
+    leader_region: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ReconcilersBatchAReport {
     tenant_apply_steps: usize,
     tenant_sql_steps: usize,
@@ -566,6 +604,37 @@ struct ReconcilersBatchAReport {
     backup_status_endpoints: usize,
     survival_topology_key: String,
     backup_archive_scheme: String,
+}
+
+fn canonical_multiregion_contracts_report() -> Result<MultiRegionContractsReport, Box<dyn Error>> {
+    let regions = canonical_region_specs_for_survival_goal();
+    let region_plan = RegionReconcilePlan::try_from(&regions[0])?;
+    let placement_spec = canonical_regional_row_placement_spec();
+    let placement_plan = RegionalRowPlacementPlan::new(
+        &placement_spec,
+        &regions,
+        &canonical_shard_group_specs_for_survival_goal()[0],
+    )?;
+    let survival_goal_spec = canonical_survival_goal_spec();
+    let survival_goal_plan = SurvivalGoalReconcilePlan::new(
+        &survival_goal_spec,
+        &canonical_shard_group_specs_for_survival_goal(),
+        &regions,
+    )?;
+    let leader_region = regions
+        .iter()
+        .find(|region| region.leader_pinned)
+        .map(|region| region.name.clone())
+        .unwrap_or_else(|| "none".to_string());
+
+    Ok(MultiRegionContractsReport {
+        region_steps: region_plan.steps.len(),
+        placement_steps: placement_plan.step_count(),
+        survival_steps: survival_goal_plan.steps.len(),
+        survival_topology_key: survival_goal_plan.required_topology_key().to_string(),
+        declared_regions: regions.len(),
+        leader_region,
+    })
 }
 
 fn canonical_reconcilers_batch_b_report() -> Result<ReconcilersBatchBReport, Box<dyn Error>> {
@@ -856,6 +925,16 @@ fn canonical_region_specs_for_survival_goal() -> Vec<RegionSpec> {
     ]
 }
 
+fn canonical_regional_row_placement_spec() -> RegionalRowPlacementSpec {
+    RegionalRowPlacementSpec {
+        table: "public.metrics".to_string(),
+        region_column: "region_id".to_string(),
+        distribution_column: "tenant_id".to_string(),
+        allowed_regions: vec!["us-east-1".to_string(), "us-west-2".to_string()],
+        min_region_replicas: 2,
+    }
+}
+
 fn canonical_hypertable_spec() -> HypertableSpec {
     HypertableSpec {
         table: "metrics".to_string(),
@@ -1133,6 +1212,24 @@ mod tests {
                 webhook_events: 2,
                 search_columns: 2,
                 sidecar_replicas: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_multiregion_contracts_report_covers_region_placement_survival() {
+        let report =
+            canonical_multiregion_contracts_report().expect("multi-region contracts report");
+
+        assert_eq!(
+            report,
+            MultiRegionContractsReport {
+                region_steps: 4,
+                placement_steps: 4,
+                survival_steps: 4,
+                survival_topology_key: "topology.kubernetes.io/region".to_string(),
+                declared_regions: 2,
+                leader_region: "us-east-1".to_string(),
             }
         );
     }
