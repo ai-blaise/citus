@@ -597,6 +597,15 @@ more production-ready than the artifacts justified.
   portable algorithm-smoke output under `benchmarks/results/`. This is not live
   Citus performance evidence; full planner CPU and pool latency claims remain
   alpha until a real Citus build and multi-worker measurement are recorded.
+- The companion advanced-planner runtime smoke now expands `FEATURE: T4`,
+  `FEATURE: T10`, `FEATURE: T11`, `FEATURE: T13`, `FEATURE: T14`, and the
+  adjacent advanced-planner contract set into deterministic runtime-boundary
+  scenarios. It verifies duplicate-feature rejection, unknown-scenario
+  rejection, invalid budget rejection, and live-distributed-execution overclaim
+  rejection through `ci/ai-blaise/companion-advanced-planner-smoke.sh`. This is
+  contract/runtime-boundary evidence only; protocol execution, Citus physical
+  pushdown, distributed cursor/savepoint cleanup, and live multi-worker planner
+  measurements remain alpha until separately measured.
 - The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
   plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
   set names, and promotion policy thresholds, and PM4 evaluates latency/cost

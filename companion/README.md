@@ -89,6 +89,13 @@ and `webhooks`.
   `FEATURE: MR3`, `FEATURE: MR6`, `FEATURE: B4`, and `FEATURE: Sto2`;
   `companion_contracts run-advanced-planner-canonical` emits the deterministic
   execution summary used by CI.
+- `canonical_advanced_planner_runtime_report` expands every advanced-planner
+  surface into a deterministic runtime-boundary scenario, counts fail-closed
+  duplicate/unknown/live-execution-claim checks, and keeps live distributed
+  execution outside the claim. `companion_contracts
+  run-advanced-planner-runtime-canonical` and
+  `ci/ai-blaise/companion-advanced-planner-smoke.sh` emit the TSV evidence
+  used by CI.
 - `OperationsReadinessContract` for Helm install, wrapper, runbook, MCP,
   security, realtime client, io_uring, and protocol pipeline gates, including
   `FEATURE: D7`, `FEATURE: D8`, `FEATURE: D9`, `FEATURE: D10`,

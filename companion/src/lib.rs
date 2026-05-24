@@ -34,8 +34,10 @@ pub mod webhooks;
 
 pub use advanced_planner::{
     canonical_advanced_planner_contract, canonical_advanced_planner_execution_report,
-    AdvancedPlannerContract, AdvancedPlannerError, AdvancedPlannerExecutionReport, PlannerSurface,
-    PlannerSurfaceKind,
+    canonical_advanced_planner_fail_closed_checks, canonical_advanced_planner_runtime_report,
+    AdvancedPlannerContract, AdvancedPlannerError, AdvancedPlannerExecutionReport,
+    AdvancedPlannerRuntimeReport, AdvancedPlannerRuntimeScenario, PlannerExecutionBoundary,
+    PlannerSurface, PlannerSurfaceKind,
 };
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use citus_timescale::{

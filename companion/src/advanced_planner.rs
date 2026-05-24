@@ -49,7 +49,9 @@ impl AdvancedPlannerContract {
         let mut seen = BTreeSet::new();
         for surface in &self.surfaces {
             surface.validate()?;
-            seen.insert(surface.feature_id);
+            if !seen.insert(surface.feature_id) {
+                return Err(AdvancedPlannerError::DuplicateFeature(surface.feature_id));
+            }
         }
 
         for feature_id in ADVANCED_PLANNER_FEATURE_IDS {
@@ -169,6 +171,191 @@ impl AdvancedPlannerExecutionReport {
 
         Ok(report)
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AdvancedPlannerRuntimeScenario {
+    pub feature_id: &'static str,
+    pub scenario_name: String,
+    pub required_evidence: Vec<String>,
+    pub contract_checks: Vec<String>,
+    pub execution_boundary: PlannerExecutionBoundary,
+}
+
+impl AdvancedPlannerRuntimeScenario {
+    fn validate(
+        &self,
+        contract_features: &BTreeSet<&'static str>,
+    ) -> Result<(), AdvancedPlannerError> {
+        validate_required("runtime.feature_id", self.feature_id)?;
+        validate_required("runtime.scenario_name", &self.scenario_name)?;
+        validate_required_list("runtime.required_evidence", &self.required_evidence)?;
+        validate_required_list("runtime.contract_checks", &self.contract_checks)?;
+
+        if !contract_features.contains(self.feature_id) {
+            return Err(AdvancedPlannerError::UnknownRuntimeFeature(self.feature_id));
+        }
+
+        if self.execution_boundary == PlannerExecutionBoundary::LiveDistributedExecution {
+            return Err(AdvancedPlannerError::UnsupportedLiveExecutionClaim(
+                self.feature_id,
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PlannerExecutionBoundary {
+    DeterministicContract,
+    PatchSmoke,
+    PlanOnly,
+    ResearchGuard,
+    LiveDistributedExecution,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AdvancedPlannerRuntimeReport {
+    pub scenario_count: usize,
+    pub covered_features: usize,
+    pub contract_checks: usize,
+    pub fail_closed_checks: usize,
+    pub live_execution_claims: usize,
+    pub patch_smoke_boundaries: usize,
+    pub plan_only_boundaries: usize,
+    pub deterministic_boundaries: usize,
+    pub research_guard_boundaries: usize,
+}
+
+impl AdvancedPlannerRuntimeReport {
+    fn from_contract(contract: &AdvancedPlannerContract) -> Result<Self, AdvancedPlannerError> {
+        contract.validate()?;
+        let scenarios = contract
+            .surfaces
+            .iter()
+            .map(runtime_scenario_for_surface)
+            .collect::<Vec<_>>();
+
+        Self::from_scenarios(contract, &scenarios)
+    }
+
+    fn from_scenarios(
+        contract: &AdvancedPlannerContract,
+        scenarios: &[AdvancedPlannerRuntimeScenario],
+    ) -> Result<Self, AdvancedPlannerError> {
+        contract.validate()?;
+        if scenarios.is_empty() {
+            return Err(AdvancedPlannerError::MissingRequiredField(
+                "runtime.scenarios",
+            ));
+        }
+
+        let contract_features = contract
+            .surfaces
+            .iter()
+            .map(|surface| surface.feature_id)
+            .collect::<BTreeSet<_>>();
+        let mut scenario_features = BTreeSet::new();
+        let mut contract_checks = 0;
+        let mut live_execution_claims = 0;
+        let mut patch_smoke_boundaries = 0;
+        let mut plan_only_boundaries = 0;
+        let mut deterministic_boundaries = 0;
+        let mut research_guard_boundaries = 0;
+
+        for scenario in scenarios {
+            scenario.validate(&contract_features)?;
+            if !scenario_features.insert(scenario.feature_id) {
+                return Err(AdvancedPlannerError::DuplicateFeature(scenario.feature_id));
+            }
+            contract_checks += scenario.contract_checks.len();
+            match scenario.execution_boundary {
+                PlannerExecutionBoundary::DeterministicContract => deterministic_boundaries += 1,
+                PlannerExecutionBoundary::PatchSmoke => patch_smoke_boundaries += 1,
+                PlannerExecutionBoundary::PlanOnly => plan_only_boundaries += 1,
+                PlannerExecutionBoundary::ResearchGuard => research_guard_boundaries += 1,
+                PlannerExecutionBoundary::LiveDistributedExecution => live_execution_claims += 1,
+            }
+        }
+
+        for feature_id in &contract_features {
+            if !scenario_features.contains(feature_id) {
+                return Err(AdvancedPlannerError::MissingRuntimeScenario(feature_id));
+            }
+        }
+
+        Ok(Self {
+            scenario_count: scenarios.len(),
+            covered_features: scenario_features.len(),
+            contract_checks,
+            fail_closed_checks: canonical_advanced_planner_fail_closed_checks(),
+            live_execution_claims,
+            patch_smoke_boundaries,
+            plan_only_boundaries,
+            deterministic_boundaries,
+            research_guard_boundaries,
+        })
+    }
+}
+
+pub fn canonical_advanced_planner_runtime_report(
+) -> Result<AdvancedPlannerRuntimeReport, AdvancedPlannerError> {
+    AdvancedPlannerRuntimeReport::from_contract(&canonical_advanced_planner_contract())
+}
+
+pub fn canonical_advanced_planner_fail_closed_checks() -> usize {
+    let mut checks = 0;
+
+    if (AdvancedPlannerContract { surfaces: vec![] })
+        .validate()
+        .is_err()
+    {
+        checks += 1;
+    }
+
+    let mut duplicate = canonical_advanced_planner_contract();
+    duplicate.surfaces.push(duplicate.surfaces[0].clone());
+    if matches!(
+        duplicate.validate(),
+        Err(AdvancedPlannerError::DuplicateFeature(_))
+    ) {
+        checks += 1;
+    }
+
+    if (AdvancedPlannerContract {
+        surfaces: vec![PlannerSurface {
+            feature_id: "T10",
+            name: "bulk fetch".to_string(),
+            references: vec!["executor/bulk_fetch".to_string()],
+            kind: PlannerSurfaceKind::BatchTransfer { max_batch_rows: 0 },
+        }],
+    })
+    .validate()
+    .is_err()
+    {
+        checks += 1;
+    }
+
+    let contract_features = canonical_advanced_planner_contract()
+        .surfaces
+        .iter()
+        .map(|surface| surface.feature_id)
+        .collect::<BTreeSet<_>>();
+    if runtime_probe("Nope", PlannerExecutionBoundary::PlanOnly)
+        .validate(&contract_features)
+        .is_err()
+    {
+        checks += 1;
+    }
+    if runtime_probe("T11", PlannerExecutionBoundary::LiveDistributedExecution)
+        .validate(&contract_features)
+        .is_err()
+    {
+        checks += 1;
+    }
+
+    checks
 }
 
 impl PlannerSurfaceKind {
@@ -315,6 +502,87 @@ pub fn canonical_advanced_planner_execution_report(
     AdvancedPlannerExecutionReport::from_contract(&canonical_advanced_planner_contract())
 }
 
+fn runtime_scenario_for_surface(surface: &PlannerSurface) -> AdvancedPlannerRuntimeScenario {
+    let mut required_evidence = surface.references.clone();
+    required_evidence.push("docs/ai-blaise/NEW_FEATURES.md".to_string());
+    required_evidence.push("ci/ai-blaise/companion-advanced-planner-smoke.sh".to_string());
+
+    let (execution_boundary, contract_checks) = match &surface.kind {
+        PlannerSurfaceKind::Lookup { min_partitions } => (
+            PlannerExecutionBoundary::PatchSmoke,
+            vec![
+                format!("min_partitions={min_partitions}"),
+                "router_planner_algorithm_smoke_required".to_string(),
+            ],
+        ),
+        PlannerSurfaceKind::BatchTransfer { max_batch_rows } => (
+            PlannerExecutionBoundary::PlanOnly,
+            vec![
+                format!("max_batch_rows={max_batch_rows}"),
+                "external_protocol_backpressure_not_claimed".to_string(),
+            ],
+        ),
+        PlannerSurfaceKind::DistributedSql { worker_tasks } => (
+            PlannerExecutionBoundary::PlanOnly,
+            vec![
+                format!("worker_tasks={worker_tasks}"),
+                "physical_worker_execution_not_claimed".to_string(),
+            ],
+        ),
+        PlannerSurfaceKind::TransactionState { max_open_shards } => (
+            PlannerExecutionBoundary::PlanOnly,
+            vec![
+                format!("max_open_shards={max_open_shards}"),
+                "distributed_cleanup_not_claimed".to_string(),
+            ],
+        ),
+        PlannerSurfaceKind::Policy { required_inputs } => {
+            let mut checks = vec!["policy_contract_present".to_string()];
+            checks.extend(
+                required_inputs
+                    .iter()
+                    .map(|input| format!("required_input:{input}")),
+            );
+            (PlannerExecutionBoundary::DeterministicContract, checks)
+        }
+        PlannerSurfaceKind::StorageDomain {
+            domain_name,
+            backing_table,
+        } => (
+            PlannerExecutionBoundary::DeterministicContract,
+            vec![
+                format!("domain_name={domain_name}"),
+                format!("backing_table={backing_table}"),
+            ],
+        ),
+        PlannerSurfaceKind::ResearchGuard { decision_record } => (
+            PlannerExecutionBoundary::ResearchGuard,
+            vec![format!("decision_record={decision_record}")],
+        ),
+    };
+
+    AdvancedPlannerRuntimeScenario {
+        feature_id: surface.feature_id,
+        scenario_name: format!("{} runtime boundary", surface.name),
+        required_evidence,
+        contract_checks,
+        execution_boundary,
+    }
+}
+
+fn runtime_probe(
+    feature_id: &'static str,
+    execution_boundary: PlannerExecutionBoundary,
+) -> AdvancedPlannerRuntimeScenario {
+    AdvancedPlannerRuntimeScenario {
+        feature_id,
+        scenario_name: "probe".to_string(),
+        required_evidence: vec!["ci/ai-blaise/companion-advanced-planner-smoke.sh".to_string()],
+        contract_checks: vec!["probe_check".to_string()],
+        execution_boundary,
+    }
+}
+
 fn lookup(feature_id: &'static str, name: &str, reference: &str) -> PlannerSurface {
     surface(
         feature_id,
@@ -413,21 +681,41 @@ fn surface(
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum AdvancedPlannerError {
     InvalidPositive(&'static str),
+    DuplicateFeature(&'static str),
     MissingFeature(&'static str),
+    MissingRuntimeScenario(&'static str),
     MissingRequiredField(&'static str),
+    UnknownRuntimeFeature(&'static str),
+    UnsupportedLiveExecutionClaim(&'static str),
 }
 
 impl fmt::Display for AdvancedPlannerError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidPositive(field) => write!(formatter, "{field} must be greater than zero"),
+            Self::DuplicateFeature(feature_id) => {
+                write!(formatter, "advanced planner contract duplicates feature {feature_id}")
+            }
             Self::MissingFeature(feature_id) => {
                 write!(
                     formatter,
                     "advanced planner contract missing feature {feature_id}"
                 )
             }
+            Self::MissingRuntimeScenario(feature_id) => {
+                write!(
+                    formatter,
+                    "advanced planner runtime report missing scenario for {feature_id}"
+                )
+            }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::UnknownRuntimeFeature(feature_id) => {
+                write!(formatter, "advanced planner runtime scenario references unknown feature {feature_id}")
+            }
+            Self::UnsupportedLiveExecutionClaim(feature_id) => write!(
+                formatter,
+                "advanced planner runtime scenario for {feature_id} claims live distributed execution"
+            ),
         }
     }
 }
@@ -481,6 +769,21 @@ mod tests {
     }
 
     #[test]
+    fn advanced_planner_runtime_report_is_deterministic_and_bounded() {
+        let report = canonical_advanced_planner_runtime_report().expect("runtime report");
+
+        assert_eq!(report.scenario_count, 27);
+        assert_eq!(report.covered_features, 27);
+        assert_eq!(report.contract_checks, 73);
+        assert_eq!(report.fail_closed_checks, 5);
+        assert_eq!(report.live_execution_claims, 0);
+        assert_eq!(report.patch_smoke_boundaries, 1);
+        assert_eq!(report.plan_only_boundaries, 4);
+        assert_eq!(report.deterministic_boundaries, 20);
+        assert_eq!(report.research_guard_boundaries, 2);
+    }
+
+    #[test]
     fn advanced_planner_rejects_invalid_batch_size() {
         let contract = AdvancedPlannerContract {
             surfaces: vec![PlannerSurface {
@@ -494,6 +797,42 @@ mod tests {
         assert_eq!(
             contract.validate(),
             Err(AdvancedPlannerError::InvalidPositive("max_batch_rows"))
+        );
+    }
+
+    #[test]
+    fn advanced_planner_rejects_duplicate_feature_surface() {
+        let mut contract = canonical_advanced_planner_contract();
+        contract.surfaces.push(contract.surfaces[0].clone());
+
+        assert_eq!(
+            contract.validate(),
+            Err(AdvancedPlannerError::DuplicateFeature("T4"))
+        );
+    }
+
+    #[test]
+    fn advanced_planner_runtime_rejects_unknown_feature() {
+        let contract = canonical_advanced_planner_contract();
+        let scenarios = vec![runtime_probe("Unknown", PlannerExecutionBoundary::PlanOnly)];
+
+        assert_eq!(
+            AdvancedPlannerRuntimeReport::from_scenarios(&contract, &scenarios),
+            Err(AdvancedPlannerError::UnknownRuntimeFeature("Unknown"))
+        );
+    }
+
+    #[test]
+    fn advanced_planner_runtime_rejects_live_execution_overclaim() {
+        let contract = canonical_advanced_planner_contract();
+        let scenarios = vec![runtime_probe(
+            "T11",
+            PlannerExecutionBoundary::LiveDistributedExecution,
+        )];
+
+        assert_eq!(
+            AdvancedPlannerRuntimeReport::from_scenarios(&contract, &scenarios),
+            Err(AdvancedPlannerError::UnsupportedLiveExecutionClaim("T11"))
         );
     }
 }

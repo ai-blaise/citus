@@ -42,9 +42,10 @@
 // FEATURE: TS11
 
 use ai_blaise_citus_companion::{
-    canonical_advanced_planner_execution_report, canonical_cohabit_detection_report,
-    canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
-    canonical_operations_readiness_report, canonical_plan_runtime_report,
+    canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
+    canonical_cohabit_detection_report, canonical_domain_contracts_report,
+    canonical_extension_catalog_execution_report, canonical_operations_readiness_report,
+    canonical_plan_runtime_report,
 };
 use std::env;
 use std::process;
@@ -60,6 +61,9 @@ fn main() {
         [] => run_advanced_planner_canonical(),
         [command] if command == "run-advanced-planner-canonical" => {
             run_advanced_planner_canonical()
+        }
+        [command] if command == "run-advanced-planner-runtime-canonical" => {
+            run_advanced_planner_runtime_canonical();
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();
@@ -106,6 +110,29 @@ fn run_advanced_planner_canonical() {
         report.policy_required_inputs,
         report.storage_domains,
         report.research_guards,
+    );
+}
+
+fn run_advanced_planner_runtime_canonical() {
+    let report = canonical_advanced_planner_runtime_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: advanced planner runtime report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "scenarios	covered_features	contract_checks	fail_closed_checks	live_execution_claims	patch_smoke_boundaries	plan_only_boundaries	deterministic_boundaries	research_guard_boundaries"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.scenario_count,
+        report.covered_features,
+        report.contract_checks,
+        report.fail_closed_checks,
+        report.live_execution_claims,
+        report.patch_smoke_boundaries,
+        report.plan_only_boundaries,
+        report.deterministic_boundaries,
+        report.research_guard_boundaries,
     );
 }
 
@@ -218,7 +245,7 @@ fn run_plan_runtime_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports and emits TSV");
 }
