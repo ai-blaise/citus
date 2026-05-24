@@ -22,7 +22,9 @@ Mechanics:
 * CitusInvalidateRelcacheByShardId also calls BumpPlacementGeneration() so
   helper paths that bypass the trigger still drive the counter.
 * citus_placement_generation() is a SQL-callable UDF returning the counter
-  as bigint; the companion polls it through router_assist.
+  as bigint; the companion polls it through router_assist. The patch installs
+  the pg_catalog UDF in the base extension SQL and ships versioned UDF SQL
+  snapshots so fresh installs and upgrades expose the C symbol.
 
 The counter resets on backend start. Cross-process invariants are still
 guaranteed by relcache invalidations; the counter is an additive signal that
@@ -30,8 +32,11 @@ lets plan caches avoid unnecessary recomputation when placements have not
 moved.
 ---
  .../distributed/metadata/metadata_cache.c     | 69 ++++++++++++++++++-
+ src/backend/distributed/sql/citus--8.0-1.sql  |  8 +++
+ .../citus_placement_generation/14.0-1.sql     |  7 +++
+ .../citus_placement_generation/latest.sql     |  7 +++
  src/include/distributed/metadata_cache.h      |  2 +
- 2 files changed, 70 insertions(+), 1 deletion(-)
+ 5 files changed, 92 insertions(+), 1 deletion(-)
 
 diff --git a/src/backend/distributed/metadata/metadata_cache.c b/src/backend/distributed/metadata/metadata_cache.c
 index 163f0991e..37eec8c21 100644
@@ -145,6 +150,51 @@ index 163f0991e..37eec8c21 100644
  	/*
  	 * Load shard, to find the associated relation id. Can't use
  	 * LoadShardInterval directly because that'd fail if the shard doesn't
+diff --git a/src/backend/distributed/sql/citus--8.0-1.sql b/src/backend/distributed/sql/citus--8.0-1.sql
+index 1af8296ac..47539d79b 100644
+--- a/src/backend/distributed/sql/citus--8.0-1.sql
++++ b/src/backend/distributed/sql/citus--8.0-1.sql
+@@ -542,6 +542,14 @@ CREATE TRIGGER dist_placement_cache_invalidate
+     ON pg_catalog.pg_dist_shard_placement
+     FOR EACH ROW EXECUTE PROCEDURE master_dist_placement_cache_invalidate();
+ 
++CREATE FUNCTION pg_catalog.citus_placement_generation()
++    RETURNS bigint
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_placement_generation$$;
++COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
++    IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
++
+ CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
+ 	RETURNS void
+ 	LANGUAGE C STRICT
+diff --git a/src/backend/distributed/sql/udfs/citus_placement_generation/14.0-1.sql b/src/backend/distributed/sql/udfs/citus_placement_generation/14.0-1.sql
+new file mode 100644
+index 000000000..3eb09e869
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_placement_generation/14.0-1.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_placement_generation()
++    RETURNS bigint
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_placement_generation$$;
++COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
++    IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_placement_generation/latest.sql b/src/backend/distributed/sql/udfs/citus_placement_generation/latest.sql
+new file mode 100644
+index 000000000..3eb09e869
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_placement_generation/latest.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_placement_generation()
++    RETURNS bigint
++    LANGUAGE C STRICT
++    AS 'MODULE_PATHNAME', $$citus_placement_generation$$;
++COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
++    IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
 diff --git a/src/include/distributed/metadata_cache.h b/src/include/distributed/metadata_cache.h
 index f79cb9ce9..e66cbb6fc 100644
 --- a/src/include/distributed/metadata_cache.h

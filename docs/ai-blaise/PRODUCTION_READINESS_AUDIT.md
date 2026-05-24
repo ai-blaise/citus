@@ -622,6 +622,13 @@ more production-ready than the artifacts justified.
   zero-shard failures in the PostgreSQL smoke, and does not claim dynamic shard
   creation, Citus router integration, operator rebalancing, pool data-plane
   routing, or distributed range metadata propagation.
+- The T2 placement-generation UDF contract now exposes
+  `pg_catalog.citus_placement_generation()` in fresh-install and 15.0 upgrade SQL,
+  keeps versioned UDF snapshots in sync, and guards the companion query and
+  upstream patch artifact with `ci/ai-blaise/placement-generation-udf-contract-smoke.sh`.
+  This closes the previously unexecuted SQL exposure contract, but it does not
+  prove live counter execution inside a patched Citus backend or live pool cache
+  invalidation; T2 remains alpha until that runtime evidence exists.
 - The Citus quilt now carries `FEATURE: T3` and `FEATURE: T4` patch artifacts
   for the coordinator-skip locality probe and hashed router-planner placement
   intersection. The current evidence is patch applicability, companion

@@ -306,10 +306,13 @@ Executable evidence: `cargo test -p ai_blaise_citus_companion --lib
 router_assist` runs the placement-generation subscriber contract end to end
 (initial/unchanged/advanced/reset transitions, catalog SELECT shape,
 sample validation). `cargo test -p ai_blaise_citus_pool --lib shard_map`
-runs the pool-side plan-cache generation contract. The C-level counter is
-upstream-PR candidate; full Citus-build evidence lands once the
-`kind-smoke` overlay rebuilds the operand image with the quilt patches
-applied.
+runs the pool-side plan-cache generation contract.
+`ci/ai-blaise/placement-generation-udf-contract-smoke.sh` verifies that the C
+symbol, fresh-install SQL, 15.0 upgrade SQL, versioned UDF snapshots,
+companion query string, and upstream patch artifact all expose
+`pg_catalog.citus_placement_generation()`. The C-level counter remains alpha
+until a live patched-Citus runtime exercises the installed UDF through the
+operand image with placement mutations.
 
 **References**:
 
@@ -327,6 +330,7 @@ applied.
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 - Executable: `cargo test -p ai_blaise_citus_companion --lib router_assist`
 - Executable: `cargo test -p ai_blaise_citus_pool --lib shard_map`
+- CI: `ci/ai-blaise/placement-generation-udf-contract-smoke.sh`
 - Patches: `patches/0003-guc-report-citus-userset.patch`,
   `patches/0005-placement-generation-counter.patch`
 

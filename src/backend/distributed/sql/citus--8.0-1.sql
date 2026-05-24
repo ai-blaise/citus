@@ -543,6 +543,14 @@ CREATE TRIGGER dist_placement_cache_invalidate
     ON pg_catalog.pg_dist_shard_placement
     FOR EACH ROW EXECUTE PROCEDURE master_dist_placement_cache_invalidate();
 
+CREATE FUNCTION pg_catalog.citus_placement_generation()
+    RETURNS bigint
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$citus_placement_generation$$;
+COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
+    IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
+GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
+
 CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
 	RETURNS void
 	LANGUAGE C STRICT

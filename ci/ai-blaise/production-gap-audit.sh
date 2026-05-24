@@ -47,6 +47,7 @@ STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
+PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
@@ -385,6 +386,7 @@ for path in (
     STORAGE_RUNTIME_SMOKE,
     POOL_PROXY_SMOKE,
     POOL_ROUTING_SECURITY_SMOKE,
+    PLACEMENT_GENERATION_UDF_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -979,6 +981,49 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve T1 boundary: {phrase}")
+
+placement_udf_smoke = read(PLACEMENT_GENERATION_UDF_SMOKE)
+for required in (
+    "PG_FUNCTION_INFO_V1(citus_placement_generation)",
+    "CREATE OR REPLACE FUNCTION pg_catalog.citus_placement_generation()",
+    "citus--14.0-1--15.0-1.sql",
+    "udfs/citus_placement_generation/15.0-1.sql",
+    "patches/0005-placement-generation-counter.patch",
+):
+    if required not in placement_udf_smoke:
+        fail(f"placement-generation UDF smoke lost required proof: {required}")
+for required_path, required_phrase in (
+    (ROOT / "src/backend/distributed/sql/udfs/citus_placement_generation/latest.sql", "GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_placement_generation/15.0-1.sql", "AS 'MODULE_PATHNAME', $$citus_placement_generation$$"),
+    (ROOT / "src/backend/distributed/sql/udfs/citus_placement_generation/14.0-1.sql", "RETURNS bigint"),
+    (ROOT / "src/backend/distributed/sql/citus--14.0-1--15.0-1.sql", "udfs/citus_placement_generation/15.0-1.sql"),
+):
+    if required_phrase not in read(required_path):
+        fail(f"placement-generation SQL contract missing {required_phrase} in {required_path}")
+if "placement-generation-udf-contract-smoke:" not in makefile or "placement-generation-udf-contract-smoke" not in makefile.split("gate-close:", 1)[1]:
+    fail("gate-close must run placement-generation-udf-contract-smoke")
+if status_by_id.get("T2") != "alpha":
+    fail("T2 must remain alpha until live patched-Citus placement-generation runtime evidence exists")
+t2_body = compact(entry_by_id["T2"]["body"])
+for phrase in (
+    "placement-generation-udf-contract-smoke.sh",
+    "pg_catalog.citus_placement_generation()",
+    "fresh-install sql",
+    "15.0 upgrade sql",
+    "live patched-citus runtime",
+    "remains alpha",
+):
+    if compact(phrase) not in t2_body:
+        fail(f"T2 docs lost placement-generation UDF boundary phrase: {phrase}")
+
+audit_compact = compact(read(AUDIT))
+for phrase in (
+    "pg_catalog.citus_placement_generation()",
+    "fresh-install and 15.0 upgrade SQL",
+    "does not prove live counter execution",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve T2 UDF boundary: {phrase}")
 
 matrix_truth = compact(read(COHAB_MATRIX_README) + "\n" + read(COHABITATION_DOC) + "\n" + audit)
 for phrase in (
