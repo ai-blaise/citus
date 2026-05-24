@@ -280,7 +280,7 @@ pooler.
 `pool/src/prepared.rs`, `companion/src/router_assist.rs`,
 `patches/0003-guc-report-citus-userset.patch`,
 `patches/0005-placement-generation-counter.patch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -302,7 +302,7 @@ movement but does not ship the ai-blaise pool's generation-aware cache model.
 Vanilla Citus also does not flag its USERSET GUCs with `GUC_REPORT`, which
 makes correct transaction pooling impossible without these patches.
 
-Executable evidence: `cargo test -p ai_blaise_citus_companion --lib
+Production evidence: `cargo test -p ai_blaise_citus_companion --lib
 router_assist` runs the placement-generation subscriber contract end to end
 (initial/unchanged/advanced/reset transitions, catalog SELECT shape,
 sample validation). `cargo test -p ai_blaise_citus_pool --lib shard_map`
@@ -310,9 +310,21 @@ runs the pool-side plan-cache generation contract.
 `ci/ai-blaise/placement-generation-udf-contract-smoke.sh` verifies that the C
 symbol, fresh-install SQL, 15.0 upgrade SQL, versioned UDF snapshots,
 companion query string, and upstream patch artifact all expose
-`pg_catalog.citus_placement_generation()`. The C-level counter remains alpha
-until a live patched-Citus runtime exercises the installed UDF through the
-operand image with placement mutations.
+`pg_catalog.citus_placement_generation()`.
+`ci/ai-blaise/pg-cron-cohabitation-smoke.sh` now boots a live patched Citus PG17
+runtime, creates two real distributed tables, records
+`placement_generation_initial`,
+`placement_generation_after_first_distribution`,
+`placement_generation_after_second_distribution`, and
+`placement_generation_placements`, and asserts that the installed
+`pg_catalog.citus_placement_generation()` counter advances monotonically while
+Citus creates placement metadata. The same smoke opens a raw PostgreSQL protocol
+connection and verifies a `citus_shard_count_parameter_status` packet after
+`SET citus.shard_count TO 7`, proving the `GUC_REPORT`/ParameterStatus contract
+for a live `citus.*` USERSET GUC. This closes the T2 Citus patch runtime
+contract for the bounded placement-generation and GUC-reporting surface; it does
+not claim production latency, rebalance throughput, or the unpublished pool
+data-plane serving traffic under real tenant load.
 
 **References**:
 
@@ -331,6 +343,7 @@ operand image with placement mutations.
 - Executable: `cargo test -p ai_blaise_citus_companion --lib router_assist`
 - Executable: `cargo test -p ai_blaise_citus_pool --lib shard_map`
 - CI: `ci/ai-blaise/placement-generation-udf-contract-smoke.sh`
+- CI: `ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
 - Patches: `patches/0003-guc-report-citus-userset.patch`,
   `patches/0005-placement-generation-counter.patch`
 

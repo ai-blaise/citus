@@ -631,11 +631,20 @@ more production-ready than the artifacts justified.
   routing, or distributed range metadata propagation.
 - The T2 placement-generation UDF contract now exposes
   `pg_catalog.citus_placement_generation()` in fresh-install and 15.0 upgrade SQL,
-  keeps versioned UDF snapshots in sync, and guards the companion query and
-  upstream patch artifact with `ci/ai-blaise/placement-generation-udf-contract-smoke.sh`.
-  This closes the previously unexecuted SQL exposure contract, but it does not
-  prove live counter execution inside a patched Citus backend or live pool cache
-  invalidation; T2 remains alpha until that runtime evidence exists.
+  keeps versioned UDF snapshots in sync, guards the companion query and upstream
+  patch artifact with `ci/ai-blaise/placement-generation-udf-contract-smoke.sh`,
+  and closes the live patched-Citus runtime boundary in
+  `ci/ai-blaise/pg-cron-cohabitation-smoke.sh`. That live PG17 smoke creates two
+  real distributed tables, records `placement_generation_initial`,
+  `placement_generation_after_first_distribution`,
+  `placement_generation_after_second_distribution`, and
+  `placement_generation_placements`, asserts monotonic counter advancement from
+  the installed `pg_catalog.citus_placement_generation()` UDF while Citus creates
+  placement metadata, and proves `GUC_REPORT`/ParameterStatus emission with
+  `citus_shard_count_parameter_status` after `SET citus.shard_count TO 7`. This
+  makes T2 production-ready for the bounded Citus patch surface; it still does
+  not claim production latency, rebalance throughput, or unpublished pool
+  data-plane serving traffic under real tenant load.
 - The Citus quilt now carries `FEATURE: T3` and `FEATURE: T4` patch artifacts
   for the coordinator-skip locality probe and hashed router-planner placement
   intersection. The current evidence is patch applicability, companion

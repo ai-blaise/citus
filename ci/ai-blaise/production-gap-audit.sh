@@ -1003,28 +1003,53 @@ for required_path, required_phrase in (
         fail(f"placement-generation SQL contract missing {required_phrase} in {required_path}")
 if "placement-generation-udf-contract-smoke:" not in makefile or "placement-generation-udf-contract-smoke" not in makefile.split("gate-close:", 1)[1]:
     fail("gate-close must run placement-generation-udf-contract-smoke")
-if status_by_id.get("T2") != "alpha":
-    fail("T2 must remain alpha until live patched-Citus placement-generation runtime evidence exists")
+if status_by_id.get("T2") != "production-ready":
+    fail("T2 must be production-ready after live patched-Citus placement-generation and GUC_REPORT evidence")
 t2_body = compact(entry_by_id["T2"]["body"])
 for phrase in (
     "placement-generation-udf-contract-smoke.sh",
+    "pg-cron-cohabitation-smoke.sh",
     "pg_catalog.citus_placement_generation()",
     "fresh-install sql",
     "15.0 upgrade sql",
-    "live patched-citus runtime",
-    "remains alpha",
+    "placement_generation_after_first_distribution",
+    "placement_generation_after_second_distribution",
+    "placement_generation_placements",
+    "citus_shard_count_parameter_status",
+    "ParameterStatus",
+    "SET citus.shard_count TO 7",
+    "does not claim production latency",
 ):
     if compact(phrase) not in t2_body:
-        fail(f"T2 docs lost placement-generation UDF boundary phrase: {phrase}")
+        fail(f"T2 docs lost placement-generation runtime proof/boundary phrase: {phrase}")
+
+pg_cron_cohabitation_smoke = read(PG_CRON_COHABITATION_SMOKE)
+for phrase in (
+    "FEATURE: Bundle1 T2 TS19 TS20",
+    "placement_generation_initial",
+    "placement_generation_after_first_distribution",
+    "placement_generation_after_second_distribution",
+    "placement_generation_placements",
+    "citus_shard_count_parameter_status",
+    "SET citus.shard_count TO 7",
+    "ParameterStatus",
+    "POSTGRES_HOST_AUTH_METHOD=trust",
+):
+    if phrase not in pg_cron_cohabitation_smoke:
+        fail(f"pg_cron cohabitation smoke must preserve T2 runtime proof: {phrase}")
 
 audit_compact = compact(read(AUDIT))
 for phrase in (
     "pg_catalog.citus_placement_generation()",
     "fresh-install and 15.0 upgrade SQL",
-    "does not prove live counter execution",
+    "placement_generation_after_second_distribution",
+    "citus_shard_count_parameter_status",
+    "GUC_REPORT",
+    "production-ready for the bounded Citus patch surface",
+    "does not claim production latency",
 ):
     if compact(phrase) not in audit_compact:
-        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve T2 UDF boundary: {phrase}")
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve T2 runtime boundary: {phrase}")
 
 matrix_truth = compact(read(COHAB_MATRIX_README) + "\n" + read(COHABITATION_DOC) + "\n" + audit)
 for phrase in (
@@ -1077,7 +1102,6 @@ for pattern in (
     if compact(pattern) in compact(docs + "\n" + audit):
         fail(f"Timescale docs overclaim production readiness: {pattern}")
 
-pg_cron_cohabitation_smoke = read(PG_CRON_COHABITATION_SMOKE)
 pg_cron_truth = compact(docs + "\n" + audit + "\n" + pg_cron_cohabitation_smoke)
 if status_by_id.get("TS19") != "production-ready":
     fail("TS19 pg_cron clock cohabitation must be production-ready after live clock-reservation worker evidence")

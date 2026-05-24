@@ -28,6 +28,7 @@ udf_upstream="${udf_dir}/14.0-1.sql"
 router_assist="companion/src/router_assist.rs"
 patch_file="patches/0005-placement-generation-counter.patch"
 feature_doc="docs/ai-blaise/NEW_FEATURES.md"
+pg_cron_smoke="ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 
 for file in \
   "${metadata_c}" \
@@ -39,7 +40,8 @@ for file in \
   "${udf_upstream}" \
   "${router_assist}" \
   "${patch_file}" \
-  "${feature_doc}"
+  "${feature_doc}" \
+  "${pg_cron_smoke}"
 do
   require_file "${file}"
 done
@@ -89,7 +91,28 @@ done
 
 grep -Fq "placement-generation-udf-contract-smoke.sh" "${feature_doc}" || \
   fail "NEW_FEATURES.md must reference the placement-generation UDF smoke"
-grep -Fq "The C-level counter remains alpha" "${feature_doc}" || \
-  fail "NEW_FEATURES.md must preserve alpha boundary wording"
+grep -Fq "pg-cron-cohabitation-smoke.sh" "${feature_doc}" || \
+  fail "NEW_FEATURES.md must reference the live patched-Citus runtime smoke"
+for required in \
+  "placement_generation_after_first_distribution" \
+  "placement_generation_after_second_distribution" \
+  "placement_generation_placements" \
+  "citus_shard_count_parameter_status" \
+  "SET citus.shard_count TO 7" \
+  "production latency"
+do
+  grep -Fq "${required}" "${feature_doc}" || \
+    fail "NEW_FEATURES.md lost T2 runtime proof/boundary: ${required}"
+done
+for required in \
+  "placement_generation_after_first_distribution" \
+  "placement_generation_after_second_distribution" \
+  "placement_generation_placements" \
+  "citus_shard_count_parameter_status" \
+  "SET citus.shard_count TO 7"
+do
+  grep -Fq "${required}" "${pg_cron_smoke}" || \
+    fail "pg-cron cohabitation smoke lost T2 runtime proof: ${required}"
+done
 
-printf 'placement_generation_udf_contract_smoke\tudf_snapshots=3\tbase_sql=true\tupgrade_sql=true\tpatch_artifact=true\n'
+printf 'placement_generation_udf_contract_smoke\tudf_snapshots=3\tbase_sql=true\tupgrade_sql=true\tpatch_artifact=true\tlive_runtime_gate=true\n'
