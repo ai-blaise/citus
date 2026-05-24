@@ -2069,11 +2069,22 @@ pgEdge/Spock contribution to pgsql-hackers, rebased to PostgreSQL 17.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the branch source-cluster, storage, and branch-type
-contract needed for snapshot-backed cluster branches.
+**Summary**: Defines the branch source-cluster, target-cluster, storage,
+branch-type, and CSI snapshot-class contract needed for snapshot-backed cluster
+branches.
 
 **Motivation**: Branching needs an operator-owned API before CSI snapshot and
 copy-on-write implementations can be reconciled safely.
+
+**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
+exercises the real operator binary and `operator/src/crds/branch.rs` unit tests.
+It verifies fail-closed source/target identity, conservative admission guards
+for storage and snapshot class names, storage-quantity validation,
+snapshot-class requirements for snapshot branches, and deterministic apply
+planning from `pending` to `ready`. The class-name guard is intentionally stricter
+than a complete Kubernetes storage-class parser. This remains alpha contract
+evidence; it does not prove live Kubernetes CSI `VolumeSnapshot` creation, PVC
+cloning, or cluster materialization.
 
 **Citus comparison**: Vanilla Citus does not ship snapshot branch automation.
 
@@ -2082,6 +2093,8 @@ copy-on-write implementations can be reconciled safely.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C6` in `operator/src/crds/branch.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-branch-lifecycle-canonical`
+- CI: `ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
 
 ### C7: Branch Suspend
 
@@ -2091,11 +2104,17 @@ copy-on-write implementations can be reconciled safely.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries suspend intent on the branch spec so the operator can
-coordinate scale-to-zero and resume workflows.
+**Summary**: Carries suspend intent on the branch spec and validates the
+operator-side suspend transition from `ready` to `suspended`.
 
 **Motivation**: Branch lifecycle must be declarative to avoid orphaned compute
 or ad hoc suspend state.
+
+**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
+exercises deterministic suspend planning and fail-closed guards for active
+sessions, pending migrations, and invalid phases before scale-to-zero steps are
+reported. This remains alpha contract evidence; it does not prove live
+Kubernetes StatefulSet scaling, connection draining, or resume execution.
 
 **Citus comparison**: Vanilla Citus has no branch suspend/resume surface.
 
@@ -2104,6 +2123,8 @@ or ad hoc suspend state.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C7` in `operator/src/crds/branch.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-branch-lifecycle-canonical`
+- CI: `ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
 
 ### C8: Branch Promote
 
@@ -2113,11 +2134,19 @@ or ad hoc suspend state.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Establishes typed branch identity and source-cluster state for
-atomic branch promotion workflows.
+**Summary**: Establishes typed branch identity and source/target readiness
+checks for deterministic branch promotion planning.
 
 **Motivation**: Promote/cut-over workflows need the same branch object that
 created and suspended the branch, so status and ownership stay consistent.
+
+**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
+exercises deterministic promote planning from `ready` to `promoted` and
+fail-closed guards for suspend intent, missing snapshot readiness, target
+readiness, active sessions, pending migrations, unquiesced writes, and
+replication lag. This remains alpha contract evidence; it does not prove live
+cut-over, Service/Endpoint retargeting, DNS changes, or production promotion of
+a Kubernetes branch cluster.
 
 **Citus comparison**: Vanilla Citus does not provide branch promotion.
 
@@ -2126,6 +2155,8 @@ created and suspended the branch, so status and ownership stay consistent.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C8` in `operator/src/crds/branch.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-branch-lifecycle-canonical`
+- CI: `ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
 
 ### C9: Migration Framework
 

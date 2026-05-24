@@ -648,6 +648,17 @@ Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 (NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
 client operation) remain alpha unless covered by their own feature entry.
 
+Branch lifecycle evidence for `C6`, `C7`, and `C8` is intentionally alpha. The
+VM smoke `ci/ai-blaise/operator-branch-lifecycle-smoke.sh` and focused operator
+unit tests verify only deterministic local contracts: branch source/target
+validation, conservative storage and snapshot class admission guards,
+storage-quantity validation, snapshot-class invariants, apply/suspend/promote
+state transition planning, and fail-closed guards for readiness, active sessions,
+pending migrations, write quiescence, replication catch-up, and suspend intent.
+This is not production evidence for live CSI `VolumeSnapshot` creation, PVC
+cloning, Kubernetes cluster materialization, StatefulSet scaling, traffic
+cut-over, DNS/Service retargeting, or production branch promotion.
+
 
 
 

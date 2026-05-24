@@ -7,7 +7,11 @@ pub mod reconcile;
 pub use crds::backup::{
     BackupEncryption, BackupProvider, BackupSpec, BackupSpecError, BackupTarget,
 };
-pub use crds::branch::{BranchSpec, BranchSpecError, BranchStorageSpec, BranchType};
+pub use crds::branch::{
+    plan_branch_lifecycle, BranchLifecycleAction, BranchLifecycleError, BranchLifecyclePhase,
+    BranchLifecyclePlan, BranchLifecycleStatus, BranchLifecycleStep, BranchSpec, BranchSpecError,
+    BranchStorageSpec, BranchType,
+};
 pub use crds::citus_cluster::{
     CitusClusterSpec, CitusClusterSpecError, CitusTopology, PoolSpec, SidecarSpec, SidecarType,
 };

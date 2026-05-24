@@ -36,8 +36,9 @@ use ai_blaise_citus_operator::controllers::boundary::{
     ExecutionMode,
 };
 use ai_blaise_citus_operator::{
-    canonical_operator_security_report, BackupEncryption, BackupProvider, BackupReconcilePlan,
-    BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec,
+    canonical_operator_security_report, plan_branch_lifecycle, BackupEncryption, BackupProvider,
+    BackupReconcilePlan, BackupSpec, BackupTarget, BranchLifecycleAction, BranchLifecyclePhase,
+    BranchLifecycleStatus, BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec,
     ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec, CitusTopology,
     CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
     ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
@@ -83,6 +84,9 @@ fn main() {
         [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
         [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
         [command] if command == "run-controller-boundary" => run_controller_boundary(),
+        [command] if command == "run-branch-lifecycle-canonical" => {
+            run_branch_lifecycle_canonical()
+        }
         [command] if command == "run-endpointslice-retarget-canonical" => {
             run_endpointslice_retarget_canonical()
         }
@@ -123,7 +127,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-endpointslice-retarget-canonical|run-security-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical]");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -229,6 +233,51 @@ fn run_security_canonical() {
         report.read_only_rootfs,
         report.drop_all_capabilities,
     );
+}
+
+fn run_branch_lifecycle_canonical() {
+    let spec = canonical_branch_spec();
+    let apply_status = BranchLifecycleStatus {
+        source_cluster_ready: true,
+        ..BranchLifecycleStatus::pending(7)
+    };
+    let ready_status = canonical_ready_branch_status();
+    let mut promote_spec = spec.clone();
+    promote_spec.suspend = false;
+
+    let apply = plan_branch_lifecycle(&spec, &apply_status, BranchLifecycleAction::Apply)
+        .unwrap_or_else(|error| {
+            eprintln!("operator: branch apply plan failed: {error}");
+            process::exit(1);
+        });
+    let suspend = plan_branch_lifecycle(&spec, &ready_status, BranchLifecycleAction::Suspend)
+        .unwrap_or_else(|error| {
+            eprintln!("operator: branch suspend plan failed: {error}");
+            process::exit(1);
+        });
+    let promote =
+        plan_branch_lifecycle(&promote_spec, &ready_status, BranchLifecycleAction::Promote)
+            .unwrap_or_else(|error| {
+                eprintln!("operator: branch promote plan failed: {error}");
+                process::exit(1);
+            });
+
+    println!("action\tfrom_phase\tto_phase\tsteps\tsource\ttarget\tsnapshot_ready\ttarget_ready\tactive_sessions\tpending_migrations");
+    for plan in [&apply, &suspend, &promote] {
+        println!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            plan.action.as_str(),
+            plan.from_phase.as_str(),
+            plan.to_phase.as_str(),
+            plan.step_count(),
+            spec.source_cluster,
+            spec.target_cluster,
+            ready_status.snapshot_ready,
+            ready_status.target_cluster_ready,
+            ready_status.active_sessions,
+            ready_status.pending_migrations
+        );
+    }
 }
 
 fn run_reconcile_plans() {
@@ -836,7 +885,8 @@ fn canonical_hypertable_spec() -> HypertableSpec {
 fn canonical_branch_spec() -> BranchSpec {
     BranchSpec {
         source_cluster: "prod-us-east".to_string(),
-        branch_type: BranchType::CopyOnWrite,
+        target_cluster: "branch-review".to_string(),
+        branch_type: BranchType::Snapshot,
         storage: BranchStorageSpec {
             size: "256Gi".to_string(),
             storage_class: Some("fast-ssd".to_string()),
@@ -844,6 +894,20 @@ fn canonical_branch_spec() -> BranchSpec {
         },
         suspend: true,
         retention_days: Some(7),
+    }
+}
+
+fn canonical_ready_branch_status() -> BranchLifecycleStatus {
+    BranchLifecycleStatus {
+        phase: BranchLifecyclePhase::Ready,
+        observed_generation: 7,
+        source_cluster_ready: true,
+        snapshot_ready: true,
+        target_cluster_ready: true,
+        writes_quiesced: true,
+        replication_caught_up: true,
+        active_sessions: 0,
+        pending_migrations: 0,
     }
 }
 
