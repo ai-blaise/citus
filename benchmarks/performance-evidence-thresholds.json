@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "description": "Machine-checkable production SLO and capacity thresholds for ai-blaise benchmark evidence.",
+  "release_result_tag": "release",
+  "exploratory_result_tag": "quick",
+  "core_harnesses": {
+    "tpcc": {
+      "result": "tpcc-{tag}.json",
+      "required_mode": "full",
+      "release_driver": "benchbase",
+      "thresholds": {
+        "tpmC_min": 5000,
+        "latency_ms.p99_max": 250,
+        "errors_max": 0
+      }
+    },
+    "sysbench": {
+      "required_mode": "full",
+      "release_driver": "sysbench",
+      "workloads": {
+        "oltp_read_only": {
+          "result": "sysbench-oltp_read_only-{tag}.json",
+          "tps_min": 20000,
+          "latency_ms_p95_max": 5
+        },
+        "oltp_write_only": {
+          "result": "sysbench-oltp_write_only-{tag}.json",
+          "tps_min": 8000,
+          "latency_ms_p95_max": 15
+        },
+        "oltp_read_write": {
+          "result": "sysbench-oltp_read_write-{tag}.json",
+          "tps_min": 12000,
+          "latency_ms_p95_max": 10
+        },
+        "oltp_point_select": {
+          "result": "sysbench-oltp_point_select-{tag}.json",
+          "tps_min": 50000,
+          "latency_ms_p95_max": 2
+        }
+      }
+    },
+    "timescale_ingest": {
+      "result": "timescale-ingest-{tag}.json",
+      "required_mode": "full",
+      "release_driver": "timescaledb_parallel_copy or psql COPY",
+      "thresholds": {
+        "rows_per_s_min": 10000000,
+        "compression_ratio_min": 6,
+        "lag_ms_max": 5000
+      }
+    },
+    "chaos": {
+      "result": "chaos-{tag}.json",
+      "required_mode": "full",
+      "release_driver": "kubectl against the 3-worker ai-blaise Citus cluster",
+      "required_scenarios": [
+        "disk-full",
+        "kill-coordinator",
+        "kill-worker",
+        "network-partition",
+        "slow-disk"
+      ],
+      "thresholds": {
+        "traffic_error_rate_max": 0.05,
+        "recovery_p99_ms_max": 5000,
+        "data_intact_required": true
+      }
+    }
+  },
+  "microbenches": {
+    "aggregate": "benchmarks/microbenches/results-latest.json",
+    "individual_glob": "benchmarks/results/microbench-*-{tag}.json",
+    "minimum_count": 26,
+    "required_result_mode": "measured",
+    "baseline_path": "benchmarks/microbenches/{ext}/baseline.json",
+    "regression_threshold_default_pct": 10,
+    "release_driver": "psql against the 3-worker ai-blaise Citus cluster with all bundled extensions installed"
+  }
+}
