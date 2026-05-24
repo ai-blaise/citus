@@ -329,7 +329,7 @@ pub fn listen_addr_from_env(default_addr: &str) -> Result<String, SidecarRuntime
 
 pub fn serve_tcp_forever(
     listen_addr: &str,
-    runtime: SidecarRuntime,
+    mut runtime: SidecarRuntime,
 ) -> Result<(), SidecarRuntimeError> {
     use std::io::{Read, Write};
 
@@ -339,7 +339,6 @@ pub fn serve_tcp_forever(
 
     for stream in listener.incoming() {
         let mut stream = stream?;
-        let mut runtime = runtime.clone();
         let mut buffer = [0_u8; 8192];
         let read_len = stream.read(&mut buffer)?;
         let response = runtime

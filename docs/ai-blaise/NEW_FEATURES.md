@@ -3192,6 +3192,7 @@ starts serving table-backed endpoints.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API1` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
@@ -3214,6 +3215,7 @@ so requests route through Citus-aware helper views.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
@@ -3236,6 +3238,7 @@ contract before exposing pg_graphql to tenants.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API3` in `sidecar/graphql/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
@@ -3275,6 +3278,7 @@ for distributed tables.
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI sidecar contract: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### API5: RLS-Aware Auto API
 
@@ -3295,6 +3299,7 @@ policy.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API5` in `sidecar/postgrest/src/lib.rs`
 - In-source: `FEATURE: API5` in `sidecar/graphql/src/lib.rs`
@@ -3318,6 +3323,7 @@ OpenAPI endpoint.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
@@ -3437,6 +3443,7 @@ runtime.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
@@ -3459,9 +3466,11 @@ the sidecar needs runtime selection without changing the CRD shape.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF2` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 
 ### EF3: Function CRD
 
@@ -3504,6 +3513,7 @@ callback path.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF4` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
@@ -3527,6 +3537,7 @@ from schedules or CDC events.
 
 **References**:
 
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF5` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`

@@ -17,5 +17,6 @@ Current implemented surface:
 - `GraphqlAuthPolicy`
 - `canonical_graphql_execution_plan()`
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
+- `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 These contracts cover `FEATURE: API3`, `FEATURE: API4`, and `FEATURE: API5`.
