@@ -4013,6 +4013,8 @@ broadcasts.
 
 Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
+Current boundary: The production-ready claim is limited to the single-node raw WebSocket/Phoenix runtime and CDC-ingest fan-out exercised by `ci/ai-blaise/sidecar-realtime-smoke.sh`. The canonical runtime reports `runtime_boundary=single-node-raw-ws-cdc-ingest`, `websocket_network_exercised=true`, `browser_client_exercised=false`, `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and `kubernetes_traffic_exercised=false`; browser client behavior, WebSocket extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes traffic remain outside this proof. The presence timestamp guard enforces a UTC-looking `online_at` shape ending in `Z`, not a full calendar semantic parse.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -4041,6 +4043,8 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 
 Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
+Current boundary: The production-ready claim is limited to the single-node raw WebSocket/Phoenix runtime and CDC-ingest fan-out exercised by `ci/ai-blaise/sidecar-realtime-smoke.sh`. The canonical runtime reports `runtime_boundary=single-node-raw-ws-cdc-ingest`, `websocket_network_exercised=true`, `browser_client_exercised=false`, `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and `kubernetes_traffic_exercised=false`; browser client behavior, WebSocket extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes traffic remain outside this proof. The presence timestamp guard enforces a UTC-looking `online_at` shape ending in `Z`, not a full calendar semantic parse.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -4068,6 +4072,8 @@ event over the socket.
 
 Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
+Current boundary: The production-ready claim is limited to the single-node raw WebSocket/Phoenix runtime and CDC-ingest fan-out exercised by `ci/ai-blaise/sidecar-realtime-smoke.sh`. The canonical runtime reports `runtime_boundary=single-node-raw-ws-cdc-ingest`, `websocket_network_exercised=true`, `browser_client_exercised=false`, `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and `kubernetes_traffic_exercised=false`; browser client behavior, WebSocket extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes traffic remain outside this proof. The presence timestamp guard enforces a UTC-looking `online_at` shape ending in `Z`, not a full calendar semantic parse.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -4094,6 +4100,8 @@ sidecar can account for subscribers consistently.
 **Citus comparison**: Vanilla Citus has no presence-channel surface.
 
 Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
+
+Current boundary: The production-ready claim is limited to the single-node raw WebSocket/Phoenix runtime and CDC-ingest fan-out exercised by `ci/ai-blaise/sidecar-realtime-smoke.sh`. The canonical runtime reports `runtime_boundary=single-node-raw-ws-cdc-ingest`, `websocket_network_exercised=true`, `browser_client_exercised=false`, `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and `kubernetes_traffic_exercised=false`; browser client behavior, WebSocket extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes traffic remain outside this proof. The presence timestamp guard enforces a UTC-looking `online_at` shape ending in `Z`, not a full calendar semantic parse.
 
 **References**:
 
@@ -7890,6 +7898,8 @@ for this overlay policy.
 compatibility gates.
 
 Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
+
+Current boundary: The production-ready claim is limited to the single-node raw WebSocket/Phoenix runtime and CDC-ingest fan-out exercised by `ci/ai-blaise/sidecar-realtime-smoke.sh`. The canonical runtime reports `runtime_boundary=single-node-raw-ws-cdc-ingest`, `websocket_network_exercised=true`, `browser_client_exercised=false`, `cdc_tailing_integrated=false`, `multi_node_pubsub=false`, and `kubernetes_traffic_exercised=false`; browser client behavior, WebSocket extension negotiation, live CDC tailing, multi-node pubsub, and Kubernetes traffic remain outside this proof. The presence timestamp guard enforces a UTC-looking `online_at` shape ending in `Z`, not a full calendar semantic parse.
 
 **References**:
 
