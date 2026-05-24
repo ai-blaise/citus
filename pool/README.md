@@ -94,7 +94,8 @@ selection.
 `cargo run -p ai_blaise_citus_pool -- run-canonical` emits the deterministic
 execution summary for the pool runtime and shard-map contracts used by CI.
 `ci/ai-blaise/pool-routing-security-smoke.sh` runs that real binary path and
-asserts the T9/T12/MR5/R10 routing/security evidence columns without claiming
+asserts the T9/T12/R10 routing/security evidence columns and alpha MR5
+parser/report evidence without claiming
 live canary mirroring, managed GeoIP, rustls integration, or analytical query
 execution.
 `ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL

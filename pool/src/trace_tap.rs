@@ -110,7 +110,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     let length = u32::from_be_bytes(header[0..4].try_into().unwrap()) as usize;
     let code = u32::from_be_bytes(header[4..8].try_into().unwrap());
 
-    if length < 8 || length > STARTUP_MESSAGE_MAX_BYTES {
+    if !(8..=STARTUP_MESSAGE_MAX_BYTES).contains(&length) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("PostgreSQL startup envelope reported {length} byte length"),
@@ -130,7 +130,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     // SSLRequest (80877103), GSSENCRequest (80877104), CancelRequest (80877102)
     // are special envelopes; they do not carry an application_name. The proxy
     // still replays them verbatim.
-    if matches!(code, 80877102 | 80877103 | 80877104) {
+    if matches!(code, 80877102..=80877104) {
         return Ok(StartupTraceTap {
             fields: ApplicationNameFields::default(),
             buffered_bytes,
@@ -143,7 +143,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     // We accept anything from 2.0 onwards; the PostgreSQL community has used
     // 3.0 for two decades but the field is informational here.
     let major = (code >> 16) as u16;
-    if major < 2 || major > 4 {
+    if !(2..=4).contains(&major) {
         // Not a recognized startup envelope; return an empty parse but keep
         // the bytes so they can be forwarded.
         return Ok(StartupTraceTap {

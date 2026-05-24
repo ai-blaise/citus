@@ -470,12 +470,13 @@ more production-ready than the artifacts justified.
   extended-query batching and broader shard-aware pool routing remain alpha.
 
 - The pool routing/security canonical smoke now covers bounded production-ready
-  contracts for T9/T12/MR5/R10: fail-closed mirror rule parsing and deterministic
-  sampling reports, fail-closed HTAP feature-report parsing, fail-closed GeoIP
-  CIDR/replica-table parsing with fallback reports, and TLS ticket rotation
-  reports with redacted fingerprints. This is not evidence for live canary
-  mirroring, managed GeoIP databases, rustls listener/session-resumption
-  traffic, analytical sidecar query execution, or Kubernetes traffic.
+  contracts for T9/T12/R10 plus alpha-only MR5 parser/report evidence:
+  fail-closed mirror rule parsing and deterministic sampling reports,
+  fail-closed HTAP feature-report parsing, fail-closed GeoIP CIDR/replica-table
+  parsing with fallback reports, and TLS ticket rotation reports with redacted
+  fingerprints. This is not evidence for live canary mirroring, managed GeoIP
+  databases, rustls listener/session-resumption traffic, analytical sidecar
+  query execution, live multi-region read routing, or Kubernetes traffic.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim

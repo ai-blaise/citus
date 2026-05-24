@@ -115,7 +115,7 @@ pub fn classify(
         .host
         .trim()
         .is_empty()
-        .then(|| ())
+        .then_some(())
         .map(|_| Err::<(), HtapClassifierError>(HtapClassifierError::MissingAnalyticalTarget))
         .transpose()?;
 

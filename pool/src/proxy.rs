@@ -87,7 +87,7 @@ impl PoolProxyConfig {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct ClientCidrAllowlist {
     entries: Vec<CidrBlock>,
 }
@@ -117,14 +117,6 @@ impl ClientCidrAllowlist {
             .map(|entry| entry.source.as_str())
             .collect::<Vec<_>>()
             .join(",")
-    }
-}
-
-impl Default for ClientCidrAllowlist {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
     }
 }
 

@@ -3054,7 +3054,7 @@ manage them as region objects.
 ### MR5: Pool GeoIP Routing
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/geoip.rs`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3062,14 +3062,14 @@ manage them as region objects.
 **Summary**: Defines the pool region-routing contract from CIDR/GeoIP region
 resolution to nearest preferred replicas.
 
-**Current production-ready boundary**: `GeoRoutingPolicy` now validates CIDR
-syntax and region names fail-closed, `ClosestReplicaTable::from_specs` validates
-replica rows, and `route_report_for_client` records requested region, selected
-region, and default-region fallback evidence. This does not claim managed
-MaxMind DB loading, Region-CR synchronization, hot-swap reloads, live read
-routing, or edge-replica traffic.
+**Current alpha boundary**: `GeoRoutingPolicy` now validates CIDR syntax and
+region names fail-closed, `ClosestReplicaTable::from_specs` validates replica
+rows, and `route_report_for_client` records requested region, selected region,
+and default-region fallback evidence. This bounded parser/report path does not
+claim managed MaxMind DB loading, Region-CR synchronization, hot-swap reloads,
+live read routing, cross-region traffic behavior, or edge-replica traffic.
 
-Production evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
+Alpha evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
 `cargo run -p ai_blaise_citus_pool -- run-canonical`, and
 `ci/ai-blaise/pool-routing-security-smoke.sh` assert replica-region count,
 default fallback, and invalid-CIDR rejection columns.
