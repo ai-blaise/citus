@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn cr_spec_coordinator_less_clears_coordinators() {
+    fn cr_spec_coordinator_less_with_pool_clears_coordinators() {
         let cr = CitusClusterCrSpec {
             image: "ghcr.io/ai-blaise/citus:pg18-v2".to_string(),
             workers: 2,
@@ -243,12 +243,16 @@ mod tests {
             timescale_enabled: false,
             extensions: vec!["citus".to_string()],
             storage_class: None,
-            pool_replicas: None,
+            pool_replicas: Some(2),
             sidecars: Vec::new(),
         };
         let authoritative = cr.to_authoritative();
         authoritative.validate().expect("spec valid");
         assert_eq!(authoritative.coordinators, 0);
+        assert_eq!(
+            authoritative.pool.as_ref().map(|pool| pool.replicas),
+            Some(2)
+        );
         assert!(matches!(
             authoritative.topology,
             CitusTopology::CoordinatorLess

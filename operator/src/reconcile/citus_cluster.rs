@@ -369,7 +369,10 @@ mod tests {
             storage_class: None,
             timescale_enabled: false,
             extensions: vec!["citus".to_string()],
-            pool: None,
+            pool: Some(PoolSpec {
+                replicas: 2,
+                geoip_db: None,
+            }),
             sidecars: Vec::new(),
         };
 
@@ -383,9 +386,11 @@ mod tests {
             plan.cnpg_cluster.shared_preload_libraries,
             vec!["citus".to_string()]
         );
-        assert!(plan.pool.is_none());
+        let pool = plan.pool.as_ref().expect("pool plan");
+        assert_eq!(pool.name, "acme-pool");
+        assert_eq!(pool.replicas, 2);
         assert_eq!(plan.sidecars.len(), 0);
-        assert_eq!(plan.total_deployments(), 0);
+        assert_eq!(plan.total_deployments(), 1);
     }
 
     #[test]
