@@ -6,9 +6,9 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T04:41:19Z",
+    "captured_at": "2026-05-24T05:16:56Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url",
-    "post_landing_note": "PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #89, #90, #91, #92, #93, #106, #107, #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads."
+    "post_landing_note": "PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are removed from the open-PR manifest because direct bootstrap-v2 merge batches land their heads."
   },
   "checklist": [
     {
@@ -41,7 +41,6 @@
   "expensive_citus_matrix_policy": {
     "default_rule": "Batch meaningful work first. Do not spend a full Citus matrix run on every metadata-only rebase, doc-only conflict, or isolated sidecar smoke if the focused gate covers the changed runtime. Run the matrix at the batch boundaries and high-risk path triggers below.",
     "run_full_matrix_after_batches": [
-      "ready-release-evidence",
       "draft-runtime-durability-upgrade-pool",
       "draft-release-and-patch-audit"
     ],
@@ -64,17 +63,6 @@
     ]
   },
   "integration_batches": [
-    {
-      "id": "ready-release-evidence",
-      "summary": "Merge non-draft release monitor, observability contract, and DR restore-depth evidence after the runtime and operator surfaces are present.",
-      "prs": [
-        88,
-        94,
-        95
-      ],
-      "run_expensive_citus_matrix_after": true,
-      "matrix_reason": "The tranche closes broad release evidence loops; run focused gates first, then one matrix before moving into remaining draft blockers."
-    },
     {
       "id": "draft-runtime-durability-upgrade-pool",
       "summary": "Hold cohabitation matrix, sidecar API runtime closure, migration durability, upgrade rollback, and pool load behavior until draft blockers and focused checks clear.",
@@ -106,62 +94,8 @@
   ],
   "pull_requests": [
     {
-      "number": 88,
-      "order": 1,
-      "batch": "ready-release-evidence",
-      "title": "Add production release gate monitor",
-      "head": "codex/prod-release-gate-monitor-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/release-gate-monitor.sh",
-        ".github/workflows/ci-release-gate-monitor.yml",
-        "docs/ai-blaise/RELEASE_GATE_MONITOR.md",
-        "docs/ai-blaise/RELEASING.md"
-      ]
-    },
-    {
-      "number": 94,
-      "order": 2,
-      "batch": "ready-release-evidence",
-      "title": "Add observability contract smoke",
-      "head": "codex/prod-observability-contracts-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/observability-contracts-check.sh",
-        ".github/workflows/ci-observability-contracts.yml",
-        "docs/ai-blaise/OBSERVABILITY.md",
-        "sidecar/shared/src/main.rs"
-      ]
-    },
-    {
-      "number": 95,
-      "order": 3,
-      "batch": "ready-release-evidence",
-      "title": "Add DR restore depth verification gate",
-      "head": "codex/prod-dr-restore-depth-20260523",
-      "base": "bootstrap-v2",
-      "status": "ready",
-      "is_draft": false,
-      "dependency_hints": [],
-      "known_blockers": [],
-      "watch_paths": [
-        "ci/ai-blaise/dr-restore-depth-check.sh",
-        "e2e/src/dr_restore_depth.rs",
-        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
-        "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
-      ]
-    },
-    {
       "number": 87,
-      "order": 4,
+      "order": 1,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add Timescale 2.28 cohabitation matrix",
       "head": "codex/prod-timescale-228-matrix-20260523",
@@ -183,7 +117,7 @@
     },
     {
       "number": 104,
-      "order": 5,
+      "order": 2,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add sidecar API runtime smoke",
       "head": "codex/sidecar-runtime-contract-smoke-20260524",
@@ -202,7 +136,7 @@
     },
     {
       "number": 101,
-      "order": 6,
+      "order": 3,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add migration durability invariant gates",
       "head": "codex/data-durability-invariants",
@@ -221,7 +155,7 @@
     },
     {
       "number": 96,
-      "order": 7,
+      "order": 4,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Add upgrade rollback guardrails",
       "head": "codex/upgrade-rollback-guardrails-20260523-235847",
@@ -241,7 +175,7 @@
     },
     {
       "number": 98,
-      "order": 8,
+      "order": 5,
       "batch": "draft-runtime-durability-upgrade-pool",
       "title": "[codex] Harden pool load failure behavior",
       "head": "codex/prod-pool-load-depth-20260523",
@@ -259,7 +193,7 @@
     },
     {
       "number": 99,
-      "order": 9,
+      "order": 6,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add Citus patch production gate audit",
       "head": "codex/patch-production-integration-audit-20260524020118",
@@ -277,16 +211,14 @@
     },
     {
       "number": 100,
-      "order": 10,
+      "order": 7,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Add release environment preflight checks",
       "head": "codex/release-env-preflight",
       "base": "bootstrap-v2",
       "status": "ready",
       "is_draft": false,
-      "dependency_hints": [
-        88
-      ],
+      "dependency_hints": [],
       "known_blockers": [],
       "watch_paths": [
         "ci/ai-blaise/env-preflight.sh",
@@ -298,7 +230,7 @@
     },
     {
       "number": 102,
-      "order": 11,
+      "order": 8,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Harden performance evidence gates",
       "head": "codex/slo-performance-evidence-hardening-20260524015908",
@@ -306,7 +238,6 @@
       "status": "ready",
       "is_draft": false,
       "dependency_hints": [
-        88,
         99,
         100
       ],
@@ -321,7 +252,7 @@
     },
     {
       "number": 105,
-      "order": 12,
+      "order": 9,
       "batch": "draft-release-and-patch-audit",
       "title": "Add runbook command validation gate",
       "head": "codex/runbook-command-checks-20260524-022745",
@@ -329,7 +260,6 @@
       "status": "ready",
       "is_draft": false,
       "dependency_hints": [
-        95,
         96,
         100
       ],
@@ -344,7 +274,7 @@
     },
     {
       "number": 103,
-      "order": 13,
+      "order": 10,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Make production gap inventory machine-derived",
       "head": "codex/production-gap-inventory-audit",
@@ -352,7 +282,6 @@
       "status": "ready",
       "is_draft": false,
       "dependency_hints": [
-        88,
         102,
         104
       ],
@@ -364,7 +293,7 @@
     },
     {
       "number": 109,
-      "order": 14,
+      "order": 11,
       "batch": "draft-release-and-patch-audit",
       "title": "[codex] Demonstrate production gap audit integration reconciliation",
       "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
@@ -396,7 +325,7 @@
     },
     {
       "number": 97,
-      "order": 15,
+      "order": 12,
       "batch": "draft-release-and-patch-audit",
       "title": "Harden ai-blaise release image publishability",
       "head": "codex/release-publishability-20260523-2357",
@@ -404,7 +333,6 @@
       "status": "blocked",
       "is_draft": false,
       "dependency_hints": [
-        88,
         96,
         100,
         102,
@@ -752,6 +680,45 @@
         "deploy/README.md"
       ],
       "landed_by": "direct bootstrap-v2 ready-operator-k8s batch"
+    },
+    {
+      "number": 88,
+      "title": "Add production release gate monitor",
+      "head": "codex/prod-release-gate-monitor-20260523",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/release-gate-monitor.sh",
+        ".github/workflows/ci-release-gate-monitor.yml",
+        "docs/ai-blaise/RELEASE_GATE_MONITOR.md",
+        "docs/ai-blaise/RELEASING.md"
+      ],
+      "landed_by": "direct bootstrap-v2 ready-release-evidence batch"
+    },
+    {
+      "number": 94,
+      "title": "Add observability contract smoke",
+      "head": "codex/prod-observability-contracts-20260523",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/observability-contracts-check.sh",
+        ".github/workflows/ci-observability-contracts.yml",
+        "docs/ai-blaise/OBSERVABILITY.md",
+        "sidecar/shared/src/main.rs"
+      ],
+      "landed_by": "direct bootstrap-v2 ready-release-evidence batch"
+    },
+    {
+      "number": 95,
+      "title": "Add DR restore depth verification gate",
+      "head": "codex/prod-dr-restore-depth-20260523",
+      "base": "bootstrap-v2",
+      "watch_paths": [
+        "ci/ai-blaise/dr-restore-depth-check.sh",
+        "e2e/src/dr_restore_depth.rs",
+        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
+        "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
+      ],
+      "landed_by": "direct bootstrap-v2 ready-release-evidence batch"
     }
   ]
 }

@@ -35,9 +35,9 @@ open PR #70+ is missing from the manifest.
 
 ## Current Snapshot
 
-Captured from GitHub on `2026-05-24T04:41:19Z` for the post-operator manifest:
+Captured from GitHub on `2026-05-24T05:16:56Z` for the post-release-evidence manifest:
 
-- Open manifest: 15 PRs against `bootstrap-v2`; PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #89, #90, #91, #92, #93, #106, #107, #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
+- Open manifest: 12 PRs against `bootstrap-v2`; PRs #70, #71, #72, #73, #74, #75, #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #88, #89, #90, #91, #92, #93, #94, #95, #106, #107, #108 are recorded as landed by direct `bootstrap-v2` merge batches and are no longer open-plan work.
 - Draft blockers: PR #109.
 - Non-draft merge-order blockers: PR #87, PR #97.
 - PR #87 is no longer draft, but remains blocked until the Timescale 2.28 image/tag evidence is truthful and the branch is refreshed against the current `bootstrap-v2` tip.
@@ -47,21 +47,18 @@ Captured from GitHub on `2026-05-24T04:41:19Z` for the post-operator manifest:
 
 | Order | PR | Status | Batch | Dependency hints |
 | --- | --- | --- | --- | --- |
-| 1 | #88 | ready | ready-release-evidence | none |
-| 2 | #94 | ready | ready-release-evidence | none |
-| 3 | #95 | ready | ready-release-evidence | none |
-| 4 | #87 | blocked | draft-runtime-durability-upgrade-pool | none |
-| 5 | #104 | ready | draft-runtime-durability-upgrade-pool | none |
-| 6 | #101 | ready | draft-runtime-durability-upgrade-pool | none |
-| 7 | #96 | ready | draft-runtime-durability-upgrade-pool | #101 |
-| 8 | #98 | ready | draft-runtime-durability-upgrade-pool | none |
-| 9 | #99 | ready | draft-release-and-patch-audit | none |
-| 10 | #100 | ready | draft-release-and-patch-audit | #88 |
-| 11 | #102 | ready | draft-release-and-patch-audit | #88, #99, #100 |
-| 12 | #105 | ready | draft-release-and-patch-audit | #95, #96, #100 |
-| 13 | #103 | ready | draft-release-and-patch-audit | #88, #102, #104 |
-| 14 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105 |
-| 15 | #97 | blocked | draft-release-and-patch-audit | #88, #96, #100, #102, #103, #105, #109 |
+| 1 | #87 | blocked | draft-runtime-durability-upgrade-pool | none |
+| 2 | #104 | ready | draft-runtime-durability-upgrade-pool | none |
+| 3 | #101 | ready | draft-runtime-durability-upgrade-pool | none |
+| 4 | #96 | ready | draft-runtime-durability-upgrade-pool | #101 |
+| 5 | #98 | ready | draft-runtime-durability-upgrade-pool | none |
+| 6 | #99 | ready | draft-release-and-patch-audit | none |
+| 7 | #100 | ready | draft-release-and-patch-audit | none |
+| 8 | #102 | ready | draft-release-and-patch-audit | #99, #100 |
+| 9 | #105 | ready | draft-release-and-patch-audit | #96, #100 |
+| 10 | #103 | ready | draft-release-and-patch-audit | #102, #104 |
+| 11 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105 |
+| 12 | #97 | blocked | draft-release-and-patch-audit | #96, #100, #102, #103, #105, #109 |
 
 Use the JSON as canonical if this table drifts.
 
