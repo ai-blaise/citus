@@ -8446,69 +8446,90 @@ intent.
 ### Sec7: External Secrets Integration
 
 **Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records the External Secrets reference-only security control for
-overlay credentials.
+**Summary**: Records and verifies the External Secrets reference-only security
+control for overlay credentials. The production-ready boundary is controller
+reconciliation and runtime consumption of referenced Kubernetes Secret material:
+inline values are rejected by the operator contract, every runtime Secret ref
+requires an ExternalSecret binding, the live kind smoke installs External
+Secrets Operator chart `0.10.7`, reconciles fake-provider `ExternalSecret`
+objects into real Kubernetes Secrets, and proves the runtime ServiceAccount can
+mount those Secrets while `kubectl auth can-i get secrets` remains `no`.
 
-**Current boundary**: The operations runner verifies the intended control,
-and the operator security runner rejects inline secret values, requires named
-Secret references for pool and sidecar workloads, renders deterministic
-ExternalSecret manifest metadata, and fails closed unless each runtime Secret
-reference has an ExternalSecret binding with a SecretStore, target key, remote
-key, remote property, and positive refresh interval. Live External Secrets
-controller reconciliation, provider authentication, status conditions, and
-rotation evidence remain alpha.
+The boundary does not claim cloud provider authentication, cloud KMS policy,
+SecretStore credentials, production rotation SLOs, or provider-specific status
+condition behavior beyond the fake provider used for deterministic CI.
 
 **Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
+
+Production evidence: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
+boots kind, installs External Secrets Operator, creates
+`SecretStore/ai-blaise-cluster-secrets` with the fake provider, reconciles
+`ai-blaise-citus-pool-postgres-auth`, `ai-blaise-citus-pool-tls`, and
+`ai-blaise-citus-pool-client-tls` ExternalSecrets into Kubernetes Secrets,
+checks their `Ready` conditions, verifies the pool runtime ServiceAccount is
+denied Secret API reads, and writes
+`artifacts/security-external-secrets-tls-live-evidence.tsv`. `gate-close`
+depends on this smoke.
 
 **References**:
 
 - In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
 - In-source: `FEATURE: Sec7` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
-- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
-- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
-- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
-- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
+- CI: `ci/ai-blaise/security-enforcement-smoke.sh`
+- CI: `ci/ai-blaise/security-supply-chain-smoke.sh`
+- CI: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
 
 ### Sec8: TLS Everywhere
 
 **Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Tracks TLS expectations for clients, Postgres backends, and
-sidecar-to-sidecar traffic.
+**Summary**: Tracks and verifies TLS expectations for clients, Postgres
+backends, and sidecar-to-sidecar traffic. The production-ready boundary is the
+operator security contract plus live Kubernetes mTLS enforcement: TLS 1.3 is
+required, client certificates are required, TLS material must be Secret-backed,
+weak TLS versions fail closed, and the live kind smoke mounts reconciled TLS
+Secrets into pods and proves a TLS 1.3 client-cert connection succeeds while
+no-client-cert and TLS 1.2 clients fail.
 
-**Current boundary**: The security contract is executable; the operator
-security runner requires TLS 1.3, client certificates, certificate Secret
-references, ExternalSecret-backed runtime Secret refs, fail-closed auth
-boundaries, no Secret RBAC grants, and restricted pod/container security
-contexts for pool and sidecar workloads. The supply-chain runner also validates
-the rendered TLS Secret-reference shape (`tls.crt`, `tls.key`, `ca.crt`) and
-weak-TLS fail-closed behavior. Certificate issuance, actual Kubernetes mounts,
-mTLS traffic enforcement, and live rotation tests remain alpha.
+The boundary does not claim cloud certificate issuance, cert-manager
+integration, automatic rotation, production CA hierarchy, service-mesh policy,
+or every application protocol path. Those require separate provider and traffic
+evidence.
 
 **Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
 contract.
+
+Production evidence: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
+generates a short-lived CA plus server and client certificates, stores them in
+External Secrets fake-provider data, reconciles `kubernetes.io/tls` Secrets,
+mounts the server Secret into an in-cluster TLS server, mounts the client Secret
+into client Jobs, verifies TLS 1.3 mTLS success, verifies a client without a
+certificate fails, verifies a TLS 1.2 client fails, and records the evidence TSV.
+The existing `security-enforcement-smoke.sh` and
+`security-supply-chain-smoke.sh` remain the fast contract checks for TLS 1.3,
+client-cert requirement, Secret references, no Secret RBAC, and weak-TLS
+fail-closed behavior. `gate-close` depends on the live smoke.
 
 **References**:
 
 - In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
 - In-source: `FEATURE: Sec8` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
-- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
-- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
-- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
-- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
+- CI: `ci/ai-blaise/security-enforcement-smoke.sh`
+- CI: `ci/ai-blaise/security-supply-chain-smoke.sh`
+- CI: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
 
 ### Sec9: SBOM And Cosign Attestation
 

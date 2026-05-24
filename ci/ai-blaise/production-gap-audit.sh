@@ -57,6 +57,7 @@ SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
 PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
+SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-external-secrets-tls-live-smoke.sh"
 SECURITY_SBOM_COSIGN_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-sbom-cosign-live-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
@@ -1012,6 +1013,38 @@ for required in (
     if required not in security_supply_chain_smoke:
         fail(f"security supply-chain smoke lost required assertion: {required}")
 
+security_external_tls_smoke = read(SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE)
+if not (SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE.stat().st_mode & 0o111):
+    fail("security-external-secrets-tls-live-smoke.sh must be executable")
+for required in (
+    "FEATURE: Sec7 Sec8",
+    "external-secrets/external-secrets",
+    "SEC78_ESO_CHART_VERSION",
+    "0.10.7",
+    "SecretStore",
+    "provider:",
+    "fake:",
+    "ExternalSecret",
+    "kubectl -n \"$ns\" wait externalsecret",
+    "auth can-i get secrets",
+    "ssl.TLSVersion.TLSv1_3",
+    "ssl.CERT_REQUIRED",
+    "mode == \"tls12\"",
+    "mode != \"no-cert\"",
+    "runtime_secret_api_denied",
+    "tls13_mtls_success",
+    "client_cert_required",
+    "tls12_rejected",
+):
+    if required not in security_external_tls_smoke:
+        fail(f"Sec7/Sec8 live smoke lost required assertion: {required}")
+if (
+    "security-external-secrets-tls-live-smoke:" not in makefile
+    or "gate-close:" not in makefile
+    or "security-external-secrets-tls-live-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run security-external-secrets-tls-live-smoke")
+
 sec9_live_smoke = read(SECURITY_SBOM_COSIGN_LIVE_SMOKE)
 for required in (
     "SEC9_SYFT_IMAGE",
@@ -1036,8 +1069,30 @@ if "security-supply-chain-smoke.sh" not in operator_workflow:
 if status_by_id.get("Sec9") != "production-ready":
     fail("Sec9 must remain production-ready after registry-backed SBOM/cosign proof")
 for feature_id in ("Sec7", "Sec8"):
-    if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} must remain alpha until live external-secret/TLS proof exists")
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready after live External Secrets and TLS proof")
+sec7_body = compact(entry_by_id["Sec7"]["body"])
+for phrase in (
+    "External Secrets Operator chart `0.10.7`",
+    "fake-provider `ExternalSecret` objects into real Kubernetes Secrets",
+    "runtime ServiceAccount is denied Secret API reads",
+    "does not claim cloud provider authentication",
+    "production rotation SLOs",
+    "security-external-secrets-tls-live-smoke.sh",
+):
+    if compact(phrase) not in sec7_body:
+        fail(f"Sec7 docs lost live proof/boundary phrase: {phrase}")
+sec8_body = compact(entry_by_id["Sec8"]["body"])
+for phrase in (
+    "TLS 1.3 mTLS success",
+    "no-client-cert and TLS 1.2 clients fail",
+    "does not claim cloud certificate issuance",
+    "automatic rotation",
+    "every application protocol path",
+    "security-external-secrets-tls-live-smoke.sh",
+):
+    if compact(phrase) not in sec8_body:
+        fail(f"Sec8 docs lost live proof/boundary phrase: {phrase}")
 sec9_body = compact(entry_by_id["Sec9"]["body"])
 for phrase in (
     "Production evidence",
@@ -1054,6 +1109,13 @@ for phrase in (
         fail(f"Sec9 production boundary lost docs phrase: {phrase}")
 
 for phrase in (
+    "security-external-secrets-tls-live-smoke.sh",
+    "External Secrets Operator chart `0.10.7`",
+    "runtime Secret API reads are denied",
+    "TLS 1.3 mTLS success",
+    "no-client-cert and TLS 1.2 clients fail",
+    "Cloud provider authentication",
+    "production rotation SLOs",
     "ExternalSecret manifest",
     "TLS Secret-reference",
     "SBOM/cosign metadata",

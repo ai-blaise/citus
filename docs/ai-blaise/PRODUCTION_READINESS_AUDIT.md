@@ -247,9 +247,12 @@ more production-ready than the artifacts justified.
   operand-image overclaim until that full-bundle evidence exists.
 - Production values now keep alpha runtime/security intent controls disabled by
   default. The deploy check and production gap audit reject production values
-  that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
+  that enable protocol pipelining, PG18 `io_uring`,
   or release attestations before those controls are rendered, enforced, and
-  verified end to end.
+  verified end to end. Sec7/Sec8 External Secrets and TLS now have a separate
+  live kind proof for controller reconciliation, Secret mounts, RBAC denial,
+  and TLS 1.3 mTLS enforcement, while cloud provider auth and rotation remain
+  outside the claim.
 - Sec13 pool CIDR access control is now enforced by the live pool data path and
   rendered by Helm. The pool rejects PostgreSQL clients outside
   `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST` before connecting upstream, exposes
@@ -257,16 +260,20 @@ more production-ready than the artifacts justified.
   NetworkPolicy for clusters with NetworkPolicy-capable CNI enforcement, and is
   proven by Docker plus kind smokes that verify allowed and denied SQL traffic.
 - Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
-  wildcard grant, and it no longer grants Secret access while secret binding
-  remains alpha. The operator security runner now fails closed when pool or
-  sidecar runtime Secret refs are not backed by ExternalSecret binding metadata,
-  validates deterministic ExternalSecret manifest and TLS Secret-reference
-  shape, and still requires TLS 1.3, client certificates, restricted security
-  contexts, and no Secret RBAC grants. The security supply-chain smoke validates
-  the narrow SBOM/cosign metadata contract for digest-pinned fixture image refs,
-  `.spdx.json` SBOM paths, `.sigstore.json` cosign bundles, SLSA provenance
-  predicate metadata, and mutable-image/malformed-SBOM fail-closed behavior.
-  Sec9 release-artifact readiness for the registry-backed
+  wildcard grant, and runtime ServiceAccounts still receive no Secret API
+  grants. Sec7/Sec8 production evidence from
+  `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh` installs External
+  Secrets Operator chart `0.10.7`, reconciles fake-provider ExternalSecrets
+  from deterministic ExternalSecret manifest shape into real Kubernetes Secrets, verifies runtime Secret API reads are denied,
+  mounts TLS Secret-reference material into pods, proves TLS 1.3 mTLS success, and proves
+  no-client-cert and TLS 1.2 clients fail. Cloud provider authentication,
+  cert-manager integration, production rotation SLOs, service-mesh policy, and
+  every application protocol path remain outside the Sec7/Sec8 claim. The
+  security supply-chain smoke validates the narrow SBOM/cosign metadata contract
+  for digest-pinned fixture image refs, `.spdx.json` SBOM paths,
+  `.sigstore.json` cosign bundles, SLSA provenance predicate metadata, and
+  mutable-image/malformed-SBOM fail-closed behavior. Sec9 release-artifact
+  readiness for the registry-backed
   generation/sign/verify flow is now proven by
   `ci/ai-blaise/security-sbom-cosign-live-smoke.sh`: it starts a local OCI
   registry, pushes a digest-pinned ai-blaise Citus image, generates an SPDX 2.3
