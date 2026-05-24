@@ -1,4 +1,17 @@
+pub mod backup;
 pub mod citus_cluster;
+pub mod conflict_policy;
+pub mod federation;
+pub mod function;
 pub mod hypertable;
 pub mod migration;
+pub mod region;
+pub mod scheduled_repack;
+pub mod search_index;
+pub mod security;
 pub mod shard_group;
+pub mod sidecar;
+pub mod sidecar_endpoint;
+pub mod survival_goal;
+pub mod tenant;
+pub mod webhook;

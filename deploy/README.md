@@ -22,6 +22,10 @@ This repository keeps:
 - The PG-overlay container image build (`images/citus-pg-overlay/`).
 - ai-blaise CI workflows that build, test, and publish the images consumed by
   the command-center chart.
+- A narrow Kubernetes guardrail contract under `deploy/contracts/` for the
+  command-center chart labels and workload names. It renders real HPA,
+  PodDisruptionBudget, and NetworkPolicy resources for the ai-blaise operator,
+  pool, and sidecar surfaces without reintroducing the folded Helm chart.
 
 ## Deploying
 
@@ -46,3 +50,40 @@ REQUIRE_PUBLISHED_DIGESTS=1 \
   RELEASE_DIGEST_MANIFEST=artifacts/ai-blaise-image-digests.tsv \
   ci/ai-blaise/release-publishability-check.sh
 ```
+
+Before promoting Citus-side image/runtime changes, run
+`make -f Makefile.ai-blaise deploy-check`. The check validates that
+`deploy/contracts/k8s-production-guardrails.yaml` is in sync with the renderer,
+that the rendered manifest covers the expected production guardrail resources,
+and that the external-chart-aware live harness at
+`ci/ai-blaise/live-k8s-e2e.sh` satisfies its dry-run contract unless a stricter
+mode is requested. Full Helm values rendering remains owned by
+`ai-blaise/command-center`.
+
+## Live Kubernetes E2E
+
+This repo now ships the external-chart-aware traffic harness at
+`ci/ai-blaise/live-k8s-e2e.sh`. Use `CHART_DIR` to point directly at the
+command-center chart, or `COMMAND_CENTER_DIR` to point at a checkout containing
+`helm/charts/citus-cluster`.
+
+Dry-run contract smoke:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center ci/ai-blaise/deploy-check.sh
+```
+
+Real kind traffic with locally built or published images:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center \
+LIVE_K8S_MODE=kind \
+LOCAL_IMAGE_REFS='registry.local/citus:dev' \
+AI_BLAISE_STACK_IMAGE_REF=registry.local/citus:dev \
+ci/ai-blaise/kind-production-smoke.sh
+```
+
+For richer command-center charts, pass chart-specific image values through
+`HELM_SET_ARGS`. The harness fails real mode when required image refs, HTTP
+probe targets, or SQL service traffic are missing; dry-run output is not live
+runtime evidence.

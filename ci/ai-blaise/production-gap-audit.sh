@@ -39,6 +39,14 @@ PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
 RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
+K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
+K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
+K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
+DEPLOY_CHECK = ROOT / "ci/ai-blaise/deploy-check.sh"
+K8S_GUARDRAIL_CHECK = ROOT / "ci/ai-blaise/k8s-guardrails-check.sh"
+KIND_PRODUCTION_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
+LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
+DEPLOY_README = ROOT / "deploy/README.md"
 
 SOURCE_ROOTS = [
     "companion",
@@ -322,6 +330,56 @@ production_workflow = read(PRODUCTION_WORKFLOW)
 if "runbook-command-check.sh" not in production_workflow:
     fail("ci-production-readiness workflow must run runbook-command-check.sh")
 
+
+live_k8s = read(LIVE_K8S_E2E)
+deploy_check = read(DEPLOY_CHECK)
+kind_smoke = read(KIND_PRODUCTION_SMOKE)
+deploy_readme = read(DEPLOY_README)
+for phrase in ("CHART_DIR", "COMMAND_CENTER_DIR", "AI_BLAISE_STACK_IMAGE_REF", "LOCAL_IMAGE_REFS"):
+    if phrase not in live_k8s:
+        fail(f"live Kubernetes e2e harness missing required contract phrase: {phrase}")
+
+for phrase in ("REQUIRE_CHART", "REQUIRE_HELM", "dry-run"):
+    if phrase not in deploy_check:
+        fail(f"deploy-check wrapper missing required contract phrase: {phrase}")
+
+for phrase in ("REAL_K8S", "LIVE_K8S_MODE=kind", "REQUIRE_HTTP", "REQUIRE_SQL"):
+    if phrase not in kind_smoke:
+        fail(f"kind production smoke wrapper missing required contract phrase: {phrase}")
+
+for phrase in (
+    "ci/ai-blaise/live-k8s-e2e.sh",
+    "CHART_DIR",
+    "COMMAND_CENTER_DIR",
+    "AI_BLAISE_STACK_IMAGE_REF",
+    "LOCAL_IMAGE_REFS",
+):
+    if phrase not in deploy_readme:
+        fail(f"deploy/README.md must document live Kubernetes e2e input: {phrase}")
+
+for path in (
+    K8S_GUARDRAIL_RENDERER,
+    K8S_GUARDRAIL_MANIFEST,
+    K8S_GUARDRAIL_KUSTOMIZATION,
+    DEPLOY_CHECK,
+    K8S_GUARDRAIL_CHECK,
+):
+    if not path.exists() or not path.read_text(encoding="utf-8", errors="ignore").strip():
+        fail(f"missing Kubernetes guardrail contract artifact: {path}")
+
+guardrail_text = read(K8S_GUARDRAIL_MANIFEST)
+for phrase in (
+    'kind: "HorizontalPodAutoscaler"',
+    'kind: "PodDisruptionBudget"',
+    'kind: "NetworkPolicy"',
+    'app.kubernetes.io/name: "ai-blaise-citus"',
+    'ai-blaise.com/chart-fold-date: "2026-05-22"',
+    'name: "ai-blaise-citus-pool-postgres"',
+    "ai_blaise_sidecar_queue_depth",
+):
+    if phrase not in guardrail_text:
+        fail(f"Kubernetes guardrail contract missing phrase: {phrase}")
+
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:
     fail(
@@ -342,6 +400,8 @@ print(
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"
     "live_sql_guards=true\t"
+    "k8s_guardrail_contract=true\t"
+    "live_k8s_e2e_harness=true\t"
     "chart_folded_to_command_center=2026-05-22"
 )
 PY

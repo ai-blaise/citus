@@ -29,22 +29,33 @@
 // FEATURE: TS7
 // FEATURE: WH1
 
+use ai_blaise_citus_companion::{SchemaJobOperation, SchemaJobState};
 use ai_blaise_citus_operator::controllers;
-use ai_blaise_citus_operator::{
-    BackupEncryption, BackupProvider, BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec,
-    BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec,
-    CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec, ConflictResolution,
-    ContinuousAggregateSpec, EmbeddingProvider, FederationConnection, FederationSpec,
-    FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec, FunctionTrigger,
-    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
-    PlacementPolicy, PoolSpec, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
-    ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexSpec, SearchScorer,
-    ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType,
-    SidecarSpec, SidecarType, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas, TenantSpec,
-    UnsatisfiablePlacementAction, VectorDestinationSpec, VectorizerScheduleMode,
-    VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent, WebhookRetryPolicy, WebhookSpec,
+use ai_blaise_citus_operator::controllers::boundary::{
+    execution_mode_from_env, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    ExecutionMode,
 };
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_operator::{
+    canonical_operator_security_report, BackupEncryption, BackupProvider, BackupReconcilePlan,
+    BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec,
+    ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec, CitusTopology,
+    CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
+    ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
+    FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent, FunctionReconcilePlan,
+    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger,
+    HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction,
+    MigrationReconcilePlan, MigrationSpec, MigrationType, PlacementPolicy, PoolSpec,
+    RegionReconcilePlan, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
+    ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec,
+    SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan,
+    ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType, SidecarEndpointCandidate,
+    SidecarEndpointRetargetPlan, SidecarReconcilePlan, SidecarSpec, SidecarType,
+    SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
+    TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
+    VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
+    WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
+};
+use ai_blaise_citus_sidecar_shared::{run_probe_server, EndpointRegistry, RetargetConfig};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -68,6 +79,14 @@ fn main() {
         [] => run_canonical(),
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
+        [command] if command == "run-reconcilers-batch-a" => run_reconcilers_batch_a(),
+        [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
+        [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
+        [command] if command == "run-controller-boundary" => run_controller_boundary(),
+        [command] if command == "run-endpointslice-retarget-canonical" => {
+            run_endpointslice_retarget_canonical()
+        }
+        [command] if command == "run-security-canonical" => run_security_canonical(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -104,7 +123,112 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-endpointslice-retarget-canonical|run-security-canonical]");
+}
+
+fn run_endpointslice_retarget_canonical() {
+    let mut registry = EndpointRegistry::new(
+        RetargetConfig::parse(
+            "id=primary,target=http://realtime-primary:8080,priority=1,failover_after=1;\
+             id=standby,target=http://realtime-standby:8080,priority=2,failover_after=1",
+        )
+        .expect("canonical retarget config"),
+    );
+
+    println!("phase	status	generation	selected	endpoints	slice");
+    emit_endpoint_retarget_phase("initial", &registry);
+    registry
+        .record_failure("primary", "connection refused")
+        .expect("record primary failure");
+    emit_endpoint_retarget_phase("primary_failed", &registry);
+    registry
+        .record_failure("standby", "timeout")
+        .expect("record standby failure");
+    let fail_closed = emit_endpoint_retarget_phase("all_failed", &registry);
+
+    println!("--- endpoint_slice_yaml");
+    print!(
+        "{}",
+        fail_closed
+            .endpoint_slice_manifest_yaml()
+            .expect("canonical EndpointSlice manifest")
+    );
+    println!("--- service_merge_patch_json");
+    print!(
+        "{}",
+        fail_closed
+            .service_merge_patch_json()
+            .expect("canonical Service merge patch")
+    );
+}
+
+fn emit_endpoint_retarget_phase(
+    phase: &str,
+    registry: &EndpointRegistry,
+) -> SidecarEndpointRetargetPlan {
+    let plan = SidecarEndpointRetargetPlan::from_decision(
+        "ai-blaise-realtime",
+        "realtime",
+        &registry.select(),
+        canonical_endpoint_candidates(),
+    )
+    .expect("canonical EndpointSlice retarget plan");
+    println!(
+        "{}	{}	{}	{}	{}	{}",
+        phase,
+        plan.status.as_str(),
+        plan.generation,
+        plan.selected_endpoint_id.as_deref().unwrap_or("none"),
+        plan.endpoint_count(),
+        plan.endpoint_slice_name,
+    );
+    plan
+}
+
+fn canonical_endpoint_candidates() -> Vec<SidecarEndpointCandidate> {
+    vec![
+        SidecarEndpointCandidate {
+            endpoint_id: "primary".to_string(),
+            target_ref_name: "realtime-primary-0".to_string(),
+            addresses: vec!["10.0.0.10".to_string()],
+            port_name: "http".to_string(),
+            port: 8080,
+            zone: Some("us-east1-b".to_string()),
+            ready: true,
+        },
+        SidecarEndpointCandidate {
+            endpoint_id: "standby".to_string(),
+            target_ref_name: "realtime-standby-0".to_string(),
+            addresses: vec!["10.0.1.10".to_string()],
+            port_name: "http".to_string(),
+            port: 8080,
+            zone: Some("us-east1-c".to_string()),
+            ready: true,
+        },
+    ]
+}
+
+fn run_security_canonical() {
+    let report = canonical_operator_security_report().unwrap_or_else(|error| {
+        eprintln!("operator: security canonical execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "workloads\ttls_required\tauth_boundaries\tsecret_refs\trbac_rules\tkube_api_denied\trun_as_non_root\tread_only_rootfs\tdrop_all_capabilities"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.workloads,
+        report.tls_required,
+        report.auth_boundaries,
+        report.secret_refs,
+        report.rbac_rules,
+        report.kube_api_denied,
+        report.run_as_non_root,
+        report.read_only_rootfs,
+        report.drop_all_capabilities,
+    );
 }
 
 fn run_reconcile_plans() {
@@ -128,6 +252,87 @@ fn run_reconcile_plans() {
         report.shard_replication_factor,
         report.shard_hard_constraint,
     );
+}
+
+fn run_reconcilers_batch_a() {
+    let report = canonical_reconcilers_batch_a_report().unwrap_or_else(|error| {
+        eprintln!("operator: reconcilers batch A execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "tenant_apply_steps\ttenant_sql_steps\tregion_apply_steps\tregion_sql_steps\tsurvival_goal_apply_steps\tbackup_apply_steps\tbackup_status_endpoints\tsurvival_topology_key\tbackup_archive_scheme"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.tenant_apply_steps,
+        report.tenant_sql_steps,
+        report.region_apply_steps,
+        report.region_sql_steps,
+        report.survival_goal_apply_steps,
+        report.backup_apply_steps,
+        report.backup_status_endpoints,
+        report.survival_topology_key,
+        report.backup_archive_scheme,
+    );
+}
+
+fn run_reconcilers_batch_b() {
+    let report = canonical_reconcilers_batch_b_report().unwrap_or_else(|error| {
+        eprintln!("operator: reconcilers batch-b execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "federation_apply_steps	federation_iceberg	search_apply_steps	search_hybrid	webhook_apply_steps	webhook_events	function_apply_steps	function_sidecar_steps	function_kubernetes_steps"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.federation_apply_steps,
+        report.federation_iceberg,
+        report.search_apply_steps,
+        report.search_hybrid,
+        report.webhook_apply_steps,
+        report.webhook_events,
+        report.function_apply_steps,
+        report.function_sidecar_steps,
+        report.function_kubernetes_steps,
+    );
+}
+
+fn run_reconcile_plans_batch_c() {
+    let report = canonical_reconcile_plans_batch_c_report().unwrap_or_else(|error| {
+        eprintln!("operator: Batch C reconcile plans execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.repack_job,
+        report.repack_strategy,
+        report.repack_apply_steps,
+        report.migration_name,
+        report.migration_apply_steps,
+        report.migration_target_state,
+        report.conflict_policy_class,
+        report.conflict_policy_resolution,
+        report.conflict_policy_apply_steps,
+        report.sidecar_deployment,
+        report.sidecar_replicas,
+        report.sidecar_deletion_steps,
+    );
+}
+
+fn run_controller_boundary() {
+    let plans = canonical_controller_boundary_plans().unwrap_or_else(|error| {
+        eprintln!("operator: controller boundary execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!("{}", ControllerBoundaryPlan::render_tsv_header());
+    for plan in plans {
+        println!("{}", plan.render_tsv());
+    }
 }
 
 /// Spawn the probe server on a dedicated thread (blocking std net) while a
@@ -259,6 +464,19 @@ fn canonical_operator_execution_report() -> Result<OperatorExecutionReport, Box<
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilersBatchBReport {
+    federation_apply_steps: usize,
+    federation_iceberg: bool,
+    search_apply_steps: usize,
+    search_hybrid: bool,
+    webhook_apply_steps: usize,
+    webhook_events: usize,
+    function_apply_steps: usize,
+    function_sidecar_steps: usize,
+    function_kubernetes_steps: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ReconcilePlansReport {
     cluster_name: String,
     cnpg_instances: u32,
@@ -269,6 +487,65 @@ struct ReconcilePlansReport {
     shard_topology_constraints: usize,
     shard_replication_factor: u32,
     shard_hard_constraint: bool,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilePlansBatchCReport {
+    repack_job: String,
+    repack_strategy: String,
+    repack_apply_steps: usize,
+    migration_name: String,
+    migration_apply_steps: usize,
+    migration_target_state: String,
+    conflict_policy_class: String,
+    conflict_policy_resolution: String,
+    conflict_policy_apply_steps: usize,
+    sidecar_deployment: String,
+    sidecar_replicas: u32,
+    sidecar_deletion_steps: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilersBatchAReport {
+    tenant_apply_steps: usize,
+    tenant_sql_steps: usize,
+    region_apply_steps: usize,
+    region_sql_steps: usize,
+    survival_goal_apply_steps: usize,
+    backup_apply_steps: usize,
+    backup_status_endpoints: usize,
+    survival_topology_key: String,
+    backup_archive_scheme: String,
+}
+
+fn canonical_reconcilers_batch_b_report() -> Result<ReconcilersBatchBReport, Box<dyn Error>> {
+    let federation_spec = canonical_federation_spec();
+    let federation_plan = FederationReconcilePlan::try_from(&federation_spec)?;
+    let federation_apply_plan = federation_plan.apply_plan();
+
+    let search_index_spec = canonical_search_index_spec();
+    let search_plan = SearchIndexReconcilePlan::from_spec("documents-search", &search_index_spec)?;
+    let search_apply_plan = search_plan.apply_plan();
+
+    let webhook_spec = canonical_webhook_spec();
+    let webhook_plan = WebhookReconcilePlan::from_spec("orders-hook", &webhook_spec)?;
+    let webhook_apply_plan = webhook_plan.apply_plan();
+
+    let function_spec = canonical_function_spec();
+    let function_plan = FunctionReconcilePlan::try_from(&function_spec)?;
+    let function_apply_plan = function_plan.apply_plan();
+
+    Ok(ReconcilersBatchBReport {
+        federation_apply_steps: federation_apply_plan.steps.len(),
+        federation_iceberg: federation_plan.backend.is_iceberg(),
+        search_apply_steps: search_apply_plan.steps.len(),
+        search_hybrid: search_plan.is_hybrid(),
+        webhook_apply_steps: webhook_apply_plan.steps.len(),
+        webhook_events: webhook_plan.events.len(),
+        function_apply_steps: function_apply_plan.steps.len(),
+        function_sidecar_steps: function_apply_plan.step_count_of(FunctionStepKind::Sidecar),
+        function_kubernetes_steps: function_apply_plan.step_count_of(FunctionStepKind::Kubernetes),
+    })
 }
 
 fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Error>> {
@@ -289,6 +566,166 @@ fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Er
         shard_topology_constraints: shard_plan.topology_constraint_count(),
         shard_replication_factor: shard_plan.replication_factor,
         shard_hard_constraint: shard_plan.has_hard_constraint(),
+    })
+}
+
+fn canonical_controller_boundary_plans() -> Result<Vec<ControllerBoundaryPlan>, Box<dyn Error>> {
+    canonical_controller_boundary_plans_for_mode(execution_mode_from_env()?)
+}
+
+fn canonical_controller_boundary_plans_for_mode(
+    mode: ExecutionMode,
+) -> Result<Vec<ControllerBoundaryPlan>, Box<dyn Error>> {
+    let default_requeue = std::time::Duration::from_secs(30);
+
+    let cluster_spec = canonical_cluster_spec();
+    let cluster_plan = CitusClusterReconcilePlan::from_spec("ai-blaise-citus", &cluster_spec)?;
+
+    let hypertable_spec = canonical_hypertable_spec();
+    let hypertable_plan = HypertableReconcilePlan::try_from(&hypertable_spec)?;
+    let _hypertable_apply_plan = hypertable_plan.apply_plan();
+
+    let migration_spec = canonical_migration_spec();
+    migration_spec.validate()?;
+
+    let tenant_spec = canonical_tenant_spec();
+    tenant_spec.validate()?;
+
+    Ok(vec![
+        ControllerBoundaryPlan::try_new(
+            "CitusCluster",
+            &cluster_plan.cluster_name,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_citus_cluster_plan"),
+                BoundaryOperation::alpha(
+                    "apply_citus_cluster_children",
+                    BoundaryOperationKind::KubernetesApply,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_citus_cluster_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Hypertable",
+            &hypertable_spec.table,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_hypertable_apply_plan"),
+                BoundaryOperation::alpha(
+                    "execute_hypertable_sql",
+                    BoundaryOperationKind::DirectSql,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_hypertable_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Migration",
+            "users-display-name",
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_migration_state_transition"),
+                BoundaryOperation::alpha(
+                    "invoke_schema_job_sidecar",
+                    BoundaryOperationKind::KubernetesApply,
+                ),
+                BoundaryOperation::alpha(
+                    "patch_migration_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+        ControllerBoundaryPlan::try_new(
+            "Tenant",
+            &tenant_spec.name,
+            mode,
+            vec![
+                BoundaryOperation::render_plan("render_tenant_plan"),
+                BoundaryOperation::alpha("execute_tenant_sql", BoundaryOperationKind::DirectSql),
+                BoundaryOperation::alpha(
+                    "patch_tenant_status",
+                    BoundaryOperationKind::StatusMutation,
+                ),
+            ],
+            default_requeue,
+        )?,
+    ])
+}
+
+fn canonical_reconcile_plans_batch_c_report() -> Result<ReconcilePlansBatchCReport, Box<dyn Error>>
+{
+    let scheduled_repack = canonical_scheduled_repack_spec();
+    let repack_plan = ScheduledRepackReconcilePlan::from_spec("weekly-orders", &scheduled_repack)?;
+    let repack_apply_plan = repack_plan.apply_plan();
+
+    let migration_command = canonical_migration_command();
+    let migration_plan = MigrationReconcilePlan::try_from(&migration_command)?;
+    let migration_apply_plan = migration_plan.apply_plan();
+
+    let conflict_policy = canonical_conflict_policy_spec();
+    let conflict_policy_plan =
+        ConflictPolicyReconcilePlan::from_spec("accounts-lww", &conflict_policy)?;
+    let conflict_policy_apply_plan = conflict_policy_plan.apply_plan();
+
+    let sidecar = canonical_sidecar_deployment_spec();
+    let sidecar_plan = SidecarReconcilePlan::from_spec("primary", &sidecar)?;
+    let sidecar_deletion_plan = sidecar_plan.deletion_plan();
+
+    Ok(ReconcilePlansBatchCReport {
+        repack_job: repack_plan.job_name.clone(),
+        repack_strategy: repack_plan.strategy_str().to_string(),
+        repack_apply_steps: repack_apply_plan.steps.len(),
+        migration_name: migration_plan.schema_job.name.clone(),
+        migration_apply_steps: migration_apply_plan.steps.len(),
+        migration_target_state: migration_plan.target_state_str().to_string(),
+        conflict_policy_class: conflict_policy_plan.class_str().to_string(),
+        conflict_policy_resolution: conflict_policy_plan.resolution_str().to_string(),
+        conflict_policy_apply_steps: conflict_policy_apply_plan.steps.len(),
+        sidecar_deployment: sidecar_plan.deployment_name.clone(),
+        sidecar_replicas: sidecar_plan.replicas,
+        sidecar_deletion_steps: sidecar_deletion_plan.steps.len(),
+    })
+}
+
+fn canonical_reconcilers_batch_a_report() -> Result<ReconcilersBatchAReport, Box<dyn Error>> {
+    let tenant_spec = canonical_tenant_spec();
+    let tenant_plan = TenantReconcilePlan::try_from(&tenant_spec)?;
+
+    let region_spec = canonical_region_spec();
+    let region_plan = RegionReconcilePlan::try_from(&region_spec)?;
+
+    let survival_goal_spec = canonical_survival_goal_spec();
+    let survival_goal_plan = SurvivalGoalReconcilePlan::new(
+        &survival_goal_spec,
+        &canonical_shard_group_specs_for_survival_goal(),
+        &canonical_region_specs_for_survival_goal(),
+    )?;
+
+    let backup_spec = canonical_backup_spec();
+    let backup_plan = BackupReconcilePlan::from_resource_name("nightly", &backup_spec)?;
+    let backup_archive_scheme = backup_plan
+        .archive_uri
+        .split_once("://")
+        .map_or_else(String::new, |(scheme, _)| scheme.to_string());
+
+    Ok(ReconcilersBatchAReport {
+        tenant_apply_steps: tenant_plan.steps.len(),
+        tenant_sql_steps: tenant_plan.sql_step_count(),
+        region_apply_steps: region_plan.steps.len(),
+        region_sql_steps: region_plan.sql_step_count(),
+        survival_goal_apply_steps: survival_goal_plan.steps.len(),
+        backup_apply_steps: backup_plan.steps.len(),
+        backup_status_endpoints: backup_plan.status_endpoints().len(),
+        survival_topology_key: survival_goal_plan.required_topology_key().to_string(),
+        backup_archive_scheme,
     })
 }
 
@@ -335,6 +772,38 @@ fn canonical_shard_group_spec() -> ShardGroupSpec {
             when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
         }],
     }
+}
+
+fn canonical_shard_group_specs_for_survival_goal() -> Vec<ShardGroupSpec> {
+    vec![ShardGroupSpec {
+        parent_table: "public.metrics".to_string(),
+        distribution_column: "tenant_id".to_string(),
+        num_shards: 32,
+        colocation_group: Some("metrics".to_string()),
+        replication_factor: 3,
+        placement_policy: vec![PlacementPolicy {
+            topology_key: "topology.kubernetes.io/region".to_string(),
+            max_skew: 1,
+            when_unsatisfiable: UnsatisfiablePlacementAction::DoNotSchedule,
+        }],
+    }]
+}
+
+fn canonical_region_specs_for_survival_goal() -> Vec<RegionSpec> {
+    vec![
+        RegionSpec {
+            name: "us-east-1".to_string(),
+            kubernetes_zone: "us-east-1a".to_string(),
+            tablespace_name: "ts_us_east_1".to_string(),
+            leader_pinned: true,
+        },
+        RegionSpec {
+            name: "us-west-2".to_string(),
+            kubernetes_zone: "us-west-2a".to_string(),
+            tablespace_name: "ts_us_west_2".to_string(),
+            leader_pinned: false,
+        },
+    ]
 }
 
 fn canonical_hypertable_spec() -> HypertableSpec {
@@ -468,6 +937,26 @@ fn canonical_migration_spec() -> MigrationSpec {
     }
 }
 
+fn canonical_migration_command() -> MigrationCommand {
+    MigrationCommand {
+        spec: canonical_migration_spec(),
+        job_name: "users-add-display-name".to_string(),
+        table: "public.users".to_string(),
+        current_state: SchemaJobState::DeleteOnly,
+        operations: vec![
+            SchemaJobOperation::AddColumn {
+                column: "display_name".to_string(),
+                sql_type: "text".to_string(),
+            },
+            SchemaJobOperation::Backfill {
+                statement: "UPDATE public.users SET display_name = email".to_string(),
+            },
+        ],
+        lease_seconds: 60,
+        workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+    }
+}
+
 fn canonical_conflict_policy_spec() -> ConflictPolicySpec {
     ConflictPolicySpec {
         table: "public.reference_accounts".to_string(),
@@ -582,6 +1071,46 @@ mod tests {
     }
 
     #[test]
+    fn canonical_reconcilers_batch_a_report_covers_tenant_region_survival_and_backup() {
+        let report = canonical_reconcilers_batch_a_report().expect("canonical batch A report");
+
+        assert_eq!(
+            report,
+            ReconcilersBatchAReport {
+                tenant_apply_steps: 5,
+                tenant_sql_steps: 3,
+                region_apply_steps: 4,
+                region_sql_steps: 2,
+                survival_goal_apply_steps: 4,
+                backup_apply_steps: 4,
+                backup_status_endpoints: 2,
+                survival_topology_key: "topology.kubernetes.io/region".to_string(),
+                backup_archive_scheme: "s3".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_reconcilers_batch_b_report_covers_requested_batch() {
+        let report = canonical_reconcilers_batch_b_report().expect("batch-b reconcile report");
+
+        assert_eq!(
+            report,
+            ReconcilersBatchBReport {
+                federation_apply_steps: 4,
+                federation_iceberg: true,
+                search_apply_steps: 5,
+                search_hybrid: true,
+                webhook_apply_steps: 6,
+                webhook_events: 2,
+                function_apply_steps: 6,
+                function_sidecar_steps: 1,
+                function_kubernetes_steps: 2,
+            }
+        );
+    }
+
+    #[test]
     fn canonical_reconcile_plans_report_covers_cluster_and_shard_group() {
         let report = canonical_reconcile_plans_report().expect("canonical reconcile plans report");
 
@@ -599,5 +1128,59 @@ mod tests {
                 shard_hard_constraint: true,
             }
         );
+    }
+
+    #[test]
+    fn canonical_reconcile_plans_batch_c_report_covers_batch_c() {
+        let report = canonical_reconcile_plans_batch_c_report()
+            .expect("canonical reconcile plans batch-c report");
+
+        assert_eq!(
+            report,
+            ReconcilePlansBatchCReport {
+                repack_job: "ai-blaise-citus-repack-weekly-orders".to_string(),
+                repack_strategy: "pg_repack".to_string(),
+                repack_apply_steps: 5,
+                migration_name: "users-add-display-name".to_string(),
+                migration_apply_steps: 6,
+                migration_target_state: "write_only".to_string(),
+                conflict_policy_class: "update_origin_differs".to_string(),
+                conflict_policy_resolution: "apply_remote_if_newer".to_string(),
+                conflict_policy_apply_steps: 3,
+                sidecar_deployment: "ai-blaise-citus-sidecar-primary-realtime".to_string(),
+                sidecar_replicas: 2,
+                sidecar_deletion_steps: 4,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_controller_boundary_report_is_deterministic_dry_run() {
+        let plans = canonical_controller_boundary_plans_for_mode(ExecutionMode::DryRun)
+            .expect("canonical controller boundary plans");
+        let rows = plans
+            .iter()
+            .map(ControllerBoundaryPlan::render_tsv)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rows,
+            vec![
+                "CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Migration	users-display-name	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Tenant	tenant-a	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn canonical_controller_boundary_fails_closed_in_apply_mode() {
+        let error = canonical_controller_boundary_plans_for_mode(ExecutionMode::Apply)
+            .expect_err("apply mode must reject alpha operations")
+            .to_string();
+
+        assert!(error.contains("apply mode blocked"));
+        assert!(error.contains("apply_citus_cluster_children"));
     }
 }

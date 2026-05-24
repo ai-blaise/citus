@@ -47,17 +47,78 @@ pub use crds::vectorizer::{
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
+pub use reconcile::backup::{
+    BackupApplyStep, BackupApplyStepKind, BackupDeletePlan, BackupReconcileError,
+    BackupReconcilePlan,
+};
 pub use reconcile::citus_cluster::{
     CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan, CnpgClusterPlan,
     PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
     POOL_DEPLOYMENT_NAME_SUFFIX, POSTGRES_SHARED_PRELOAD_LIBRARIES,
 };
+pub use reconcile::conflict_policy::{
+    ConflictPolicyApplyPlan, ConflictPolicyApplyStep, ConflictPolicyReconcileError,
+    ConflictPolicyReconcilePlan, CONFLICT_POLICY_TABLE, CONFLICT_STATUS_TABLE,
+};
+pub use reconcile::federation::{
+    FederationApplyPlan, FederationApplyStep, FederationBackend, FederationReconcileError,
+    FederationReconcilePlan, FEDERATION_METADATA_TABLES_SQL, FEDERATION_PROVENANCE_TABLE,
+    MONGO_FDW_EXTENSION, MYSQL_FDW_EXTENSION, ORACLE_FDW_EXTENSION, TDS_FDW_EXTENSION,
+};
+pub use reconcile::function::{
+    FunctionApplyPlan, FunctionApplyStep, FunctionEventTriggerPlan, FunctionHttpTriggerPlan,
+    FunctionReconcileError, FunctionReconcilePlan, FunctionScheduledTriggerPlan,
+    FunctionSidecarRegistration, FunctionStepKind, FUNCTION_METADATA_TABLES_SQL,
+    FUNCTION_NOTIFY_CHANNEL_PREFIX, PG_CRON_EXTENSION, SIDECAR_REGISTER_ENDPOINT,
+};
 pub use reconcile::hypertable::{
     HypertableApplyPlan, HypertableApplyStep, HypertableReconcileError, HypertableReconcilePlan,
 };
-pub use reconcile::migration::{MigrationCommand, MigrationReconcileError, MigrationReconcilePlan};
+pub use reconcile::migration::{
+    MigrationApplyPlan, MigrationApplyStep, MigrationCommand, MigrationReconcileError,
+    MigrationReconcilePlan, MigrationTeardownAction, SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+    SCHEMA_JOB_ADVANCE_FUNCTION, SCHEMA_JOB_START_FUNCTION, SCHEMA_JOB_STATUS_VIEW,
+};
+pub use reconcile::region::{
+    RegionApplyStep, RegionApplyStepKind, RegionReconcileError, RegionReconcilePlan,
+};
+pub use reconcile::scheduled_repack::{
+    ScheduledRepackApplyPlan, ScheduledRepackApplyStep, ScheduledRepackReconcileError,
+    ScheduledRepackReconcilePlan, PG_CRON_SCHEDULE_FUNCTION, PG_CRON_UNSCHEDULE_FUNCTION,
+    REPACK_POLICY_TABLE, REPACK_QUEUE_TABLE,
+};
+pub use reconcile::search_index::{
+    SearchIndexApplyPlan, SearchIndexApplyStep, SearchIndexReconcileError,
+    SearchIndexReconcilePlan, PG_SEARCH_ACCESS_METHOD, SEARCH_METADATA_TABLES_SQL,
+};
+pub use reconcile::security::{
+    canonical_operator_security_plans, canonical_operator_security_report, AuthBoundaryPlan,
+    ContainerSecurityContextPlan, PodSecurityContextPlan, RbacRulePlan, SecretReferencePlan,
+    WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
+};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
     CITUS_SHARD_COUNT_GUC, CITUS_UPDATE_COLOCATION,
+};
+pub use reconcile::sidecar::{
+    SidecarDeletionPlan, SidecarDeletionStep, SidecarReconcileError, SidecarReconcilePlan,
+    SidecarRuntimeProfile, SidecarStatusProbeUrls, SIDECAR_DEFAULT_PORT,
+    SIDECAR_DELETION_GRACE_SECONDS, SIDECAR_DEPLOYMENT_NAME_PREFIX,
+};
+pub use reconcile::sidecar_endpoint::{
+    EndpointSliceAddressType, SidecarEndpointCandidate, SidecarEndpointRetargetError,
+    SidecarEndpointRetargetPlan, SidecarEndpointRetargetStatus,
+};
+pub use reconcile::survival_goal::{
+    SurvivalGoalApplyStep, SurvivalGoalApplyStepKind, SurvivalGoalReconcileError,
+    SurvivalGoalReconcilePlan,
+};
+pub use reconcile::tenant::{
+    TenantApplyStep, TenantApplyStepKind, TenantDeletePlan, TenantReconcileError,
+    TenantReconcilePlan, TENANT_ARCHIVE_DEFAULT_RETENTION_DAYS,
+};
+pub use reconcile::webhook::{
+    WebhookApplyPlan, WebhookApplyStep, WebhookReconcileError, WebhookReconcilePlan,
+    WEBHOOK_METADATA_TABLES_SQL, WEBHOOK_QUEUE,
 };

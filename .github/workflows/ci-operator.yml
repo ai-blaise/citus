@@ -21,3 +21,11 @@ jobs:
         run: cargo test -p ai_blaise_citus_operator
       - name: Run canonical operator contract
         run: cargo run -q -p ai_blaise_citus_operator -- run-canonical
+      - name: Run Batch C reconciler contract
+        run: bash ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh
+      - name: Run controller boundary smoke
+        run: bash ci/ai-blaise/operator-boundary-smoke.sh
+      - name: Run EndpointSlice retarget smoke
+        run: bash ci/ai-blaise/endpointslice-retarget-smoke.sh
+      - name: Run operator security enforcement smoke
+        run: bash ci/ai-blaise/security-enforcement-smoke.sh

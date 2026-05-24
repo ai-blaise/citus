@@ -37,6 +37,10 @@ and catalog specs for `FEATURE: S2`, `FEATURE: S4`, `FEATURE: TS7`,
 `FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
 `FEATURE: TO5`, and `FEATURE: WH1`, then emits the deterministic TSV summary
 with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
+`cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c` and
+`ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` guard the Batch C operator
+reconcile plans for `FEATURE: R7`, `FEATURE: C9`, `FEATURE: M3`, `FEATURE:
+M14`, `FEATURE: C4`, `FEATURE: C5`, and `FEATURE: O5`.
 `e2e/src/runtime_contracts.rs` validates canonical runtime contracts for
 `FEATURE: Auth1`, `FEATURE: Auth3`, `FEATURE: B1`, `FEATURE: B3`,
 `FEATURE: B4`, `FEATURE: C1`, `FEATURE: L8`, `FEATURE: MR5`, `FEATURE: R7`,
@@ -1386,7 +1390,7 @@ fan embedding jobs across Citus workers safely.
 
 ### S2: Topology-Aware Placement
 
-**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`
+**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`, `operator/src/controllers/boundary.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -1399,21 +1403,29 @@ optional `update_distributed_table_colocation`, and a `pg_dist_shard`
 post-condition guard) plus Kubernetes-style topology-spread constraints. The
 `CitusClusterReconcilePlan` plan-builder renders the CloudNativePG cluster
 manifest, pool Deployment intent, and one Deployment intent per declared
-sidecar so the operator-owned reconcile contract is executable end-to-end.
+sidecar so the operator-owned reconcile contract is executable end-to-end. The
+controller boundary model renders typed Conditions and retry classification for
+`CitusCluster`, `Hypertable`, `Migration`, and `Tenant` so dry-run planning is
+explicit and alpha mutation paths cannot be mistaken for implemented apply
+behavior.
 
 Production evidence: Local and VM proof runs `cargo test -p
-ai_blaise_citus_operator` (61 unit tests including reconcile-plan coverage for
-coordinator-worker, coordinator-less, custom-sidecar, and colocation-free
-shard-group cases) and `cargo run -p ai_blaise_citus_operator --
+ai_blaise_citus_operator` (unit tests including reconcile-plan and controller
+boundary coverage) and `cargo run -p ai_blaise_citus_operator --
 run-reconcile-plans`, which emits the canonical reconcile-plan TSV row
-`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. The matching SQL apply
-plan and CloudNativePG cluster manifest are produced from the canonical
-`CitusClusterSpec` and `ShardGroupSpec` without external Kubernetes
-dependencies. Live in-cluster reconciliation (a Kubernetes controller loop
-that watches the CRDs, applies the manifests, and updates `.status`) remains
-gated behind the alpha `operator.controllerRbac.enabled` profile because the
-operator runtime currently exposes only health/readiness/metrics and
-plan-builder helpers.
+`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. `cargo run -p
+ai_blaise_citus_operator -- run-controller-boundary` emits the canonical
+dry-run boundary TSV and `ci/ai-blaise/operator-boundary-smoke.sh` proves
+`AI_BLAISE_OPERATOR_EXECUTION_MODE=apply` fails closed while Kubernetes apply,
+direct SQL execution, and `.status` mutation are still `AlphaNotImplemented`.
+The matching SQL apply plan and CloudNativePG cluster manifest are produced
+from the canonical `CitusClusterSpec` and `ShardGroupSpec` without external
+Kubernetes dependencies. Live in-cluster reconciliation (a Kubernetes
+controller loop that watches the CRDs, applies the manifests, and updates
+`.status`) remains gated behind the alpha `operator.controllerRbac.enabled`
+profile because the operator runtime currently exposes only
+health/readiness/metrics, plan-builder helpers, and non-mutating boundary
+reports.
 
 **Motivation**: Placement decisions need an operator-owned policy before the
 fork can prove zone-aware replication and survival-goal behavior.
@@ -1426,10 +1438,13 @@ Kubernetes-native CRD for topology spread constraints.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`,
   `operator/src/reconcile/shard_group.rs`,
-  `operator/src/reconcile/citus_cluster.rs`
+  `operator/src/reconcile/citus_cluster.rs`,
+  `operator/src/controllers/boundary.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-controller-boundary`
+- CI: `bash ci/ai-blaise/operator-boundary-smoke.sh`
 - CI: `cargo test -p ai_blaise_citus_operator`
 
 ### S4: Coordinator-Less Topology Mode
@@ -1555,14 +1570,25 @@ reads.
 
 ### S10: Schema-Based Tenancy
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Defines the `Tenant` operator spec for one-tenant-per-schema
-layouts on Citus schema-based sharding.
+layouts and reconciles it into a deterministic tenant apply plan.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler validates `Tenant` CRs through the kube-rs controller, emits an
+idempotent `CREATE SCHEMA IF NOT EXISTS` step, binds installable
+`companion_internal.set_tenant_quota(...)` and
+`set_tenant_region_affinity(...)` SQL where applicable, publishes a bounded
+pool ConfigMap name/payload, and produces an archive-safe delete plan that does
+not drop tenant schemas. Executing those SQL steps against a live cluster,
+writing Kubernetes status, and enforcing storage bytes in the pool data plane
+remain alpha.
 
 **Motivation**: SaaS tenancy needs a declarative lifecycle boundary before
 tenant quotas, region affinity, migration, and archive jobs can reconcile.
@@ -1574,18 +1600,32 @@ ship a Kubernetes tenant CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S10` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO1` / `FEATURE: TO2` / `FEATURE: TO5` in
+  `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### S11: Survival Goals
 
-**Overlay**: `operator/src/crds/survival_goal.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/survival_goal.rs`, `operator/src/reconcile/survival_goal.rs`, `operator/src/controllers/survival_goal.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines zone-failure and region-failure survival targets that the
-operator can use to validate placement and replication intent.
+**Summary**: Defines zone-failure and region-failure survival targets and
+reconciles them into topology-spread, pgactive, and CNPG replication policy
+intent.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler rejects duplicate regions, missing region inventory, missing
+ShardGroup topology policies, loose region skew, and insufficient replication
+factor in unit coverage, and the kube-rs `SurvivalGoal` controller validates
+standalone CR shape before building the policy plan. Applying topology spread
+to live StatefulSets/Deployments, mutating CNPG replication, and configuring
+pgactive remain alpha.
 
 **Motivation**: Replication factor alone is ambiguous; users need an explicit
 failure domain goal for topology-aware reconciliation.
@@ -1596,7 +1636,11 @@ failure domain goal for topology-aware reconciliation.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S11` in `operator/src/crds/survival_goal.rs`
+- In-source: `FEATURE: S11` / `FEATURE: MR2` in
+  `operator/src/reconcile/survival_goal.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### S13: Range-Based Dynamic Sharding
 
@@ -1800,10 +1844,14 @@ does not provide a scheduled repack CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R7` in `operator/src/crds/scheduled_repack.rs`
+- In-source: `FEATURE: R7` in `operator/src/reconcile/scheduled_repack.rs`
+- In-source: `FEATURE: R7` in `operator/src/controllers/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### R9: Cross-Tier Query Planner Input
 
@@ -1877,8 +1925,12 @@ policy objects.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
 - In-source: `FEATURE: C4` in `companion/src/replication_conflict.rs`
+- In-source: `FEATURE: C4` in `operator/src/reconcile/conflict_policy.rs`
+- In-source: `FEATURE: C4` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### C5: Replication Conflict Taxonomy
 
@@ -1902,8 +1954,12 @@ classification contract.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
 - In-source: `FEATURE: C5` in `companion/src/replication_conflict.rs`
+- In-source: `FEATURE: C5` in `operator/src/reconcile/conflict_policy.rs`
+- In-source: `FEATURE: C5` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` and
   `patches/postgres/0002-per-subtrans-commit-ts.patch` provide the PG-core
   pieces the seven-class conflict resolver needs: monotonic commit timestamps
@@ -2074,7 +2130,11 @@ that can coordinate validation, retries, and conflict handling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C9` in `operator/src/crds/migration.rs`
+- In-source: `FEATURE: C9` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: C9` in `operator/src/controllers/migration.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### C10: Online DDL State Machine
 
@@ -2351,7 +2411,11 @@ operator-owned migration object.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: M3` in `operator/src/crds/migration.rs`
+- In-source: `FEATURE: M3` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: M3` in `operator/src/controllers/migration.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### M5: LSP Refactor Quick-Fixes
 
@@ -2566,6 +2630,9 @@ phase log, worker lease, or rollback planner.
 - In-source: `FEATURE: M14` in `companion/src/schema_jobs/rollback.rs`
 - In-source: `FEATURE: M14` in `sidecar/schema_job/src/controller.rs`
 - In-source: `FEATURE: M14` in `operator/src/reconcile/migration.rs`
+- In-source: `FEATURE: M14` in `operator/src/controllers/migration.rs`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 - SQL runtime: `FEATURE: M14` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
@@ -2613,13 +2680,22 @@ emit invariant alarms.
 
 ### MR1: Region CRD
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines named regions with Kubernetes zone and tablespace mapping.
+**Summary**: Defines named regions with Kubernetes zone and tablespace mapping,
+then reconciles them into PostgreSQL tablespace and Kubernetes affinity intent.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The `RegionReconcilePlan` validates CR input, emits a tablespace inspection
+query, renders a separately executable `CREATE TABLESPACE` statement, and
+publishes deterministic node-affinity and optional leader-pinning labels. Live
+PostgreSQL tablespace execution, CNPG primary relocation, and Kubernetes status
+updates remain alpha.
 
 **Motivation**: Multi-region placement and tenant affinity need stable region
 objects rather than repeated stringly typed zone settings.
@@ -2631,18 +2707,28 @@ region CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR1` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR1` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR2: SurvivalGoal CRD
 
-**Overlay**: `operator/src/crds/survival_goal.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/survival_goal.rs`, `operator/src/reconcile/survival_goal.rs`, `operator/src/controllers/survival_goal.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Declares whether the cluster should survive zone or region
 failure and how many replicas must remain available.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler maps region failure to `topology.kubernetes.io/region`, maps
+zone failure to `topology.kubernetes.io/zone`, and validates ShardGroup
+replication/topology inventory in deterministic unit tests. Live topology
+mutation and cross-region replication setup remain alpha.
 
 **Motivation**: The operator must be able to reject impossible survival goals
 before it places shards.
@@ -2653,18 +2739,28 @@ before it places shards.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR2` in `operator/src/crds/survival_goal.rs`
+- In-source: `FEATURE: MR2` in `operator/src/reconcile/survival_goal.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR4: Tablespaces By Region
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Adds a declarative region-to-tablespace mapping for region-affine
 storage placement.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler sanitizes tablespace paths, quotes identifiers and literals, and
+keeps the inspection step separate from `CREATE TABLESPACE` because PostgreSQL
+does not allow `CREATE TABLESPACE` inside a transactional `DO` block. Live
+execution against PostgreSQL and storage-class placement remain alpha.
 
 **Motivation**: Tablespaces are the PostgreSQL primitive, but the operator
 needs a higher-level region policy to keep placements understandable.
@@ -2676,7 +2772,10 @@ manage them as region objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR4` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR4` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### MR5: Pool GeoIP Routing
 
@@ -2703,14 +2802,21 @@ GeoIP and edge-replica behavior can be enforced.
 
 ### MR8: Leader Pinning Per Region
 
-**Overlay**: `operator/src/crds/region.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/region.rs`, `operator/src/reconcile/region.rs`, `operator/src/controllers/region.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Carries leader-pinning intent on regions so HA reconcilers can
 constrain primaries to chosen failure domains.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The region reconciler emits the deterministic `ai-blaise.com/leader-region`
+label only when `leader_pinned` is true and the kube-rs controller validates
+the CR before logging the resolved plan. CNPG primary relocation and failover
+orchestration remain alpha.
 
 **Motivation**: Multi-region clusters need explicit write-leader placement to
 control latency and failover behavior.
@@ -2722,7 +2828,10 @@ tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR8` in `operator/src/crds/region.rs`
+- In-source: `FEATURE: MR8` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ## Backup / PITR
 
@@ -2773,14 +2882,21 @@ tooling.
 
 ### B2: Backup CRD
 
-**Overlay**: `operator/src/crds/backup.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/backup.rs`, `operator/src/reconcile/backup.rs`, `operator/src/controllers/backup.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines backup schedule, retention, object-store target, and
 provider consumed by the backup sidecar reconciler and runtime contracts.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The backup reconciler validates the CR, derives provider-specific archive URIs,
+emits per-resource sidecar Deployment and ConfigMap plan names, registers
+backup status endpoints, and rejects unknown providers. Actual WAL-G execution,
+object-store writes, archive deletion, and restore orchestration remain alpha.
 
 **Motivation**: PITR and backup-as-data-source workflows need an auditable
 declarative schedule.
@@ -2791,7 +2907,10 @@ declarative schedule.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B2` in `operator/src/crds/backup.rs`
+- In-source: `FEATURE: B2` in `operator/src/reconcile/backup.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### B3: PITR Restore
 
@@ -2892,27 +3011,32 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 
 ### B6: Encrypted Backups
 
-**Overlay**: `operator/src/crds/backup.rs`, `sidecar/backup`
+**Overlay**: `operator/src/crds/backup.rs`, `operator/src/reconcile/backup.rs`, `sidecar/backup`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Validates the backup encryption contract and materializes the
-sidecar WAL-G encryption environment with `WALG_GPG_KEY_ID` before accepting
-encrypted backup work.
+**Summary**: Validates the backup encryption contract from the operator
+backup reconciler through the sidecar WAL-G runtime, including KMS references
+and `WALG_GPG_KEY_ID` materialization before encrypted backup work is accepted.
 
 Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` verifies
 that encrypted plans render `WALG_GPG_KEY_ID`, reject missing encryption
 environment, and keep encrypted-artifact accounting in the runtime report. The
 backup smoke runs the real binary with the canonical encrypted plan and proves
 base backup execution, status, PITR, retention, and queryable branch paths
-preserve the encrypted runtime state.
+preserve the encrypted runtime state. VM proof for Reconcilers Batch A runs
+`cargo test -p ai_blaise_citus_operator` and
+`ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`; the backup reconciler
+validates non-empty KMS references and emits a distinct `KmsBinding` apply step
+into the sidecar configuration plan, while unencrypted plans skip that step
+deterministically.
 
-**Current boundary**: The production-ready claim covers sidecar environment
-validation and encrypted backup orchestration. It does not prove hardware KMS,
-External Secrets, cloud IAM, key rotation, or a Backup CR reconciler applying
-secrets into Kubernetes pods.
+**Current boundary**: The production-ready claim covers operator-side KMS
+binding validation, sidecar environment validation, and encrypted backup
+orchestration. It does not prove hardware KMS, External Secrets, cloud IAM, key
+rotation, or encrypted object-store archives with real WAL-G credentials.
 
 **Motivation**: Backup encryption must be configured with the schedule, not
 attached later by an external script.
@@ -2924,22 +3048,32 @@ deployment-specific tooling.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B6` in `operator/src/crds/backup.rs`
+- In-source: `FEATURE: B6` in `operator/src/reconcile/backup.rs`
 - In-source: `FEATURE: B6` in `sidecar/backup/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ## Tenant Operations
 
 ### TO1: Tenant CRD
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Introduces the tenant lifecycle object used by tenant migration,
 archive, quotas, and region-affinity workflows.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The tenant reconciler validates the CR through kube-rs, emits a quoted
+`CREATE SCHEMA IF NOT EXISTS` step, builds bounded DNS-safe pool ConfigMap
+names, and generates an archive-first delete plan that never drops tenant
+schemas. Live schema execution and status writes remain alpha.
 
 **Motivation**: Tenant operations require a first-class unit of ownership
 rather than interpreting arbitrary schema names.
@@ -2950,17 +3084,27 @@ rather than interpreting arbitrary schema names.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO1` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO1` in `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### TO2: Tenant Quotas
 
-**Overlay**: `operator/src/crds/tenant.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/tenant.rs`, `operator/src/reconcile/tenant.rs`, `operator/src/controllers/tenant.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds connection, QPS, and storage quotas to tenant declarations.
+
+Production evidence: VM proof for Reconcilers Batch A runs `cargo test -p
+ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
+The reconciler rejects zero quotas, maps connection/QPS limits to the
+`companion_internal.set_tenant_quota(...)` SQL contract, and carries
+storage bytes in the pool ConfigMap contract for downstream admission control.
+Live pool enforcement of storage bytes remains alpha.
 
 **Motivation**: Pool and sidecar enforcement need a typed quota source before
 runtime admission control is wired in.
@@ -2971,7 +3115,10 @@ runtime admission control is wired in.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TO2` in `operator/src/crds/tenant.rs`
+- In-source: `FEATURE: TO2` in `operator/src/reconcile/tenant.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
 
 ### TO3: Tenant Migration Online
 
@@ -3095,8 +3242,9 @@ real PostgreSQL server and verifies
 `companion_internal.register_search_index(...)` records
 `companion_search_worker_indexes`, renders deterministic GIN DDL, and verifies
 a missing distribution column fails closed. Actual pg_search BM25 index
-execution, worker index rollout, distributed DDL application, operator
-reconciliation, and shard-aware query fanout remain alpha.
+execution, worker index rollout, distributed DDL application, and shard-aware
+query fanout remain alpha. The `SearchIndex` operator plan-builder and
+kube-rs watch/controller path are covered separately by `Search7`.
 
 **Motivation**: Search indexes must be declared once and fanned out across
 workers without losing table ownership or scorer semantics.
@@ -3150,14 +3298,27 @@ while BM25 and vector indexes remain worker-local.
 
 ### Search7: Search Index CRD
 
-**Overlay**: `operator/src/crds/search_index.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/search_index.rs`,
+`operator/src/reconcile/search_index.rs`,
+`operator/src/controllers/search_index.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_search`
 
 **Summary**: Adds the Kubernetes-facing `SearchIndex` object for declarative
-text and hybrid search indexes.
+text and hybrid search indexes, plus an operator reconcile plan that installs
+`pg_search`, creates the operator-owned provenance tables, delegates distributed
+worker fanout to the companion search bridge, and records hybrid vector linkage
+for status/provenance.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `search_apply_steps=5` and `search_hybrid=true`. The kube-rs
+`SearchIndex` controller mirrors the CR into the authoritative Rust spec and
+builds the same plan during `serve`. Actual pg_search BM25 execution,
+distributed DDL application, and shard-aware query fanout remain alpha.
 
 **Motivation**: Search indexes need lifecycle and validation before companion
 SQL and sidecar cold-tier integration can be reconciled.
@@ -3169,7 +3330,10 @@ objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Search7` in `operator/src/crds/search_index.rs`
+- In-source: `FEATURE: Search7` in `operator/src/reconcile/search_index.rs`
+- Controller: `operator/src/controllers/search_index.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### Search8: Search-Aware Cold Tier
 
@@ -3806,14 +3970,27 @@ the sidecar needs runtime selection without changing the CRD shape.
 
 ### EF3: Function CRD
 
-**Overlay**: `operator/src/crds/function.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/function.rs`,
+`operator/src/reconcile/function.rs`, `operator/src/controllers/function.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines edge-function runtime, source, triggers, and secret
-bindings for Deno and Bun deployments.
+bindings for Deno and Bun deployments, plus an operator reconcile plan that
+posts a stable sidecar registration payload, renders HTTP Service/Ingress
+manifests, records function provenance, and registers scheduled or event
+trigger metadata.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `function_apply_steps=6`, `function_sidecar_steps=1`, and
+`function_kubernetes_steps=2`; unit tests cover HTTP, scheduled, and event
+trigger plans plus teardown. Edge-function source execution, runtime sandboxing,
+and gateway traffic remain governed by the edge-functions runtime evidence and
+are not claimed by this CRD/controller promotion.
 
 **Motivation**: Function deployment needs to be declarative so auth, pool, and
 sidecar runtimes can share the same desired state.
@@ -3824,7 +4001,10 @@ sidecar runtimes can share the same desired state.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF3` in `operator/src/crds/function.rs`
+- In-source: `FEATURE: EF3` in `operator/src/reconcile/function.rs`
+- Controller: `operator/src/controllers/function.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### EF4: Database Callback Over UDS
 
@@ -4401,14 +4581,26 @@ index advisor.
 
 ### WH1: Webhook CRD
 
-**Overlay**: `operator/src/crds/webhook.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/webhook.rs`,
+`operator/src/reconcile/webhook.rs`, `operator/src/controllers/webhook.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines outbound HTTP trigger declarations with events, URL,
-header secret reference, retry policy, and payload template.
+header secret reference, retry policy, and payload template, plus an operator
+reconcile plan that installs `ai_blaise_citus`, delegates trigger/queue setup
+to the companion webhook helper, and records webhook provenance, payload
+template, and dead-letter target metadata.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `webhook_apply_steps=6` and `webhook_events=2`; unit tests cover
+full, minimal, invalid, and teardown plans. Outbound HTTP delivery workers,
+secret resolution, and retry/dead-letter execution remain alpha until the
+sidecar runtime evidence lands separately.
 
 **Motivation**: Webhook delivery needs an operator-controlled contract before
 CDC and queue sidecars can guarantee retry behavior.
@@ -4420,7 +4612,10 @@ management.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: WH1` in `operator/src/crds/webhook.rs`
+- In-source: `FEATURE: WH1` in `operator/src/reconcile/webhook.rs`
+- Controller: `operator/src/controllers/webhook.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
 
 ### WH2: Companion Webhook Helpers
 
@@ -4441,7 +4636,8 @@ real PostgreSQL server and verifies
 `companion_webhook_events` register a webhook, install a table trigger, and
 verifies INSERT and UPDATE rows are enqueued. The smoke also verifies non-http
 webhook URLs fail closed. Outbound HTTP delivery, retry workers,
-dead-letter queues, secret resolution, and operator webhook CRDs remain alpha.
+dead-letter execution, and secret resolution remain alpha; the operator
+Webhook CRD and reconcile plan are covered by `WH1`.
 
 **Motivation**: Declarative webhook CRDs need a companion SQL surface that
 turns table/event/url configuration into queue-backed triggers.
@@ -4999,31 +5195,38 @@ queries.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Provides a production-safe direct Helm install surface for the
-ai-blaise overlay. The chart defaults in `values.yaml` require immutable
-operator/pool image digests and keep alpha sidecars, tools, and alpha
-runtime/security intent disabled. They also omit controller-grade operator
-RBAC while the operator production runtime only serves probes/metrics.
-Non-production image-matrix coverage moved to the explicit
-`values-exhaustive.yaml` profile, while `values-dev.yaml` remains the small
-developer profile.
+**Summary**: Provides the Citus-side contract for a production-safe direct Helm
+install surface while the actual chart lives in `ai-blaise/command-center`.
+This repository no longer owns `deploy/k8s/`; it owns the render and traffic
+harness that points at the external chart and fails real mode when image refs,
+HTTP probes, or SQL service traffic are missing.
 
-**Motivation**: A direct `helm upgrade --install` command should fail closed
-unless production image identity is supplied, and it must not install the
-exhaustive alpha profile by accident.
+**Motivation**: A direct `helm upgrade --install` command should be validated
+against the real chart and real images, not against in-repo stubs or synthetic
+responder containers.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise overlay chart
-or its production default profile.
+or this external-chart validation harness.
 
-Production evidence: `ci/ai-blaise/deploy-check.sh` renders the default chart
-and rejects missing immutable digests, alpha sidecar deployments, alpha tools,
-and alpha runtime/security intent in the default profile. The same check keeps
-`values-exhaustive.yaml` as the only direct Helm profile with all alpha
-sidecars enabled. `ci/ai-blaise/kind-production-smoke.sh` now installs the
-default chart profile with direct Helm against a live kind cluster, verifies
-operator/pool replicas, rejects alpha workload deployments and controller-grade
-operator RBAC, and runs live SQL plus operator admin traffic through the
-installed release.
+Production evidence: after the 2026-05-22 chart fold, full Helm rendering
+and live chart smoke evidence live with `ai-blaise/command-center`. This
+repository keeps the Citus-side deploy contract that the chart must preserve:
+`ci/ai-blaise/deploy-check.sh` validates the rendered
+`deploy/contracts/k8s-production-guardrails.yaml` bundle, including 49 HPA,
+PodDisruptionBudget, and NetworkPolicy resources for the operator, pool, and
+sidecar surfaces. The production-readiness workflow and `gate-close` run that
+contract so Citus-side image/runtime changes cannot drift from the Kubernetes
+guardrails consumed by command-center.
+
+Production evidence: `ci/ai-blaise/deploy-check.sh` runs the CI-safe dry-run
+entrypoint for the external command-center chart. When `CHART_DIR` or
+`COMMAND_CENTER_DIR` is supplied, it runs Helm lint/template, records the
+rendered image set, and can run client-side Kubernetes validation when
+`KUBECTL_CLIENT_DRY_RUN=1` is set. Dry-run mode is not runtime evidence. `ci/ai-blaise/kind-production-smoke.sh` switches to real
+traffic only with `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real`; in those modes
+it requires a chart, explicit image availability, Kubernetes readiness, live
+HTTP probes, live `psql` traffic through port-forwarded services, failure
+log/event collection, and safe teardown.
 
 **References**:
 
@@ -5041,30 +5244,27 @@ installed release.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Provides the production-safe human deploy wrapper for rendering
-and installing the Helm overlay. The wrapper defaults to `values-prod.yaml`,
-accepts release image tags and immutable operator/pool digests, refuses
-non-production installs unless `ALLOW_ALPHA_INSTALL=1` is set explicitly, and
-requires `ALLOW_MUTABLE_IMAGE_TAGS=1` before production rendering can bypass
-digest pinning for local smoke images.
+**Summary**: Preserves the in-repo deploy-wrapper boundary after the Helm chart
+folded into `ai-blaise/command-center`. `scripts/citus-scale/deploy.sh` now
+fails closed with a pointer to the command-center chart, while
+`ci/ai-blaise/live-k8s-e2e.sh` provides the real render/install/traffic path
+when operators pass `CHART_DIR` or `COMMAND_CENTER_DIR`.
 
-**Motivation**: Operators need one deploy entrypoint whose default behavior
-matches GitOps and production values, so a direct install cannot accidentally
-deploy the exhaustive alpha profile.
+**Motivation**: Operators need the old in-repo deploy wrapper to stop before it
+can install stale chart content, and they need a current harness that validates
+the external chart against real Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy
-wrapper or its production-profile guardrails.
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy wrapper
+boundary or external-chart traffic harness.
 
-Production evidence: `ci/ai-blaise/kind-production-smoke.sh` runs
-`scripts/citus-scale/deploy.sh` with `DEPLOY_PROFILE=prod` and `MODE=install`
-against a live kind cluster, verifies the resulting `values-prod.yaml` release
-has only operator/pool/PostgreSQL workloads, runs live SQL and pool admin
-traffic through the installed release, rejects controller-grade operator RBAC
-in the production profile, and proves the wrapper install path is part of
-`make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
-statically rejects regressions that remove the production default,
-digest-inputs, mutable-tag escape hatch, controller RBAC boundary, or
-non-production install refusal.
+Production evidence: `scripts/citus-scale/deploy.sh` exits nonzero with a
+clear command-center handoff instead of rendering removed manifests.
+`ci/ai-blaise/deploy-check.sh` and `ci/ai-blaise/kind-production-smoke.sh` are
+the supported validation entrypoints in this repo. Real mode requires external
+chart input and image refs that are published or locally loaded; if branch
+images are unpublished, the harness reports that explicitly and tells the
+operator to pass `AI_BLAISE_STACK_IMAGE_REF`, `HELM_SET_ARGS`, and
+`LOCAL_IMAGE_REFS` rather than faking traffic.
 
 **References**:
 
@@ -5082,21 +5282,17 @@ non-production install refusal.
 **Bundled extension dep**: none
 
 **Summary**: Builds real Rust application images for the operator, pool,
-sidecars, and `citusctl`, with deployed services defaulting to the long-running
-`serve` command and the `citusctl` tool image defaulting to `plan inspect
-cluster`. The pool image separates PostgreSQL TCP traffic from admin probes and
-requires a configured upstream before readiness. The Kubernetes production smoke
-also verifies live operator and sidecar health, readiness, and metrics over
-port-forwarded pod traffic before accepting the deployment, runs the built
-`citusctl` image as a Job, and aggregates pool request metrics across replicas
-after the SQL smoke so service load balancing cannot hide a cold pool pod.
-Controller-grade operator RBAC remains an alpha chart contract enabled only by
-the exhaustive profile until the operator runs real Kubernetes watches and
-reconciliation.
+sidecars, and `citusctl`, with service images defaulting to long-running
+`serve` commands and the `citusctl` tool image defaulting to `plan inspect
+cluster`. The live Kubernetes harness validates whatever command-center chart
+is supplied, waits for the rendered workloads, probes HTTP services through
+port-forwarding, sends SQL through a port-forwarded PostgreSQL service, and
+collects diagnostics on failure. The harness does not create stand-in traffic
+or pretend a dry-run is runtime evidence.
 
-**Motivation**: Production Kubernetes verification must exercise the actual
-app containers and PostgreSQL traffic path rather than synthetic responder
-images.
+**Motivation**: Production Kubernetes verification must exercise actual app
+containers and PostgreSQL traffic paths rather than synthetic responder images
+or chart-only tests.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
@@ -5115,9 +5311,10 @@ immutable repo digests. The deploy workflow and `gate-close` run
 `ci/ai-blaise/kind-production-smoke.sh` as a live integration gate, while
 the Makefile smoke targets set `REQUIRE_DOCKER=1` so missing Docker fails the
 release gate instead of silently skipping live evidence. `gate-close` also runs
-the image/deploy contract checks directly, with `REQUIRE_HELM=1` for rendered
-chart checks so missing Helm fails the release gate instead of silently skipping
-render evidence. The deploy wrapper install path is now live-gated by the
+the image/deploy contract checks directly; after the chart fold, this repo's
+`deploy-check` validates the Citus-side HPA, PodDisruptionBudget, and
+NetworkPolicy contract while command-center owns full Helm render evidence. The
+deploy wrapper install path is now live-gated by the
 `values-prod.yaml` phase of the kind smoke through `MODE=install`, while the
 optional tools Deployment remains dev-only and is not production evidence. The
 kind smoke also runs the built `citusctl` image and
@@ -5127,6 +5324,19 @@ merely built or loaded. The
 `values-prod.yaml` for GitOps deployment with namespace creation and pruning
 enabled; the Argo application is a GitOps render contract, not live controller
 evidence.
+
+Production evidence: `scripts/citus-scale/build-app-images.sh` builds and, for
+release runs, pushes the Rust image matrix while writing
+`artifacts/ai-blaise-image-digests.tsv` and failing if pushed images do not
+report immutable digests. `ci/ai-blaise/kind-production-smoke.sh` defaults to a
+CI-safe dry-run, but `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real` turns it into
+a fail-closed live test: render the external chart, verify image availability
+or load `LOCAL_IMAGE_REFS` into kind, install into a namespace, wait for
+rollouts and ready pods, probe `/healthz`, `/readyz`, and `/metrics`, run a
+write/read `psql` script through an exposed PostgreSQL service, collect
+logs/events/Helm state on failure, and tear down unless debugging opts out.
+This is runtime evidence only when the real mode completes against the exact
+chart and image refs under review.
 
 **References**:
 
@@ -5166,14 +5376,27 @@ replay and restore commands can share preflight and audit behavior.
 
 ### F1: Federation CRD
 
-**Overlay**: `operator/src/crds/federation.rs`
-**Status**: alpha
+**Overlay**: `operator/src/crds/federation.rs`,
+`operator/src/reconcile/federation.rs`, `operator/src/controllers/federation.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `oracle_fdw`, `mysql_fdw`, `mongo_fdw`
 
 **Summary**: Defines external federation links for warehouse, document, and
-legacy database targets using secret-backed connection references.
+legacy database targets using secret-backed connection references, plus an
+operator reconcile plan that chooses the FDW or Iceberg bridge backend, installs
+FDW extensions where required, creates foreign server/user-mapping SQL, and
+records deterministic federation provenance.
+
+Production evidence: VM proof run `cargo check -p ai_blaise_citus_operator
+--tests`, `cargo test -p ai_blaise_citus_operator`, and `cargo run -q -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b`. The canonical batch-B
+row reports `federation_apply_steps=4` and `federation_iceberg=true`; unit
+tests cover Snowflake/Iceberg routing, MySQL FDW routing, teardown, invalid
+spec propagation, and Kubernetes CR mirror parsing. Actual external warehouse
+connectivity and Iceberg snapshot reads remain alpha under `F3` and analytical
+runtime evidence.
 
 **Motivation**: FDW and lakehouse federation need a typed source of desired
 state before credentials and foreign schema creation are reconciled.
@@ -5185,7 +5408,12 @@ not ship a federation CRD.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: F1` in `operator/src/crds/federation.rs`
+- In-source: `FEATURE: F1` in `operator/src/reconcile/federation.rs`
+- Controller: `operator/src/controllers/federation.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`
+
+## Graph
 
 ## Graph
 
@@ -5533,6 +5761,51 @@ only to the shared probe/metrics runtime.
 - In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
 - Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
+### SC7: Sidecar EndpointSlice Retarget Contract
+
+**Overlay**: `operator/src/reconcile/sidecar_endpoint.rs`, `sidecar/shared/src/ha.rs`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Defines the narrow sidecar HA retarget contract between the
+sidecar health selector and the operator: sidecars produce a deterministic
+`RetargetDecision`, the operator validates Kubernetes EndpointSlice candidates,
+renders a single-selected-endpoint EndpointSlice plus a Service merge patch that
+removes the Service selector, and renders an empty EndpointSlice when no
+candidate is eligible. The fail-closed path prevents stale sidecar endpoints
+from remaining selected after health selection returns no endpoint.
+
+**Motivation**: HA sidecars need a small, reviewable integration surface before
+any broader Kubernetes controller watches EndpointSlices or coordinates regional
+failover. This contract makes the retarget artifact deterministic and testable
+without claiming automated cross-region failover.
+
+**Citus comparison**: Vanilla Citus does not ship ai-blaise sidecars, sidecar
+health selection, or Kubernetes EndpointSlice retargeting for sidecar traffic.
+
+Production evidence: VM verification runs `cargo test -p
+ai_blaise_citus_sidecar_shared`, `cargo test -p ai_blaise_citus_operator`,
+`cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical`,
+`cargo run -q -p ai_blaise_citus_operator --
+run-endpointslice-retarget-canonical`, and
+`ci/ai-blaise/endpointslice-retarget-smoke.sh`. These cover config parsing,
+health-aware selection, drain/failure exclusion, EndpointSlice candidate
+validation, deterministic manifest rendering, deterministic Service merge patch
+rendering, and the empty EndpointSlice fail-closed case. Live in-cluster
+EndpointSlice watches, Service patch application, leader election, and
+cross-region failover remain alpha and are not claimed by this feature.
+
+**References**:
+
+- Design: `docs/ai-blaise/ARCHITECTURE.md`
+- In-source: `FEATURE: SC7` in `sidecar/shared/src/ha.rs`
+- In-source: `FEATURE: SC7` in `operator/src/reconcile/sidecar_endpoint.rs`
+- Executable: `cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical`
+- Executable: `cargo run -q -p ai_blaise_citus_operator -- run-endpointslice-retarget-canonical`
+- CI: `ci/ai-blaise/endpointslice-retarget-smoke.sh`
+
 ### O5: Sidecar Deployment Contract
 
 **Overlay**: `operator/src/crds/sidecar.rs`
@@ -5557,7 +5830,11 @@ deployment objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O5` in `operator/src/crds/sidecar.rs`
+- In-source: `FEATURE: O5` in `operator/src/reconcile/sidecar.rs`
+- In-source: `FEATURE: O5` in `operator/src/controllers/sidecar.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### O6: Grafana Dashboards As ConfigMaps
 
@@ -7112,9 +7389,10 @@ gate.
 **Summary**: Defines catalog and warehouse inputs for an Iceberg federation
 bridge.
 
-**Current boundary**: The advanced-planner contract covers input validation;
-Iceberg catalog connectivity, snapshot planning, and warehouse reads remain
-alpha.
+**Current boundary**: The advanced-planner contract covers input validation,
+and `F1` now covers the operator-side federation plan that records Iceberg
+bridge intent. Iceberg catalog connectivity, snapshot planning, and warehouse
+reads remain alpha.
 
 **Citus comparison**: Vanilla Citus does not define Iceberg warehouse
 federation.
@@ -7481,7 +7759,7 @@ intent.
 
 ### Sec7: External Secrets Integration
 
-**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -7490,19 +7768,23 @@ intent.
 **Summary**: Records the External Secrets reference-only security control for
 overlay credentials.
 
-**Current boundary**: The operations runner verifies the intended control; live
-External Secrets controller reconciliation and rotation evidence remain alpha.
+**Current boundary**: The operations runner verifies the intended control,
+and the operator security runner rejects inline secret values while requiring
+named Secret references for pool and sidecar workloads. Live External Secrets
+controller reconciliation and rotation evidence remain alpha.
 
 **Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
 
 **References**:
 
 - In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: Sec7` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec8: TLS Everywhere
 
-**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -7511,8 +7793,12 @@ External Secrets controller reconciliation and rotation evidence remain alpha.
 **Summary**: Tracks TLS expectations for clients, Postgres backends, and
 sidecar-to-sidecar traffic.
 
-**Current boundary**: The security contract is executable; certificate
-issuance, mTLS enforcement, and live rotation tests remain alpha.
+**Current boundary**: The security contract is executable; the operator
+security runner requires TLS 1.3, client certificates, certificate Secret
+references, fail-closed auth boundaries, no Secret RBAC grants, and restricted
+pod/container security contexts for pool and sidecar workloads. Certificate
+issuance, actual Kubernetes mounts, mTLS traffic enforcement, and live rotation
+tests remain alpha.
 
 **Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
 contract.
@@ -7520,7 +7806,9 @@ contract.
 **References**:
 
 - In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: Sec8` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec9: SBOM And Cosign Attestation
 
@@ -8813,51 +9101,6 @@ microbenchmarks; the upstream test surface is correctness-only.
 - In-source: `FEATURE: MB26` in `benchmarks/microbenches/rum/setup.sql`
 - Executable: `bash benchmarks/microbenches/rum/bench.sh`
 - CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
-
-## Sidecar HA
-
-### SC7: Sidecar Retarget Endpoint Selection
-
-**Overlay**: `sidecar/shared`
-**Status**: production-ready
-**Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: none
-
-**Summary**: Adds shared HA retarget primitives for sidecars: endpoint config
-parsing, health-aware endpoint selection, deterministic failover ordering,
-drain-aware exclusion, and generation-tracked config reloads.
-
-Production evidence: VM verification runs
-`cargo test -p ai_blaise_citus_sidecar_shared`, which covers duplicate and
-empty config rejection, deterministic selection, failure retargeting,
-fail-closed all-down behavior, drain exclusion, and reload status preservation.
-The canonical executable
-`cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical` emits the
-initial primary selection, primary-failed standby selection, drain-induced
-no-endpoint decision, and reload generation increment; the sidecar workflow
-runs the same canonical report so the contract cannot drift silently.
-
-**Motivation**: Sidecars need one shared retarget decision contract before
-individual runtimes or operator-owned EndpointSlice wiring can safely switch
-traffic away from unhealthy pods.
-
-**Citus comparison**: Vanilla Citus delegates sidecar traffic selection to
-external deployment tooling and does not provide an in-tree sidecar retarget
-contract.
-
-**Production boundary**: This is a library and canonical-runner primitive. It
-does not claim Kubernetes Service retargeting, EndpointSlice watches, HPA/PDB
-rendering, NetworkPolicy enforcement, or cross-region failover execution;
-those orchestration surfaces remain alpha until live Kubernetes evidence is
-recorded.
-
-**References**:
-
-- In-source: `FEATURE: SC7` in `sidecar/shared/src/ha.rs`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_shared -- ha-canonical`
-- CI: `.github/workflows/ci-sidecar.yml`
-
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature

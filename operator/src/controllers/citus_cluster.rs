@@ -1,9 +1,15 @@
 //! `CitusCluster` controller.
 
-use super::{Context, ControllerError};
+use super::{
+    boundary::{
+        retry_class_for_error, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
+    },
+    Context, ControllerError,
+};
 use crate::crds::citus_cluster::{
     CitusClusterSpec, CitusTopology, PoolSpec, SidecarSpec, SidecarType,
 };
+use crate::reconcile::citus_cluster::CitusClusterReconcilePlan;
 use futures::StreamExt;
 use kube::{
     api::Api,
@@ -147,22 +153,54 @@ async fn reconcile(
     cluster: Arc<CitusCluster>,
     ctx: Arc<Context>,
 ) -> Result<Action, ControllerError> {
+    let resource_name = cluster
+        .metadata
+        .name
+        .clone()
+        .unwrap_or_else(|| "<unnamed>".to_string());
     let authoritative = cluster.spec.to_authoritative();
     authoritative
         .validate()
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let plan = CitusClusterReconcilePlan::from_spec(&resource_name, &authoritative)
+        .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
+    let boundary = ControllerBoundaryPlan::try_new(
+        "CitusCluster",
+        &resource_name,
+        ctx.execution_mode,
+        vec![
+            BoundaryOperation::render_plan("render_citus_cluster_plan"),
+            BoundaryOperation::alpha(
+                "apply_citus_cluster_children",
+                BoundaryOperationKind::KubernetesApply,
+            ),
+            BoundaryOperation::alpha(
+                "patch_citus_cluster_status",
+                BoundaryOperationKind::StatusMutation,
+            ),
+        ],
+        ctx.default_requeue,
+    )?;
+
     info!(
-        cluster = ?cluster.metadata.name,
+        cluster = %resource_name,
         workers = authoritative.workers,
         sidecars = authoritative.sidecars.len(),
-        "CitusCluster reconciled"
+        cnpg_instances = plan.total_postgres_instances(),
+        boundary = %boundary.render_tsv(),
+        "CitusCluster reconciled in bounded dry-run/apply contract"
     );
     Ok(Action::requeue(ctx.default_requeue))
 }
 
 fn error_policy(_cluster: Arc<CitusCluster>, error: &ControllerError, ctx: Arc<Context>) -> Action {
-    error!(?error, "CitusCluster controller backoff");
-    Action::requeue(ctx.default_requeue)
+    let retry_class = retry_class_for_error(error);
+    error!(
+        ?error,
+        retry_class = retry_class.as_str(),
+        "CitusCluster controller classified reconcile error"
+    );
+    retry_class.action(ctx.default_requeue)
 }
 
 #[cfg(test)]
