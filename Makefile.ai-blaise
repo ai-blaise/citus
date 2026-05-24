@@ -427,6 +427,9 @@ observability-replication-smoke:
 app-image-digest-manifest-smoke:
 	@ci/ai-blaise/app-image-digest-manifest-smoke.sh
 
+release-publishability-check:
+	@bash ci/ai-blaise/release-publishability-check.sh
+
 image-check:
 	@bash ci/ai-blaise/image-check.sh
 

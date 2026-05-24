@@ -39,9 +39,11 @@ of publication. The command-center image handoff is
 `SOURCE_REVISION`, `DIGEST_FILE`, and `PUSH=true`. A production handoff requires
 the release image build/push to write immutable `sha256:` rows from that
 manifest, and the command-center deploy overlay must consume those rows before
-installing a release candidate. Mutable tags or locally loaded images are valid
-only for local smoke runs and must not be cited as release image-pinning
-evidence.
+installing a release candidate. Carry the operator and pool rows through
+`OPERATOR_IMAGE_DIGEST` and `POOL_IMAGE_DIGEST` or their equivalent
+command-center Helm values for production render/install. Mutable tags or
+locally loaded images are valid only for local smoke runs and must not be cited
+as release image-pinning evidence.
 
 Validate the handoff before updating command-center values or Argo overlays:
 
