@@ -562,15 +562,15 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 275 source `FEATURE:` markers and 275
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 156 narrow headings are
+The current feature inventory contains 276 source `FEATURE:` markers and 276
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 157 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
 plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, Reconcilers
 Batch A and Batch B operator plan builders, and sidecar runtime entries, plus
-the backup, CDC, realtime, auth sidecar, and vectorizer runtime entries merged
-in this release train dry-run.
+the backup, CDC, realtime, auth sidecar, vectorizer runtime, and SC7 sidecar HA
+retarget entries merged in this release train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -626,6 +626,14 @@ replication-conflict taxonomy across `M1`, `M11`, `R6`, `C4`, and `C5` under
 installable SQL runtime evidence where those entries are already promoted, but
 distributed DDL execution, queue worker operations, active-active replication,
 operator reconciliation, and live multi-node conflict handling remain alpha.
+
+`SC7` sidecar HA retarget evidence is scoped to shared-library config parsing,
+health-aware deterministic endpoint selection, failure retargeting,
+drain-aware exclusion, fail-closed all-down behavior, and generation-tracked
+reloads under `cargo test -p ai_blaise_citus_sidecar_shared` and
+`cargo run -p ai_blaise_citus_sidecar_shared -- ha-canonical`. Kubernetes
+Service or EndpointSlice retargeting, HPA/PDB/chart rendering, NetworkPolicy
+enforcement, and cross-region failover execution remain alpha.
 
 The vectorizer runtime evidence is scoped to the PostgreSQL-backed sidecar
 worker loop, provider routing, tenant budget checks, queue claiming, usage-log

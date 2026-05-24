@@ -20,6 +20,8 @@ current shared runtime surface.
 Current implemented surface:
 
 - `HealthReport`
+- `RetargetConfig`
+- `EndpointRegistry`
 - `ComponentState`
 - `DrainState`
 - `SidecarRuntimeContracts`
@@ -31,8 +33,18 @@ These primitives are the local foundation for `FEATURE: O4` sidecar health and
 metrics emission.
 `SidecarRuntimeContracts` adds validation contracts for CDC, realtime, auth,
 storage, backup/restore, repack, and analytical mirror sidecars.
+`RetargetConfig` and `EndpointRegistry` add the narrow `FEATURE: SC7` HA
+primitive: fail-closed endpoint config parsing, deterministic health-aware
+endpoint selection, failure-driven retargeting, drain-aware exclusion, and
+generation-tracked config reloads. They do not create Kubernetes objects,
+watch EndpointSlices, or execute cross-region failover; those orchestration
+surfaces remain owned by the operator/chart layer and stay alpha until live
+evidence is recorded.
 
 `cargo run -p ai_blaise_citus_sidecar_shared -- probe-canonical` emits a
 tab-separated canonical probe sequence that covers readiness, Prometheus metrics,
 drain transition, and post-drain readiness rejection. CI checks all targets so
 the binary probe surface cannot drift from the shared runtime library.
+`cargo run -p ai_blaise_citus_sidecar_shared -- ha-canonical` emits a canonical
+retarget sequence covering initial selection, primary failure, drain exclusion,
+and generation-incrementing reload.

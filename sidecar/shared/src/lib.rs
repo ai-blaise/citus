@@ -5,6 +5,7 @@
 // FEATURE: O15
 
 pub mod contracts;
+pub mod ha;
 pub mod log_schema;
 pub mod otel;
 pub mod runtime;
@@ -13,6 +14,10 @@ pub use contracts::{
     AnalyticalMirrorContract, AuthIssuerContract, BackupRestoreContract, CdcSink,
     CdcStreamContract, DeliveryRetryPolicy, RealtimeContract, RepackContract,
     RepackExecutionStrategy, SidecarContractError, SidecarRuntimeContracts, StorageContract,
+};
+pub use ha::{
+    EndpointConfig, EndpointHealth, EndpointRegistry, EndpointReload, EndpointSelection,
+    EndpointStatus, RetargetConfig, RetargetDecision, RetargetError,
 };
 pub use log_schema::{
     canonical_sidecar_log_schemas, LogField, LogFieldKind, LogRecord, LogSchema, LogSchemaError,
