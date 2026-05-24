@@ -1,5 +1,4 @@
 // FEATURE: T5
-// FEATURE: T5
 
 use ai_blaise_citus_sidecar_hlc::HlcTimestamp;
 use ai_blaise_citus_sidecar_shared::{listen_addr_from_env, HttpProbeResponse, SidecarRuntime};
@@ -9,11 +8,15 @@ use ai_blaise_citus_sidecar_txn_status::{
     ParallelCommitMicrobench, ParallelCommitRecord, TxnFinalizeDecision, TxnIntent, TxnStatus,
     TxnStatusRuntime,
 };
+use serde::Deserialize;
+use serde_json::json;
 use std::env;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::process;
 use std::sync::Mutex;
+
+const MAX_HTTP_REQUEST_BYTES: usize = 65_536;
 
 fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
@@ -187,8 +190,11 @@ fn run_txn_status_server(default_addr: &str) {
 }
 
 fn handle_request(request: &[u8], runtime: &Mutex<TxnStatusRuntime>) -> HttpProbeResponse {
+    if request.len() >= MAX_HTTP_REQUEST_BYTES && !request_complete(request) {
+        return error_response(400, "request exceeds maximum HTTP request size");
+    }
     let Ok(text) = std::str::from_utf8(request) else {
-        return HttpProbeResponse::new(400, "application/json", "{\"error\":\"invalid utf-8\"}\n");
+        return error_response(400, "invalid utf-8");
     };
     let (head, body) = match text.split_once("\r\n\r\n") {
         Some((head, body)) => (head, body),
@@ -210,18 +216,10 @@ fn handle_request(request: &[u8], runtime: &Mutex<TxnStatusRuntime>) -> HttpProb
                     Ok(staged) => {
                         HttpProbeResponse::new(201, "application/json", render_record_json(&staged))
                     }
-                    Err(error) => HttpProbeResponse::new(
-                        409,
-                        "application/json",
-                        format!("{{\"error\":\"{error}\"}}\n"),
-                    ),
+                    Err(error) => error_response(409, &error.to_string()),
                 }
             }
-            Err(error) => HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{error}\"}}\n"),
-            ),
+            Err(error) => error_response(400, &error),
         },
         ("POST", "/txn/finalize") => match parse_finalize_body(body) {
             Ok((txn_id, observed_at)) => {
@@ -232,18 +230,22 @@ fn handle_request(request: &[u8], runtime: &Mutex<TxnStatusRuntime>) -> HttpProb
                         "application/json",
                         render_finalize_json(&record, decision),
                     ),
-                    Err(error) => HttpProbeResponse::new(
-                        404,
-                        "application/json",
-                        format!("{{\"error\":\"{error}\"}}\n"),
-                    ),
+                    Err(error) => error_response(404, &error.to_string()),
                 }
             }
-            Err(error) => HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{error}\"}}\n"),
-            ),
+            Err(error) => error_response(400, &error),
+        },
+        ("POST", "/txn/ack") => match parse_ack_body(body) {
+            Ok((txn_id, shard_id, replica_acks)) => {
+                let mut guard = runtime.lock().expect("runtime mutex");
+                match guard.record_replica_ack(&txn_id, shard_id, replica_acks) {
+                    Ok(record) => {
+                        HttpProbeResponse::new(200, "application/json", render_record_json(&record))
+                    }
+                    Err(error) => error_response(404, &error.to_string()),
+                }
+            }
+            Err(error) => error_response(400, &error),
         },
         ("GET", path) if path.starts_with("/txn/") && path.ends_with("/status") => {
             let txn_id = &path["/txn/".len()..path.len() - "/status".len()];
@@ -252,153 +254,113 @@ fn handle_request(request: &[u8], runtime: &Mutex<TxnStatusRuntime>) -> HttpProb
                 Ok(record) => {
                     HttpProbeResponse::new(200, "application/json", render_record_json(record))
                 }
-                Err(error) => HttpProbeResponse::new(
-                    404,
-                    "application/json",
-                    format!("{{\"error\":\"{error}\"}}\n"),
-                ),
+                Err(error) => error_response(404, &error.to_string()),
             }
         }
-        (_, "/txn/staging") | (_, "/txn/finalize") => HttpProbeResponse::new(
+        (_, "/txn/staging") | (_, "/txn/finalize") | (_, "/txn/ack") => HttpProbeResponse::new(
             405,
             "application/json",
             "{\"error\":\"method not allowed\"}\n",
         ),
         _ => {
             let mut probe = SidecarRuntime::ready("txn-status");
-            probe.handle_http_bytes(request).unwrap_or_else(|error| {
-                HttpProbeResponse::new(
-                    400,
-                    "application/json",
-                    format!("{{\"error\":\"{error}\"}}\n"),
-                )
-            })
+            probe
+                .handle_http_bytes(request)
+                .unwrap_or_else(|error| error_response(400, &error.to_string()))
         }
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StagingRequest {
+    txn_id: String,
+    coordinator: String,
+    staging_physical_ms: u64,
+    intents: Vec<IntentRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IntentRequest {
+    shard_id: u64,
+    key_range: String,
+    required_acks: u32,
+    #[serde(default)]
+    replica_acks: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinalizeRequest {
+    txn_id: String,
+    observed_physical_ms: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AckRequest {
+    txn_id: String,
+    shard_id: u64,
+    replica_acks: u32,
+}
+
 fn parse_staging_body(body: &str) -> Result<ParallelCommitRecord, String> {
-    // Minimal hand-rolled JSON parser sufficient for the staging shape:
-    //   {"txn_id":"...","coordinator":"...","staging_physical_ms":N,
-    //    "intents":[{"shard_id":N,"key_range":"...","required_acks":N,"replica_acks":N}]}
-    let txn_id = extract_string_field(body, "txn_id").ok_or("missing txn_id")?;
-    let coordinator = extract_string_field(body, "coordinator").ok_or("missing coordinator")?;
-    let staging_physical_ms = extract_u64_field(body, "staging_physical_ms").unwrap_or(0);
-    let intents_section = extract_array_field(body, "intents").ok_or("missing intents")?;
-    let intents = parse_intent_objects(&intents_section)?;
-    if intents.is_empty() {
-        return Err("intents must not be empty".to_string());
-    }
-    Ok(ParallelCommitRecord {
-        txn_id,
-        coordinator,
+    let request: StagingRequest =
+        serde_json::from_str(body).map_err(|error| format!("invalid staging JSON: {error}"))?;
+    let record = ParallelCommitRecord {
+        txn_id: request.txn_id,
+        coordinator: request.coordinator,
         status: TxnStatus::Staging,
         staging_at: HlcTimestamp {
-            physical_ms: staging_physical_ms,
+            physical_ms: request.staging_physical_ms,
             logical: 0,
         },
-        intents,
-    })
+        intents: request
+            .intents
+            .into_iter()
+            .map(|intent| TxnIntent {
+                shard_id: intent.shard_id,
+                key_range: intent.key_range,
+                replica_ack_count: intent.replica_acks,
+                required_acks: intent.required_acks,
+            })
+            .collect(),
+    };
+    record.validate().map_err(|error| error.to_string())?;
+    Ok(record)
 }
 
 fn parse_finalize_body(body: &str) -> Result<(String, HlcTimestamp), String> {
-    let txn_id = extract_string_field(body, "txn_id").ok_or("missing txn_id")?;
-    let observed_physical_ms = extract_u64_field(body, "observed_physical_ms").unwrap_or(0);
+    let request: FinalizeRequest =
+        serde_json::from_str(body).map_err(|error| format!("invalid finalize JSON: {error}"))?;
     Ok((
-        txn_id,
+        request.txn_id,
         HlcTimestamp {
-            physical_ms: observed_physical_ms,
+            physical_ms: request.observed_physical_ms,
             logical: 0,
         },
     ))
 }
 
-fn parse_intent_objects(section: &str) -> Result<Vec<TxnIntent>, String> {
-    let mut intents = Vec::new();
-    let mut depth = 0;
-    let mut start = None;
-    for (index, ch) in section.char_indices() {
-        match ch {
-            '{' => {
-                if depth == 0 {
-                    start = Some(index);
-                }
-                depth += 1;
-            }
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    let from = start.take().ok_or("malformed intents")?;
-                    let slice = &section[from..=index];
-                    intents.push(parse_intent_object(slice)?);
-                }
-            }
-            _ => {}
-        }
+fn parse_ack_body(body: &str) -> Result<(String, u64, u32), String> {
+    let request: AckRequest =
+        serde_json::from_str(body).map_err(|error| format!("invalid ack JSON: {error}"))?;
+    if request.txn_id.trim().is_empty() {
+        return Err("txn_id must not be empty".to_string());
     }
-    Ok(intents)
-}
-
-fn parse_intent_object(slice: &str) -> Result<TxnIntent, String> {
-    let shard_id = extract_u64_field(slice, "shard_id").ok_or("missing shard_id")?;
-    let key_range = extract_string_field(slice, "key_range").ok_or("missing key_range")?;
-    let required_acks =
-        extract_u64_field(slice, "required_acks").ok_or("missing required_acks")? as u32;
-    let replica_acks = extract_u64_field(slice, "replica_acks").unwrap_or(0) as u32;
-    Ok(TxnIntent {
-        shard_id,
-        key_range,
-        replica_ack_count: replica_acks,
-        required_acks,
-    })
-}
-
-fn extract_string_field(input: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\"");
-    let start = input.find(&needle)?;
-    let after = &input[start + needle.len()..];
-    let after = after.trim_start();
-    let after = after.strip_prefix(':')?.trim_start();
-    let after = after.strip_prefix('"')?;
-    let end = after.find('"')?;
-    Some(after[..end].to_string())
-}
-
-fn extract_u64_field(input: &str, key: &str) -> Option<u64> {
-    let needle = format!("\"{key}\"");
-    let start = input.find(&needle)?;
-    let after = &input[start + needle.len()..];
-    let after = after.trim_start();
-    let after = after.strip_prefix(':')?.trim_start();
-    let end = after
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(after.len());
-    after[..end].parse::<u64>().ok()
-}
-
-fn extract_array_field(input: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\"");
-    let start = input.find(&needle)?;
-    let after = &input[start + needle.len()..];
-    let after = after.trim_start();
-    let after = after.strip_prefix(':')?.trim_start();
-    let after = after.strip_prefix('[')?;
-    let mut depth = 1;
-    let mut end = None;
-    for (index, ch) in after.char_indices() {
-        match ch {
-            '[' => depth += 1,
-            ']' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = Some(index);
-                    break;
-                }
-            }
-            _ => {}
-        }
+    if request.shard_id == 0 {
+        return Err("shard_id must be greater than zero".to_string());
     }
-    Some(after[..end?].to_string())
+    Ok((request.txn_id, request.shard_id, request.replica_acks))
+}
+
+fn error_response(status_code: u16, message: &str) -> HttpProbeResponse {
+    HttpProbeResponse::new(
+        status_code,
+        "application/json",
+        format!("{}\n", json!({ "error": message })),
+    )
 }
 
 fn read_http_request(stream: &mut std::net::TcpStream) -> Result<Vec<u8>, std::io::Error> {
@@ -412,7 +374,7 @@ fn read_http_request(stream: &mut std::net::TcpStream) -> Result<Vec<u8>, std::i
             break;
         }
         request.extend_from_slice(&chunk[..read_len]);
-        if request_complete(&request) || request.len() >= 65_536 {
+        if request_complete(&request) || request.len() >= MAX_HTTP_REQUEST_BYTES {
             break;
         }
     }
@@ -463,5 +425,77 @@ fn decision_name(decision: &TxnFinalizeDecision) -> &'static str {
         TxnFinalizeDecision::FallbackToTwoPhaseCommit => "fallback_to_two_phase_commit",
         TxnFinalizeDecision::AlreadyCommitted => "already_committed",
         TxnFinalizeDecision::AlreadyAborted => "already_aborted",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn runtime() -> Mutex<TxnStatusRuntime> {
+        Mutex::new(
+            TxnStatusRuntime::new(
+                "txn-status-orders",
+                vec![
+                    "worker-a".to_string(),
+                    "worker-b".to_string(),
+                    "worker-c".to_string(),
+                ],
+                5_000,
+            )
+            .expect("runtime"),
+        )
+    }
+
+    fn request(method: &str, path: &str, body: &str) -> Vec<u8> {
+        format!(
+            "{method} {path} HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn http_lifecycle_waits_then_commits_after_ack() {
+        let runtime = runtime();
+        let stage_body = r#"{"txn_id":"txn-http-1","coordinator":"worker-a","staging_physical_ms":1700000000,"intents":[{"shard_id":10,"key_range":"[a,m)","required_acks":2,"replica_acks":0}]}"#;
+        let staged = handle_request(&request("POST", "/txn/staging", stage_body), &runtime);
+        assert_eq!(staged.status_code, 201);
+        assert!(staged.body.contains("\"status\":\"staging\""));
+
+        let finalize_body = r#"{"txn_id":"txn-http-1","observed_physical_ms":1700000010}"#;
+        let waiting = handle_request(&request("POST", "/txn/finalize", finalize_body), &runtime);
+        assert_eq!(waiting.status_code, 200);
+        assert!(waiting
+            .body
+            .contains("\"decision\":\"wait_for_replication_evidence\""));
+
+        let ack_body = r#"{"txn_id":"txn-http-1","shard_id":10,"replica_acks":2}"#;
+        let acked = handle_request(&request("POST", "/txn/ack", ack_body), &runtime);
+        assert_eq!(acked.status_code, 200);
+        assert!(acked.body.contains("\"replica_acks\":2"));
+
+        let committed = handle_request(&request("POST", "/txn/finalize", finalize_body), &runtime);
+        assert_eq!(committed.status_code, 200);
+        assert!(committed.body.contains("\"decision\":\"commit\""));
+        assert!(committed.body.contains("\"status\":\"committed\""));
+    }
+
+    #[test]
+    fn malformed_json_and_unknown_fields_fail_closed() {
+        let runtime = runtime();
+        let bad_json = handle_request(&request("POST", "/txn/staging", "{"), &runtime);
+        assert_eq!(bad_json.status_code, 400);
+
+        let extra_field = r#"{"txn_id":"txn-http-1","coordinator":"worker-a","staging_physical_ms":1700000000,"unexpected":true,"intents":[]}"#;
+        let rejected = handle_request(&request("POST", "/txn/staging", extra_field), &runtime);
+        assert_eq!(rejected.status_code, 400);
+    }
+
+    #[test]
+    fn invalid_utf8_is_rejected() {
+        let runtime = runtime();
+        let response = handle_request(&[0xff, 0xfe, 0xfd], &runtime);
+        assert_eq!(response.status_code, 400);
     }
 }

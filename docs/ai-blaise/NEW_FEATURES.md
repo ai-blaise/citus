@@ -159,10 +159,11 @@ per-shard targets for `FEATURE: R7`.
 `sidecar/repack/src/main.rs` emits the canonical online repack command runner
 for `FEATURE: R7`.
 `sidecar/schema_job/src/lib.rs` validates online-DDL worker leases, backfill,
-safety, and gh-ost shadow-table contracts for `FEATURE: C10` and
+safety, gh-ost shadow-table contracts, and fail-closed manifest/apply SQL
+boundaries for `FEATURE: C10` and `FEATURE: M2`.
+`sidecar/schema_job/src/main.rs` emits canonical online-DDL worker,
+controller-tick, and manifest-validation runners for `FEATURE: C10` and
 `FEATURE: M2`.
-`sidecar/schema_job/src/main.rs` emits the canonical online-DDL worker runner
-for `FEATURE: C10` and `FEATURE: M2`.
 `sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
 ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
 `FEATURE: Sto4`, and `FEATURE: Sto5`.
@@ -174,7 +175,8 @@ intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
 `sidecar/txn_status/src/runtime.rs` runs the Raft-backed staging/finalize state
 machine and parallel-commit microbenchmark for `FEATURE: T5`.
 `sidecar/txn_status/src/main.rs` emits the canonical parallel-commit status,
-runtime, and microbenchmark runners for `FEATURE: T5`.
+runtime, microbenchmark, and loopback HTTP stage/finalize/ack runners for
+`FEATURE: T5`.
 `companion/src/txn_coord.rs` renders the companion SQL/UDF coordination plan
 for `FEATURE: T5`.
 The tool overlays expose deterministic canonical runners for their library
@@ -370,11 +372,14 @@ parallel-commit transaction-status sidecar.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-runtime-canonical`
 - CI: `ci/ai-blaise/parallel-commits-smoke.sh`
+- CI: `ci/ai-blaise/schema-txn-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - Current boundary: the sidecar has deterministic Raft-backed staging/finalize
-  runtime evidence, the microbenchmark proves the modeled fast-path step count,
-  and the SQL extension installs `companion.txn_stage`/`companion.txn_finalize`
-  against real PostgreSQL. Integration with the Citus distributed executor,
+  runtime evidence, a loopback HTTP runtime smoke that drives stage -> wait ->
+  ack -> commit with serde-validated JSON and malformed-input rejection, the
+  microbenchmark proves the modeled fast-path step count, and the SQL extension
+  installs `companion.txn_stage`/`companion.txn_finalize` against real
+  PostgreSQL. Integration with the Citus distributed executor,
   real multi-process networked Raft transport, PostgreSQL-core commit timestamp
   patches, and Kubernetes operator wiring remain alpha.
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
@@ -2170,7 +2175,10 @@ Production evidence: Local, VM, and GitHub Actions proof run
 real PostgreSQL server and verifies `companion_internal.schema_job_start(...)`
 records `companion_schema_jobs`, `companion_internal.schema_job_advance(...)`
 enforces valid forward transitions, and verifies invalid state transitions and
-zero leases fail closed. Actual DDL execution workers, dual-write triggers,
+zero leases fail closed. `ci/ai-blaise/schema-txn-runtime-smoke.sh` also runs
+the real schema-job binary through canonical worker output, controller advance
+/ wait / rollback output, manifest validation, unsafe SQL rejection, malformed
+JSON rejection, and loopback probe behavior. Actual DDL execution workers, dual-write triggers,
 backfill scheduling, lock orchestration, rollback, and operator reconciliation
 remain alpha.
 
@@ -2188,6 +2196,9 @@ state machine.
 - SQL runtime: `FEATURE: C10` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-controller-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- validate-manifest <path>`
+- CI: `ci/ai-blaise/schema-txn-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### C1: CDC Sidecar
@@ -2365,7 +2376,6 @@ ship a pgroll-style expand/contract migration layer.
 - SQL runtime: `FEATURE: M1` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (walks Migration through DELETE_ONLY/WRITE_ONLY/BACKFILL/PUBLIC with checkpointed phase log)
@@ -2387,9 +2397,11 @@ real PostgreSQL server and verifies
 `companion_internal.schema_job_add_operation(...)` records
 `companion_schema_job_operations`, renders add-column and backfill SQL, and
 `companion_internal.schema_job_render_plan(...)` returns the ordered operation
-plan. Actual online DDL execution, trigger dual-writes, backfill workers,
-cutover validation, rollback, and distributed-table orchestration remain
-alpha.
+plan. `ci/ai-blaise/schema-txn-runtime-smoke.sh` also verifies the real
+schema-job manifest validator accepts bounded backfill manifests and rejects
+unsafe SQL fragments before any apply boundary. Actual online DDL execution,
+trigger dual-writes, backfill workers, cutover validation, rollback, and
+distributed-table orchestration remain alpha.
 
 **Motivation**: Online DDL needs explicit state transitions and lease
 validation before a sidecar or companion UDF can execute it.
@@ -2405,6 +2417,9 @@ gh-ost-style online DDL state machinery.
 - SQL runtime: `FEATURE: M2` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- validate-manifest <path>`
+- CI: `ci/ai-blaise/schema-txn-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 
 ### M3: Migration CRD
@@ -2595,7 +2610,6 @@ ship an online column-type migration contract.
 - SQL runtime: `FEATURE: M11` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (simulates mid-BACKFILL worker failure, verifies rollback restores DELETE_ONLY semantics, cleans partial backfill rows)
@@ -2625,10 +2639,12 @@ into a real PostgreSQL server and walks a Migration through all four
 phases, recording one phase-log row per transition, validating worker
 lease acknowledgements, simulating a worker failure mid-BACKFILL,
 triggering rollback and partial-backfill cleanup, and verifying every
-forward-progress phase honors the two-version invariant. Distributed
-backfill workers, kube-rs MigrationReconciler client, dual-write triggers,
-and live planner-hook enforcement of the WRITE_ONLY/DELETE_ONLY
-read/write invariants remain alpha.
+forward-progress phase honors the two-version invariant.
+`ci/ai-blaise/schema-txn-runtime-smoke.sh` also verifies the real schema-job
+binary emits deterministic controller advance, wait, and rollback decisions
+with 2VI SQL evidence. Distributed backfill workers, kube-rs
+MigrationReconciler client, dual-write triggers, and live planner-hook
+enforcement of the WRITE_ONLY/DELETE_ONLY read/write invariants remain alpha.
 
 **Motivation**: Citus distributes DDL but does not guarantee a bounded
 number of in-flight schema versions or coordinate phase transitions
@@ -2653,6 +2669,8 @@ phase log, worker lease, or rollback planner.
 - SQL runtime: `FEATURE: M14` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-controller-canonical`
+- CI: `ci/ai-blaise/schema-txn-runtime-smoke.sh`
 - CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh`
 
 ### M15: Continuous Two-Version Invariant Verifier

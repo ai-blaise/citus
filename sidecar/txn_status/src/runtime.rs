@@ -1,13 +1,14 @@
-//! Parallel-commit transaction-status runtime backed by an in-process Raft
-//! state machine.
+//! Parallel-commit transaction-status runtime backed by a deterministic
+//! in-process Raft state-machine boundary.
 //!
-//! This is the production runtime for `FEATURE: T5`. It records transaction
-//! staging records, intent replication evidence, and final commit/abort
-//! decisions through the shared Raft log so every voter agrees on the txn
-//! record before the coordinator acknowledges the commit. When the runtime is
-//! unreachable, callers must fall back to standard distributed 2PC; the
-//! contract surface in `lib.rs` carries the deterministic boundary used by
-//! the companion fallback path.
+//! This is the executable runtime evidence for the narrow `FEATURE: T5`
+//! sidecar contract. It records transaction staging records, intent
+//! replication evidence, and final commit/abort decisions through the local
+//! Raft round-trip model before acknowledging a modeled commit. It is not the
+//! networked multi-process Raft transport or Citus executor integration; when
+//! the sidecar path is unavailable, callers must fall back to standard
+//! distributed 2PC. The contract surface in `lib.rs` carries the deterministic
+//! boundary used by the companion fallback path.
 
 // FEATURE: T5
 
@@ -16,6 +17,7 @@ use ai_blaise_citus_sidecar_hlc::HlcTimestamp;
 use ai_blaise_citus_sidecar_raft::{
     run_raft_round_trip, NodeId, RaftRoundTripReport, RaftRuntimeError,
 };
+use serde_json::json;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -319,22 +321,26 @@ pub fn render_record_json(record: &TxnRuntimeRecord) -> String {
         .intents
         .iter()
         .map(|intent| {
-            format!(
-                "{{\"shard_id\":{},\"replica_acks\":{},\"required_acks\":{}}}",
-                intent.shard_id, intent.replica_acks, intent.required_acks
-            )
+            json!({
+                "shard_id": intent.shard_id,
+                "replica_acks": intent.replica_acks,
+                "required_acks": intent.required_acks,
+            })
         })
-        .collect::<Vec<_>>()
-        .join(",");
+        .collect::<Vec<_>>();
     format!(
-        "{{\"txn_id\":\"{}\",\"coordinator\":\"{}\",\"status\":\"{}\",\"staging_at\":{{\"physical_ms\":{},\"logical\":{}}},\"raft_index\":{},\"intents\":[{}]}}\n",
-        record.txn_id,
-        record.coordinator,
-        txn_status_name(record.status),
-        record.staging_at.physical_ms,
-        record.staging_at.logical,
-        record.raft_index,
-        intents,
+        "{}\n",
+        json!({
+            "txn_id": record.txn_id,
+            "coordinator": record.coordinator,
+            "status": txn_status_name(record.status),
+            "staging_at": {
+                "physical_ms": record.staging_at.physical_ms,
+                "logical": record.staging_at.logical,
+            },
+            "raft_index": record.raft_index,
+            "intents": intents,
+        })
     )
 }
 
@@ -343,20 +349,22 @@ pub fn render_finalize_json(record: &TxnRuntimeRecord, decision: TxnFinalizeDeci
         .intents
         .iter()
         .map(|intent| {
-            format!(
-                "{{\"shard_id\":{},\"replica_acks\":{},\"required_acks\":{}}}",
-                intent.shard_id, intent.replica_acks, intent.required_acks
-            )
+            json!({
+                "shard_id": intent.shard_id,
+                "replica_acks": intent.replica_acks,
+                "required_acks": intent.required_acks,
+            })
         })
-        .collect::<Vec<_>>()
-        .join(",");
+        .collect::<Vec<_>>();
     format!(
-        "{{\"txn_id\":\"{}\",\"decision\":\"{}\",\"status\":\"{}\",\"raft_index\":{},\"intents\":[{}]}}\n",
-        record.txn_id,
-        finalize_decision_name(decision),
-        txn_status_name(record.status),
-        record.raft_index,
-        intents,
+        "{}\n",
+        json!({
+            "txn_id": record.txn_id,
+            "decision": finalize_decision_name(decision),
+            "status": txn_status_name(record.status),
+            "raft_index": record.raft_index,
+            "intents": intents,
+        })
     )
 }
 
