@@ -206,6 +206,10 @@ try:
     if status != 202 or '"operation":"delete_old"' not in data:
         fail("/backups/delete-old did not prune retention", status, data)
 
+    status, data = request("GET", "/backups/status")
+    if status != 200 or '"retention_deletions":1' not in data:
+        fail("/backups/status missing retention deletion accounting", status, data)
+
     status, data = request("GET", "/backups")
     if status != 200 or "base_000000010000000000000001" not in data:
         fail("/backups did not list stub output", status, data)
@@ -244,6 +248,24 @@ try:
     status, data = request("GET", f"/pitr/status/{urllib.parse.quote(job_id)}")
     if status != 200 or '"status":"succeeded"' not in data:
         fail("/pitr/status did not return succeeded job", status, data)
+
+    bad_port = json.dumps(
+        {
+            "branch_name": "prod-bad-port",
+            "source_archive_uri": "s3://backups/prod",
+            "target_time": "2026-05-19T12:00:00Z",
+            "port": 80,
+        },
+        separators=(",", ":"),
+    )
+    status, data = request("POST", "/branches/queryable", bad_port)
+    if status != 400 or "port must be between" not in data:
+        fail("/branches/queryable should reject privileged port", status, data)
+
+    malformed_port = '{"branch_name":"prod-malformed-port","source_archive_uri":"s3://backups/prod","target_time":"2026-05-19T12:00:00Z","port":6543junk}'
+    status, data = request("POST", "/branches/queryable", malformed_port)
+    if status != 400 or "malformed backup sidecar HTTP request" not in data:
+        fail("/branches/queryable should reject numeric port with junk suffix", status, data)
 
     queryable = json.dumps(
         {

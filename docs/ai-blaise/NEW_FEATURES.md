@@ -2866,20 +2866,24 @@ health/readiness, and Prometheus metrics.
 
 Production evidence: `ci/ai-blaise/sidecar-backup-smoke.sh` builds the real
 `ai_blaise_citus_sidecar_backup` binary on the VM/CI runner, starts `serve`
-with deterministic local `wal-g`, `pg_ctl`, and `psql` fakes, then exercises
-`/readyz`, `/metrics`, `/backups/run`, `/backups/status`, `/backups`,
-`/backups/delete-old`, `/wal/status`, `/pitr/restore`, `/pitr/status/<job>`,
-and `/branches/queryable`. Unit tests cover the WAL-G command builder,
-non-zero exit propagation, retention validation, schedule calculation, HTTP
+on a fresh ephemeral loopback port with deterministic local `wal-g`, `pg_ctl`,
+and `psql` fakes, then exercises `/readyz`, `/metrics`, `/backups/run`,
+`/backups/status`, `/backups`, `/backups/delete-old`, `/wal/status`,
+`/pitr/restore`, `/pitr/status/<job>`, and `/branches/queryable`. Unit tests
+cover the WAL-G command builder, provider-specific WAL-G prefix environment,
+non-zero exit propagation, strict object-store URI and UTC target-time
+validation, retention and WAL-G failure accounting, schedule calculation, HTTP
 body parsing, scheduler due-run behavior, and branch read-only config
-materialization. This proves the sidecar runtime and process-orchestration
-contract without requiring a live cloud bucket.
+materialization. This proves the local sidecar runtime and
+process-orchestration contract without requiring or claiming a live cloud
+bucket.
 
 **Current boundary**: This production-ready claim is intentionally narrow: it
-covers the sidecar process, command orchestration, HTTP API, scheduler,
-retention, and metrics paths. It does not prove a cloud object-store account,
-external secret wiring, Backup CR reconciliation, or a full Kubernetes restore
-against a real WAL-G archive.
+covers the sidecar process, command materialization/execution against local
+fakes, HTTP API, scheduler, retention accounting, failure metrics, and status
+paths. It does not prove a cloud object-store account, external secret wiring,
+Backup CR reconciliation, successful WAL-G publish/fetch against remote
+storage, or a full Kubernetes restore against a real WAL-G archive.
 
 **Motivation**: Backup execution needs a sidecar runtime that matches the
 operator CRD and fails through auditable command/status surfaces.
@@ -2942,17 +2946,19 @@ records restore jobs, and exposes restore status through the backup sidecar
 HTTP runtime.
 
 Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` covers
-PITR plan validation, wrong-archive rejection before WAL-G invocation,
-out-of-window target rejection, success/failure job recording, and HTTP
+PITR plan validation, calendar-valid canonical UTC target timestamps,
+wrong-archive rejection before WAL-G invocation, out-of-window target
+rejection, WAL-G failure accounting, success/failure job recording, and HTTP
 `/pitr/restore` plus `/pitr/status/<job>` behavior. The backup smoke then
 starts the real binary and proves both an out-of-window restore failure and an
 in-window restore success through the sidecar HTTP API using a deterministic
 safe WAL-G fake.
 
 **Current boundary**: The production-ready claim covers sidecar PITR
-orchestration and status reporting. It does not claim that a real production
-archive, cloud credential, in-place restore, or operator-driven target-cluster
-rollout has been live-exercised.
+orchestration, validation, local WAL-G command execution, accounting, and
+status reporting. It does not claim that a real production archive, cloud
+credential, in-place restore, or operator-driven target-cluster rollout has
+been live-exercised.
 
 **Motivation**: PITR restore needs explicit target validation before sidecar
 code executes recovery.
@@ -2985,15 +2991,16 @@ PostgreSQL recovery configuration, starts the branch with `pg_ctl`, probes
 
 Production evidence: unit tests cover recovery file generation,
 `postgresql.auto.conf` read-only settings, `pg_ctl` command construction,
-`psql` read-only probe construction, duplicate branch rejection, and HTTP
-create/list behavior. The backup smoke exercises the real binary end to end
-with local `wal-g`, `pg_ctl`, and `psql` fakes and verifies that a branch is
-created, listed, and rejected on duplicate creation.
+`psql` read-only probe construction, strict branch-name and port validation,
+duplicate branch rejection, and HTTP create/list behavior. The backup smoke
+exercises the real binary end to end with local `wal-g`, `pg_ctl`, and `psql`
+fakes and verifies that invalid branch ports fail closed, a branch is created,
+listed, and rejected on duplicate creation.
 
 **Current boundary**: The production-ready claim covers the sidecar branch
-mount boundary and read-only enforcement probe. It does not prove long-running
-query load, operator lifecycle management, or a restore from a real remote
-archive.
+mount boundary, local restore command orchestration, and read-only enforcement
+probe. It does not prove long-running query load, operator lifecycle
+management, or a restore from a real remote archive.
 
 **Motivation**: Time-travel and investigation workflows need backup archives
 to become explicit read-only data sources.
@@ -3045,8 +3052,9 @@ Production evidence: `cargo test -p ai_blaise_citus_sidecar_backup` verifies
 that encrypted plans render `WALG_GPG_KEY_ID`, reject missing encryption
 environment, and keep encrypted-artifact accounting in the runtime report. The
 backup smoke runs the real binary with the canonical encrypted plan and proves
-base backup execution, status, PITR, retention, and queryable branch paths
-preserve the encrypted runtime state. VM proof for Reconcilers Batch A runs
+base backup command execution against local fakes, status, PITR, retention,
+and queryable branch paths preserve the encrypted runtime state. VM proof for
+Reconcilers Batch A runs
 `cargo test -p ai_blaise_citus_operator` and
 `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`; the backup reconciler
 validates non-empty KMS references and emits a distinct `KmsBinding` apply step
@@ -3055,8 +3063,9 @@ deterministically.
 
 **Current boundary**: The production-ready claim covers operator-side KMS
 binding validation, sidecar environment validation, and encrypted backup
-orchestration. It does not prove hardware KMS, External Secrets, cloud IAM, key
-rotation, or encrypted object-store archives with real WAL-G credentials.
+orchestration against the local WAL-G command boundary. It does not prove
+hardware KMS, External Secrets, cloud IAM, key rotation, or encrypted
+object-store archives with real WAL-G credentials.
 
 **Motivation**: Backup encryption must be configured with the schedule, not
 attached later by an external script.
