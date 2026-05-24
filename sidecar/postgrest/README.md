@@ -18,6 +18,7 @@ Current implemented surface:
 - `OpenApiPlan`
 - `canonical_postgrest_execution_plan()`
 - `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
+- `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 These contracts cover `FEATURE: API1`, `FEATURE: API2`, `FEATURE: API5`, and
 `FEATURE: API6`.

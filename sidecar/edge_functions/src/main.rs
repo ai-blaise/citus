@@ -5,7 +5,8 @@
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
 use ai_blaise_citus_sidecar_edge_functions::{
-    canonical_edge_function_report, canonical_edge_function_runtime_report, EdgeFunctionRuntime,
+    canonical_bun_edge_function_runtime_report, canonical_edge_function_report,
+    canonical_edge_function_runtime_report, EdgeFunctionRuntime, EdgeFunctionRuntimeReport,
     FunctionTrigger, InvocationStatus,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
@@ -26,6 +27,11 @@ fn main() {
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["run-bun-runtime-canonical"] {
+        run_bun_runtime_canonical();
         return;
     }
 
@@ -66,7 +72,18 @@ fn run_runtime_canonical() {
         eprintln!("edge-functions: canonical runtime report failed: {error}");
         process::exit(1);
     });
+    print_runtime_report(&report);
+}
 
+fn run_bun_runtime_canonical() {
+    let report = canonical_bun_edge_function_runtime_report().unwrap_or_else(|error| {
+        eprintln!("edge-functions: canonical Bun runtime report failed: {error}");
+        process::exit(1);
+    });
+    print_runtime_report(&report);
+}
+
+fn print_runtime_report(report: &EdgeFunctionRuntimeReport) {
     println!(
         "function\truntime\tcommand\ttrigger\ttenant_id\tpayload_bytes\tresponse_bytes\tdb_callback_used\tlaunched_functions\tinvocations\tdb_callbacks\tstatus"
     );
@@ -88,7 +105,7 @@ fn run_runtime_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: edge-functions [serve|run-canonical|run-runtime-canonical]");
+    println!("usage: edge-functions [serve|run-canonical|run-runtime-canonical|run-bun-runtime-canonical]");
     println!("runs deterministic canonical edge-function launch/runtime reports and emits TSV");
 }
 

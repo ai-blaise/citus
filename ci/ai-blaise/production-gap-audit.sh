@@ -28,6 +28,9 @@ ARCHITECTURE_DOC = ROOT / "docs/ai-blaise/ARCHITECTURE.md"
 BUNDLED_EXTENSIONS_DOC = ROOT / "docs/ai-blaise/BUNDLED_EXTENSIONS.md"
 IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
+SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -168,6 +171,9 @@ for path in (
     BUNDLED_EXTENSIONS_DOC,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
+    MAKEFILE,
+    SIDECAR_WORKFLOW,
+    SIDECAR_API_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -179,6 +185,34 @@ for path in (
     ):
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+sidecar_smoke = read(SIDECAR_API_SMOKE)
+for required in (
+    "run-bun-runtime-canonical",
+    "POST",
+    "/drain",
+    "invalid listen address",
+    "definitely-not-a-command",
+    "ai_blaise_sidecar_accepting_new_work",
+):
+    if required not in sidecar_smoke:
+        fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+makefile = read(MAKEFILE)
+if "sidecar-api-runtime-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")
+if (
+    "gate-close:" not in makefile
+    or "sidecar-api-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run sidecar-api-runtime-smoke")
+
+sidecar_workflow = read(SIDECAR_WORKFLOW)
+if (
+    "api-runtime-smoke:" not in sidecar_workflow
+    or "sidecar-api-runtime-smoke.sh" not in sidecar_workflow
+):
+    fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:

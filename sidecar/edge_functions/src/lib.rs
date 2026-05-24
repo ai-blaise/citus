@@ -471,6 +471,22 @@ pub fn canonical_edge_function_plan() -> EdgeFunctionPlan {
     }
 }
 
+pub fn canonical_bun_edge_function_plan() -> EdgeFunctionPlan {
+    EdgeFunctionPlan {
+        name: "invoice_sync".to_string(),
+        runtime: EdgeFunctionRuntime::Bun,
+        source: FunctionSource::BundleUri {
+            uri: "s3://functions/invoice-sync.tgz".to_string(),
+            entrypoint: "index.ts".to_string(),
+        },
+        triggers: vec![FunctionTrigger::Scheduled {
+            schedule: "*/5 * * * *".to_string(),
+        }],
+        env_secret_refs: Vec::new(),
+        db_callback: None,
+    }
+}
+
 pub fn canonical_invocation_request() -> InvocationRequest {
     InvocationRequest {
         function_name: "order_created".to_string(),
@@ -481,6 +497,18 @@ pub fn canonical_invocation_request() -> InvocationRequest {
         },
         payload_bytes: 512,
         timeout_ms: 1_000,
+    }
+}
+
+pub fn canonical_bun_invocation_request() -> InvocationRequest {
+    InvocationRequest {
+        function_name: "invoice_sync".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        trigger: FunctionTrigger::Scheduled {
+            schedule: "*/5 * * * *".to_string(),
+        },
+        payload_bytes: 256,
+        timeout_ms: 500,
     }
 }
 
@@ -501,6 +529,18 @@ pub fn canonical_edge_function_runtime_report(
 ) -> Result<EdgeFunctionRuntimeReport, EdgeFunctionError> {
     let mut runtime = EdgeFunctionRuntimeHost::new(canonical_edge_function_plan())?;
     let execution = runtime.invoke(&canonical_invocation_request())?;
+
+    Ok(EdgeFunctionRuntimeReport {
+        launch: runtime.launch().clone(),
+        execution,
+        state: runtime.state().clone(),
+    })
+}
+
+pub fn canonical_bun_edge_function_runtime_report(
+) -> Result<EdgeFunctionRuntimeReport, EdgeFunctionError> {
+    let mut runtime = EdgeFunctionRuntimeHost::new(canonical_bun_edge_function_plan())?;
+    let execution = runtime.invoke(&canonical_bun_invocation_request())?;
 
     Ok(EdgeFunctionRuntimeReport {
         launch: runtime.launch().clone(),
@@ -593,24 +633,35 @@ mod tests {
 
     #[test]
     fn bun_bundle_renders_bun_launch_plan() {
-        let plan = EdgeFunctionPlan {
-            name: "invoice_sync".to_string(),
-            runtime: EdgeFunctionRuntime::Bun,
-            source: FunctionSource::BundleUri {
-                uri: "s3://functions/invoice-sync.tgz".to_string(),
-                entrypoint: "index.ts".to_string(),
-            },
-            triggers: vec![FunctionTrigger::Scheduled {
-                schedule: "*/5 * * * *".to_string(),
-            }],
-            env_secret_refs: Vec::new(),
-            db_callback: None,
-        };
+        let plan = canonical_bun_edge_function_plan();
 
         let launch = plan.launch_plan().expect("launch plan");
 
         assert_eq!(launch.executable, "bun");
         assert_eq!(launch.args, vec!["run".to_string(), "index.ts".to_string()]);
+    }
+
+    #[test]
+    fn bun_runtime_invokes_scheduled_trigger_without_db_callback() {
+        let report = canonical_bun_edge_function_runtime_report().expect("runtime report");
+
+        assert_eq!(report.execution.function_name, "invoice_sync");
+        assert_eq!(report.execution.runtime, EdgeFunctionRuntime::Bun);
+        assert_eq!(
+            report.execution.command,
+            vec!["bun".to_string(), "run".to_string(), "index.ts".to_string()]
+        );
+        assert_eq!(
+            report.execution.trigger,
+            FunctionTrigger::Scheduled {
+                schedule: "*/5 * * * *".to_string()
+            }
+        );
+        assert_eq!(report.execution.response_bytes, 192);
+        assert!(!report.execution.db_callback_used);
+        assert_eq!(report.state.launched_functions, 1);
+        assert_eq!(report.state.invocations, 1);
+        assert_eq!(report.state.db_callbacks, 0);
     }
 
     #[test]

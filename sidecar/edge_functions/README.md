@@ -25,10 +25,14 @@ Current implemented surface:
 - `canonical_edge_function_runtime_report()`
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
+- `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 These contracts cover `FEATURE: EF1`, `FEATURE: EF2`, `FEATURE: EF4`, and
 `FEATURE: EF5`.
 
 The runtime surface deterministically validates launch command construction,
 configured trigger authorization, DB callback timeout bounds, invocation
-accounting, and response sizing for canonical tests.
+accounting, and response sizing for canonical tests. The API runtime smoke
+launches the real sidecar binary, verifies loopback probe/drain behavior, and
+runs both Deno and Bun runtime reports through process-backed commands.

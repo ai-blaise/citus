@@ -395,6 +395,15 @@ more production-ready than the artifacts justified.
   evidence for JSON-RPC language-server protocol integration, editor
   transport, workspace indexing, automatic file rewrites, or full PostgreSQL
   grammar coverage.
+- The auto-API and edge-functions sidecars now have a bounded
+  process/socket runtime smoke for the canonical API contracts. The smoke
+  builds the real PostgREST, GraphQL, and edge-functions binaries, runs their
+  canonical TSV commands directly, starts each `serve` process on loopback,
+  verifies health/readiness/metrics/drain behavior persists across HTTP
+  requests, and verifies unknown commands plus empty listen addresses fail
+  closed. This is not evidence for table-backed PostgREST request serving,
+  `pg_graphql` query execution, external Deno/Bun user-code execution, or
+  Kubernetes deployment.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a
@@ -524,10 +533,8 @@ the chart now proves real Rust app images, real pods, sidecar probes, and live
 SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
-The current feature inventory contains 245 source `FEATURE:` markers and 245
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 99 narrow headings
-The current feature inventory contains 269 source `FEATURE:` markers and 269
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 123 narrow headings
+The current feature inventory contains 273 source `FEATURE:` markers and 273
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 125 narrow headings
 are `Status: production-ready` because they have live VM/GitHub evidence: `D7`
 for the production-safe default Helm install, `D8` for the production-safe
 deploy wrapper, `D13` for the production runtime image matrix, `O4` for the
@@ -589,7 +596,7 @@ execution for `tools/citus-mcp`. Authentication, mutating database execution,
 Kubernetes tool execution, and production sidecar enablement remain alpha, and
 production values keep the MCP sidecar disabled until those contracts are
 implemented and live-gated. The
-other 146
+other 148
 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
 former V2 addendum rows were promoted to alpha feature headings with
