@@ -19,6 +19,10 @@ PGDG-missing extensions.
 
 - `extension-manifest.tsv` is the source of truth for required, optional, and
   hard-blocked extensions from the V2 plan.
+- `extensions/ai_blaise_citus-upgrade-manifest.tsv` is the bounded
+  upgrade/rollback contract for the local companion SQL extension. CI fails
+  closed when a new install or transition SQL file appears without an explicit
+  rollback and version-skew statement.
 - `shared-preload-libraries.conf` records the load-order-sensitive preload
   contract.
 - `initdb.d/00-ai-blaise-extensions.sql` creates the required extension set in a

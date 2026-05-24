@@ -237,6 +237,7 @@ RUN set -eux; \
       "/usr/share/postgresql/${PG_MAJOR}/extension"
 COPY images/citus-pg-overlay/extension-manifest.tsv /usr/local/share/ai-blaise/citus/extension-manifest.tsv
 COPY images/citus-pg-overlay/shared-preload-libraries.conf /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf
+COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql
 COPY images/citus-pg-overlay/extensions/pg_warm.control /usr/local/share/ai-blaise/citus/extensions/pg_warm.control
@@ -247,6 +248,7 @@ RUN set -eux; \
     install -m 0755 /usr/local/share/ai-blaise/citus/pgsodium_getkey "/usr/share/postgresql/${PG_MAJOR}/extension/pgsodium_getkey"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
+    test -s /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm.control "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm--0.1.0.sql"; \
     sed -n 1,120p /usr/local/share/ai-blaise/citus/extension-manifest.tsv >/usr/local/share/ai-blaise/citus/required-extension-preview.tsv

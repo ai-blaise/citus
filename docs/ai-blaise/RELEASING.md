@@ -9,7 +9,12 @@ acceptance workflows are green for the exact commit.
 Docker-backed smoke targets must fail closed if Docker is unavailable; direct
 smoke scripts may skip only for exploratory runs outside the release gate.
 Rendered Helm checks must also fail closed under the Makefile release path
-through `REQUIRE_HELM=1`; missing Helm is not valid release evidence.
+through `REQUIRE_HELM=1`; missing Helm is not valid release evidence. The
+upgrade/rollback compatibility guard must also be green for the exact commit:
+
+```bash
+make -f Makefile.ai-blaise upgrade-rollback-guardrails
+```
 
 Those checks are release prerequisites, not a waiver for alpha features. A
 production release must also pass:
@@ -38,4 +43,8 @@ Release artifacts must include:
 - signed container images
 - updated `NEW_FEATURES.md`
 - updated `BENCHMARKS.md`
+- `images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
+  matching the shipped companion SQL files
+- `make -f Makefile.ai-blaise upgrade-rollback-guardrails` output for the
+  release commit
 - production-readiness audit evidence for every release-scope custom feature

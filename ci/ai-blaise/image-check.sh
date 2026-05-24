@@ -3,6 +3,7 @@ set -euo pipefail
 
 image_dir="images/citus-pg-overlay"
 manifest="${image_dir}/extension-manifest.tsv"
+upgrade_manifest="${image_dir}/extensions/ai_blaise_citus-upgrade-manifest.tsv"
 dockerfile="${image_dir}/Dockerfile"
 load_order="${image_dir}/shared-preload-libraries.conf"
 init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
@@ -24,6 +25,7 @@ observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 for file in \
   "${dockerignore}" \
   "${manifest}" \
+  "${upgrade_manifest}" \
   "${dockerfile}" \
   "${load_order}" \
   "${init_sql}" \
@@ -165,6 +167,7 @@ grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgvector,pgaudit,pgsodiu
 grep -Fq "citus.cohabit_extensions = 'timescaledb'" "${load_order}"
 grep -Fq "COPY images/citus-pg-overlay/extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm.control" "${dockerfile}"
@@ -216,6 +219,7 @@ grep -Fq "FEATURE: Bundle1" "${image_overview}"
 grep -Fq "full required binary extension bundle is installed" "${image_overview}"
 grep -Fq "build/initdb smoke" "${image_overview}"
 grep -Fq "not production evidence" "${image_dir}/README.md"
+grep -Fq "ai_blaise_citus-upgrade-manifest.tsv" "${image_dir}/README.md"
 grep -Fq "every binary package" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 if [[ "$(grep -Fc "ARG DEFAULT_ARGS=serve" "${runtime_dockerfile}")" -lt 2 ]]; then
