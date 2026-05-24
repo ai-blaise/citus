@@ -3,10 +3,9 @@
 // FEATURE: Sto4
 // FEATURE: Sto5
 
-use ai_blaise_citus_sidecar_shared::run_probe_server;
 use ai_blaise_citus_sidecar_storage::{
-    canonical_storage_report, canonical_storage_runtime_report, AntivirusVerdict, BucketAcl,
-    ObjectStoreProvider, PresignedMethod,
+    canonical_storage_report, canonical_storage_runtime_report, serve_storage_sidecar_http_forever,
+    AntivirusVerdict, BucketAcl, ObjectStoreProvider, PresignedMethod,
 };
 use std::env;
 use std::process;
@@ -98,8 +97,8 @@ fn print_usage() {
 }
 
 fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+    if let Err(error) = serve_storage_sidecar_http_forever(default_addr) {
+        eprintln!("{component}: server failed: {error}");
         process::exit(1);
     }
 }

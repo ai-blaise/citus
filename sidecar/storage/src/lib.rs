@@ -5,7 +5,10 @@
 // FEATURE: Sto4
 // FEATURE: Sto5
 
-use ai_blaise_citus_sidecar_shared::{SidecarContractError, StorageContract};
+use ai_blaise_citus_sidecar_shared::{
+    listen_addr_from_env, HttpProbeResponse, SidecarContractError, SidecarRuntime,
+    SidecarRuntimeError, StorageContract,
+};
 use std::error::Error;
 use std::fmt;
 
@@ -159,6 +162,7 @@ pub enum StorageSidecarError {
         size_bytes: u64,
         max_object_bytes: u64,
     },
+    Io(String),
     PolicyNotFound,
     PresignedTtlExceedsPolicy {
         ttl_seconds: u32,
@@ -189,6 +193,7 @@ impl fmt::Display for StorageSidecarError {
                 formatter,
                 "object size {size_bytes} exceeds bucket limit {max_object_bytes}"
             ),
+            Self::Io(error) => write!(formatter, "storage sidecar I/O error: {error}"),
             Self::PolicyNotFound => write!(formatter, "no bucket policy matched bucket and tenant"),
             Self::PresignedTtlExceedsPolicy {
                 ttl_seconds,
@@ -207,6 +212,18 @@ impl Error for StorageSidecarError {}
 impl From<SidecarContractError> for StorageSidecarError {
     fn from(error: SidecarContractError) -> Self {
         Self::SharedContract(error.to_string())
+    }
+}
+
+impl From<SidecarRuntimeError> for StorageSidecarError {
+    fn from(error: SidecarRuntimeError) -> Self {
+        Self::SharedContract(error.to_string())
+    }
+}
+
+impl From<std::io::Error> for StorageSidecarError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error.to_string())
     }
 }
 
@@ -537,6 +554,355 @@ pub fn canonical_storage_runtime_report() -> Result<StorageRuntimeReport, Storag
         presigned_url,
         state: runtime.state(),
     })
+}
+
+// -----------------------------------------------------------------------------
+// HTTP front door
+// -----------------------------------------------------------------------------
+
+pub fn handle_storage_sidecar_http_bytes(
+    request: &[u8],
+) -> Result<HttpProbeResponse, StorageSidecarError> {
+    let mut runtime = SidecarRuntime::ready("storage");
+    let mut storage = StorageRuntime::new(canonical_storage_plan())?;
+    handle_storage_sidecar_http_request(request, &mut runtime, &mut storage)
+}
+
+fn handle_storage_sidecar_http_request(
+    request: &[u8],
+    runtime: &mut SidecarRuntime,
+    storage: &mut StorageRuntime,
+) -> Result<HttpProbeResponse, StorageSidecarError> {
+    let request = std::str::from_utf8(request)
+        .map_err(|_| StorageSidecarError::SharedContract("malformed HTTP request".to_string()))?;
+    let (method, path, body) = parse_http_request(request)?;
+
+    if method == "GET" && path == "/storage/policy" {
+        return Ok(HttpProbeResponse::new(
+            200,
+            "application/json",
+            render_storage_policy(&storage.plan),
+        ));
+    }
+    if method == "GET" && path == "/storage/state" {
+        return Ok(HttpProbeResponse::new(
+            200,
+            "application/json",
+            render_storage_state(&storage.state()),
+        ));
+    }
+    if method == "POST" && path == "/storage/presign" {
+        let plan = presign_plan_from_body(body)?;
+        return match storage.issue_presigned_url(&plan) {
+            Ok(issue) => Ok(HttpProbeResponse::new(
+                200,
+                "application/json",
+                render_presigned_issue(&issue),
+            )),
+            Err(error) => Ok(HttpProbeResponse::new(
+                400,
+                "application/json",
+                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+            )),
+        };
+    }
+    if method == "POST" && path == "/storage/upload" {
+        let upload = upload_request_from_body(body)?;
+        return match storage.put_object(&upload) {
+            Ok(result) => Ok(HttpProbeResponse::new(
+                200,
+                "application/json",
+                render_upload_result(&result, &storage.state()),
+            )),
+            Err(error) => Ok(HttpProbeResponse::new(
+                400,
+                "application/json",
+                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+            )),
+        };
+    }
+
+    Ok(runtime.handle_http_bytes(request.as_bytes())?)
+}
+
+fn parse_http_request(request: &str) -> Result<(&str, &str, &str), StorageSidecarError> {
+    let (head, body) = request
+        .split_once("\r\n\r\n")
+        .or_else(|| request.split_once("\n\n"))
+        .unwrap_or((request, ""));
+    let request_line = head
+        .lines()
+        .next()
+        .ok_or_else(|| StorageSidecarError::SharedContract("malformed HTTP request".to_string()))?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts
+        .next()
+        .ok_or_else(|| StorageSidecarError::SharedContract("missing method".to_string()))?;
+    let path = parts
+        .next()
+        .ok_or_else(|| StorageSidecarError::SharedContract("missing path".to_string()))?;
+    if !path.starts_with('/') {
+        return Err(StorageSidecarError::SharedContract(
+            "HTTP path must be absolute".to_string(),
+        ));
+    }
+    Ok((method, path, body))
+}
+
+fn presign_plan_from_body(body: &str) -> Result<PresignedUrlPlan, StorageSidecarError> {
+    let mut plan = canonical_presigned_url_plan();
+    if let Some(bucket) = body_field(body, "bucket") {
+        plan.bucket = bucket;
+    }
+    if let Some(object_key) = body_field(body, "object_key") {
+        plan.object_key = object_key;
+    }
+    if let Some(tenant_id) = body_field(body, "tenant_id") {
+        plan.tenant_id = tenant_id;
+    }
+    if let Some(method) = body_field(body, "method") {
+        plan.method = match method.as_str() {
+            "get" => PresignedMethod::Get,
+            "put" => PresignedMethod::Put,
+            "delete" => PresignedMethod::Delete,
+            _ => {
+                return Err(StorageSidecarError::SharedContract(
+                    "unsupported presigned method".to_string(),
+                ));
+            }
+        };
+    }
+    if let Some(ttl) = body_field(body, "ttl_seconds") {
+        plan.ttl_seconds = ttl
+            .parse()
+            .map_err(|_| StorageSidecarError::InvalidPresignedTtl)?;
+    }
+    plan.validate()?;
+    Ok(plan)
+}
+
+fn upload_request_from_body(body: &str) -> Result<ObjectUploadRequest, StorageSidecarError> {
+    let mut metadata = canonical_metadata_record();
+    if let Some(bucket) = body_field(body, "bucket") {
+        metadata.bucket = bucket;
+    }
+    if let Some(object_key) = body_field(body, "object_key") {
+        metadata.object_key = object_key;
+    }
+    if let Some(tenant_id) = body_field(body, "tenant_id") {
+        metadata.tenant_id = tenant_id;
+    }
+    if let Some(content_type) = body_field(body, "content_type") {
+        metadata.content_type = content_type;
+    }
+    if let Some(size) = body_field(body, "size_bytes") {
+        metadata.size_bytes = size
+            .parse()
+            .map_err(|_| StorageSidecarError::InvalidObjectSize)?;
+    }
+    let request = ObjectUploadRequest {
+        metadata,
+        content_digest: body_field(body, "content_digest")
+            .unwrap_or_else(|| canonical_upload_request().content_digest),
+        scan_signature: body_field(body, "scan_signature")
+            .unwrap_or_else(|| canonical_upload_request().scan_signature),
+    };
+    request.validate()?;
+    Ok(request)
+}
+
+fn render_storage_policy(plan: &StorageSidecarPlan) -> String {
+    let bucket = &plan.buckets[0];
+    let antivirus = plan.antivirus.as_ref();
+    format!(
+        "{{\"provider\":\"{}\",\"bucket\":\"{}\",\"tenant_id\":\"{}\",\"acl\":\"{}\",\"metadata_table\":\"{}\",\"presigned_url_ttl_seconds\":{},\"max_object_bytes\":{},\"antivirus_fail_closed\":{},\"quarantine_bucket\":{}}}\n",
+        provider_slug(&plan.provider),
+        escape_json(&bucket.bucket),
+        escape_json(&bucket.tenant_id),
+        acl_slug(bucket.acl),
+        escape_json(&plan.contract.metadata_table),
+        plan.contract.presigned_url_ttl_seconds,
+        bucket.max_object_bytes,
+        antivirus.map(|plan| plan.fail_closed).unwrap_or(false),
+        antivirus
+            .map(|plan| format!("\"{}\"", escape_json(&plan.quarantine_bucket)))
+            .unwrap_or_else(|| "null".to_string()),
+    )
+}
+
+fn render_storage_state(state: &StorageRuntimeState) -> String {
+    format!(
+        "{{\"stored_objects\":{},\"quarantined_objects\":{},\"issued_urls\":{},\"scanned_objects\":{}}}\n",
+        state.stored_objects, state.quarantined_objects, state.issued_urls, state.scanned_objects,
+    )
+}
+
+fn render_presigned_issue(issue: &PresignedUrlIssue) -> String {
+    format!(
+        "{{\"bucket\":\"{}\",\"object_key\":\"{}\",\"tenant_id\":\"{}\",\"method\":\"{}\",\"expires_in_seconds\":{},\"url\":\"{}\"}}\n",
+        escape_json(&issue.plan.bucket),
+        escape_json(&issue.plan.object_key),
+        escape_json(&issue.plan.tenant_id),
+        method_slug(&issue.plan.method),
+        issue.expires_in_seconds,
+        escape_json(&issue.url),
+    )
+}
+
+fn render_upload_result(result: &ObjectUploadResult, state: &StorageRuntimeState) -> String {
+    format!(
+        "{{\"bucket\":\"{}\",\"object_key\":\"{}\",\"tenant_id\":\"{}\",\"stored\":{},\"quarantined\":{},\"antivirus_verdict\":\"{}\",\"content_digest\":\"{}\",\"state\":{}}}\n",
+        escape_json(&result.metadata.bucket),
+        escape_json(&result.metadata.object_key),
+        escape_json(&result.metadata.tenant_id),
+        result.stored,
+        result.quarantined,
+        verdict_slug(result.antivirus_verdict),
+        escape_json(&result.content_digest),
+        render_storage_state(state).trim(),
+    )
+}
+
+fn body_field(body: &str, field: &str) -> Option<String> {
+    let needle = format!("\"{field}\":");
+    let start = body.find(&needle)? + needle.len();
+    let mut chars = body[start..].chars().peekable();
+    while matches!(chars.peek(), Some(ch) if ch.is_whitespace()) {
+        chars.next();
+    }
+    if chars.peek() == Some(&'\"') {
+        chars.next();
+        let mut value = String::new();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                if let Some(next) = chars.next() {
+                    match next {
+                        '\"' => value.push('\"'),
+                        '\\' => value.push('\\'),
+                        '/' => value.push('/'),
+                        'n' => value.push('\n'),
+                        'r' => value.push('\r'),
+                        't' => value.push('\t'),
+                        other => value.push(other),
+                    }
+                }
+                continue;
+            }
+            if ch == '\"' {
+                return Some(value);
+            }
+            value.push(ch);
+        }
+        None
+    } else {
+        let mut value = String::new();
+        for ch in chars {
+            if ch == ',' || ch == '}' {
+                let trimmed = value.trim();
+                return (!trimmed.is_empty()).then(|| trimmed.to_string());
+            }
+            value.push(ch);
+        }
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+}
+
+fn acl_slug(acl: BucketAcl) -> &'static str {
+    match acl {
+        BucketAcl::Private => "private",
+        BucketAcl::TenantRead => "tenant_read",
+        BucketAcl::TenantReadWrite => "tenant_read_write",
+        BucketAcl::PublicRead => "public_read",
+    }
+}
+
+fn verdict_slug(verdict: AntivirusVerdict) -> &'static str {
+    match verdict {
+        AntivirusVerdict::Clean => "clean",
+        AntivirusVerdict::Infected => "infected",
+        AntivirusVerdict::NotScanned => "not_scanned",
+    }
+}
+
+fn escape_json(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            '\"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect()
+}
+
+pub fn serve_storage_sidecar_http_forever(default_addr: &str) -> Result<(), StorageSidecarError> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let mut runtime = SidecarRuntime::ready("storage");
+    let mut storage = StorageRuntime::new(canonical_storage_plan())?;
+    let listen_addr = listen_addr_from_env(default_addr)?;
+    let listener = TcpListener::bind(&listen_addr)?;
+    eprintln!("ai-blaise storage sidecar listening on {listen_addr}");
+
+    for stream in listener.incoming() {
+        let mut stream = stream?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 8192];
+        loop {
+            let read_len = stream.read(&mut chunk)?;
+            if read_len == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read_len]);
+            if http_request_complete(&request) || request.len() >= 65_536 {
+                break;
+            }
+        }
+        let response = handle_storage_sidecar_http_request(&request, &mut runtime, &mut storage)
+            .unwrap_or_else(|error| {
+                HttpProbeResponse::new(
+                    400,
+                    "application/json",
+                    format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+                )
+            });
+        stream.write_all(response.to_http_string().as_bytes())?;
+    }
+    Ok(())
+}
+
+fn http_request_complete(request: &[u8]) -> bool {
+    let Some((body_start, header_bytes)) = split_http_head(request) else {
+        return false;
+    };
+    let Ok(headers) = std::str::from_utf8(header_bytes) else {
+        return true;
+    };
+    let content_length = headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    request.len() >= body_start + content_length
+}
+
+fn split_http_head(request: &[u8]) -> Option<(usize, &[u8])> {
+    find_bytes(request, b"\r\n\r\n")
+        .map(|index| (index + 4, &request[..index]))
+        .or_else(|| find_bytes(request, b"\n\n").map(|index| (index + 2, &request[..index])))
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 #[cfg(test)]

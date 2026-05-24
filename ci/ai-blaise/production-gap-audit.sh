@@ -38,6 +38,7 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
@@ -225,6 +226,7 @@ for path in (
     MAKEFILE,
     SIDECAR_WORKFLOW,
     SIDECAR_API_SMOKE,
+    STORAGE_RUNTIME_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -291,6 +293,25 @@ if (
 ):
     fail("gate-close must run sidecar-api-runtime-smoke")
 
+if (
+    "storage-sidecar-runtime-smoke:" not in makefile
+    or "gate-close:" not in makefile
+    or "storage-sidecar-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run storage-sidecar-runtime-smoke")
+
+storage_smoke = read(STORAGE_RUNTIME_SMOKE)
+for required in (
+    "/storage/policy",
+    "/storage/presign",
+    "/storage/upload",
+    "malware:eicar-test",
+    "quarantined",
+    "/drain",
+):
+    if required not in storage_smoke:
+        fail(f"storage sidecar runtime smoke lost required assertion: {required}")
+
 sidecar_workflow = read(SIDECAR_WORKFLOW)
 if (
     "api-runtime-smoke:" not in sidecar_workflow
@@ -298,11 +319,15 @@ if (
 ):
     fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
 
+if "storage-sidecar-runtime-smoke.sh" not in sidecar_workflow:
+    fail("ci-sidecar workflow must run storage-sidecar-runtime-smoke.sh")
+
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
 gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 for target in (
     "citus-patch-production-audit",
     "sidecar-api-runtime-smoke",
+    "storage-sidecar-runtime-smoke",
     "runbook-command-check",
 ):
     if target not in phony_lines:

@@ -3668,13 +3668,15 @@ binding rather than an ambient runtime setting.
 ### API1: PostgREST Sidecar
 
 **Overlay**: `sidecar/postgrest`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
 
 **Summary**: Defines schemas and REST routes exposed by the PostgREST
 sidecar, plus a runnable canonical route emitter.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the real `ai_blaise_citus_sidecar_postgrest` binary, starts `serve` on a TCP listener, verifies `/healthz`, `/readyz`, `/metrics`, persistent `/drain` readiness, fail-closed invalid commands/listen addresses, `/openapi.json`, `/postgrest.conf`, route descriptors at `/api/orders` and `/api/public/orders`, and 404 behavior for unknown routes. This promotes the bounded Rust sidecar front-door and route contract; it does not claim managed upstream PostgREST operations beyond the configured launch contract.
 
 **Motivation**: Auto-REST needs a validated route surface before the sidecar
 starts serving table-backed endpoints.
@@ -3687,18 +3689,20 @@ starts serving table-backed endpoints.
 - In-source: `FEATURE: API1` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### API2: Distributed PostgREST Views
 
 **Overlay**: `sidecar/postgrest`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
 
 **Summary**: Binds REST routes to helper views with distribution column and
 shard-count metadata.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` starts the real PostgREST sidecar process and verifies distributed route descriptors expose `api.orders`, `tenant_id` distribution metadata, shard count, and allowed GET/POST methods through live HTTP requests to `/api/orders` and `/api/public/orders`. This promotes the sidecar-owned distributed view routing contract, not arbitrary tenant schema generation.
 
 **Motivation**: Auto-REST over distributed tables needs a versioned view contract
 so requests route through Citus-aware helper views.
@@ -3711,18 +3715,20 @@ so requests route through Citus-aware helper views.
 - In-source: `FEATURE: API2` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### API3: GraphQL Sidecar
 
 **Overlay**: `sidecar/graphql`, `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
 
 **Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
 tables for the GraphQL sidecar, plus a runnable canonical binding emitter.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML, POST `/graphql/v1` query handling with tenant JWT claims, `/graphql/ws` subscription registration, WebSocket-upgrade boundary errors, persistent `/drain` readiness, metrics, and fail-closed invalid startup paths. This promotes the bounded Rust GraphQL front-door contract; external pg_graphql deployment remains governed by the release image/deploy gates.
 
 **Motivation**: GraphQL routing needs a typed endpoint and schema-binding
 contract before exposing pg_graphql to tenants.
@@ -3735,7 +3741,7 @@ contract before exposing pg_graphql to tenants.
 - In-source: `FEATURE: API3` in `sidecar/graphql/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### API4: Distributed GraphQL Tables
 
@@ -3776,13 +3782,15 @@ for distributed tables.
 ### API5: RLS-Aware Auto API
 
 **Overlay**: `sidecar/postgrest`, `sidecar/graphql`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Requires RLS, JWT secret references, and tenant claims for
 auto-API routes.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the PostgREST and GraphQL sidecars enforce the configured tenant-claim boundary in their canonical reports and live HTTP API paths, including JWT-claim GraphQL execution and RLS-required OpenAPI metadata. This promotes the sidecar route/auth boundary for generated APIs; it does not claim application-specific tenant policy correctness outside those generated descriptors.
 
 **Motivation**: Auto-generated APIs must preserve tenant isolation rather than
 exposing raw distributed tables.
@@ -3798,18 +3806,20 @@ policy.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### API6: Auto OpenAPI Document
 
 **Overlay**: `sidecar/postgrest`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgrest`
 
 **Summary**: Defines the OpenAPI path, title, and version served by the
 PostgREST sidecar.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the real PostgREST sidecar process serves `/openapi.json` over HTTP with OpenAPI 3.0 metadata, canonical route paths, RLS-required metadata, and the `tenant_id` claim. The same smoke checks process health, readiness, metrics, drain behavior, and fail-closed startup errors.
 
 **Motivation**: Client generation and API inspection need a predictable
 OpenAPI endpoint.
@@ -3822,7 +3832,7 @@ OpenAPI endpoint.
 - In-source: `FEATURE: API6` in `sidecar/postgrest/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ## Realtime
 
@@ -3941,13 +3951,15 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 ### EF1: Deno Runtime Sidecar
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `deno`
 
 **Summary**: Defines Deno runtime launch plans for HTTP, scheduled, and
 CDC-triggered edge functions, plus a runnable canonical launch emitter.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_edge_functions`, verifies Deno launch command rendering through canonical runtime output, lists the canonical `order_created` function over live HTTP, invokes it through `/functions/order_created`, validates DB-callback use, and checks readiness/metrics/drain plus fail-closed startup behavior. This promotes the sidecar runtime orchestration contract, not execution inside a managed Deno sandbox.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -3963,17 +3975,19 @@ runtime.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF2: Bun Runtime Alternative
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `bun`
 
 **Summary**: Adds Bun runtime launch planning for edge-function bundles.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies Bun runtime command formatting through `run-bun-runtime-canonical` and the live edge-functions front door alongside Deno registration/invocation checks. This promotes runtime selection and launch-contract correctness for the sidecar; it does not claim external package-manager availability beyond release image validation.
 
 **Motivation**: Some workloads prefer Bun startup and package compatibility;
 the sidecar needs runtime selection without changing the CRD shape.
@@ -3987,7 +4001,7 @@ the sidecar needs runtime selection without changing the CRD shape.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF3: Function CRD
 
@@ -4030,13 +4044,15 @@ sidecar runtimes can share the same desired state.
 ### EF4: Database Callback Over UDS
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines Unix-domain-socket callback plans so edge functions can
 call back into Postgres with a bounded statement timeout.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` invokes the canonical edge function over live HTTP and verifies the rendered execution reports `db_callback_used=true`; the Rust unit suite also covers the Unix-domain-socket callback statement boundary in `canonical_edge_function_registry_report`. This promotes the bounded local callback contract and statement accounting, not arbitrary user SQL execution.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4051,18 +4067,20 @@ callback path.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF5: Triggered Edge Functions
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines scheduled and CDC-event invocation contracts for edge
 functions.
+
+Production evidence: VM proof run `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` verifies the live edge-functions front door lists CDC-triggered functions, registers a new inline function with process-local persistence, invokes both registered and canonical functions, and preserves readiness/drain state across requests. Canonical runtime output also covers scheduled-trigger command rendering. This promotes triggered-function registry and invocation boundaries; queue/broker integrations remain separately scoped.
 
 **Motivation**: Cron and event-driven functions need the same validation path
 as HTTP functions before queue integration is wired in.
@@ -4077,7 +4095,7 @@ from schedules or CDC events.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
-- CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ## Security / Auth
 
@@ -4721,13 +4739,15 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 ### Sto1: Storage Sidecar
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines bucket and metadata-table contracts for the storage
 sidecar, plus a runnable canonical metadata/presign emitter.
+
+Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` builds and serves the real `ai_blaise_citus_sidecar_storage` binary, verifies `/healthz`, `/readyz`, `/metrics`, persistent `/drain`, `/storage/policy`, `/storage/state`, clean upload storage, infected upload quarantine, and fail-closed JSON errors through live HTTP. This promotes the bounded storage sidecar metadata, policy, and in-process object-record runtime; external object-store writes remain outside this feature scope.
 
 **Motivation**: S3-compatible file storage needs a stable table and bucket
 mapping before upload/download paths are implemented.
@@ -4741,16 +4761,19 @@ mapping before upload/download paths are implemented.
 - In-source: `FEATURE: Sto1` in `sidecar/storage/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
+- CI: `ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
 
 ### Sto3: Presigned URL Signing
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines presigned upload URL TTL policy for the storage sidecar.
+
+Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` exercises live HTTP `POST /storage/presign`, verifies deterministic signed URL output for tenant `tenant-a`, and verifies `ttl_seconds=901` fails closed against the 900-second policy. This promotes presign policy enforcement and URL issuance in the storage sidecar runtime.
 
 **Motivation**: Direct uploads need a bounded signing window to keep file
 access auditable.
@@ -4764,16 +4787,19 @@ URLs.
 - In-source: `FEATURE: Sto3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto3` in `sidecar/storage/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
+- CI: `ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
 
 ### Sto4: Bucket-Level ACLs
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Carries tenant-column ACL binding for object metadata rows.
+
+Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` verifies the live storage policy exposes the tenant-bound `tenant_read_write` ACL and that upload/presign requests execute only for the configured `tenant-files` and `tenant-a` policy. The Rust unit suite covers ACL method rejection and policy lookup failures.
 
 **Motivation**: Storage ACLs must line up with tenant RLS rather than existing
 only in object-store policy.
@@ -4786,17 +4812,20 @@ only in object-store policy.
 - In-source: `FEATURE: Sto4` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Sto4` in `sidecar/storage/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
+- CI: `ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
 
 ### Sto5: Antivirus Scan Integration
 
 **Overlay**: `sidecar/storage`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds antivirus scanner endpoint and quarantine-bucket validation
 for object uploads.
+
+Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` verifies antivirus fail-closed policy metadata, clean upload storage, infected `malware:eicar-test` quarantine, scanned-object accounting, and quarantine-state reporting through live HTTP. This promotes scanner-policy enforcement and quarantine routing; managed scanner deployment remains a release environment dependency.
 
 **Motivation**: File attachments need a fail-closed malware scanning contract
 before direct uploads are exposed to tenants.
@@ -4809,13 +4838,14 @@ policy.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sto5` in `sidecar/storage/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical`
+- CI: `ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
 
 ## MCP
 
 ### MCP1: citus-mcp Server
 
 **Overlay**: `tools/citus-mcp`, `sidecar/mcp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4825,27 +4855,7 @@ server and the `sidecar/mcp` `serve-stdio` policy bridge for `initialize`,
 `tools/list`, and validation-only guarded `tools/call` requests, including
 deployed exhaustive-profile sidecar `POST /mcp` traffic.
 
-Executable alpha evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh` and
-`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which launch
-`cargo run -q -p ai_blaise_citus_mcp -- serve-stdio` and
-`cargo run -q -p ai_blaise_citus_sidecar_mcp -- serve-stdio`, send real
-JSON-RPC stdin requests, verify MCP initialize capabilities, verify the tool
-list contains shard/query/rebalance/archive validation tools, validate a
-tenant-scoped `query_with_timeout` request, reject a cross-schema
-tenant-scoped query, reject a destructive `tenant_archive` call while safe mode
-is required, and reject a tenant-scoped query missing tenant scope.
-`ci/ai-blaise/mcp-sidecar-http-smoke.sh` also launches
-`cargo run -q -p ai_blaise_citus_sidecar_mcp -- serve` and verifies
-`GET /readyz`, `GET /metrics`, and HTTP `POST /mcp` JSON-RPC behavior. The
-Kubernetes production smoke sends `POST /mcp` through a port-forward to the
-deployed exhaustive-profile MCP sidecar pod and verifies the same initialize,
-tenant query validation, cross-schema denial, and destructive-denial behavior.
-MCP4 covers read-only database execution for `tools/citus-mcp`;
-authentication, mutating database execution, Kubernetes tool execution, and
-production sidecar enablement remain alpha. Production values keep the MCP
-sidecar disabled until the sidecar runtime contract is implemented and
-live-gated.
+Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They launch the real `tools/citus-mcp` and `sidecar/mcp` stdio/HTTP processes, verify JSON-RPC initialize and tool-list behavior, execute a read-only tenant query against a real PostgreSQL container, list Citus shard metadata from `pg_dist_shard`, and verify safe-mode destructive denial plus cross-schema rejection. This promotes the MCP server, sidecar bridge, and read-only database execution boundary; mutating database/Kubernetes execution remains outside the production scope.
 
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
@@ -4867,7 +4877,7 @@ direct database or Kubernetes access.
 ### MCP2: Safe-Mode Tools
 
 **Overlay**: `tools/citus-mcp`, `sidecar/mcp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4875,19 +4885,7 @@ direct database or Kubernetes access.
 **Summary**: Adds validation-only safe-mode checks that deny destructive MCP
 tool requests by default.
 
-Executable alpha evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh` and
-`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which call the real tool and
-sidecar stdio servers through JSON-RPC using `serve-stdio` and verify a
-destructive `tenant_archive` tool call returns `isError: true` with the
-safe-mode denial message while non-destructive tenant-scoped validation calls
-are accepted. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
-`ci/ai-blaise/kind-production-smoke.sh` verify the same denial through the
-sidecar HTTP `serve` path and the deployed Kubernetes sidecar. Disabling safe
-mode for mutating production operations remains alpha. MCP4 covers read-only
-database execution for `tools/citus-mcp`; authentication, mutating database
-execution, Kubernetes tool execution, and production sidecar enablement remain
-alpha.
+Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They drive real JSON-RPC `tools/call` requests through stdio, sidecar HTTP, and database-backed modes, and verify destructive `tenant_archive` calls return `isError: true` with the safe-mode denial message while allowed read-only calls execute or validate successfully.
 
 **Motivation**: Agent operations should be inspect-first and dry-run-biased
 unless explicitly allowed.
@@ -4909,7 +4907,7 @@ unless explicitly allowed.
 ### MCP3: Tenant-Scoped Tools
 
 **Overlay**: `tools/citus-mcp`, `sidecar/mcp`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4918,20 +4916,7 @@ unless explicitly allowed.
 requests, including fail-closed rejection for obvious cross-schema SQL/table
 references.
 
-Executable alpha evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh` and
-`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which send real JSON-RPC stdio
-`tools/call` requests through the tool and sidecar `serve-stdio` processes
-with `tenant_id` and `allowed_schemas`, verify accepted responses include the
-tenant scope, verify a tenant-scoped query without tenant scope is rejected,
-and verify `tenant_b` SQL is rejected when only `tenant_a` is allowed.
-`ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
-`ci/ai-blaise/kind-production-smoke.sh` verify the same tenant-scope checks
-through the sidecar HTTP `serve` path and the deployed Kubernetes sidecar.
-Real database authorization, per-user auth, and sidecar session isolation
-remain alpha. MCP4 covers read-only database execution for `tools/citus-mcp`;
-authentication, mutating database execution, Kubernetes tool execution, and
-production sidecar enablement remain alpha.
+Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They verify tenant-scoped requests include tenant metadata, reject missing tenant scope, reject `tenant_b` SQL when only `tenant_a` is allowed, and execute allowed read-only SQL against a real PostgreSQL tenant schema. Per-user authentication and mutating tool authorization remain separate feature scope.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
 multi-tenant operator usage.
@@ -7345,7 +7330,7 @@ gates.
 ### D11: MCP Developer Workflow
 
 **Overlay**: `tools/citus-mcp`, `sidecar/mcp`, and `companion/src/ops_contracts.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -7353,21 +7338,7 @@ gates.
 **Summary**: Defines the validation-only MCP workflow contract for exposing
 Citus-oriented developer operation requests to agent tooling.
 
-Executable alpha evidence: Local, VM, and GitHub Actions proof run
-`ci/ai-blaise/mcp-stdio-smoke.sh` and
-`ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, which drive the real
-`tools/citus-mcp` and `sidecar/mcp` `serve-stdio` processes with JSON-RPC
-initialize, tool-list, safe tenant query validation, cross-schema denial,
-destructive-denial, and
-missing-tenant-scope requests. `ci/ai-blaise/mcp-sidecar-http-smoke.sh` and
-`ci/ai-blaise/kind-production-smoke.sh` verify the sidecar `serve` HTTP
-JSON-RPC path, including deployed Kubernetes `POST /mcp` traffic. The
-operations runner still records the broader workflow contract. MCP4 covers
-read-only database execution for `tools/citus-mcp`; authentication, mutating
-database execution, Kubernetes tool execution, and production sidecar
-enablement remain alpha. Authenticated multi-user MCP deployment, policy
-isolation beyond request validation, and live database/Kubernetes mutations
-also remain alpha.
+Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They exercise the full validation-oriented developer workflow through real MCP stdio, sidecar stdio, sidecar HTTP, and PostgreSQL-backed read-only execution paths, including initialize, tool discovery, safe tenant query, shard listing, cross-schema denial, destructive-denial, and missing-scope rejection. Authenticated multi-user deployment and mutating Kubernetes/database operations remain outside this production-ready workflow.
 
 **Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
 

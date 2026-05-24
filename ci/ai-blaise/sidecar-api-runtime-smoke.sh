@@ -114,13 +114,16 @@ def free_port():
         return sock.getsockname()[1]
 
 
-def request(port, method, path):
+def request(port, method, path, body=None, headers=None):
+    headers = dict(headers or {})
+    if body is not None and "content-type" not in {key.lower() for key in headers}:
+        headers["content-type"] = "application/json"
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    conn.request(method, path)
+    conn.request(method, path, body=body, headers=headers)
     response = conn.getresponse()
-    body = response.read().decode("utf-8")
+    response_body = response.read().decode("utf-8")
     conn.close()
-    return response.status, body
+    return response.status, response_body
 
 
 def wait_ready(proc, port, component):
@@ -204,8 +207,88 @@ def smoke_http_runtime(entry):
             f'ai_blaise_sidecar_accepting_new_work{{component="{component}"}} 0'
             in body
         ), body
+        smoke_component_front_door(port, entry["label"])
     finally:
         terminate(proc)
+
+
+def smoke_component_front_door(port, label):
+    if label == "postgrest":
+        status, body = request(port, "GET", "/openapi.json")
+        assert status == 200, body
+        assert '"openapi":"3.0.0"' in body, body
+        assert '"/orders"' in body, body
+        assert '"tenant_claim":"tenant_id"' in body, body
+
+        status, body = request(port, "GET", "/api/orders")
+        assert status == 200, body
+        assert '"table":"orders"' in body, body
+        assert '"method":"GET"' in body, body
+        assert '"distribution_column":"tenant_id"' in body, body
+        assert '"view":"api.orders"' in body, body
+
+        status, body = request(port, "POST", "/api/public/orders", body="{}")
+        assert status == 200, body
+        assert '"schema":"public"' in body, body
+        assert '"method":"POST"' in body, body
+
+        status, body = request(port, "GET", "/api/missing")
+        assert status == 404, body
+        assert '"error"' in body, body
+        return
+
+    if label == "graphql":
+        status, body = request(port, "GET", "/graphql")
+        assert status == 200, body
+        assert "ai-blaise GraphQL" in body, body
+        assert "/graphql/v1" in body, body
+
+        query = '{"query":"query { orderCollection { edges { node { id } } } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
+        status, body = request(port, "POST", "/graphql/v1", body=query)
+        assert status == 200, body
+        assert '"namespace":"public_api"' in body, body
+        assert '"tenant_id":"tenant-a"' in body, body
+
+        subscription = '{"query":"subscription { orderInserted { id total } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
+        status, body = request(port, "POST", "/graphql/ws", body=subscription)
+        assert status == 200, body
+        assert '"transport":"websocket"' in body, body
+        assert '"subscription_field":"orderInserted"' in body, body
+        assert "public_api.public.orders" in body, body
+
+        status, body = request(port, "GET", "/graphql/ws")
+        assert status == 426, body
+        assert "upgrade required" in body, body
+        return
+
+    if label == "edge-functions":
+        status, body = request(port, "GET", "/functions")
+        assert status == 200, body
+        assert '"order_created"' in body, body
+        assert '"cdc_event"' in body, body
+
+        register = '{"name":"hello","runtime":"deno","code":"export default async () => Response.json({ok:true})","http_path":"/hello"}'
+        status, body = request(port, "POST", "/functions", body=register)
+        assert status == 201, body
+        assert '"registered":"hello"' in body, body
+
+        status, body = request(port, "GET", "/functions")
+        assert status == 200, body
+        assert '"hello"' in body, body
+
+        invoke = '{"tenant_id":"tenant-a","payload_bytes":64,"timeout_ms":250}'
+        status, body = request(port, "POST", "/functions/hello", body=invoke)
+        assert status == 200, body
+        assert '"function":"hello"' in body, body
+        assert '"status":"succeeded"' in body, body
+
+        status, body = request(port, "POST", "/functions/order_created", body=invoke)
+        assert status == 200, body
+        assert '"function":"order_created"' in body, body
+        assert '"db_callback_used":true' in body, body
+        return
+
+    fail(f"unknown sidecar API smoke label: {label}")
 
 
 def smoke_fail_closed(entry):

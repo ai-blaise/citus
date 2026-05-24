@@ -281,6 +281,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-canonical
       - name: Run canonical storage runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_storage -- run-runtime-canonical
+      - name: Run storage sidecar runtime smoke
+        run: bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh
 
   txn-status:
     runs-on: ubuntu-latest
