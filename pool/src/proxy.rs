@@ -2,12 +2,15 @@
 // FEATURE: O14
 // FEATURE: Sec12
 // FEATURE: Sec13
+// FEATURE: T1
 // FEATURE: T3
 // FEATURE: T7
 
 use crate::{
     admission::{PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError},
     auth_introspection::{PoolAuthConfig, PoolAuthError, PoolAuthGate},
+    runtime::{SessionSetting, SettingsBucketPolicy},
+    settings_bucket::{SettingsBucketError, SettingsBucketPoolMap},
     trace_tap,
 };
 use std::error::Error;
@@ -15,7 +18,7 @@ use std::fmt;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -31,6 +34,7 @@ pub struct PoolProxyConfig {
     pub client_cidr_allowlist: ClientCidrAllowlist,
     pub admission: PoolAdmissionConfig,
     pub auth: Option<PoolAuthConfig>,
+    pub settings_bucket: Option<SettingsBucketPolicy>,
 }
 
 impl PoolProxyConfig {
@@ -47,6 +51,7 @@ impl PoolProxyConfig {
         ))?;
         let admission = PoolAdmissionConfig::from_env()?;
         let auth = PoolAuthConfig::from_env()?;
+        let settings_bucket = settings_bucket_policy_from_env()?;
 
         let config = Self {
             listen_addr,
@@ -55,6 +60,7 @@ impl PoolProxyConfig {
             client_cidr_allowlist,
             admission,
             auth,
+            settings_bucket,
         };
         config.validate()?;
         Ok(config)
@@ -73,6 +79,9 @@ impl PoolProxyConfig {
         self.admission.validate()?;
         if let Some(auth) = &self.auth {
             auth.validate()?;
+        }
+        if let Some(settings_bucket) = &self.settings_bucket {
+            settings_bucket.validate().map_err(PoolProxyError::from)?;
         }
         Ok(())
     }
@@ -216,6 +225,9 @@ pub struct PoolProxyState {
     auth_verified_connections: AtomicU64,
     auth_cache_hits: AtomicU64,
     auth_rejections: AtomicU64,
+    settings_bucket: Option<Mutex<SettingsBucketPoolMap>>,
+    settings_bucket_borrows: AtomicU64,
+    settings_bucket_release_errors: AtomicU64,
     startup_timeouts: AtomicU64,
     fail_closed_routes: AtomicU64,
     upstream_connect_errors: AtomicU64,
@@ -240,7 +252,19 @@ impl PoolProxyState {
         admission: PoolAdmissionConfig,
         auth: Option<PoolAuthConfig>,
     ) -> Result<Self, PoolProxyError> {
+        Self::with_proxy_config(admission, auth, None)
+    }
+
+    pub fn with_proxy_config(
+        admission: PoolAdmissionConfig,
+        auth: Option<PoolAuthConfig>,
+        settings_bucket: Option<SettingsBucketPolicy>,
+    ) -> Result<Self, PoolProxyError> {
         let auth = auth.map(PoolAuthGate::new).transpose()?;
+        let settings_bucket = match settings_bucket {
+            Some(policy) => Some(Mutex::new(SettingsBucketPoolMap::new(policy)?)),
+            None => None,
+        };
         Ok(Self {
             started_at: SystemTime::now(),
             admission: PoolAdmissionController::new(admission)?,
@@ -254,6 +278,9 @@ impl PoolProxyState {
             auth_verified_connections: AtomicU64::new(0),
             auth_cache_hits: AtomicU64::new(0),
             auth_rejections: AtomicU64::new(0),
+            settings_bucket,
+            settings_bucket_borrows: AtomicU64::new(0),
+            settings_bucket_release_errors: AtomicU64::new(0),
             startup_timeouts: AtomicU64::new(0),
             fail_closed_routes: AtomicU64::new(0),
             upstream_connect_errors: AtomicU64::new(0),
@@ -275,6 +302,54 @@ impl PoolProxyState {
 
     pub fn active_connections(&self) -> u64 {
         self.active_connections.load(Ordering::Relaxed)
+    }
+
+    fn acquire_settings_bucket(
+        &self,
+        tap: &trace_tap::StartupTraceTap,
+    ) -> Result<Option<String>, PoolProxyError> {
+        let Some(settings_bucket) = &self.settings_bucket else {
+            return Ok(None);
+        };
+        let mut map = settings_bucket
+            .lock()
+            .map_err(|_| PoolProxyError::SettingsBucketLockPoisoned)?;
+        let settings = tracked_settings_from_startup(tap, &map.policy().tracked_gucs);
+        let entry = map.acquire(&settings)?;
+        self.settings_bucket_borrows.fetch_add(1, Ordering::Relaxed);
+        Ok(Some(entry.fingerprint))
+    }
+
+    fn release_settings_bucket(&self, fingerprint: &str) {
+        let Some(settings_bucket) = &self.settings_bucket else {
+            return;
+        };
+        let Ok(mut map) = settings_bucket.lock() else {
+            self.settings_bucket_release_errors
+                .fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        if map.release(fingerprint).is_err() {
+            self.settings_bucket_release_errors
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    fn settings_bucket_snapshot(&self) -> (usize, u32, u64, u64) {
+        let borrowed = self.settings_bucket_borrows.load(Ordering::Relaxed);
+        let release_errors = self.settings_bucket_release_errors.load(Ordering::Relaxed);
+        let Some(settings_bucket) = &self.settings_bucket else {
+            return (0, 0, borrowed, release_errors);
+        };
+        let Ok(map) = settings_bucket.lock() else {
+            return (0, 0, borrowed, release_errors + 1);
+        };
+        (
+            map.bucket_count(),
+            map.total_assigned(),
+            borrowed,
+            release_errors,
+        )
     }
 
     fn accepted(&self) {
@@ -421,9 +496,10 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
     config.validate()?;
     let proxy_listener = TcpListener::bind(&config.listen_addr)?;
     let admin_listener = TcpListener::bind(&config.admin_addr)?;
-    let state = Arc::new(PoolProxyState::with_config(
+    let state = Arc::new(PoolProxyState::with_proxy_config(
         config.admission.clone(),
         config.auth.clone(),
+        config.settings_bucket.clone(),
     )?);
 
     let admin_state = Arc::clone(&state);
@@ -563,15 +639,24 @@ fn proxy_connection(
         }
     }
 
+    let settings_fingerprint = state.acquire_settings_bucket(&startup_tap)?;
     let prefix_bytes = startup_tap.sanitized_startup_bytes();
-    let upstream = connect_upstream(upstream_addr).inspect_err(|_error| {
-        state.connect_error();
-        state.fail_closed_route();
-        let _ = write_postgres_startup_error(&client, "08006", "pool upstream is not reachable");
-    })?;
+    let upstream = match connect_upstream(upstream_addr) {
+        Ok(upstream) => upstream,
+        Err(error) => {
+            if let Some(fingerprint) = &settings_fingerprint {
+                state.release_settings_bucket(fingerprint);
+            }
+            state.connect_error();
+            state.fail_closed_route();
+            let _ =
+                write_postgres_startup_error(&client, "08006", "pool upstream is not reachable");
+            return Err(error);
+        }
+    };
     upstream.set_nodelay(true)?;
 
-    thread::scope(|scope| {
+    let result = thread::scope(|scope| {
         let mut client_reader = client.try_clone()?;
         let mut upstream_writer = upstream.try_clone()?;
         let prefix_bytes = prefix_bytes;
@@ -613,7 +698,13 @@ fn proxy_connection(
         } else {
             Ok(())
         }
-    })
+    });
+
+    if let Some(fingerprint) = settings_fingerprint {
+        state.release_settings_bucket(&fingerprint);
+    }
+
+    result
 }
 
 fn copy_and_shutdown(reader: &mut TcpStream, writer: &mut TcpStream) -> io::Result<u64> {
@@ -746,6 +837,89 @@ fn env_or_default(name: &str, default_value: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default_value.to_string())
 }
 
+fn settings_bucket_policy_from_env() -> Result<Option<SettingsBucketPolicy>, PoolProxyError> {
+    let tracked_gucs = env_or_default("AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS", "");
+    let tracked_gucs = tracked_gucs
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if tracked_gucs.is_empty() {
+        return Ok(None);
+    }
+
+    let max_connections = parse_u32_env("AI_BLAISE_POOL_SETTINGS_BUCKET_MAX_CONNECTIONS", 1024)?;
+    let policy = SettingsBucketPolicy {
+        bucket_name: env_or_default("AI_BLAISE_POOL_SETTINGS_BUCKET_NAME", "startup-gucs"),
+        tracked_gucs,
+        max_connections,
+    };
+    policy.validate().map_err(PoolProxyError::from)?;
+    Ok(Some(policy))
+}
+
+fn parse_u32_env(name: &'static str, default_value: u32) -> Result<u32, PoolProxyError> {
+    match std::env::var(name) {
+        Ok(raw) => raw.parse::<u32>().map_err(|_| PoolProxyError::InvalidEnv {
+            name,
+            value: raw,
+            reason: "expected unsigned integer",
+        }),
+        Err(_) => Ok(default_value),
+    }
+}
+
+fn tracked_settings_from_startup(
+    tap: &trace_tap::StartupTraceTap,
+    tracked_gucs: &[String],
+) -> Vec<SessionSetting> {
+    tracked_gucs
+        .iter()
+        .filter_map(|name| {
+            startup_setting_value(tap, name).map(|value| SessionSetting {
+                name: name.clone(),
+                value,
+            })
+        })
+        .collect()
+}
+
+fn startup_setting_value(tap: &trace_tap::StartupTraceTap, name: &str) -> Option<String> {
+    tap.startup_parameter(name)
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            tap.startup_parameter("options")
+                .and_then(|options| extract_options_assignment(options, name))
+        })
+}
+
+fn extract_options_assignment(options: &str, key: &str) -> Option<String> {
+    let tokens = options.split_whitespace().collect::<Vec<_>>();
+    let mut index = 0;
+    while index < tokens.len() {
+        let token = tokens[index];
+        if let Some(remainder) = token.strip_prefix("-c") {
+            let assignment = if remainder.is_empty() {
+                index += 1;
+                if index >= tokens.len() {
+                    break;
+                }
+                tokens[index]
+            } else {
+                remainder
+            };
+            if let Some((assignment_key, assignment_value)) = assignment.split_once('=') {
+                if assignment_key.eq_ignore_ascii_case(key) {
+                    return Some(assignment_value.to_string());
+                }
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
 fn validate_addr(field: &'static str, address: &str) -> Result<(), PoolProxyError> {
     if address.trim().is_empty() {
         return Err(PoolProxyError::MissingAddress(field));
@@ -762,8 +936,15 @@ fn health_json(
     ready: bool,
     upstream_ready: bool,
 ) -> String {
+    let (
+        settings_bucket_unique,
+        settings_bucket_assigned,
+        settings_bucket_borrows,
+        settings_bucket_release_errors,
+    ) = state.settings_bucket_snapshot();
     format!(
-        "{{\"component\":\"pool\",\"ready\":{},\"upstream_ready\":{},\"upstream_addr\":\"{}\",\"active_connections\":{},\"accepted_connections\":{},\"completed_connections\":{},\"rejected_connections\":{},\"overloaded_connections\":{},\"tenant_quota_rejections\":{},\"auth_verified_connections\":{},\"auth_cache_hits\":{},\"auth_rejections\":{},\"startup_timeouts\":{},\"fail_closed_routes\":{},\"upstream_connect_errors\":{},\"io_errors\":{},\"uptime_seconds\":{}}}\n",
+        r#"{{"component":"pool","ready":{},"upstream_ready":{},"upstream_addr":"{}","active_connections":{},"accepted_connections":{},"completed_connections":{},"rejected_connections":{},"overloaded_connections":{},"tenant_quota_rejections":{},"auth_verified_connections":{},"auth_cache_hits":{},"auth_rejections":{},"settings_bucket_unique_fingerprints":{},"settings_bucket_assigned_connections":{},"settings_bucket_backend_borrows":{},"settings_bucket_release_errors":{},"startup_timeouts":{},"fail_closed_routes":{},"upstream_connect_errors":{},"io_errors":{},"uptime_seconds":{}}}
+"#,
         ready,
         upstream_ready,
         escape_json(upstream_addr),
@@ -776,6 +957,10 @@ fn health_json(
         state.auth_verified_connections.load(Ordering::Relaxed),
         state.auth_cache_hits.load(Ordering::Relaxed),
         state.auth_rejections.load(Ordering::Relaxed),
+        settings_bucket_unique,
+        settings_bucket_assigned,
+        settings_bucket_borrows,
+        settings_bucket_release_errors,
         state.startup_timeouts.load(Ordering::Relaxed),
         state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed),
@@ -786,55 +971,74 @@ fn health_json(
 
 fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
     let upstream_ready = u8::from(connect_upstream(upstream_addr).is_ok());
+    let (
+        settings_bucket_unique,
+        settings_bucket_assigned,
+        settings_bucket_borrows,
+        settings_bucket_release_errors,
+    ) = state.settings_bucket_snapshot();
     format!(
-        "# HELP ai_blaise_citus_pool_upstream_ready Whether the configured PostgreSQL upstream accepts TCP connections.\n\
-         # TYPE ai_blaise_citus_pool_upstream_ready gauge\n\
-         ai_blaise_citus_pool_upstream_ready{{upstream=\"{}\"}} {}\n\
-         # HELP ai_blaise_citus_pool_active_connections Active proxied PostgreSQL connections.\n\
-         # TYPE ai_blaise_citus_pool_active_connections gauge\n\
-         ai_blaise_citus_pool_active_connections {}\n\
-         # HELP ai_blaise_citus_pool_requests_total Accepted PostgreSQL client connections.\n\
-         # TYPE ai_blaise_citus_pool_requests_total counter\n\
-         ai_blaise_citus_pool_requests_total {}\n\
-         # HELP ai_blaise_citus_pool_rejected_connections_total PostgreSQL client connections rejected by CIDR allowlist, overload, startup timeout, or quota.\n\
-         # TYPE ai_blaise_citus_pool_rejected_connections_total counter\n\
-         ai_blaise_citus_pool_rejected_connections_total {}\n\
-         # HELP ai_blaise_citus_pool_overloaded_connections_total PostgreSQL client connections rejected because active connection admission was full.\n\
-         # TYPE ai_blaise_citus_pool_overloaded_connections_total counter\n\
-         ai_blaise_citus_pool_overloaded_connections_total {}\n\
-         # HELP ai_blaise_citus_pool_tenant_quota_rejections_total PostgreSQL client connections rejected by tenant quota admission.\n\
-         # TYPE ai_blaise_citus_pool_tenant_quota_rejections_total counter\n\
-         ai_blaise_citus_pool_tenant_quota_rejections_total {}\n\
-         # HELP ai_blaise_citus_pool_auth_verified_connections_total PostgreSQL client connections admitted by auth introspection.\n\
-         # TYPE ai_blaise_citus_pool_auth_verified_connections_total counter\n\
-         ai_blaise_citus_pool_auth_verified_connections_total {}\n\
-         # HELP ai_blaise_citus_pool_auth_cache_hits_total PostgreSQL client connections admitted from the auth introspection cache.\n\
-         # TYPE ai_blaise_citus_pool_auth_cache_hits_total counter\n\
-         ai_blaise_citus_pool_auth_cache_hits_total {}\n\
-         # HELP ai_blaise_citus_pool_auth_rejections_total PostgreSQL client connections rejected by auth introspection.\n\
-         # TYPE ai_blaise_citus_pool_auth_rejections_total counter\n\
-         ai_blaise_citus_pool_auth_rejections_total {}\n\
-         # HELP ai_blaise_citus_pool_startup_timeouts_total PostgreSQL client connections closed before a complete startup envelope arrived.\n\
-         # TYPE ai_blaise_citus_pool_startup_timeouts_total counter\n\
-         ai_blaise_citus_pool_startup_timeouts_total {}\n\
-         # HELP ai_blaise_citus_pool_fail_closed_routes_total Connections intentionally routed nowhere because admission or upstream safety checks failed.\n\
-         # TYPE ai_blaise_citus_pool_fail_closed_routes_total counter\n\
-         ai_blaise_citus_pool_fail_closed_routes_total {}\n\
-         # HELP ai_blaise_citus_pool_errors_total Upstream connect and proxy I/O errors.\n\
-         # TYPE ai_blaise_citus_pool_errors_total counter\n\
-         ai_blaise_citus_pool_errors_total {}\n\
-         # HELP ai_blaise_citus_pool_client_to_upstream_bytes_total Bytes copied from clients to upstream PostgreSQL.\n\
-         # TYPE ai_blaise_citus_pool_client_to_upstream_bytes_total counter\n\
-         ai_blaise_citus_pool_client_to_upstream_bytes_total {}\n\
-         # HELP ai_blaise_citus_pool_upstream_to_client_bytes_total Bytes copied from upstream PostgreSQL to clients.\n\
-         # TYPE ai_blaise_citus_pool_upstream_to_client_bytes_total counter\n\
-         ai_blaise_citus_pool_upstream_to_client_bytes_total {}\n\
-         # HELP ai_blaise_citus_pool_traceparent_tapped_total Client connections whose startup envelope carried a W3C traceparent.\n\
-         # TYPE ai_blaise_citus_pool_traceparent_tapped_total counter\n\
-         ai_blaise_citus_pool_traceparent_tapped_total {}\n\
-         # HELP ai_blaise_citus_pool_traceparent_absent_total Client connections whose startup envelope did not carry a W3C traceparent.\n\
-         # TYPE ai_blaise_citus_pool_traceparent_absent_total counter\n\
-         ai_blaise_citus_pool_traceparent_absent_total {}\n",
+        r#"# HELP ai_blaise_citus_pool_upstream_ready Whether the configured PostgreSQL upstream accepts TCP connections.
+# TYPE ai_blaise_citus_pool_upstream_ready gauge
+ai_blaise_citus_pool_upstream_ready{{upstream="{}"}} {}
+# HELP ai_blaise_citus_pool_active_connections Active proxied PostgreSQL connections.
+# TYPE ai_blaise_citus_pool_active_connections gauge
+ai_blaise_citus_pool_active_connections {}
+# HELP ai_blaise_citus_pool_requests_total Accepted PostgreSQL client connections.
+# TYPE ai_blaise_citus_pool_requests_total counter
+ai_blaise_citus_pool_requests_total {}
+# HELP ai_blaise_citus_pool_rejected_connections_total PostgreSQL client connections rejected by CIDR allowlist, overload, startup timeout, or quota.
+# TYPE ai_blaise_citus_pool_rejected_connections_total counter
+ai_blaise_citus_pool_rejected_connections_total {}
+# HELP ai_blaise_citus_pool_overloaded_connections_total PostgreSQL client connections rejected because active connection admission was full.
+# TYPE ai_blaise_citus_pool_overloaded_connections_total counter
+ai_blaise_citus_pool_overloaded_connections_total {}
+# HELP ai_blaise_citus_pool_tenant_quota_rejections_total PostgreSQL client connections rejected by tenant quota admission.
+# TYPE ai_blaise_citus_pool_tenant_quota_rejections_total counter
+ai_blaise_citus_pool_tenant_quota_rejections_total {}
+# HELP ai_blaise_citus_pool_auth_verified_connections_total PostgreSQL client connections admitted by auth introspection.
+# TYPE ai_blaise_citus_pool_auth_verified_connections_total counter
+ai_blaise_citus_pool_auth_verified_connections_total {}
+# HELP ai_blaise_citus_pool_auth_cache_hits_total PostgreSQL client connections admitted from the auth introspection cache.
+# TYPE ai_blaise_citus_pool_auth_cache_hits_total counter
+ai_blaise_citus_pool_auth_cache_hits_total {}
+# HELP ai_blaise_citus_pool_auth_rejections_total PostgreSQL client connections rejected by auth introspection.
+# TYPE ai_blaise_citus_pool_auth_rejections_total counter
+ai_blaise_citus_pool_auth_rejections_total {}
+# HELP ai_blaise_citus_pool_settings_bucket_unique_fingerprints Unique tracked-GUC fingerprints observed by the pool.
+# TYPE ai_blaise_citus_pool_settings_bucket_unique_fingerprints gauge
+ai_blaise_citus_pool_settings_bucket_unique_fingerprints {}
+# HELP ai_blaise_citus_pool_settings_bucket_assigned_connections Active client connections assigned to settings buckets.
+# TYPE ai_blaise_citus_pool_settings_bucket_assigned_connections gauge
+ai_blaise_citus_pool_settings_bucket_assigned_connections {}
+# HELP ai_blaise_citus_pool_settings_bucket_backend_borrows_total Accepted backend assignments recorded by settings-bucket accounting.
+# TYPE ai_blaise_citus_pool_settings_bucket_backend_borrows_total counter
+ai_blaise_citus_pool_settings_bucket_backend_borrows_total {}
+# HELP ai_blaise_citus_pool_settings_bucket_release_errors_total Settings-bucket release accounting errors.
+# TYPE ai_blaise_citus_pool_settings_bucket_release_errors_total counter
+ai_blaise_citus_pool_settings_bucket_release_errors_total {}
+# HELP ai_blaise_citus_pool_startup_timeouts_total Client connections closed before a complete startup envelope arrived.
+# TYPE ai_blaise_citus_pool_startup_timeouts_total counter
+ai_blaise_citus_pool_startup_timeouts_total {}
+# HELP ai_blaise_citus_pool_fail_closed_routes_total Connections intentionally routed nowhere because admission or upstream safety checks failed.
+# TYPE ai_blaise_citus_pool_fail_closed_routes_total counter
+ai_blaise_citus_pool_fail_closed_routes_total {}
+# HELP ai_blaise_citus_pool_errors_total Upstream connect and proxy I/O errors.
+# TYPE ai_blaise_citus_pool_errors_total counter
+ai_blaise_citus_pool_errors_total {}
+# HELP ai_blaise_citus_pool_client_to_upstream_bytes_total Bytes copied from clients to upstream PostgreSQL.
+# TYPE ai_blaise_citus_pool_client_to_upstream_bytes_total counter
+ai_blaise_citus_pool_client_to_upstream_bytes_total {}
+# HELP ai_blaise_citus_pool_upstream_to_client_bytes_total Bytes copied from upstream PostgreSQL to clients.
+# TYPE ai_blaise_citus_pool_upstream_to_client_bytes_total counter
+ai_blaise_citus_pool_upstream_to_client_bytes_total {}
+# HELP ai_blaise_citus_pool_traceparent_tapped_total Client connections whose startup envelope carried a W3C traceparent.
+# TYPE ai_blaise_citus_pool_traceparent_tapped_total counter
+ai_blaise_citus_pool_traceparent_tapped_total {}
+# HELP ai_blaise_citus_pool_traceparent_absent_total Client connections whose startup envelope did not carry a W3C traceparent.
+# TYPE ai_blaise_citus_pool_traceparent_absent_total counter
+ai_blaise_citus_pool_traceparent_absent_total {}
+"#,
         escape_prometheus_label(upstream_addr),
         upstream_ready,
         state.active_connections.load(Ordering::Relaxed),
@@ -845,6 +1049,10 @@ fn metrics_text(state: &PoolProxyState, upstream_addr: &str) -> String {
         state.auth_verified_connections.load(Ordering::Relaxed),
         state.auth_cache_hits.load(Ordering::Relaxed),
         state.auth_rejections.load(Ordering::Relaxed),
+        settings_bucket_unique,
+        settings_bucket_assigned,
+        settings_bucket_borrows,
+        settings_bucket_release_errors,
         state.startup_timeouts.load(Ordering::Relaxed),
         state.fail_closed_routes.load(Ordering::Relaxed),
         state.upstream_connect_errors.load(Ordering::Relaxed)
@@ -898,6 +1106,13 @@ pub enum PoolProxyError {
     MalformedHttp,
     MissingAddress(&'static str),
     MissingEnv(&'static str),
+    InvalidEnv {
+        name: &'static str,
+        value: String,
+        reason: &'static str,
+    },
+    SettingsBucket(SettingsBucketError),
+    SettingsBucketLockPoisoned,
     WorkerPanicked,
 }
 
@@ -924,6 +1139,15 @@ impl fmt::Display for PoolProxyError {
             Self::MalformedHttp => write!(formatter, "malformed HTTP request"),
             Self::MissingAddress(field) => write!(formatter, "{field} must not be empty"),
             Self::MissingEnv(name) => write!(formatter, "{name} is required"),
+            Self::InvalidEnv {
+                name,
+                value,
+                reason,
+            } => {
+                write!(formatter, "{name}={value:?} is invalid: {reason}")
+            }
+            Self::SettingsBucket(error) => write!(formatter, "{error}"),
+            Self::SettingsBucketLockPoisoned => write!(formatter, "settings bucket lock poisoned"),
             Self::WorkerPanicked => write!(formatter, "proxy worker panicked"),
         }
     }
@@ -940,6 +1164,18 @@ impl From<PoolAdmissionError> for PoolProxyError {
 impl From<PoolAuthError> for PoolProxyError {
     fn from(error: PoolAuthError) -> Self {
         Self::Auth(error)
+    }
+}
+
+impl From<SettingsBucketError> for PoolProxyError {
+    fn from(error: SettingsBucketError) -> Self {
+        Self::SettingsBucket(error)
+    }
+}
+
+impl From<crate::PoolRuntimeError> for PoolProxyError {
+    fn from(error: crate::PoolRuntimeError) -> Self {
+        Self::SettingsBucket(SettingsBucketError::Runtime(error))
     }
 }
 
@@ -969,6 +1205,7 @@ mod tests {
             client_cidr_allowlist: ClientCidrAllowlist::default(),
             admission: PoolAdmissionConfig::default(),
             auth: None,
+            settings_bucket: None,
         };
 
         assert_eq!(
@@ -1041,6 +1278,68 @@ mod tests {
     }
 
     #[test]
+    fn settings_bucket_policy_from_env_is_disabled_without_tracked_gucs() {
+        std::env::remove_var("AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS");
+        assert_eq!(settings_bucket_policy_from_env().unwrap(), None);
+    }
+
+    #[test]
+    fn tracked_settings_are_extracted_from_libpq_options() {
+        let packet = build_startup_packet_with_options(
+            "settings-smoke",
+            Some("-c citus.enable_repartition_joins=on -cstatement_timeout=5000"),
+        );
+        let mut cursor = std::io::Cursor::new(packet);
+        let tap = trace_tap::tap_startup_message(&mut cursor).unwrap();
+        let settings = tracked_settings_from_startup(
+            &tap,
+            &[
+                "citus.enable_repartition_joins".to_string(),
+                "statement_timeout".to_string(),
+            ],
+        );
+
+        assert_eq!(settings.len(), 2);
+        assert_eq!(settings[0].value, "on");
+        assert_eq!(settings[1].value, "5000");
+    }
+
+    #[test]
+    fn settings_bucket_accounting_tracks_and_releases_startup_gucs() {
+        let state = PoolProxyState::with_proxy_config(
+            PoolAdmissionConfig::default(),
+            None,
+            Some(SettingsBucketPolicy {
+                bucket_name: "test".to_string(),
+                tracked_gucs: vec!["citus.enable_repartition_joins".to_string()],
+                max_connections: 2,
+            }),
+        )
+        .unwrap();
+        let on_packet = build_startup_packet_with_options(
+            "settings-smoke",
+            Some("-c citus.enable_repartition_joins=on"),
+        );
+        let off_packet = build_startup_packet_with_options(
+            "settings-smoke",
+            Some("-c citus.enable_repartition_joins=off"),
+        );
+        let mut on_cursor = std::io::Cursor::new(on_packet);
+        let mut off_cursor = std::io::Cursor::new(off_packet);
+        let on_tap = trace_tap::tap_startup_message(&mut on_cursor).unwrap();
+        let off_tap = trace_tap::tap_startup_message(&mut off_cursor).unwrap();
+
+        let on_fingerprint = state.acquire_settings_bucket(&on_tap).unwrap().unwrap();
+        let off_fingerprint = state.acquire_settings_bucket(&off_tap).unwrap().unwrap();
+        assert_ne!(on_fingerprint, off_fingerprint);
+        assert_eq!(state.settings_bucket_snapshot(), (2, 2, 2, 0));
+
+        state.release_settings_bucket(&on_fingerprint);
+        state.release_settings_bucket(&off_fingerprint);
+        assert_eq!(state.settings_bucket_snapshot(), (2, 0, 2, 0));
+    }
+
+    #[test]
     fn cidr_allowlist_accepts_matching_clients_and_rejects_others() {
         let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8,10.244.0.0/16").unwrap();
 
@@ -1063,6 +1362,10 @@ mod tests {
     }
 
     fn build_startup_packet(application_name: &str) -> Vec<u8> {
+        build_startup_packet_with_options(application_name, None)
+    }
+
+    fn build_startup_packet_with_options(application_name: &str, options: Option<&str>) -> Vec<u8> {
         let mut body: Vec<u8> = Vec::new();
         body.extend_from_slice(&196608_u32.to_be_bytes());
         body.extend_from_slice(b"user");
@@ -1077,6 +1380,12 @@ mod tests {
         body.push(0);
         body.extend_from_slice(application_name.as_bytes());
         body.push(0);
+        if let Some(options) = options {
+            body.extend_from_slice(b"options");
+            body.push(0);
+            body.extend_from_slice(options.as_bytes());
+            body.push(0);
+        }
         body.push(0);
         let length = (body.len() + 4) as u32;
         let mut packet = Vec::with_capacity(body.len() + 4);

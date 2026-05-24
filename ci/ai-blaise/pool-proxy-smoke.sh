@@ -116,6 +116,7 @@ AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
   AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
   AI_BLAISE_POOL_UPSTREAM_ADDR="127.0.0.1:${postgres_port}" \
   AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST="127.0.0.0/8" \
+  AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS="citus.enable_repartition_joins" \
   cargo run -q -p ai_blaise_citus_pool -- serve >"${pool_log}" 2>&1 &
 pool_pid="$!"
 
@@ -225,6 +226,49 @@ def data_row(payload):
     return values
 
 
+def startup_ok(sock):
+    while True:
+        message_type, payload = read_message(sock)
+        if message_type == b"R":
+            auth_code = struct.unpack("!I", payload[:4])[0]
+            if auth_code != 0:
+                raise RuntimeError(f"expected trust auth code 0, got {auth_code}")
+        elif message_type == b"E":
+            raise RuntimeError(f"startup failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            return
+
+
+def connect_with_repartition(setting):
+    sock = socket.create_connection(("127.0.0.1", pool_port), timeout=10)
+    sock.sendall(
+        pack_startup(
+            {
+                "user": "postgres",
+                "database": "postgres",
+                "application_name": f"ai_blaise_settings_{setting}",
+                "options": f"-c citus.enable_repartition_joins={setting}",
+            }
+        )
+    )
+    startup_ok(sock)
+    return sock
+
+
+def simple_query(sock, query):
+    sock.sendall(pack_simple_query(query))
+    rows = []
+    while True:
+        message_type, payload = read_message(sock)
+        if message_type == b"D":
+            rows.append(data_row(payload))
+        elif message_type == b"E":
+            raise RuntimeError(f"query failed: {error_message(payload)}")
+        elif message_type == b"Z":
+            return rows
+
+
+
 with socket.create_connection(("127.0.0.1", pool_port), timeout=10) as sock:
     sock.sendall(
         pack_startup(
@@ -236,16 +280,7 @@ with socket.create_connection(("127.0.0.1", pool_port), timeout=10) as sock:
         )
     )
 
-    while True:
-        message_type, payload = read_message(sock)
-        if message_type == b"R":
-            auth_code = struct.unpack("!I", payload[:4])[0]
-            if auth_code != 0:
-                raise RuntimeError(f"expected trust auth code 0, got {auth_code}")
-        elif message_type == b"E":
-            raise RuntimeError(f"startup failed: {error_message(payload)}")
-        elif message_type == b"Z":
-            break
+    startup_ok(sock)
 
     # Send both query frames before reading either result. This proves the pool
     # preserves PostgreSQL simple-query pipelining instead of relying on psql's
@@ -272,17 +307,35 @@ with socket.create_connection(("127.0.0.1", pool_port), timeout=10) as sock:
 
     sock.sendall(b"X" + struct.pack("!I", 4))
 
-print("raw PostgreSQL pipelined simple-query smoke passed through pool proxy")
+with connect_with_repartition("on") as on_sock, connect_with_repartition("off") as off_sock:
+    setting_query = "SELECT current_setting('citus.enable_repartition_joins', true), pg_backend_pid()::text"
+    on_rows = simple_query(on_sock, setting_query)
+    off_rows = simple_query(off_sock, setting_query)
+    if len(on_rows) != 1 or len(off_rows) != 1:
+        raise RuntimeError(f"unexpected settings rows: {on_rows!r} {off_rows!r}")
+    if on_rows[0][0] != "on" or off_rows[0][0] != "off":
+        raise RuntimeError(f"tracked GUC state bled across settings buckets: {on_rows!r} {off_rows!r}")
+    if on_rows[0][1] == off_rows[0][1]:
+        raise RuntimeError(f"expected distinct backend pids for simultaneous tracked-GUC settings: {on_rows!r} {off_rows!r}")
+    on_sock.sendall(b"X" + struct.pack("!I", 4))
+    off_sock.sendall(b"X" + struct.pack("!I", 4))
+
+print("raw PostgreSQL pipelined simple-query and settings-bucket smoke passed through pool proxy")
 PY
 
 metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
-if ! printf '%s\n' "${metrics}" | awk '
+if ! printf '%s
+' "${metrics}" | awk '
   /^ai_blaise_citus_pool_upstream_ready/ && $2 == 1 { upstream_ready = 1 }
-  /^ai_blaise_citus_pool_requests_total / && $2 >= 1 { requests = 1 }
-  END { exit upstream_ready && requests ? 0 : 1 }
+  /^ai_blaise_citus_pool_requests_total / && $2 >= 3 { requests = 1 }
+  /^ai_blaise_citus_pool_settings_bucket_unique_fingerprints / && $2 >= 3 { bucket_unique = 1 }
+  /^ai_blaise_citus_pool_settings_bucket_backend_borrows_total / && $2 >= 3 { bucket_borrows = 1 }
+  /^ai_blaise_citus_pool_settings_bucket_assigned_connections / && $2 == 0 { bucket_released = 1 }
+  /^ai_blaise_citus_pool_settings_bucket_release_errors_total / && $2 == 0 { bucket_release_errors = 1 }
+  END { exit upstream_ready && requests && bucket_unique && bucket_borrows && bucket_released && bucket_release_errors ? 0 : 1 }
 '; then
   cat "${pool_log}" >&2
-  echo "pool metrics did not show upstream readiness and proxied PostgreSQL traffic" >&2
+  echo "pool metrics did not show upstream readiness, settings-bucket borrow/release accounting, and proxied PostgreSQL traffic" >&2
   printf '%s\n' "${metrics}" >&2
   exit 1
 fi

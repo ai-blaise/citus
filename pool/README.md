@@ -39,10 +39,21 @@ proxy with a separate admin health port:
   default `0` revalidates every startup so revocation is observed immediately
 - `AI_BLAISE_POOL_AUTH_REQUIRE_TENANT_MATCH`: defaults to true and rejects a
   startup tenant that differs from the token tenant
+- `AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS`: optional comma-separated tracked GUC
+  list; when set, the live proxy fingerprints startup parameters and libpq
+  `options` assignments into settings buckets before opening the upstream
+  backend
+- `AI_BLAISE_POOL_SETTINGS_BUCKET_NAME`: optional settings-bucket namespace,
+  default `startup-gucs`
+- `AI_BLAISE_POOL_SETTINGS_BUCKET_MAX_CONNECTIONS`: optional per-fingerprint
+  accounting limit, default `1024`
 
 The proxy keeps the data plane byte-transparent after startup admission; when
 Auth3 is enabled it consumes and strips pool-only credential startup parameters
-before forwarding the sanitized startup packet upstream. Readiness checks
+before forwarding the sanitized startup packet upstream. When settings buckets
+are enabled, startup `options` such as
+`-c citus.enable_repartition_joins=on` are parsed for fingerprint accounting
+before the sanitized startup bytes are forwarded to PostgreSQL. Readiness checks
 connect to the configured upstream, so Kubernetes does not route traffic to a
 pool pod that cannot reach Postgres.
 `FEATURE: Sec13` is enforced in the live proxy: clients outside the configured
@@ -56,6 +67,8 @@ Prometheus counters.
 
 Current implemented surface:
 
+- Live proxy settings-bucket startup parsing, borrow/release metrics, and raw
+  PostgreSQL smoke evidence for tracked-GUC backend-state isolation
 - `SettingsBucketPoolMap` and opaque settings fingerprints
 - `PlacementSubscriber`, `ShardMap`, `PlanCache`, and `PreparedStatementCache`
 - `ExtendedPipelineBuffer` for extended-query protocol batching
@@ -82,5 +95,7 @@ execution summary for the pool runtime and shard-map contracts used by CI.
 through the pool listener, proves CIDR-allowed and CIDR-denied data-port
 traffic, exercises active-connection overload, tenant-quota fail-closed denial,
 Auth3 startup-token admission against the real auth sidecar, revoked-token
-fail-closed denial, upstream-unreachable fail-closed routing, and asserts
-readiness plus Prometheus counters.
+fail-closed denial, upstream-unreachable fail-closed routing, proves tracked
+`citus.enable_repartition_joins` startup values do not bleed across simultaneous
+backend sessions, and asserts readiness plus Prometheus counters including
+settings-bucket unique-fingerprint, borrow, release, and release-error metrics.

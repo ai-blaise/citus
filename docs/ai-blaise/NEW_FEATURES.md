@@ -223,15 +223,31 @@ federation extension policy.
 
 ### T1: Settings-Bucket Connection Pool
 
-**Overlay**: `pool/src/runtime.rs`, `pool/src/settings_bucket.rs`
-**Status**: alpha
+**Overlay**: `pool/src/runtime.rs`, `pool/src/settings_bucket.rs`, `pool/src/proxy.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Implements the pool settings-bucket contract with opaque,
-versioned GUC fingerprints and per-fingerprint backend accounting for sharing
-worker connections across sessions with identical tracked GUC state.
+versioned GUC fingerprints, live startup-option parsing, and per-fingerprint
+backend accounting for tracked GUC state. The production-ready surface is the
+real proxy's tracked-GUC isolation and borrow/release accounting; reusable
+transaction-pooling of backend sessions remains alpha until it has separate
+wire-protocol reset/reuse evidence.
+
+
+Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool
+against a `postgres:17` container with
+`AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS=citus.enable_repartition_joins`, opens raw
+PostgreSQL clients through the pool data port with startup `options` setting
+that tracked GUC to `on` and `off`, verifies each client observes its own
+`current_setting('citus.enable_repartition_joins', true)`, verifies simultaneous
+clients use distinct `pg_backend_pid()` values, and asserts Prometheus metrics
+for unique fingerprints, backend borrows, zero assigned connections after
+release, and zero release errors. This proves tracked-GUC startup parsing plus
+borrow/release accounting through the live proxy; it is not a claim of broad
+transaction pooling correctness or backend reuse.
 
 **Motivation**: Citus deployments need far more client sessions than worker
 backends without losing session correctness.
@@ -244,7 +260,9 @@ pooler.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: T1` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T1` in `pool/src/settings_bucket.rs`
+- In-source: `FEATURE: T1` in `pool/src/proxy.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 - Benchmark: `benchmarks/sysbench/run-suite.sh` (TPS / p95 per workload)
 - Benchmark: `benchmarks/tpcc/run.sh` (tpmC, p99 latency, error rate)
 
