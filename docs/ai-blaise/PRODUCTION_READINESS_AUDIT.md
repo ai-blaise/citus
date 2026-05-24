@@ -609,6 +609,21 @@ evidence unless the entry is also marked `Status: production-ready`; they keep
 the catalog auditable, but they are not independently sufficient for production
 signoff.
 
+Worker D CDC/realtime production evidence from 2026-05-23 adds `C1`, `C3`,
+`WH3`, `RT1`, `RT2`, `RT3`, `RT4`, and `RT5` to the narrow
+production-ready set. The evidence is limited to the CDC/realtime sidecar
+runtime boundary: wal2json ingest, pgoutput logical-frame decoder boundary,
+checkpoint/ack state, health/readiness/metrics, PII anonymization before sink
+encoding, file/in-memory DLQ records, raw WebSocket Phoenix channel join,
+presence, tenant/topic filtering, `postgres_changes` fan-out, and CDC-to-realtime
+Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
+`cargo test -p ai_blaise_citus_sidecar_realtime`,
+`ci/ai-blaise/sidecar-cdc-smoke.sh`, and
+`ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
+(NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
+client operation) remain alpha unless covered by their own feature entry.
+
+
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:
 

@@ -80,6 +80,9 @@ run-cdc-canonical:
 run-cdc-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical
 
+sidecar-cdc-smoke:
+	@bash ci/ai-blaise/sidecar-cdc-smoke.sh
+
 build-sidecar-realtime:
 	cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
 
@@ -91,6 +94,9 @@ run-realtime-canonical:
 
 run-realtime-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical
+
+sidecar-realtime-smoke:
+	@bash ci/ai-blaise/sidecar-realtime-smoke.sh
 
 build-sidecar-storage:
 	cargo check -p ai_blaise_citus_sidecar_storage --all-targets

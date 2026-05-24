@@ -2008,19 +2008,20 @@ state machine.
 ### C1: CDC Sidecar
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines logical-replication slot, publication, sink, and retry
-contracts for the CDC sidecar, plus a runnable canonical delivery emitter.
+**Summary**: Implements a live CDC sidecar runtime with wal2json ingest, a pgoutput logical-frame decoder boundary, checkpoint/ack state, health/readiness/metrics, sink wire encoders, DLQ tracking, and a CDC-to-realtime bridge.
 
 **Motivation**: Realtime, webhooks, analytical mirrors, and external sinks all
 need one validated CDC stream contract.
 
 **Citus comparison**: Vanilla Citus does not ship an out-of-process CDC
 sidecar.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_cdc`, `bash ci/ai-blaise/sidecar-cdc-smoke.sh`, and `cargo run -q -p ai_blaise_citus_sidecar_cdc -- run-live-canonical` prove wal2json ingest, pgoutput logical-frame decoder boundary, checkpoint/ack advancement, health/ready/metrics, seven sink wire frames, PII anonymization before dispatch, file/in-memory DLQ, and the realtime bridge frame format.
 
 **References**:
 
@@ -2029,6 +2030,10 @@ sidecar.
 - In-source: `FEATURE: C1` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
+- In-source: `FEATURE: C1` in `sidecar/cdc/src/source.rs`
+- In-source: `FEATURE: C1` in `sidecar/cdc/src/live.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-live-canonical`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
 ### C2: Schema-Aware CDC Sinks
 
@@ -2038,8 +2043,7 @@ sidecar.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds DDL stream-table and included-schema contracts for CDC sinks
-that need schema changes alongside row events.
+**Summary**: Carries schema/table metadata through every CDC event and sink frame, plus DDL stream-table and included-schema contracts for consumers that need schema-change timelines.
 
 **Motivation**: Downstream mirrors and queues need a pgstream-style schema
 timeline so consumers do not decode WAL against stale table metadata.
@@ -2047,22 +2051,25 @@ timeline so consumers do not decode WAL against stale table metadata.
 **Citus comparison**: Vanilla Citus does not ship schema-aware CDC sink
 coordination.
 
+Current boundary: Production evidence currently covers schema-qualified row-event delivery and sink wire encoding. Live DDL stream parsing remains alpha until a PostgreSQL DDL capture harness is wired into the replication client.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C2` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
+- In-source: `FEATURE: C2` in `sidecar/cdc/src/source.rs`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
 ### C3: CDC PII Anonymization
 
 **Overlay**: `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `anon`
 
-**Summary**: Defines table/column anonymization rules that CDC delivery plans
-must apply before routing events to external sinks.
+**Summary**: Applies table/column anonymization rules inside the CDC runtime before any sink frame is encoded or bridged to realtime.
 
 **Motivation**: CDC frequently leaves the Postgres trust boundary; tagged PII
 columns need a first-class redaction contract before external sink delivery.
@@ -2070,11 +2077,15 @@ columns need a first-class redaction contract before external sink delivery.
 **Citus comparison**: Vanilla Citus does not apply anonymization policy to
 logical replication streams.
 
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_cdc` covers hash/null/redact policies and `bash ci/ai-blaise/sidecar-cdc-smoke.sh` proves the live `/ingest` path hashes `email` before all sink frames are emitted.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C3` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
+- In-source: `FEATURE: C3` in `sidecar/cdc/src/anon.rs`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
 ### C14: CDC NATS Sink
 
@@ -2084,13 +2095,14 @@ logical replication streams.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds validated NATS subject and server URL routing for CDC event
-delivery.
+**Summary**: Adds validated NATS subject routing plus a deterministic NATS core `PUB` frame encoder and plain TCP dispatch boundary for CDC event delivery.
 
 **Motivation**: Low-latency event consumers need a NATS route with the same
 retry and dead-letter policy as webhook and realtime sinks.
 
 **Citus comparison**: Vanilla Citus does not publish CDC events to NATS.
+
+Current boundary: The production-evidenced surface is the protocol frame, validation, and DLQ-on-dispatch-failure path. Live broker authentication, TLS, JetStream, and managed NATS operations remain alpha.
 
 **References**:
 
@@ -2098,6 +2110,8 @@ retry and dead-letter policy as webhook and realtime sinks.
 - In-source: `FEATURE: C14` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: C14` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
+- In-source: `FEATURE: C14` in `sidecar/cdc/src/sinks.rs`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
 ### C15: CDC GCP Pub/Sub Sink
 
@@ -2107,14 +2121,15 @@ retry and dead-letter policy as webhook and realtime sinks.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds validated GCP Pub/Sub project and topic routing for CDC
-event delivery.
+**Summary**: Adds validated GCP Pub/Sub project/topic routing plus deterministic `messages.publish` request-body encoding for CDC event delivery.
 
 **Motivation**: Managed cloud consumers need a Pub/Sub route without forking
 the CDC sidecar delivery model.
 
 **Citus comparison**: Vanilla Citus does not publish CDC events to GCP
 Pub/Sub.
+
+Current boundary: The production-evidenced surface is the deterministic request body and validation. Live GCP authentication, IAM, retries against Pub/Sub, and managed-topic operations remain alpha.
 
 **References**:
 
@@ -2123,8 +2138,10 @@ Pub/Sub.
 - In-source: `FEATURE: C15` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
-## Migrations
+- In-source: `FEATURE: C15` in `sidecar/cdc/src/sinks.rs`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
+## Migrations
 ### M1: pgroll-Style Expand-Contract
 
 **Overlay**: `companion/src/migration.rs`
@@ -3492,19 +3509,20 @@ OpenAPI endpoint.
 ### RT1: Realtime Sidecar
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines realtime WebSocket topic contracts fed by CDC events,
-plus a runnable canonical broadcast emitter.
+**Summary**: Implements the realtime WebSocket sidecar: Phoenix-compatible channel joins, CDC ingest, fan-out hub, and probe/metrics endpoints.
 
 **Motivation**: Realtime broadcasts need typed topic and tenant binding before
 the WebSocket sidecar is implemented.
 
 **Citus comparison**: Vanilla Citus does not ship realtime WebSocket
 broadcasts.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
 **References**:
 
@@ -3513,21 +3531,25 @@ broadcasts.
 - In-source: `FEATURE: RT1` in `sidecar/realtime/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
+- In-source: `FEATURE: RT1` in `sidecar/realtime/src/live.rs`
+- In-source: `FEATURE: RT1` in `sidecar/realtime/src/hub.rs`
+- CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
 
 ### RT2: Per-Tenant Topic Isolation
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Requires tenant IDs on realtime subscriptions so topics can be
-isolated per tenant.
+**Summary**: Enforces tenant IDs on subscriptions and CDC events so realtime topics do not leak row changes across tenants.
 
 **Motivation**: Realtime streams must not leak row changes across tenants.
 
 **Citus comparison**: Vanilla Citus does not model realtime topic tenancy.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
 **References**:
 
@@ -3535,22 +3557,26 @@ isolated per tenant.
 - In-source: `FEATURE: RT2` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT2` in `sidecar/realtime/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
+- In-source: `FEATURE: RT2` in `sidecar/realtime/src/live.rs`
+- In-source: `FEATURE: RT2` in `sidecar/realtime/src/hub.rs`
+- CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
 
 ### RT3: Realtime Filter Expressions
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries server-side realtime filter expressions on subscription
-contracts.
+**Summary**: Applies server-side equality and operation filters before WebSocket fan-out so non-matching CDC events are not delivered.
 
 **Motivation**: Subscribers need filtered streams without pushing every CDC
 event over the socket.
 
 **Citus comparison**: Vanilla Citus does not ship realtime filters.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
 **References**:
 
@@ -3558,21 +3584,26 @@ event over the socket.
 - In-source: `FEATURE: RT3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: RT3` in `sidecar/realtime/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
+- In-source: `FEATURE: RT3` in `sidecar/realtime/src/live.rs`
+- In-source: `FEATURE: RT3` in `sidecar/realtime/src/hub.rs`
+- CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
 
 ### RT4: Presence
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/realtime`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Adds presence enablement to realtime topic contracts.
+**Summary**: Implements channel presence join/leave state and Phoenix-compatible `presence_diff` broadcasts.
 
 **Motivation**: Presence needs to be declared with the channel so the realtime
 sidecar can account for subscribers consistently.
 
 **Citus comparison**: Vanilla Citus has no presence-channel surface.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
 **References**:
 
@@ -3581,8 +3612,11 @@ sidecar can account for subscribers consistently.
 - In-source: `FEATURE: RT4` in `sidecar/realtime/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_realtime -- run-runtime-canonical`
 
-## Edge Functions
+- In-source: `FEATURE: RT4` in `sidecar/realtime/src/live.rs`
+- In-source: `FEATURE: RT4` in `sidecar/realtime/src/hub.rs`
+- CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
 
+## Edge Functions
 ### EF1: Deno Runtime Sidecar
 
 **Overlay**: `sidecar/edge_functions`
@@ -4221,18 +4255,19 @@ helpers.
 ### WH3: Reliable Delivery
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines max-attempt and dead-letter queue policy for CDC-backed
-webhook delivery.
+**Summary**: Implements max-attempt/dead-letter policy for CDC-backed webhook and sink delivery, with in-memory and append-only file DLQ records.
 
 **Motivation**: Webhooks need at-least-once retry and dead-letter behavior
 before delivery sidecars can be trusted.
 
 **Citus comparison**: Vanilla Citus does not include webhook retry contracts.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_cdc` covers DLQ persistence and live-dispatch failure routing, while `bash ci/ai-blaise/sidecar-cdc-smoke.sh` proves the runtime reports DLQ state and advances LSNs only through the dispatch path.
 
 **References**:
 
@@ -4241,8 +4276,11 @@ before delivery sidecars can be trusted.
 - In-source: `FEATURE: WH3` in `sidecar/cdc/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 
-## Storage
+- In-source: `FEATURE: WH3` in `sidecar/cdc/src/dlq.rs`
+- In-source: `FEATURE: WH3` in `sidecar/cdc/src/live.rs`
+- CI: `ci/ai-blaise/sidecar-cdc-smoke.sh`
 
+## Storage
 ### Sto1: Storage Sidecar
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
@@ -7054,25 +7092,26 @@ for this overlay policy.
 
 ### RT5: Phoenix-Channel-Compatible Realtime Client
 
-**Overlay**: `companion/src/ops_contracts.rs`
-**Status**: alpha
+**Overlay**: `sidecar/realtime`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records the supabase-js/Phoenix-channel compatibility target for
-the realtime client surface.
-
-**Current boundary**: Operations evidence validates the compatibility contract;
-a live WebSocket protocol harness and client SDK matrix remain alpha.
+**Summary**: Provides a Phoenix-channel-compatible realtime protocol surface exercised by raw WebSocket clients and CDC ingest smokes.
 
 **Citus comparison**: Vanilla Citus does not provide realtime client
 compatibility gates.
+
+Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo test -p ai_blaise_citus_sidecar_realtime`, `bash ci/ai-blaise/sidecar-realtime-smoke.sh`, and the raw-socket integration test prove Phoenix-compatible WebSocket upgrade, `phx_join`, tenant/topic filters, presence diffs, CDC ingest over Unix-domain socket, `postgres_changes` fan-out, and health/ready/metrics on the WS listener.
 
 **References**:
 
 - In-source: `FEATURE: RT5` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- In-source: `FEATURE: RT5` in `sidecar/realtime/src/live.rs`
+- In-source: `FEATURE: RT5` in `sidecar/realtime/src/hub.rs`
+- CI: `ci/ai-blaise/sidecar-realtime-smoke.sh`
 
 ### S1: Auto Shard Split
 

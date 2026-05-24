@@ -1,20 +1,46 @@
-//! CDC sidecar contracts and runtime.
+//! CDC sidecar contracts and real-runtime entry points.
 //!
-//! Contracts live in this module; the live runtime (logical-replication
-//! consumer, async-nats sink, axum probe server) is wired in [`replication`],
-//! [`nats_sink`], and [`runtime`].
+//! The lib exposes three layers:
+//! 1. Validation contracts ([`CdcSidecarPlan`], [`LogicalSlotPlan`],
+//!    [`CdcSinkPlan`], [`AnonymizationRule`]). Pure data structures with
+//!    eager validation and deterministic delivery plans.
+//! 2. Wire-level sink encoders ([`sinks`]) that turn an event envelope plus
+//!    a sink plan into the exact bytes a real Kafka broker, Kinesis stream,
+//!    GCP Pub/Sub topic, NATS subject, webhook endpoint, or HTTP/2 server
+//!    would observe.
+//! 3. A live runtime ([`live`]) that wires logical replication ingest to
+//!    the encoders, applies PII anonymization, and tracks DLQ state.
 
 // FEATURE: C1
 // FEATURE: C2
 // FEATURE: C3
+// FEATURE: C9
 // FEATURE: C14
 // FEATURE: C15
 // FEATURE: L8
 // FEATURE: WH3
 
-pub mod nats_sink;
-pub mod replication;
-pub mod runtime;
+pub mod anon;
+pub mod dlq;
+pub mod live;
+pub mod sinks;
+pub mod source;
+
+pub use anon::{apply_anonymization, hash_value};
+pub use dlq::{build_dlq_record, Dlq, DlqRecord};
+pub use live::{
+    cdc_runtime_dispatch, CdcDispatchReport, CdcDispatchedEvent, CdcLiveRuntime,
+    CdcReplicationSource, CdcRuntimeConfig,
+};
+pub use sinks::{
+    dispatch_http1, dispatch_nats_pub, encode_sink_frame, CdcEventPayload, SinkDeliveryOutcome,
+    SinkDispatchReport, SinkWireFrame, SinkWireKind,
+};
+pub use source::{
+    decode_replication_frame, InMemoryReplicationClient, LogicalReplicationClient,
+    PgOutputLogicalDecoder, ReplicationCheckpoint, ReplicationFrame, ReplicationStreamConfig,
+    Wal2JsonDecoder, WalDecoder,
+};
 
 use ai_blaise_citus_sidecar_shared::{
     CdcSink, CdcStreamContract, DeliveryRetryPolicy, SidecarContractError,
@@ -143,6 +169,17 @@ pub enum CdcSinkPlan {
         topic: String,
         retry_policy: DeliveryRetryPolicy,
     },
+    Kinesis {
+        name: String,
+        stream_name: String,
+        region: String,
+        retry_policy: DeliveryRetryPolicy,
+    },
+    Http2 {
+        name: String,
+        url: String,
+        retry_policy: DeliveryRetryPolicy,
+    },
 }
 
 impl CdcSinkPlan {
@@ -185,6 +222,15 @@ impl CdcSinkPlan {
                 validate_required("sink.pubsub.project_id", project_id)?;
                 validate_required("sink.pubsub.topic", topic)
             }
+            Self::Kinesis {
+                stream_name,
+                region,
+                ..
+            } => {
+                validate_required("sink.kinesis.stream_name", stream_name)?;
+                validate_required("sink.kinesis.region", region)
+            }
+            Self::Http2 { url, .. } => validate_http_url("sink.http2.url", url),
         }
     }
 
@@ -195,7 +241,9 @@ impl CdcSinkPlan {
             | Self::AnalyticalMirror { name, .. }
             | Self::Kafka { name, .. }
             | Self::Nats { name, .. }
-            | Self::PubSub { name, .. } => name,
+            | Self::PubSub { name, .. }
+            | Self::Kinesis { name, .. }
+            | Self::Http2 { name, .. } => name,
         }
     }
 
@@ -207,6 +255,8 @@ impl CdcSinkPlan {
             Self::Kafka { topic, .. } => topic,
             Self::Nats { subject, .. } => subject,
             Self::PubSub { topic, .. } => topic,
+            Self::Kinesis { stream_name, .. } => stream_name,
+            Self::Http2 { url, .. } => url,
         }
     }
 
@@ -217,7 +267,9 @@ impl CdcSinkPlan {
             | Self::AnalyticalMirror { retry_policy, .. }
             | Self::Kafka { retry_policy, .. }
             | Self::Nats { retry_policy, .. }
-            | Self::PubSub { retry_policy, .. } => retry_policy,
+            | Self::PubSub { retry_policy, .. }
+            | Self::Kinesis { retry_policy, .. }
+            | Self::Http2 { retry_policy, .. } => retry_policy,
         }
     }
 }
@@ -431,7 +483,11 @@ impl CdcRuntime {
 
         let mut deliveries = Vec::with_capacity(events.len());
         let mut delivered_sink_writes = 0_u64;
-        for event in events {
+        for mut event in events {
+            // Client-side defense in depth: rewrite values before the dispatch
+            // plan is materialized, so the runtime cannot accidentally encode
+            // raw PII for any downstream sink.
+            anon::apply_anonymization(&self.plan.anonymization, &mut event);
             let delivery = self.plan.delivery_plan(&event)?;
             delivered_sink_writes += delivery.routed_sinks.len() as u64;
             deliveries.push(CdcRuntimeDelivery { event, delivery });
@@ -454,6 +510,45 @@ impl CdcRuntime {
             },
         })
     }
+
+    /// Advance the runtime using a pre-decoded set of events. The live
+    /// runtime uses this to feed already-anonymized events through the
+    /// contract layer without re-decoding the WAL frame twice.
+    pub fn advance_with_events(
+        &mut self,
+        frame: &LogicalReplicationFrame,
+        events: &[CdcEventEnvelope],
+    ) -> Result<CdcRuntimeBatch, CdcSidecarError> {
+        frame.validate()?;
+        if events.is_empty() {
+            return Err(CdcSidecarError::MissingRequiredField("wal2json.change"));
+        }
+        let mut deliveries = Vec::with_capacity(events.len());
+        let mut delivered_sink_writes = 0_u64;
+        for event in events {
+            let delivery = self.plan.delivery_plan(event)?;
+            delivered_sink_writes += delivery.routed_sinks.len() as u64;
+            deliveries.push(CdcRuntimeDelivery {
+                event: event.clone(),
+                delivery,
+            });
+        }
+        self.state.last_received_lsn = frame.end_lsn.clone();
+        self.state.last_delivered_lsn = frame.end_lsn.clone();
+        self.state.acked_flush_lsn = frame.end_lsn.clone();
+        self.state.delivered_events += deliveries.len() as u64;
+        self.state.delivered_sink_writes += delivered_sink_writes;
+        Ok(CdcRuntimeBatch {
+            start_lsn: frame.start_lsn.clone(),
+            end_lsn: frame.end_lsn.clone(),
+            deliveries,
+            ack: ReplicationAck {
+                write_lsn: frame.end_lsn.clone(),
+                flush_lsn: frame.end_lsn.clone(),
+                apply_lsn: frame.end_lsn.clone(),
+            },
+        })
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -464,6 +559,7 @@ pub enum CdcSidecarError {
     InvalidLsn,
     InvalidNatsUrl,
     InvalidObjectUri(&'static str),
+    InvalidPgOutput(String),
     InvalidWal2Json(String),
     MissingRequiredField(&'static str),
     SharedContract(String),
@@ -488,11 +584,12 @@ impl fmt::Display for CdcSidecarError {
             Self::InvalidLsn => write!(formatter, "LSN must use the PostgreSQL HEX/HEX form"),
             Self::InvalidNatsUrl => write!(formatter, "NATS server URL must start with nats://"),
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
+            Self::InvalidPgOutput(error) => write!(formatter, "invalid pgoutput payload: {error}"),
             Self::InvalidWal2Json(error) => write!(formatter, "invalid wal2json payload: {error}"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::SharedContract(error) => write!(formatter, "{error}"),
             Self::UnsupportedOperation(operation) => {
-                write!(formatter, "unsupported wal2json operation: {operation}")
+                write!(formatter, "unsupported replication operation: {operation}")
             }
         }
     }
@@ -618,7 +715,7 @@ pub fn decode_wal2json_frame(
 
         let mut columns = Vec::with_capacity(column_names.len());
         let mut tenant_id = None;
-        for (name, value) in column_names.into_iter().zip(column_values) {
+        for (name, value) in column_names.into_iter().zip(column_values.into_iter()) {
             let value = json_scalar_to_string(value)?;
             if name == "tenant_id" {
                 tenant_id = value.clone();
@@ -798,6 +895,23 @@ pub fn canonical_cdc_plan() -> CdcSidecarPlan {
                 topic: "orders".to_string(),
                 retry_policy: canonical_retry_policy(),
             },
+            CdcSinkPlan::Kafka {
+                name: "kafka".to_string(),
+                topic: "cdc.orders".to_string(),
+                bootstrap_servers: "kafka.cdc.svc:9092".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+            CdcSinkPlan::Kinesis {
+                name: "kinesis".to_string(),
+                stream_name: "cdc-orders".to_string(),
+                region: "us-east-1".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
+            CdcSinkPlan::Http2 {
+                name: "http2".to_string(),
+                url: "https://h2.example.com/cdc/orders".to_string(),
+                retry_policy: canonical_retry_policy(),
+            },
         ],
         schema_capture: Some(SchemaCapturePlan {
             ddl_stream_table: "cdc.ddl_events".to_string(),
@@ -872,7 +986,7 @@ mod tests {
 
         assert_eq!(delivery.event_lsn, "16/B374D848");
         assert_eq!(delivery.table, "public.orders");
-        assert_eq!(delivery.routed_sinks.len(), 4);
+        assert_eq!(delivery.routed_sinks.len(), 7);
         assert_eq!(delivery.anonymized_columns, vec!["email".to_string()]);
     }
 
@@ -886,9 +1000,48 @@ mod tests {
                 .iter()
                 .map(|sink| sink.sink.as_str())
                 .collect::<Vec<_>>(),
-            vec!["webhook", "realtime", "nats", "pubsub"]
+            vec!["webhook", "realtime", "nats", "pubsub", "kafka", "kinesis", "http2"]
         );
         assert_eq!(delivery.anonymized_columns, vec!["email".to_string()]);
+    }
+
+    #[test]
+    fn kinesis_sink_requires_stream_name_and_region() {
+        let bad_stream = CdcSinkPlan::Kinesis {
+            name: "kinesis".to_string(),
+            stream_name: " ".to_string(),
+            region: "us-east-1".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+        assert_eq!(
+            bad_stream.validate(),
+            Err(CdcSidecarError::MissingRequiredField(
+                "sink.kinesis.stream_name"
+            ))
+        );
+        let bad_region = CdcSinkPlan::Kinesis {
+            name: "kinesis".to_string(),
+            stream_name: "orders".to_string(),
+            region: " ".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+        assert_eq!(
+            bad_region.validate(),
+            Err(CdcSidecarError::MissingRequiredField("sink.kinesis.region"))
+        );
+    }
+
+    #[test]
+    fn http2_sink_requires_http_url() {
+        let plan = CdcSinkPlan::Http2 {
+            name: "http2".to_string(),
+            url: "ftp://example.com".to_string(),
+            retry_policy: canonical_retry_policy(),
+        };
+        assert_eq!(
+            plan.validate(),
+            Err(CdcSidecarError::InvalidHttpUrl("sink.http2.url"))
+        );
     }
 
     #[test]
@@ -907,11 +1060,34 @@ mod tests {
         let report = canonical_cdc_runtime_report().expect("runtime report");
 
         assert_eq!(report.batch.deliveries.len(), 1);
-        assert_eq!(report.batch.deliveries[0].delivery.routed_sinks.len(), 4);
+        assert_eq!(report.batch.deliveries[0].delivery.routed_sinks.len(), 7);
         assert_eq!(report.batch.ack.flush_lsn, "16/B374D900");
         assert_eq!(report.state.acked_flush_lsn, "16/B374D900");
         assert_eq!(report.state.delivered_events, 1);
-        assert_eq!(report.state.delivered_sink_writes, 4);
+        assert_eq!(report.state.delivered_sink_writes, 7);
+    }
+
+    #[test]
+    fn runtime_applies_anonymization_to_event_before_delivery() {
+        let mut runtime = CdcRuntime::new(canonical_cdc_plan()).expect("runtime");
+        let batch = runtime
+            .apply_wal2json_frame(&canonical_wal2json_frame())
+            .expect("apply frame");
+        let email_column = batch.deliveries[0]
+            .event
+            .columns
+            .iter()
+            .find(|column| column.name == "email")
+            .expect("email column");
+        assert!(
+            email_column
+                .value
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("anon_"),
+            "expected anonymized email, got {:?}",
+            email_column.value
+        );
     }
 
     #[test]
