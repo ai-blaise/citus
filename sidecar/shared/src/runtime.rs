@@ -409,13 +409,20 @@ fn component_state(state: ComponentState) -> &'static str {
 
 fn status_reason(status_code: u16) -> &'static str {
     match status_code {
-        200 => "OK",
         101 => "Switching Protocols",
+        200 => "OK",
+        201 => "Created",
         202 => "Accepted",
+        204 => "No Content",
         400 => "Bad Request",
-        426 => "Upgrade Required",
+        401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
+        415 => "Unsupported Media Type",
+        422 => "Unprocessable Entity",
+        426 => "Upgrade Required",
         503 => "Service Unavailable",
         _ => "Unknown",
     }

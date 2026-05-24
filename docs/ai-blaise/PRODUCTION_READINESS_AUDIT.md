@@ -574,20 +574,19 @@ more production-ready than the artifacts justified.
   closed. `graphql-postgrest-runtime-smoke.sh` adds focused GraphQL/PostgREST
   evidence for runtime dependency validation, malformed input handling,
   PostgREST route method rejection, secret-backed config rendering, GraphQL
-  missing-claim errors, introspection denial, and subscription-boundary
-  responses. API6 is now promoted only for the bounded OpenAPI document path:
-  the focused smoke parses the live `/openapi.json` response as JSON and checks
-  OpenAPI 3.0 metadata, `/orders` GET/POST operations, `public.orders` tags,
-  `x-ai-blaise` schemas, `rls_required=true`, `tenant_claim=tenant_id`, and no
-  database URI or JWT secret leakage. The dedicated
-  `sidecar-edge-functions-runtime-smoke.sh` additionally proves
-  edge-functions plan-only status, env-secret/path/JSON validation, payload and
-  timeout ceilings, unknown-function handling, and fail-closed rejection of
-  external Deno/Bun execution requests. This is not evidence for table-backed
-  PostgREST request serving, live `pg_graphql` execution, external Deno/Bun
-  user-code execution, real PostgreSQL UDS callback execution, queue/broker
-  dispatch, live CDC tailing, or Kubernetes deployment; API1, API2, API3,
-  API5, EF1, EF2, EF4, and EF5 remain alpha until those live data-plane paths
+  missing-claim errors, introspection denial, subscription-boundary responses,
+  and the bounded API6 OpenAPI document path. `postgrest-live-data-plane-smoke.sh`
+  is the production data-plane proof for API1/API2/API5: it runs a Citus-capable
+  PostgreSQL container, creates the real `citus` extension, distributes
+  `public.orders`, asserts `pg_dist_partition`, creates the security-invoker
+  `api.orders` view, launches the official PostgREST 12.2.12 binary through the
+  sidecar `run-live-postgrest` supervisor, starts the sidecar proxy with
+  `AI_BLAISE_POSTGREST_UPSTREAM`, and verifies authenticated GET/POST traffic plus
+  tenant RLS isolation and secret non-disclosure end to end. This promotes only
+  the PostgREST REST data-plane boundary; live `pg_graphql` execution, external
+  Deno/Bun user-code execution, real PostgreSQL UDS callback execution,
+  queue/broker dispatch, live CDC tailing, and Kubernetes deployment remain
+  alpha-scoped for API3, EF1, EF2, EF4, and EF5 until those live data-plane paths
   are proven.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The

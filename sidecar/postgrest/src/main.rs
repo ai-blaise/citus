@@ -5,8 +5,8 @@
 
 use ai_blaise_citus_sidecar_postgrest::{
     canonical_postgrest_execution_plan, canonical_postgrest_runtime_report,
-    postgrest_runtime_dependency_report_from_env, serve_postgrest_sidecar_http_forever, RestMethod,
-    SupervisorState,
+    postgrest_runtime_dependency_report_from_env, run_supervised_postgrest_until_stopped,
+    serve_postgrest_sidecar_http_forever, RestMethod, SupervisorState,
 };
 use std::env;
 use std::process;
@@ -30,6 +30,11 @@ fn main() {
 
     if args == ["check-runtime-dependencies"] {
         run_dependency_check();
+        return;
+    }
+
+    if args == ["run-live-postgrest"] {
+        run_live_postgrest();
         return;
     }
 
@@ -70,7 +75,7 @@ fn main() {
 
 fn print_usage() {
     println!(
-        "usage: postgrest [serve|run-canonical|run-runtime-canonical|check-runtime-dependencies]"
+        "usage: postgrest [serve|run-canonical|run-runtime-canonical|check-runtime-dependencies|run-live-postgrest]"
     );
     println!("serves the PostgREST sidecar HTTP front door or emits a deterministic TSV plan");
 }
@@ -138,4 +143,11 @@ fn run_dependency_check() {
         report.schemas.join(","),
         report.route_count,
     );
+}
+
+fn run_live_postgrest() {
+    if let Err(error) = run_supervised_postgrest_until_stopped() {
+        eprintln!("postgrest: live supervisor failed: {error}");
+        process::exit(1);
+    }
 }

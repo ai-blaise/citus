@@ -256,6 +256,10 @@ pub fn canonical_postgrest_execution_plan() -> Result<PostgrestSidecarPlan, Post
 }
 
 const POSTGREST_BINARY_ENV: &str = "AI_BLAISE_POSTGREST_BINARY";
+const POSTGREST_PORT_ENV: &str = "AI_BLAISE_POSTGREST_PORT";
+const POSTGREST_CONFIG_PATH_ENV: &str = "AI_BLAISE_POSTGREST_CONFIG_PATH";
+const POSTGREST_UPSTREAM_ENV: &str = "AI_BLAISE_POSTGREST_UPSTREAM";
+const POSTGREST_EXIT_ON_STDIN_EOF_ENV: &str = "AI_BLAISE_POSTGREST_EXIT_ON_STDIN_EOF";
 const MIN_JWT_SECRET_BYTES: usize = 32;
 
 // =============================================================================
@@ -329,8 +333,9 @@ pub fn render_postgrest_conf(
         "jwt-aud = \"{}\"\n",
         plan.openapi.title.replace('"', "")
     ));
+    conf.push_str("jwt-role-claim-key = \".role\"\n");
     conf.push_str(&format!(
-        "jwt-role-claim-key = \".{}\"\n",
+        "# tenant-claim consumed by PostgreSQL RLS policies: {}\n",
         plan.auth.tenant_claim
     ));
     conf.push_str(&format!("server-port = {}\n", config.server_port));
@@ -474,6 +479,7 @@ impl PostgrestSupervisor {
                     "PGRST_JWT_SECRET".to_string(),
                     format!("env:{}", config.jwt_secret_ref),
                 ),
+                ("PGRST_DB_SCHEMAS".to_string(), plan.schemas.join(",")),
                 ("PGRST_DB_ANON_ROLE".to_string(), config.anon_role.clone()),
                 (
                     "PGRST_SERVER_PORT".to_string(),
@@ -483,6 +489,8 @@ impl PostgrestSupervisor {
                     "PGRST_LOG_LEVEL".to_string(),
                     config.log_level.as_str().to_string(),
                 ),
+                ("PGRST_JWT_AUD".to_string(), plan.openapi.title.clone()),
+                ("PGRST_JWT_ROLE_CLAIM_KEY".to_string(), ".role".to_string()),
             ],
         };
         Ok(Self {
@@ -523,6 +531,10 @@ impl PostgrestSupervisor {
         &self.launch
     }
 
+    pub fn resolved_launch_env(&self) -> Result<Vec<(String, String)>, PostgrestSidecarError> {
+        resolve_launch_env(&self.launch.env)
+    }
+
     pub fn write_config_at(
         &self,
         config_path: impl AsRef<std::path::Path>,
@@ -543,10 +555,8 @@ impl PostgrestSupervisor {
         self.write_config_at(config_path)?;
         let mut command = std::process::Command::new(&self.launch.binary_path);
         command.arg(config_path);
-        for (name, value) in &self.launch.env {
-            if !value.starts_with("env:") {
-                command.env(name, value);
-            }
+        for (name, value) in self.resolved_launch_env()? {
+            command.env(name, value);
         }
         let child = command.spawn()?;
         self.launches += 1;
@@ -602,6 +612,23 @@ impl PostgrestSupervisor {
     }
 }
 
+fn resolve_launch_env(
+    env: &[(String, String)],
+) -> Result<Vec<(String, String)>, PostgrestSidecarError> {
+    env.iter()
+        .map(|(name, value)| {
+            if let Some(secret_env) = value.strip_prefix("env:") {
+                let resolved = std::env::var(secret_env).map_err(|_| {
+                    PostgrestSidecarError::MissingRuntimeDependency(secret_env.to_string())
+                })?;
+                Ok((name.clone(), resolved))
+            } else {
+                Ok((name.clone(), value.clone()))
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PostgrestRuntimeReport {
     pub plan: PostgrestSidecarPlan,
@@ -622,6 +649,35 @@ pub fn canonical_postgrest_supervisor_config() -> PostgrestSupervisorConfig {
     }
 }
 
+pub fn postgrest_supervisor_config_from_env(
+) -> Result<PostgrestSupervisorConfig, PostgrestSidecarError> {
+    let mut config = canonical_postgrest_supervisor_config();
+    if let Ok(binary_path) = std::env::var(POSTGREST_BINARY_ENV) {
+        config.binary_path = binary_path;
+    }
+    if let Ok(port) = std::env::var(POSTGREST_PORT_ENV) {
+        config.server_port = port.parse::<u16>().map_err(|_| {
+            PostgrestSidecarError::InvalidRuntimeDependency(format!(
+                "{POSTGREST_PORT_ENV} must be a non-zero TCP port"
+            ))
+        })?;
+        if config.server_port == 0 {
+            return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+                "{POSTGREST_PORT_ENV} must be a non-zero TCP port"
+            )));
+        }
+    }
+    config.validate()?;
+    Ok(config)
+}
+
+pub fn postgrest_config_path_from_env() -> String {
+    std::env::var(POSTGREST_CONFIG_PATH_ENV)
+        .ok()
+        .filter(|path| !path.trim().is_empty())
+        .unwrap_or_else(|| "/etc/postgrest/postgrest.conf".to_string())
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PostgrestRuntimeDependencyReport {
     pub db_uri_env: String,
@@ -635,10 +691,7 @@ pub struct PostgrestRuntimeDependencyReport {
 pub fn postgrest_runtime_dependency_report_from_env(
 ) -> Result<PostgrestRuntimeDependencyReport, PostgrestSidecarError> {
     let plan = canonical_postgrest_execution_plan()?;
-    let mut config = canonical_postgrest_supervisor_config();
-    if let Ok(binary_path) = std::env::var(POSTGREST_BINARY_ENV) {
-        config.binary_path = binary_path;
-    }
+    let config = postgrest_supervisor_config_from_env()?;
     postgrest_runtime_dependency_report(&plan, &config, |name| std::env::var(name).ok())
 }
 
@@ -721,9 +774,69 @@ pub fn canonical_postgrest_runtime_report() -> Result<PostgrestRuntimeReport, Po
     })
 }
 
+pub fn run_supervised_postgrest_until_stopped() -> Result<(), PostgrestSidecarError> {
+    let plan = canonical_postgrest_execution_plan()?;
+    let config = postgrest_supervisor_config_from_env()?;
+    postgrest_runtime_dependency_report(&plan, &config, |name| std::env::var(name).ok())?;
+    let config_path = postgrest_config_path_from_env();
+    let mut supervisor = PostgrestSupervisor::new(plan, config)?;
+    let mut child = supervisor.spawn_child_at(&config_path)?;
+    eprintln!(
+        "ai-blaise postgrest supervisor launched child pid {} with config {}",
+        child.id(),
+        config_path
+    );
+
+    let exit_on_stdin_eof = std::env::var(POSTGREST_EXIT_ON_STDIN_EOF_ENV)
+        .ok()
+        .as_deref()
+        == Some("1");
+    let stdin_rx = if exit_on_stdin_eof {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::Read as _;
+            let mut buffer = Vec::new();
+            let _ = std::io::stdin().read_to_end(&mut buffer);
+            let _ = tx.send(());
+        });
+        Some(rx)
+    } else {
+        None
+    };
+
+    loop {
+        if let Some(status) = child.try_wait()? {
+            if status.success() {
+                return Ok(());
+            }
+            return Err(PostgrestSidecarError::Runtime(format!(
+                "PostgREST child exited with {status}"
+            )));
+        }
+        if stdin_rx
+            .as_ref()
+            .map(|rx| rx.try_recv().is_ok())
+            .unwrap_or(false)
+        {
+            child.kill()?;
+            let _ = child.wait();
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+}
+
 // =============================================================================
 // HTTP front door
 // =============================================================================
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ParsedPostgrestHttpRequest {
+    method: String,
+    path: String,
+    headers: Vec<(String, String)>,
+    body: String,
+}
 
 pub fn handle_postgrest_sidecar_http_bytes(
     request: &[u8],
@@ -738,7 +851,9 @@ fn handle_postgrest_sidecar_http_request(
 ) -> Result<HttpProbeResponse, PostgrestSidecarError> {
     let request =
         std::str::from_utf8(request).map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
-    let (method, path, _body) = parse_http_request(request)?;
+    let request = parse_http_request(request)?;
+    let method = request.method.as_str();
+    let path = request.path.as_str();
 
     let plan = canonical_postgrest_execution_plan()?;
     let config = canonical_postgrest_supervisor_config();
@@ -762,11 +877,15 @@ fn handle_postgrest_sidecar_http_request(
         return match supervisor.resolve_route(&path["/api".len()..]) {
             Ok(route) => match rest_method_from_http(method) {
                 Some(rest_method) if route.methods.contains(&rest_method) => {
-                    Ok(HttpProbeResponse::new(
-                        200,
-                        "application/json",
-                        render_route_payload(route, rest_method),
-                    ))
+                    if let Some(upstream) = postgrest_upstream_from_env()? {
+                        proxy_postgrest_request(&upstream, &request, route, rest_method)
+                    } else {
+                        Ok(HttpProbeResponse::new(
+                            200,
+                            "application/json",
+                            render_route_payload(route, rest_method),
+                        ))
+                    }
                 }
                 _ => Ok(HttpProbeResponse::new(
                     405,
@@ -782,7 +901,14 @@ fn handle_postgrest_sidecar_http_request(
         };
     }
 
-    Ok(runtime.handle_http_bytes(request.as_bytes())?)
+    Ok(runtime.handle_http_bytes(request_to_runtime_bytes(&request).as_bytes())?)
+}
+
+fn request_to_runtime_bytes(request: &ParsedPostgrestHttpRequest) -> String {
+    format!(
+        "{} {} HTTP/1.1\r\nHost: sidecar\r\n\r\n{}",
+        request.method, request.path, request.body
+    )
 }
 
 fn rest_method_from_http(method: &str) -> Option<RestMethod> {
@@ -792,6 +918,231 @@ fn rest_method_from_http(method: &str) -> Option<RestMethod> {
         "PATCH" => Some(RestMethod::Patch),
         "DELETE" => Some(RestMethod::Delete),
         _ => None,
+    }
+}
+
+fn postgrest_upstream_from_env() -> Result<Option<String>, PostgrestSidecarError> {
+    let Ok(raw) = std::env::var(POSTGREST_UPSTREAM_ENV) else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let upstream = if let Some(rest) = trimmed.strip_prefix("http://") {
+        rest
+    } else if trimmed.contains("://") {
+        return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} only supports http:// or host:port loopback upstreams"
+        )));
+    } else {
+        trimmed
+    };
+    if upstream.contains('/') || !upstream.contains(':') {
+        return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} must be host:port without a path"
+        )));
+    }
+    let Some((host, port)) = upstream.rsplit_once(':') else {
+        return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} must be host:port without a path"
+        )));
+    };
+    let host = host.trim_matches(|ch| ch == '[' || ch == ']');
+    if !matches!(host, "127.0.0.1" | "localhost" | "::1") {
+        return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} must point at a loopback PostgREST process"
+        )));
+    }
+    let port = port.parse::<u16>().map_err(|_| {
+        PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} must use a non-zero TCP port"
+        ))
+    })?;
+    if port == 0 {
+        return Err(PostgrestSidecarError::InvalidRuntimeDependency(format!(
+            "{POSTGREST_UPSTREAM_ENV} must use a non-zero TCP port"
+        )));
+    }
+    Ok(Some(upstream.to_string()))
+}
+
+fn proxy_postgrest_request(
+    upstream: &str,
+    request: &ParsedPostgrestHttpRequest,
+    route: &RestRoute,
+    method: RestMethod,
+) -> Result<HttpProbeResponse, PostgrestSidecarError> {
+    let target = proxy_target(route, &request.path);
+    let mut stream = std::net::TcpStream::connect(upstream)?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(15)))?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(15)))?;
+
+    let mut outbound = format!(
+        "{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
+        request.method, target.path, upstream
+    );
+    for (name, value) in request
+        .headers
+        .iter()
+        .filter(|(name, _)| passthrough_header(name))
+    {
+        if !profile_header(name) && !name.eq_ignore_ascii_case("content-length") {
+            outbound.push_str(&format!("{}: {}\r\n", name, value));
+        }
+    }
+    match method {
+        RestMethod::Get => outbound.push_str(&format!("Accept-Profile: {}\r\n", target.schema)),
+        RestMethod::Post | RestMethod::Patch | RestMethod::Delete => {
+            outbound.push_str(&format!("Content-Profile: {}\r\n", target.schema));
+            outbound.push_str(&format!("Accept-Profile: {}\r\n", target.schema));
+        }
+    }
+    if !request.body.is_empty() && !has_header(&request.headers, "content-type") {
+        outbound.push_str("Content-Type: application/json\r\n");
+    }
+    outbound.push_str(&format!(
+        "Content-Length: {}\r\n\r\n{}",
+        request.body.as_bytes().len(),
+        request.body
+    ));
+
+    use std::io::{Read as _, Write as _};
+    stream.write_all(outbound.as_bytes())?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response)?;
+    parse_upstream_response(&response)
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ProxyTarget {
+    schema: String,
+    path: String,
+}
+
+fn proxy_target(route: &RestRoute, request_path: &str) -> ProxyTarget {
+    let after_api = request_path.strip_prefix("/api").unwrap_or(request_path);
+    let trimmed = after_api.trim_start_matches('/');
+    let (path_without_query, query) = split_query(trimmed);
+    let explicit_schema = path_without_query
+        .split_once('/')
+        .map(|(schema, _)| schema.to_string());
+    let schema = explicit_schema
+        .clone()
+        .or_else(|| {
+            route.distributed_view.as_ref().and_then(|binding| {
+                binding
+                    .view_name
+                    .split_once('.')
+                    .map(|(schema, _)| schema.to_string())
+            })
+        })
+        .unwrap_or_else(|| route.schema.clone());
+    let table = explicit_schema
+        .and_then(|_| {
+            path_without_query
+                .split_once('/')
+                .map(|(_, table)| table.to_string())
+        })
+        .or_else(|| {
+            route.distributed_view.as_ref().and_then(|binding| {
+                binding
+                    .view_name
+                    .split_once('.')
+                    .map(|(_, table)| table.to_string())
+            })
+        })
+        .unwrap_or_else(|| route.table.clone());
+    let mut path = format!("/{table}");
+    if let Some(query) = query {
+        path.push('?');
+        path.push_str(query);
+    }
+    ProxyTarget { schema, path }
+}
+
+fn split_query(value: &str) -> (&str, Option<&str>) {
+    match value.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (value, None),
+    }
+}
+
+fn passthrough_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "authorization" | "accept" | "prefer" | "content-type"
+    )
+}
+
+fn profile_header(name: &str) -> bool {
+    name.eq_ignore_ascii_case("accept-profile") || name.eq_ignore_ascii_case("content-profile")
+}
+
+fn has_header(headers: &[(String, String)], needle: &str) -> bool {
+    headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case(needle))
+}
+
+fn parse_upstream_response(response: &[u8]) -> Result<HttpProbeResponse, PostgrestSidecarError> {
+    let (body_start, head_bytes) =
+        split_http_head(response).ok_or(PostgrestSidecarError::MalformedHttpRequest)?;
+    let head =
+        std::str::from_utf8(head_bytes).map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
+    let mut lines = head.lines();
+    let status_line = lines
+        .next()
+        .ok_or(PostgrestSidecarError::MalformedHttpRequest)?;
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or(PostgrestSidecarError::MalformedHttpRequest)?
+        .parse::<u16>()
+        .map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
+    let mut content_type = "application/octet-stream".to_string();
+    let mut chunked = false;
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            if name.eq_ignore_ascii_case("content-type") {
+                content_type = value.trim().to_string();
+            }
+            if name.eq_ignore_ascii_case("transfer-encoding")
+                && value.to_ascii_lowercase().contains("chunked")
+            {
+                chunked = true;
+            }
+        }
+    }
+    let body_bytes = if chunked {
+        decode_chunked_body(&response[body_start..])?
+    } else {
+        response[body_start..].to_vec()
+    };
+    let body = String::from_utf8_lossy(&body_bytes).into_owned();
+    Ok(HttpProbeResponse::new(status_code, content_type, body))
+}
+
+fn decode_chunked_body(mut body: &[u8]) -> Result<Vec<u8>, PostgrestSidecarError> {
+    let mut decoded = Vec::new();
+    loop {
+        let Some(line_end) = find_bytes(body, b"\r\n") else {
+            return Err(PostgrestSidecarError::MalformedHttpRequest);
+        };
+        let size_text = std::str::from_utf8(&body[..line_end])
+            .map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
+        let size_hex = size_text.split(';').next().unwrap_or(size_text).trim();
+        let size = usize::from_str_radix(size_hex, 16)
+            .map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
+        body = &body[line_end + 2..];
+        if size == 0 {
+            return Ok(decoded);
+        }
+        if body.len() < size + 2 {
+            return Err(PostgrestSidecarError::MalformedHttpRequest);
+        }
+        decoded.extend_from_slice(&body[..size]);
+        body = &body[size + 2..];
     }
 }
 
@@ -898,13 +1249,13 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn parse_http_request(request: &str) -> Result<(&str, &str, &str), PostgrestSidecarError> {
+fn parse_http_request(request: &str) -> Result<ParsedPostgrestHttpRequest, PostgrestSidecarError> {
     let (head, body) = request
         .split_once("\r\n\r\n")
         .or_else(|| request.split_once("\n\n"))
         .ok_or(PostgrestSidecarError::MalformedHttpRequest)?;
-    let request_line = head
-        .lines()
+    let mut lines = head.lines();
+    let request_line = lines
         .next()
         .ok_or(PostgrestSidecarError::MalformedHttpRequest)?;
     let mut parts = request_line.split_whitespace();
@@ -917,7 +1268,18 @@ fn parse_http_request(request: &str) -> Result<(&str, &str, &str), PostgrestSide
     if !path.starts_with('/') {
         return Err(PostgrestSidecarError::MalformedHttpRequest);
     }
-    Ok((method, path, body))
+    let mut headers = Vec::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.trim().to_string(), value.trim().to_string()));
+        }
+    }
+    Ok(ParsedPostgrestHttpRequest {
+        method: method.to_string(),
+        path: path.to_string(),
+        headers,
+        body: body.to_string(),
+    })
 }
 
 fn escape_json(value: &str) -> String {
@@ -1118,10 +1480,17 @@ mod tests {
             supervisor.state().config_bytes,
         ));
 
+        std::env::set_var(
+            "POSTGREST_DB_URI",
+            "postgresql://postgres@127.0.0.1/postgres",
+        );
+        std::env::set_var("POSTGREST_JWT_SECRET", "01234567890123456789012345678901");
         let mut child = supervisor
             .spawn_child_at(&config_path)
             .expect("spawn child");
         let status = child.wait().expect("wait child");
+        std::env::remove_var("POSTGREST_DB_URI");
+        std::env::remove_var("POSTGREST_JWT_SECRET");
         let conf = std::fs::read_to_string(&config_path).expect("config written");
         let _ = std::fs::remove_file(&config_path);
 
@@ -1129,6 +1498,7 @@ mod tests {
         assert_eq!(supervisor.state().state, SupervisorState::Launched);
         assert_eq!(supervisor.state().launches, 1);
         assert!(conf.contains("db-uri = \"env:POSTGREST_DB_URI\""));
+        assert!(conf.contains("jwt-role-claim-key = \".role\""));
     }
 
     #[test]
@@ -1159,6 +1529,39 @@ mod tests {
         assert_eq!(report.state.state, SupervisorState::Launched);
         assert!(report.openapi.contains("\"/orders\""));
         assert!(report.conf.contains("server-port = 3000"));
+    }
+
+    #[test]
+    fn proxy_target_uses_distributed_view_for_unqualified_api_path() {
+        let plan = canonical_postgrest_plan();
+        let route = &plan.routes[0];
+
+        let target = proxy_target(route, "/api/orders?select=id,tenant_id");
+
+        assert_eq!(target.schema, "api");
+        assert_eq!(target.path, "/orders?select=id,tenant_id");
+    }
+
+    #[test]
+    fn proxy_target_respects_explicit_public_schema() {
+        let plan = canonical_postgrest_plan();
+        let route = &plan.routes[0];
+
+        let target = proxy_target(route, "/api/public/orders?select=id");
+
+        assert_eq!(target.schema, "public");
+        assert_eq!(target.path, "/orders?select=id");
+    }
+
+    #[test]
+    fn upstream_response_parser_decodes_chunked_postgrest_body() {
+        let response = b"HTTP/1.1 201 Created\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\n\r\nB\r\n[{\"id\":1}]\n\r\n0\r\n\r\n";
+
+        let parsed = parse_upstream_response(response).expect("parsed response");
+
+        assert_eq!(parsed.status_code, 201);
+        assert_eq!(parsed.content_type, "application/json");
+        assert_eq!(parsed.body, "[{\"id\":1}]\n");
     }
 
     #[test]
