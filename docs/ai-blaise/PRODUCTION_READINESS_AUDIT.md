@@ -609,6 +609,15 @@ mutation execution, CRD `.status` writes, outbound HTTP delivery, edge-function
 execution, external warehouse connectivity, and distributed search query fanout
 remain alpha until separately implemented and live-gated.
 
+
+Companion runtime depth A evidence is scoped to deterministic Rust companion
+reports for migration planning, durable queue semantics, and
+replication-conflict taxonomy across `M1`, `M11`, `R6`, `C4`, and `C5` under
+`ci/ai-blaise/companion-runtime-depth-a-smoke.sh`. It supplements the
+installable SQL runtime evidence where those entries are already promoted, but
+distributed DDL execution, queue worker operations, active-active replication,
+operator reconciliation, and live multi-node conflict handling remain alpha.
+
 The vectorizer runtime evidence is scoped to the PostgreSQL-backed sidecar
 worker loop, provider routing, tenant budget checks, queue claiming, usage-log
 recording, and local deterministic provider execution proven by

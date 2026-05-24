@@ -14,8 +14,9 @@ Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
 `db_doctor`, `domain_contracts`, `extension_catalog`, `geo_distributed`,
 `graph_bridge`, `index_advisor`, `jsonschema_bridge`, `ledger`,
 `lsp_metadata`, `migration`, `observability`, `ops_contracts`, `plan_freeze`,
-`router_assist`, `schema_jobs`, `search_bridge`, `tenants`,
-`toolkit_distributed`, `vector`, and `webhooks`.
+`queue`, `replication_conflict`, `router_assist`, `runtime_depth_a`,
+`schema_jobs`, `search_bridge`, `tenants`, `toolkit_distributed`, `vector`,
+and `webhooks`.
 
 ## Current Surface
 
@@ -39,7 +40,15 @@ Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
 - `IndexAdvisorPlan` for `FEATURE: IA3`
 - `LedgerTransferPlan`, `LedgerSealPlan`, and `LedgerChain` for
   `FEATURE: Sec5` and `FEATURE: Sec6`
-- `MigrationPlan` for `FEATURE: M1` and `FEATURE: M11`
+- `MigrationPlan` and `MigrationRuntime` for `FEATURE: M1` and
+  `FEATURE: M11`, including guarded expand/backfill/validate/cutover phase
+  decisions.
+- `DurableQueueRuntime` for the `FEATURE: R6` queue substrate, including
+  idempotent enqueue, `FOR UPDATE SKIP LOCKED` lease SQL, visibility timeout,
+  retry backoff, ack, and dead-letter transitions.
+- `ReplicationConflictResolver` for `FEATURE: C4` and `FEATURE: C5`, including
+  the seven conflict classes, monotonic-clock validation, origin-priority and
+  home-region policies, audit SQL, and fail-closed ambiguous/apply-error paths.
 - `WebhookRegistrationPlan` for `FEATURE: WH2`
 - policy plan shapes for distributed compression, retention, reorder, and
   continuous aggregate refresh
@@ -85,6 +94,10 @@ Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`,
 - `COMPANION_FEATURE_STATUSES` as the canonical status table exposed by the
   pgrx `companion_feature_status()` function and by the SQL fallback extension
   packaged in the operand image.
+- `canonical_companion_runtime_depth_a_report` executes the companion-owned
+  migration, queue, and replication-conflict runtime evidence batch;
+  `companion_runtime_depth_a run-canonical` emits the TSV summary used by the
+  focused smoke script.
 
 Default `cargo test -p ai_blaise_citus_companion` runs pure Rust validation.
 Use `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- \

@@ -1903,7 +1903,9 @@ policy objects.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C4` in `operator/src/crds/conflict_policy.rs`
+- In-source: `FEATURE: C4` in `companion/src/replication_conflict.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 
 ### C5: Replication Conflict Taxonomy
 
@@ -1926,7 +1928,9 @@ classification contract.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: C5` in `operator/src/crds/conflict_policy.rs`
+- In-source: `FEATURE: C5` in `companion/src/replication_conflict.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` and
   `patches/postgres/0002-per-subtrans-commit-ts.patch` provide the PG-core
   pieces the seven-class conflict resolver needs: monotonic commit timestamps
@@ -2292,9 +2296,11 @@ real PostgreSQL server and verifies `companion_internal.migrate_start(...)`,
 `companion_internal.migrate_complete(...)`, and
 `companion_migration_operations` record a completed migration with rendered
 bounded expand DDL. The smoke verifies operations cannot run without an active
-migration. Actual distributed DDL execution, schema-job workers, online
-backfill, lock orchestration, rollback execution, and operator CRD
-reconciliation remain alpha.
+migration. The companion runtime depth A smoke also exercises the Rust
+`canonical_migration_runtime_report()` path alongside the durable queue and
+replication-conflict reports. Actual distributed DDL execution, schema-job
+workers, online backfill, lock orchestration, rollback execution, and operator
+CRD reconciliation remain alpha.
 
 **Motivation**: Type changes, adds, drops, and renames need a reviewed
 migration unit before schema-job workers and operator CRDs execute them.
@@ -2311,6 +2317,7 @@ ship a pgroll-style expand/contract migration layer.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (walks Migration through DELETE_ONLY/WRITE_ONLY/BACKFILL/PUBLIC with checkpointed phase log)
 
 ### M2: gh-ost-Style Online DDL
@@ -2508,7 +2515,8 @@ real PostgreSQL server and verifies
 DDL in `companion_migration_operations`. The smoke verifies identical source
 and target types fail closed. Actual backfill workers, trigger-based dual
 writes, cutover, validation scans, rollback, and distributed table rewrite
-orchestration remain alpha.
+orchestration remain alpha. The companion runtime depth A smoke includes
+this Rust migration report in its deterministic evidence row.
 
 **Motivation**: Large distributed tables need type migrations that can expand,
 backfill, and contract without a long exclusive lock.
@@ -2525,6 +2533,7 @@ ship an online column-type migration contract.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_schema_job -- run-canonical`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
+- CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/schema-job-f1-2vi-smoke.sh` (simulates mid-BACKFILL worker failure, verifies rollback restores DELETE_ONLY semantics, cleans partial backfill rows)
 
 ### M14: F1-Style Two-Version Invariant Controller
@@ -6607,14 +6616,15 @@ package reconciliation remain alpha.
 
 ### R6: Queue Extension Catalog Runtime
 
-**Overlay**: `companion/src/extension_catalog.rs`
+**Overlay**: `companion/src/extension_catalog.rs`, `companion/src/queue.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgmq`, `pgque`
 
 **Summary**: Provides an installable SQL extension catalog runtime entry for
-the bloat-free queue substrate contract.
+the bloat-free queue substrate contract plus deterministic companion queue
+runtime primitives.
 
 Production evidence: Local, VM, and GitHub Actions proof run
 `ci/ai-blaise/sql-extension-smoke.sh`, which installs `ai_blaise_citus` into a
@@ -6622,9 +6632,11 @@ real PostgreSQL server and verifies the installable SQL extension catalog
 runtime through `companion_internal.seed_extension_catalog`,
 `companion_extension_catalog`, `companion_extension_feature_coverage`,
 `companion_extension_required`, `companion_required_preload_libraries`, and
-that hard-blocked extensions fail closed. Actual binary extension
-installation, full operand image build, initdb extension creation, and operator
-package reconciliation remain alpha.
+that hard-blocked extensions fail closed. The companion runtime depth A smoke
+also exercises `DurableQueueRuntime` idempotent enqueue, lease, retry, ack,
+and dead-letter behavior with deterministic SQL evidence. Actual binary
+extension installation, full operand image build, initdb extension creation,
+and operator package reconciliation remain alpha.
 
 **Citus comparison**: Vanilla Citus does not package pgque/pgmq as queue
 policy.
@@ -6634,6 +6646,8 @@ policy.
 - SQL runtime: `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
 - In-source: `FEATURE: R6` in `companion/src/extension_catalog.rs`
+- In-source: `FEATURE: R6` in `companion/src/queue.rs`
+- CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 
 ### R11: pg_warm Catalog Runtime
 

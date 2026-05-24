@@ -298,17 +298,19 @@ has_http_probe_contract() {
         return 0
       fi
     fi
-    if grep -Fq '/healthz' "${probe_file}" && grep -Fq '/readyz' "${probe_file}"; then
+    if grep -Eq '(/healthz|healthz)' "${probe_file}" \
+      && grep -Eq '(/readyz|readyz)' "${probe_file}" \
+      && grep -Eq '(/metrics|metrics)' "${probe_file}"; then
       return 0
     fi
   fi
 
   src_dir="${main_file%/main.rs}"
   if [[ -d "${src_dir}" ]] \
-    && grep -R -Fq 'TcpListener::bind' "${src_dir}" \
-    && grep -R -Fq '"/healthz"' "${src_dir}" \
-    && grep -R -Fq '"/readyz"' "${src_dir}" \
-    && grep -R -Fq '"/metrics"' "${src_dir}"; then
+    && grep -R -Eq '(TcpListener|axum::|Router::new|serve_[A-Za-z0-9_]*_http|serve_http)' "${src_dir}" \
+    && grep -R -Eq '(/healthz|healthz)' "${src_dir}" \
+    && grep -R -Eq '(/readyz|readyz)' "${src_dir}" \
+    && grep -R -Eq '(/metrics|metrics)' "${src_dir}"; then
     return 0
   fi
 
