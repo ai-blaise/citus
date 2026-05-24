@@ -87,6 +87,9 @@ fn main() {
         }
         [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
         [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
+        [command] if command == "run-conflict-policy-runtime-canonical" => {
+            run_conflict_policy_runtime_canonical()
+        }
         [command] if command == "run-controller-boundary" => run_controller_boundary(),
         [command] if command == "run-branch-lifecycle-canonical" => {
             run_branch_lifecycle_canonical()
@@ -134,7 +137,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical]");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -426,6 +429,14 @@ fn run_reconcile_plans_batch_c() {
         report.sidecar_replicas,
         report.sidecar_deletion_steps,
     );
+}
+
+fn run_conflict_policy_runtime_canonical() {
+    let script = canonical_conflict_policy_runtime_sql().unwrap_or_else(|error| {
+        eprintln!("operator: conflict-policy runtime SQL generation failed: {error}");
+        process::exit(1);
+    });
+    print!("{script}");
 }
 
 fn run_controller_boundary() {
@@ -1140,6 +1151,23 @@ fn canonical_conflict_policy_spec() -> ConflictPolicySpec {
     }
 }
 
+fn canonical_conflict_policy_runtime_sql() -> Result<String, Box<dyn Error>> {
+    let lww_plan =
+        ConflictPolicyReconcilePlan::from_spec("accounts-lww", &canonical_conflict_policy_spec())?;
+    let merge_policy = ConflictPolicySpec {
+        table: "public.reference_accounts".to_string(),
+        class: ConflictClass::InsertUpdate,
+        resolution: ConflictResolution::CustomFunction,
+        custom_function: Some("public.merge_remote_into_local".to_string()),
+    };
+    let merge_plan = ConflictPolicyReconcilePlan::from_spec("accounts-merge", &merge_policy)?;
+    Ok(format!(
+        "-- FEATURE: C4 C5 live conflict-policy metadata apply\n{}\n{}\n",
+        lww_plan.apply_sql_script(),
+        merge_plan.apply_sql_script()
+    ))
+}
+
 fn canonical_federation_spec() -> FederationSpec {
     FederationSpec {
         name: "warehouse".to_string(),
@@ -1344,6 +1372,20 @@ mod tests {
                 sidecar_deletion_steps: 4,
             }
         );
+    }
+
+    #[test]
+    fn canonical_conflict_policy_runtime_sql_contains_lww_and_custom_plans() {
+        let script = canonical_conflict_policy_runtime_sql().expect("conflict policy script");
+
+        assert!(script.contains("FEATURE: C4 C5"));
+        assert!(script.contains("'accounts-lww'"));
+        assert!(script.contains("'update_origin_differs'"));
+        assert!(script.contains("'apply_remote_if_newer'"));
+        assert!(script.contains("'accounts-merge'"));
+        assert!(script.contains("'update_exists'"));
+        assert!(script.contains("'merge_function'"));
+        assert!(script.contains("public.merge_remote_into_local(jsonb,jsonb)"));
     }
 
     #[test]

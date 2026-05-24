@@ -27,6 +27,8 @@ ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
 bundle1_contract_check="ci/ai-blaise/bundle1-contract-check.py"
 bundle1_source_lock="${image_dir}/bundle1-source-build.lock.tsv"
 security_supply_chain_smoke="ci/ai-blaise/security-supply-chain-smoke.sh"
+operator_reconcilers_batch_c_smoke="ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh"
+companion_runtime_depth_a_smoke="ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -60,7 +62,9 @@ for file in \
   "${ai_sql_contract_smoke}" \
   "${bundle1_contract_check}" \
   "${bundle1_source_lock}" \
-  "${security_supply_chain_smoke}"; do
+  "${security_supply_chain_smoke}" \
+  "${operator_reconcilers_batch_c_smoke}" \
+  "${companion_runtime_depth_a_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -109,6 +113,14 @@ if [[ ! -x "${observability_contracts_check}" ]]; then
 fi
 if [[ ! -x "${security_supply_chain_smoke}" ]]; then
   echo "missing executable security supply-chain smoke: ${security_supply_chain_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${operator_reconcilers_batch_c_smoke}" ]]; then
+  echo "missing executable operator reconcilers batch C smoke: ${operator_reconcilers_batch_c_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${companion_runtime_depth_a_smoke}" ]]; then
+  echo "missing executable companion runtime depth A smoke: ${companion_runtime_depth_a_smoke}" >&2
   exit 1
 fi
 
@@ -771,6 +783,15 @@ grep -Fq "cron_clock_reserved_runs" "${pg_cron_cohabitation_smoke}"
 grep -Fq "negative_clock_tick_reserved" "${pg_cron_cohabitation_smoke}"
 grep -Fq "missing-citus-cohabit-extensions" "${pg_cron_cohabitation_smoke}"
 grep -Fq "pg-cron-cohabitation-evidence.tsv" "${pg_cron_cohabitation_smoke}"
+grep -Fq "run-conflict-policy-runtime-canonical" operator/src/main.rs
+grep -Fq "run-conflict-policy-runtime-canonical" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "CONFLICT_POLICY_IMAGE" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "conflict_policy_live_row" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "accounts-lww" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "accounts-merge" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "conflict_classes" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "companion.replication_conflict_audit" "${operator_reconcilers_batch_c_smoke}"
+grep -Fq "companion.replication_conflict_audit" companion/src/replication_conflict.rs
 grep -Fq "cohabit_extension_detection_report" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "assert_cohabit_extension_ready" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "stable image identity" "${timescale_cohabitation_smoke}"

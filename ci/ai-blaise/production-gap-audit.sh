@@ -41,6 +41,8 @@ SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
 SIDECAR_CDC_SMOKE = ROOT / "ci/ai-blaise/sidecar-cdc-smoke.sh"
 SIDECAR_CDC_README = ROOT / "sidecar/cdc/README.md"
 SIDECAR_CDC_MODIFICATION = ROOT / "sidecar/cdc/MODIFICATION.md"
+OPERATOR_RECONCILERS_BATCH_C_SMOKE = ROOT / "ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh"
+COMPANION_RUNTIME_DEPTH_A_SMOKE = ROOT / "ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
@@ -386,6 +388,8 @@ for path in (
     SIDECAR_CDC_SMOKE,
     SIDECAR_CDC_README,
     SIDECAR_CDC_MODIFICATION,
+    OPERATOR_RECONCILERS_BATCH_C_SMOKE,
+    COMPANION_RUNTIME_DEPTH_A_SMOKE,
     STRUCTURED_LOG_INGESTION_SMOKE,
     OBSERVABILITY_WORKFLOW,
     SIDECAR_REALTIME_SMOKE,
@@ -634,6 +638,46 @@ for phrase in (
 ):
     if phrase not in cdc_executable_truth:
         fail(f"C2 DDL capture executable proof must preserve phrase: {phrase}")
+
+conflict_truth = compact(
+    docs
+    + "\n"
+    + audit
+    + "\n"
+    + read(OPERATOR_RECONCILERS_BATCH_C_SMOKE)
+    + "\n"
+    + read(COMPANION_RUNTIME_DEPTH_A_SMOKE)
+    + "\n"
+    + read(ROOT / "operator/src/main.rs")
+    + "\n"
+    + read(ROOT / "operator/src/reconcile/conflict_policy.rs")
+    + "\n"
+    + read(ROOT / "companion/src/replication_conflict.rs")
+)
+if status_by_id.get("C4") != "production-ready":
+    fail("C4 must be production-ready after live conflict-policy metadata apply evidence")
+if status_by_id.get("C5") != "production-ready":
+    fail("C5 must be production-ready after seven-class resolver and live metadata apply evidence")
+for phrase in (
+    "run-conflict-policy-runtime-canonical",
+    "CONFLICT_POLICY_IMAGE",
+    "conflict_policy_live_row",
+    "accounts-lww",
+    "accounts-merge",
+    "update_origin_differs",
+    "apply_remote_if_newer",
+    "update_exists",
+    "merge_function",
+    "public.merge_remote_into_local",
+    "replication_conflict_status",
+    "conflict_classes",
+    "7",
+    "companion.replication_conflict_audit",
+    "does not claim live pgactive",
+    "does not claim live Spock",
+):
+    if compact(phrase) not in conflict_truth:
+        fail(f"C4/C5 conflict-policy production boundary must preserve phrase: {phrase}")
 
 sidecar_smoke = read(SIDECAR_API_SMOKE)
 for required in (

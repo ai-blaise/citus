@@ -2168,7 +2168,7 @@ contract.
 ### C4: Active-Active Conflict Policy
 
 **Overlay**: `operator/src/crds/conflict_policy.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgactive`
@@ -2182,6 +2182,17 @@ replication can be enabled safely.
 **Citus comparison**: Vanilla Citus does not ship active-active conflict
 policy objects.
 
+Production evidence: `REQUIRE_DOCKER=1 ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
+generates `run-conflict-policy-runtime-canonical`, boots `CONFLICT_POLICY_IMAGE`,
+installs `ai_blaise_citus`, applies the generated SQL to live PostgreSQL/Citus,
+and verifies `conflict_policy_live_row` output for `accounts-lww` with
+`update_origin_differs`/`apply_remote_if_newer` plus `accounts-merge` with
+`update_exists`/`merge_function` and `public.merge_remote_into_local`. The same
+runtime smoke verifies `replication_conflict_status` and the companion
+`conflict_classes` `7` taxonomy/audit contract. This does not claim live
+pgactive conflict traffic, live Spock apply traffic, multi-node active-active
+replication, or remote conflict replay.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -2191,13 +2202,14 @@ policy objects.
 - In-source: `FEATURE: C4` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-conflict-policy-runtime-canonical`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 
 ### C5: Replication Conflict Taxonomy
 
 **Overlay**: `operator/src/crds/conflict_policy.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `spock`
@@ -2211,6 +2223,19 @@ conflicts collapse into one undifferentiated failure state.
 **Citus comparison**: Vanilla Citus does not expose a Spock-style conflict
 classification contract.
 
+Production evidence: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh` and
+`REQUIRE_DOCKER=1 ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` verify
+that the companion resolves seven conflict classes, emits
+`companion.replication_conflict_audit` SQL for every canonical case, reports two
+reject outcomes and four fail-closed guards, and that the operator maps the
+runtime policy classes to `insert_exists`, `update_exists`,
+`update_origin_differs`, `update_missing`, `delete_origin_differs`,
+`delete_missing`, and `delete_exists`. The live metadata apply proof records
+`conflict_classes` `7` beside `conflict_policy_live_row` evidence for
+`accounts-lww` and `accounts-merge`. This does not claim live pgactive conflict
+traffic, live Spock apply traffic, PGC1/PGC2 runtime activation, or a production
+replication apply worker.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -2220,6 +2245,7 @@ classification contract.
 - In-source: `FEATURE: C5` in `operator/src/controllers/conflict_policy.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-conflict-policy-runtime-canonical`
 - CI: `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` and
