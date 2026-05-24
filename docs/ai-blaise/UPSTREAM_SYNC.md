@@ -26,11 +26,11 @@ the PR opens.
 | 0001 | `patches/0001-allow-trusted-hook-coextensions.patch` | pending submission | not submitted | landed in fork PR1 | gates on `make -f Makefile.ai-blaise patches-check` plus the `timescale-cohabitation-smoke` run that exercises a real Citus+TimescaleDB cohabit boot |
 | 0002 | `patches/0002-preserve-trusted-hook-chain-state.patch` | pending submission | not submitted | landed in fork PR1 | gates on `timescale-cohabitation-smoke` covering planner, executor, and explain hook chains under a trusted coextension |
 | 0003 | `patches/0003-guc-report-citus-userset.patch` | pending submission | draft prepared (one-place diff to `OverridePostgresConfigProperties()`) | landed in fork PR50 | gates on `patches-check` plus a `kind-production-smoke` run that demonstrates a pooler receiving `ParameterStatus` for `citus.enable_router_execution` |
-| 0004 | hashtable on planner hotpath | pending submission | in flight (draft not yet pushed) | not yet landed in fork | gates on a microbenchmark showing reduction in planner-hotpath linear scans on `pg_dist_partition` lookups |
+| 0004 | roster-only: `patches/0004-hashtable-on-planner-hotpath.patch` is absent from `bootstrap-v2` | pending submission | not submitted | not landed; not production-ready | no `patches/*.patch` artifact in `patches/series`; requires future measured `benchmarks/citus-patches/results/0004-router-planner-hotpath.json` before any production claim |
 | 0005 | `patches/0005-placement-generation-counter.patch` | pending submission | draft prepared | landed in fork PR50 | gates on companion-side subscriber tests (`cargo test -p ai_blaise_citus_companion --lib router_assist`) plus a real Citus build that exercises the counter through a rebalance |
-| 0006 | fast-path router skip coord rt | pending submission | in flight | not yet landed in fork | gates on `bench-fast-path-router` harness showing a measurable reduction in coordinator round-trips for single-shard router queries |
-| 0007 | citus clock cohabit pg_cron | pending submission | in flight | not yet landed in fork | gates on a cohabit-smoke run that boots Citus + `pg_cron` without `citus_clock` registration conflicts |
-| 0008 | cohabit-extensions detection API | pending submission | in flight | not yet landed in fork | gates on companion-side detection harness covering TimescaleDB, `pg_cron`, and `pg_partman` |
+| 0006 | roster-only: `patches/0006-fast-path-router-no-coord-rt.patch` is absent from `bootstrap-v2` | pending submission | not submitted | not landed; not production-ready | no `patches/*.patch` artifact in `patches/series`; requires future measured `benchmarks/citus-patches/results/0006-fast-path-router-skip.json` before any production claim |
+| 0007 | roster-only: `patches/0007-citus-clock-cohabit-pg-cron.patch` is absent from `bootstrap-v2` | pending submission | not submitted | not landed; not production-ready | no `patches/*.patch` artifact in `patches/series`; requires future measured `benchmarks/citus-patches/results/0007-pg-cron-cohabit.json` before any production claim |
+| 0008 | roster-only: `patches/0008-cohabit-extensions-detection-api.patch` is absent from `bootstrap-v2` | pending submission | not submitted | not landed; not production-ready | no `patches/*.patch` artifact in `patches/series`; requires future measured `benchmarks/citus-patches/results/0008-detection-matrix.json` before any production claim |
 | 0009 | distSQL physical plan distribution | pending submission | in flight (large scope; will require multiple sub-PRs) | not yet landed in fork | gates on `companion-advanced-planner` canonical row plus an end-to-end physical-plan distribution smoke |
 | 0010 | distributed cursors | pending submission | in flight | not yet landed in fork | gates on a cursor-correctness smoke that fetches across coordinator failover |
 | 0011 | distributed savepoints | pending submission | in flight | not yet landed in fork | gates on a savepoint-correctness smoke covering nested-transaction rollback across shards |
@@ -42,10 +42,17 @@ the next two candidates we expect to submit; their draft mailbox diffs are
 already mailbox-header-clean and have on-disk `patches/series` entries.
 
 Patches 0004 and 0006-0011 are roster entries -- they describe planned upstream
-contributions that have a tracked design but no `patches/*.patch` artifact yet.
-Each will land in the fork first (per the cadence below) and then be submitted
-upstream after the runtime gate flips from `alpha` to `production-ready` in
-`docs/ai-blaise/NEW_FEATURES.md`.
+contributions that have a tracked design but no `patches/*.patch` artifact in
+`bootstrap-v2` yet. For 0004, 0006, 0007, and 0008, the production gate is the
+fail-closed manifest in `benchmarks/citus-patches/production-gates.json` plus
+`make -f Makefile.ai-blaise citus-patch-production-audit`. The audit rejects
+placeholder benchmarks, skipped/scaffold results, docs that overstate maturity,
+and any production-ready claim before the patch artifact is listed in
+`patches/series` and the measured result exists.
+
+Each roster entry will land in the fork first (per the cadence below) and then
+be submitted upstream after the runtime gate flips from `alpha` to
+`production-ready` in `docs/ai-blaise/NEW_FEATURES.md`.
 
 ### Citus upstream submission cadence
 

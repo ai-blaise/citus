@@ -579,3 +579,12 @@ Production Helm values must also keep alpha sidecars disabled by default.
 `ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
 sidecar before the corresponding feature is promoted with measured production
 evidence.
+
+The Citus patch production integration audit keeps custom patch roster entries
+`0004`, `0006`, `0007`, and `0008` explicitly not production-ready in
+`bootstrap-v2`. `ci/ai-blaise/citus-patch-production-audit.sh` fails closed
+unless missing patch artifacts stay documented as roster-only, future patch
+artifacts enter `patches/series`, and any production claim has a measured
+non-scaffold result with thresholds in
+`benchmarks/citus-patches/production-gates.json`. This is negative evidence for
+the current branch, not a runtime signoff for those patch IDs.

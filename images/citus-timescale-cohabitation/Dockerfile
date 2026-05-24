@@ -16,6 +16,8 @@ USER root
 
 RUN set -eux; \
     apk add --no-cache \
+      autoconf \
+      automake \
       bash \
       bison \
       build-base \
@@ -26,6 +28,7 @@ RUN set -eux; \
       krb5-dev \
       libxml2-dev \
       libxslt-dev \
+      libtool \
       lz4-dev \
       llvm19-dev \
       openssl-dev \
