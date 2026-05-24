@@ -8,11 +8,7 @@ tag="${TAG:-0.1.0}"
 dockerfile="${DOCKERFILE:-images/rust-runtime/Dockerfile}"
 push="${PUSH:-false}"
 digest_file="${DIGEST_FILE:-artifacts/ai-blaise-image-digests.tsv}"
-
-if [[ -n "${digest_file}" ]]; then
-  mkdir -p "$(dirname "${digest_file}")"
-  printf 'repository\timage\ttag\tdigest\tpackage\tbinary\tpushed\n' >"${digest_file}"
-fi
+source_revision="${SOURCE_REVISION:-}"
 
 images=(
   "citus-operator|ai_blaise_citus_operator|ai_blaise_citus_operator"
@@ -37,6 +33,71 @@ images=(
   "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster"
 )
 
+if [[ "${LIST_IMAGES:-false}" == "true" ]]; then
+  printf 'repository\tpackage\tbinary\tdefault_args\n'
+  for image in "${images[@]}"; do
+    IFS="|" read -r repository package binary default_args <<< "${image}"
+    printf '%s\t%s\t%s\t%s\n' \
+      "${repository}" \
+      "${package}" \
+      "${binary}" \
+      "${default_args:-serve}"
+  done
+  exit 0
+fi
+
+if [[ "${push}" != "true" && "${push}" != "false" ]]; then
+  echo "PUSH must be either true or false" >&2
+  exit 1
+fi
+
+if [[ -z "${registry}" ]]; then
+  echo "IMAGE_REGISTRY must not be empty" >&2
+  exit 1
+fi
+
+if [[ -z "${tag}" ]]; then
+  echo "TAG must not be empty" >&2
+  exit 1
+fi
+
+if [[ "${tag}" =~ [[:space:]/@] ]]; then
+  echo "release image tag contains invalid characters: ${tag}" >&2
+  exit 1
+fi
+
+if [[ "${push}" == "true" ]]; then
+  if [[ "${tag}" =~ ^(latest|main|master|dev|test|local)$ ]]; then
+    echo "release image tag must not be mutable: ${tag}" >&2
+    exit 1
+  fi
+  if [[ -z "${IMAGE_REGISTRY+x}" || -z "${IMAGE_REGISTRY}" ]]; then
+    echo "PUSH=true requires IMAGE_REGISTRY to be set explicitly" >&2
+    exit 1
+  fi
+  if [[ -z "${TAG+x}" || -z "${TAG}" ]]; then
+    echo "PUSH=true requires TAG to be set explicitly" >&2
+    exit 1
+  fi
+  if [[ -z "${digest_file}" ]]; then
+    echo "PUSH=true requires DIGEST_FILE so the immutable image handoff is durable" >&2
+    exit 1
+  fi
+  if [[ "${registry}" =~ ^(localhost|127\.0\.0\.1)([:/]|$) && "${ALLOW_LOCAL_IMAGE_REGISTRY:-false}" != "true" ]]; then
+    echo "local IMAGE_REGISTRY requires ALLOW_LOCAL_IMAGE_REGISTRY=true and is not release evidence" >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "${source_revision}" ]]; then
+  source_revision="$(git rev-parse --verify HEAD 2>/dev/null || printf unknown)"
+fi
+
+if [[ -n "${digest_file}" ]]; then
+  mkdir -p "$(dirname "${digest_file}")"
+  printf 'source_revision\trepository\timage\ttag\tdigest\tpackage\tbinary\tpushed\n' >"${digest_file}"
+fi
+
 for image in "${images[@]}"; do
   IFS="|" read -r repository package binary default_args <<< "${image}"
   default_args="${default_args:-serve}"
@@ -48,6 +109,10 @@ for image in "${images[@]}"; do
     --build-arg "PACKAGE=${package}" \
     --build-arg "BIN=${binary}" \
     --build-arg "DEFAULT_ARGS=${default_args}" \
+    --label "org.opencontainers.image.source=https://github.com/ai-blaise/citus" \
+    --label "org.opencontainers.image.revision=${source_revision}" \
+    --label "org.opencontainers.image.version=${tag}" \
+    --label "org.opencontainers.image.title=ai-blaise/citus ${repository}" \
     --tag "${full_image}" \
     .
 
@@ -76,7 +141,8 @@ for image in "${images[@]}"; do
   fi
 
   if [[ -n "${digest_file}" ]]; then
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+      "${source_revision}" \
       "${repository}" \
       "${full_image}" \
       "${tag}" \

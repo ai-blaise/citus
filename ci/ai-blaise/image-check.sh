@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
 image_dir="images/citus-pg-overlay"
@@ -16,6 +17,7 @@ timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
+release_publishability_check="ci/ai-blaise/release-publishability-check.sh"
 
 for file in \
   "${dockerignore}" \
@@ -32,7 +34,8 @@ for file in \
   "${timescale_bridge_smoke}" \
   "${timescale_cohabitation_smoke}" \
   "${observability_replication_smoke}" \
-  "${app_digest_smoke}"; do
+  "${app_digest_smoke}" \
+  "${release_publishability_check}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -57,6 +60,10 @@ if [[ ! -x "${observability_replication_smoke}" ]]; then
 fi
 if [[ ! -x "${app_digest_smoke}" ]]; then
   echo "missing executable app image digest manifest smoke: ${app_digest_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${release_publishability_check}" ]]; then
+  echo "missing executable release publishability check: ${release_publishability_check}" >&2
   exit 1
 fi
 
@@ -158,14 +165,23 @@ grep -Fq "DIGEST_FILE" "${build_app_images}"
 grep -Fq "push_output" "${build_app_images}"
 grep -Fq "ai-blaise-image-digests.tsv" "${build_app_images}"
 grep -Fq "pushed image" "${build_app_images}"
+grep -Fq "LIST_IMAGES" "${build_app_images}"
+grep -Fq "PUSH=true requires IMAGE_REGISTRY" "${build_app_images}"
+grep -Fq "PUSH=true requires TAG" "${build_app_images}"
+grep -Fq "release image tag must not be mutable" "${build_app_images}"
+grep -Fq "org.opencontainers.image.revision" "${build_app_images}"
 grep -Fq "did not report an immutable repo digest" "${build_app_images}"
-grep -Fq "repository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" "${build_app_images}"
+grep -Fq "source_revision\\trepository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" "${build_app_images}"
 grep -Fq 'DEFAULT_ARGS=${default_args}' "${build_app_images}"
 grep -Fq "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster" "${build_app_images}"
 grep -Fq "build-app-images.sh must fail a pushed image without an immutable digest" "${app_digest_smoke}"
+grep -Fq "build-app-images.sh must require IMAGE_REGISTRY for pushes" "${app_digest_smoke}"
+grep -Fq "build-app-images.sh must reject mutable release image tags" "${app_digest_smoke}"
 grep -Fq "digest manifest must include header plus 20 image rows" "${app_digest_smoke}"
 grep -Fq "FAKE_DOCKER_DIGEST_MODE=missing" "${app_digest_smoke}"
 grep -Fq "FAKE_DOCKER_PUSH_DIGEST_MODE=missing" "${app_digest_smoke}"
+grep -Fq "release publishability contract ok" "${release_publishability_check}"
+grep -Fq "REQUIRE_PUBLISHED_DIGESTS" "${release_publishability_check}"
 grep -Fq 'cargo build --release -p "${PACKAGE}" --bin "${BIN}"' "${runtime_dockerfile}"
 grep -Fq 'ENTRYPOINT ["/usr/local/bin/ai-blaise-entrypoint"]' "${runtime_dockerfile}"
 grep -Fq 'CMD []' "${runtime_dockerfile}"
