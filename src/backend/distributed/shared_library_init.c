@@ -1734,6 +1734,29 @@ RegisterCitusConfigVariables(void)
 		GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE,
 		NULL, NULL, NULL);
 
+	/*
+	 * FEATURE: T3
+	 *
+	 * When true, the fast-path router exposes
+	 * RouterFastPathCanSkipCoordinator() and the SQL-level
+	 * pg_catalog.citus_fast_path_router_can_skip_coordinator() so an
+	 * upstream pool/companion can route single-shard requests directly
+	 * to the local worker path without paying for a coordinator
+	 * round-trip. The planner-side surface is observational; the
+	 * in-tree executor still goes through the coordinator path so
+	 * existing semantics are preserved.
+	 */
+	DefineCustomBoolVariable(
+		"citus.enable_fast_path_router_skip_coordinator",
+		gettext_noop("Exposes the fast-path-router locality probe used by"
+					 " coord-less pools to skip the coordinator round-trip."),
+		NULL,
+		&EnableFastPathRouterSkipCoordinator,
+		true,
+		PGC_USERSET,
+		GUC_NO_SHOW_ALL | GUC_NOT_IN_SAMPLE,
+		NULL, NULL, NULL);
+
 	DefineCustomBoolVariable(
 		"citus.enable_local_execution",
 		gettext_noop("Enables queries on shards that are local to the current node "

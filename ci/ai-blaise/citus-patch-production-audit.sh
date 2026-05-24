@@ -137,6 +137,57 @@ for entry in patches:
             if "scaffold" in result_text or "placeholder" in result_text or "skipped" in result_text:
                 fail(f"{patch_id}: existing result {gate_path_raw} looks scaffolded/skipped")
 
+            def number_at(key: str):
+                value = gate_result.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    fail(f"{patch_id}: existing result {gate_path_raw} missing numeric {key}")
+                    return None
+                return value
+
+            metric_value = gate_result.get(metric)
+            if "max_value" in gate:
+                if isinstance(metric_value, bool) or not isinstance(metric_value, (int, float)):
+                    fail(f"{patch_id}: metric {metric} must be numeric for max_value threshold")
+                elif metric_value > gate["max_value"]:
+                    fail(f"{patch_id}: metric {metric}={metric_value} exceeds max_value={gate['max_value']}")
+            if "min_value" in gate:
+                if isinstance(metric_value, bool) or not isinstance(metric_value, (int, float)):
+                    fail(f"{patch_id}: metric {metric} must be numeric for min_value threshold")
+                elif metric_value < gate["min_value"]:
+                    fail(f"{patch_id}: metric {metric}={metric_value} below min_value={gate['min_value']}")
+            if "required_value" in gate and metric_value != gate["required_value"]:
+                fail(f"{patch_id}: metric {metric}={metric_value!r} does not equal required_value={gate['required_value']!r}")
+            if "min_sample_count" in gate:
+                sample_count = number_at("sample_count")
+                if sample_count is not None and sample_count < gate["min_sample_count"]:
+                    fail(f"{patch_id}: sample_count={sample_count} below min_sample_count={gate['min_sample_count']}")
+            if "max_regression_pct" in gate:
+                regression_pct = gate_result.get("regression_pct", gate_result.get("planner_regression_pct"))
+                if isinstance(regression_pct, bool) or not isinstance(regression_pct, (int, float)):
+                    fail(f"{patch_id}: existing result {gate_path_raw} missing numeric regression_pct")
+                elif regression_pct > gate["max_regression_pct"]:
+                    fail(f"{patch_id}: regression_pct={regression_pct} exceeds max_regression_pct={gate['max_regression_pct']}")
+            if "min_improvement_pct" in gate:
+                improvement_pct = gate_result.get("improvement_pct")
+                if isinstance(improvement_pct, bool) or not isinstance(improvement_pct, (int, float)):
+                    fail(f"{patch_id}: existing result {gate_path_raw} missing numeric improvement_pct")
+                elif improvement_pct < gate["min_improvement_pct"]:
+                    fail(f"{patch_id}: improvement_pct={improvement_pct} below min_improvement_pct={gate['min_improvement_pct']}")
+            if "max_registration_conflicts" in gate:
+                conflicts = gate_result.get("registration_conflicts", gate_result.get("max_registration_conflicts"))
+                if isinstance(conflicts, bool) or not isinstance(conflicts, (int, float)):
+                    fail(f"{patch_id}: existing result {gate_path_raw} missing numeric registration_conflicts")
+                elif conflicts > gate["max_registration_conflicts"]:
+                    fail(f"{patch_id}: registration_conflicts={conflicts} exceeds max_registration_conflicts={gate['max_registration_conflicts']}")
+            if "min_cases" in gate:
+                case_count = gate_result.get("case_count")
+                if case_count is None and isinstance(gate_result.get("cases"), list):
+                    case_count = len(gate_result["cases"])
+                if isinstance(case_count, bool) or not isinstance(case_count, (int, float)):
+                    fail(f"{patch_id}: existing result {gate_path_raw} missing numeric case_count")
+                elif case_count < gate["min_cases"]:
+                    fail(f"{patch_id}: case_count={case_count} below min_cases={gate['min_cases']}")
+
     if production_ready:
         if not artifact_exists:
             fail(f"{patch_id}: production_ready requires patch artifact {expected_patch_path}")
@@ -183,12 +234,15 @@ for entry in patches:
         for line_no, line in enumerate(doc_text.splitlines(), start=1):
             lowered = line.lower()
             if patch_id in line and "production-ready" in lowered:
-                allowed = (
-                    "not production-ready" in lowered
-                    or "non-production" in lowered
-                    or "production-ready claim" in lowered
-                    or "production-ready until" in lowered
-                )
+                if bool(entry.get("production_ready", False)):
+                    allowed = True
+                else:
+                    allowed = (
+                        "not production-ready" in lowered
+                        or "non-production" in lowered
+                        or "production-ready claim" in lowered
+                        or "production-ready until" in lowered
+                    )
                 if not allowed:
                     fail(f"{doc_path}:{line_no}: patch {patch_id} overclaims production-ready status")
 

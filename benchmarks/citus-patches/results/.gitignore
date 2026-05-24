@@ -1,2 +1,6 @@
 *
 !.gitignore
+!0004-router-planner-hotpath.json
+!0006-fast-path-router-skip.json
+!0007-pg-cron-cohabit.json
+!0008-detection-matrix.json

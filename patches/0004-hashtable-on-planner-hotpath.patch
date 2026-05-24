@@ -49,6 +49,14 @@ diff --git a/src/backend/distributed/planner/multi_router_planner.c b/src/backen
 index 313d2674d..eb281679d 100644
 --- a/src/backend/distributed/planner/multi_router_planner.c
 +++ b/src/backend/distributed/planner/multi_router_planner.c
+@@ -22,6 +22,7 @@
+ #include "catalog/pg_opfamily.h"
+ #include "catalog/pg_proc.h"
+ #include "catalog/pg_type.h"
++#include "common/hashfn.h"
+ #include "executor/execdesc.h"
+ #include "lib/stringinfo.h"
+ #include "nodes/makefuncs.h"
 @@ -42,6 +42,7 @@
  #include "parser/parsetree.h"
  #include "postmaster/postmaster.h"
@@ -70,7 +78,7 @@ index 313d2674d..eb281679d 100644
 + * intersection beats the hashed implementation because the constant
 + * cost of HTAB setup (hash_create + per-element hash_search) is
 + * larger than the inner strncmp on a placement list of one or two
-+ * entries. Tuned against benchmarks/router-throughput; do not
++ * entries. Tuned against benchmarks/router-planner; do not
 + * change without re-running that bench.
 + */
 +#define IntersectPlacementListLinearThreshold 2

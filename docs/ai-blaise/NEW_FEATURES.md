@@ -351,7 +351,7 @@ data-plane serving traffic under real tenant load.
 
 **Overlay**: `pool/src/runtime.rs`, `companion/src/router_assist.rs`,
 `patches/0006-fast-path-router-no-coord-rt.patch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -360,16 +360,27 @@ data-plane serving traffic under real tenant load.
 upstream-targetable Citus locality probe used to send eligible single-shard
 requests directly to the worker path with a coordinator fallback.
 
-**Current boundary**: The fork carries the quilt patch, the companion SQL
-probe renderer, and an algorithm smoke that proves conservative routing cases.
-SQL catalog registration, the live pool data-plane coordinator skip, and full
-multi-worker latency measurement remain alpha.
-
 **Motivation**: Coordinator-less topology needs a pool-level fast path before
 query execution patches are wired in.
 
 **Citus comparison**: Vanilla Citus plans single-shard queries but does not
 ship this pool routing layer or an external pool locality probe.
+
+Production evidence: `ci/ai-blaise/router-patch-smoke.sh` now verifies the
+integrated Citus source, patch artifact, SQL catalog registration, and a live
+PG17 Docker runtime built from this fork. With `REQUIRE_DOCKER=1`, the smoke
+creates the `citus` extension, verifies
+`citus.enable_fast_path_router_skip_coordinator`, asserts NULL/zero/negative and
+unknown shard probes fail closed, creates a real single-shard distributed table,
+proves `pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id)`
+returns true for the single local active placement, proves the GUC-off path
+returns false, and records 30 successful locality probes with
+`coordinator_round_trips_per_single_shard_query=0` in
+`benchmarks/citus-patches/results/0006-fast-path-router-skip.json`. This closes
+the bounded T3 production surface for the SQL-visible locality probe and pool
+contract. It does not claim broad multi-region coordinator-less serving,
+replica-choice routing, all query-shape coverage, or fleet latency under tenant
+load.
 
 **References**:
 
@@ -8520,7 +8531,7 @@ and negative `size_bytes` fail closed against real PostgreSQL containers.
 `companion/src/router_assist.rs`,
 `patches/0004-hashtable-on-planner-hotpath.patch`,
 `benchmarks/router-planner/`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -8529,14 +8540,20 @@ and negative `size_bytes` fail closed against real PostgreSQL containers.
 router-planner placement-intersection nested loop with a hashed endpoint lookup
 for non-tiny placement lists while preserving legacy result semantics.
 
-**Current boundary**: Patch applicability, the portable router-planner smoke,
-and the companion advanced-planner runtime smoke prove the deterministic
-algorithm/contract boundary and guard against semantic regressions. Full Citus
-build evidence and live multi-worker planner CPU measurements remain alpha and
-must be recorded before production performance claims.
-
 **Citus comparison**: Vanilla Citus still uses the linear placement-list
 intersection on this planner path.
+
+Production evidence: `./configure PG_CONFIG=$(command -v pg_config)
+--without-pg-version-check && make -j2 V=0` builds the integrated Citus source
+with `FEATURE: T4` in `src/backend/distributed/planner/multi_router_planner.c`.
+`ci/ai-blaise/router-patch-smoke.sh` verifies patch applicability against
+upstream `release-14.0`, source integration of `IntersectPlacementListHashed`,
+and a 30-sample VM router-planner benchmark with measured p95 output in
+`benchmarks/citus-patches/results/0004-router-planner-hotpath.json`. The bounded
+production claim is the source-integrated placement-intersection algorithm,
+legacy semantic preservation, and measured local planner-hot-path microbench. It
+does not claim fleet-wide multi-worker planner CPU or release-performance
+latency until those release harnesses run against a production-sized cluster.
 
 **References**:
 

@@ -42,9 +42,9 @@ Mechanics:
   existing shard cache, so the probe does not lock pg_dist_placement or
   pg_dist_shard.
 * citus_fast_path_router_can_skip_coordinator(bigint) is the
-  PG_FUNCTION_INFO_V1 wrapper exported via MODULE_PATHNAME. The catalog
-  SQL registration is deferred to a follow-up migration so this patch
-  stays narrow.
+  PG_FUNCTION_INFO_V1 wrapper exported via MODULE_PATHNAME and registered
+  in the extension SQL so the pool can prove the live locality contract
+  without private C symbols.
 
 This is an upstream-PR candidate, gated on coord-less mode landing.
 ---
@@ -196,6 +196,51 @@ index f1a25d7bc..aea0f2cc0 100644
  	DefineCustomBoolVariable(
  		"citus.enable_local_execution",
  		gettext_noop("Enables queries on shards that are local to the current node "
+diff --git a/src/backend/distributed/sql/citus--8.0-1.sql b/src/backend/distributed/sql/citus--8.0-1.sql
+index 47539d79b..04e3236ac 100644
+--- a/src/backend/distributed/sql/citus--8.0-1.sql
++++ b/src/backend/distributed/sql/citus--8.0-1.sql
+@@ -550,6 +550,14 @@ COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
+     IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
+ GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
+ 
++CREATE FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    RETURNS boolean
++    LANGUAGE C
++    AS 'MODULE_PATHNAME', $$citus_fast_path_router_can_skip_coordinator$$;
++COMMENT ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    IS 'returns true when a single-shard route can safely skip the coordinator and dispatch to the local worker path';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint) TO PUBLIC;
++
+ CREATE FUNCTION mark_tables_colocated(source_table_name regclass, target_table_names regclass[])
+ 	RETURNS void
+ 	LANGUAGE C STRICT
+diff --git a/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/14.0-1.sql b/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/14.0-1.sql
+new file mode 100644
+index 000000000..e27517a87
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/14.0-1.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    RETURNS boolean
++    LANGUAGE C
++    AS 'MODULE_PATHNAME', $$citus_fast_path_router_can_skip_coordinator$$;
++COMMENT ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    IS 'returns true when a single-shard route can safely skip the coordinator and dispatch to the local worker path';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint) TO PUBLIC;
+diff --git a/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/latest.sql b/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/latest.sql
+new file mode 100644
+index 000000000..e27517a87
+--- /dev/null
++++ b/src/backend/distributed/sql/udfs/citus_fast_path_router_can_skip_coordinator/latest.sql
+@@ -0,0 +1,7 @@
++CREATE OR REPLACE FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    RETURNS boolean
++    LANGUAGE C
++    AS 'MODULE_PATHNAME', $$citus_fast_path_router_can_skip_coordinator$$;
++COMMENT ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
++    IS 'returns true when a single-shard route can safely skip the coordinator and dispatch to the local worker path';
++GRANT EXECUTE ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint) TO PUBLIC;
 diff --git a/src/include/distributed/multi_router_planner.h b/src/include/distributed/multi_router_planner.h
 index af3421e96..c383b6cd9 100644
 --- a/src/include/distributed/multi_router_planner.h

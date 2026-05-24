@@ -645,13 +645,18 @@ more production-ready than the artifacts justified.
   makes T2 production-ready for the bounded Citus patch surface; it still does
   not claim production latency, rebalance throughput, or unpublished pool
   data-plane serving traffic under real tenant load.
-- The Citus quilt now carries `FEATURE: T3` and `FEATURE: T4` patch artifacts
-  for the coordinator-skip locality probe and hashed router-planner placement
-  intersection. The current evidence is patch applicability, companion
-  router-assist tests, and `ci/ai-blaise/router-patch-smoke.sh`, which records
-  portable algorithm-smoke output under `benchmarks/results/`. This is not live
-  Citus performance evidence; full planner CPU and pool latency claims remain
-  alpha until a real Citus build and multi-worker measurement are recorded.
+- The Citus quilt now promotes the bounded `FEATURE: T3` and `FEATURE: T4`
+  patch surfaces with live VM evidence. `ci/ai-blaise/router-patch-smoke.sh`
+  verifies patch applicability against upstream `release-14.0`, builds the
+  integrated Citus source, boots a PG17 Docker runtime from this fork, proves the
+  SQL-registered fast-path-router locality probe against a real single-shard
+  distributed table, and writes measured non-scaffold results to
+  `benchmarks/citus-patches/results/0004-router-planner-hotpath.json` and
+  `benchmarks/citus-patches/results/0006-fast-path-router-skip.json`. The claim
+  is intentionally bounded to source-integrated T3/T4 patch behavior, SQL-visible
+  locality probing, and local planner-hot-path measurement; broad multi-region
+  coordinator-less serving and fleet planner latency remain separate release
+  performance work.
 - The companion advanced-planner runtime smoke now expands `FEATURE: T4`,
   `FEATURE: T10`, `FEATURE: T11`, `FEATURE: T13`, `FEATURE: T14`, and the
   adjacent advanced-planner contract set into deterministic runtime-boundary
@@ -948,12 +953,15 @@ and parallel matrix monitoring via `gh pr checks`. It is wired into
 `gate-close` and the `release-gate-monitor` workflow, while the repository
 remains not production-ready as a whole until production-release mode passes.
 
-The Citus patch production integration audit keeps custom patch artifacts
-`0004` and `0006` explicitly not production-ready until their measured gates
-exist. Patch gates `0007` and `0008` now have measured JSON results from the
-VM pg_cron cohabitation and cohabit detection smokes. `ci/ai-blaise/citus-patch-production-audit.sh` fails
+The Citus patch production integration audit now has measured gates for custom
+patch artifacts `0004`, `0006`, `0007`, and `0008`. `0004` records the integrated
+router-planner hot-path p95 and sample-count gate; `0006` records the live
+single-shard fast-path-router locality probe with zero coordinator round trips
+for the bounded pool contract; `0007` and `0008` retain the VM pg_cron
+cohabitation and cohabit-detection results. `ci/ai-blaise/citus-patch-production-audit.sh` fails
 closed unless each artifact is listed in `patches/series`, future patch roster
-entries stay documented as roster-only until artifacts land, and any production
-claim has a measured non-scaffold result with thresholds in
-`benchmarks/citus-patches/production-gates.json`. This remains negative evidence for patch IDs without measured results, while
-measured JSON is required for any patch-gate signoff.
+entries stay documented as roster-only until artifacts land, measured JSON uses
+`mode: measured`, and declared thresholds in
+`benchmarks/citus-patches/production-gates.json` pass. This remains negative
+evidence for patch IDs without measured results, while measured JSON is required
+for any patch-gate signoff.

@@ -1,0 +1,24 @@
+{
+  "commands": [
+    "./configure PG_CONFIG=$(command -v pg_config) --without-pg-version-check && make -j2 V=0",
+    "REQUIRE_DOCKER=1 ROUTER_PATCH_REQUIRE_BUILD=1 bash ci/ai-blaise/router-patch-smoke.sh"
+  ],
+  "coordinator_round_trips_per_single_shard_query": 0,
+  "environment": "experiment-playground VM Docker using postgres:17-bookworm plus integrated Citus source build",
+  "evidence_boundary": "live SQL-visible Citus locality probe in a single-node VM container plus pool coordinator-skip contract; not broad multi-region or replica-routing latency",
+  "fast_path_router_active_placements": 1,
+  "fast_path_router_guc_default": "on",
+  "fast_path_router_guc_disabled_result": false,
+  "fast_path_router_null_probe": false,
+  "fast_path_router_single_shard_can_skip": true,
+  "fast_path_router_unknown_probe": false,
+  "fast_path_router_zero_probe": false,
+  "git_sha": "8e96e5015bb9b9bb08f11741c20b7fc36e6366eb",
+  "live_citus_image": "ai-blaise-citus-router-patch:local",
+  "measured_at_utc": "2026-05-24T19:49:51Z",
+  "mode": "measured",
+  "patch_id": "0006",
+  "sample_count": 30,
+  "schema_version": 1,
+  "source_build_passed": true
+}

@@ -30,6 +30,10 @@ extern bool EnableRouterExecution;
 extern bool EnableFastPathRouterPlanner;
 extern bool EnableLocalFastPathQueryOptimization;
 
+/* FEATURE: T3 -- fast-path router can short-circuit the coordinator round-trip */
+extern bool EnableFastPathRouterSkipCoordinator;
+extern bool RouterFastPathCanSkipCoordinator(uint64 shardId);
+
 extern bool EnableNonColocatedRouterQueryPushdown;
 
 extern DistributedPlan * CreateRouterPlan(Query *originalQuery, Query *query,

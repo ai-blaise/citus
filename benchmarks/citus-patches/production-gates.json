@@ -8,8 +8,8 @@
       "title": "hashtable on planner hotpath",
       "expected_patch_path": "patches/0004-hashtable-on-planner-hotpath.patch",
       "required_patch_series": "patches/series",
-      "status": "artifact-landed",
-      "production_ready": false,
+      "status": "measured-gate-passed",
+      "production_ready": true,
       "required_evidence": [
         "patch artifact exists under patches/ and is listed in patches/series",
         "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
@@ -32,8 +32,8 @@
       "title": "fast-path router skip coordinator round-trip",
       "expected_patch_path": "patches/0006-fast-path-router-no-coord-rt.patch",
       "required_patch_series": "patches/series",
-      "status": "artifact-landed",
-      "production_ready": false,
+      "status": "measured-gate-passed",
+      "production_ready": true,
       "required_evidence": [
         "patch artifact exists under patches/ and is listed in patches/series",
         "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",

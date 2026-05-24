@@ -95,8 +95,8 @@ Current `bootstrap-v2` status:
 
 | Patch | Required result | Fail-closed threshold | Current state |
 | ----- | --------------- | --------------------- | ------------- |
-| `0004` | `0004-router-planner-hotpath.json` | measured planner p95, max 10% regression, at least 30 samples | roster-only; not production-ready |
-| `0006` | `0006-fast-path-router-skip.json` | measured coordinator round trips per single-shard query must be `0`, at least 30 samples | roster-only; not production-ready |
+| `0004` | `0004-router-planner-hotpath.json` | measured planner p95, max 10% regression, at least 30 samples | measured gate passed |
+| `0006` | `0006-fast-path-router-skip.json` | measured coordinator round trips per single-shard query must be `0`, at least 30 samples | measured gate passed |
 | `0007` | `0007-pg-cron-cohabit.json` | measured boot success rate `1` and zero registration conflicts | measured gate passed |
 | `0008` | `0008-detection-matrix.json` | measured detection matrix pass with at least three extension cases | measured gate passed |
 
@@ -206,8 +206,10 @@ required driver or cluster data is missing and a harness emits scaffold output.
 ## Other measured surfaces (separate runners)
 
 The TPC-C / sysbench / ingest / chaos harnesses cover gates 10 and 11. The
-router planner patch smoke covers only the patch-level algorithm boundary for
-T3/T4; full release performance evidence still requires a live Citus cluster.
+router planner patch smoke covers the source-integrated T3/T4 patch boundary,
+including a live single-node Citus locality-probe boot when `REQUIRE_DOCKER=1`.
+Full release performance evidence still requires a production-sized live Citus
+cluster.
 The remaining release gates are exercised by other runners:
 
 - distributed BM25 search latency: `cargo run -p ai_blaise_citus_e2e --bin

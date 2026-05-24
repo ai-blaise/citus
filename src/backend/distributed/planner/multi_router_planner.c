@@ -22,6 +22,7 @@
 #include "catalog/pg_opfamily.h"
 #include "catalog/pg_proc.h"
 #include "catalog/pg_type.h"
+#include "common/hashfn.h"
 #include "executor/execdesc.h"
 #include "lib/stringinfo.h"
 #include "nodes/makefuncs.h"
@@ -42,6 +43,7 @@
 #include "parser/parsetree.h"
 #include "postmaster/postmaster.h"
 #include "storage/lock.h"
+#include "utils/hsearch.h"
 #include "utils/builtins.h"
 #include "utils/elog.h"
 #include "utils/errcodes.h"
@@ -86,6 +88,45 @@
 #include "distributed/shard_pruning.h"
 #include "distributed/shard_utils.h"
 #include "distributed/shardinterval_utils.h"
+#include "distributed/worker_manager.h"
+
+/*
+ * FEATURE: T4
+ *
+ * Below this lhs/rhs size, the historical O(L * R) linear-search
+ * intersection beats the hashed implementation because the constant
+ * cost of HTAB setup (hash_create + per-element hash_search) is
+ * larger than the inner strncmp on a placement list of one or two
+ * entries. Tuned against benchmarks/router-planner; do not
+ * change without re-running that bench.
+ */
+#define IntersectPlacementListLinearThreshold 2
+
+
+/*
+ * FEATURE: T4
+ *
+ * Hash key for placement endpoints. nodePort is the primary tag,
+ * nodeName is a fixed-width null-padded buffer so memcmp on
+ * WorkerEndpointKey reproduces the strncmp(nodeName, WORKER_LENGTH)
+ * behaviour of the legacy IntersectPlacementList loop.
+ */
+typedef struct WorkerEndpointKey
+{
+	uint32 nodePort;
+	char nodeName[WORKER_LENGTH];
+} WorkerEndpointKey;
+
+typedef struct WorkerEndpointEntry
+{
+	WorkerEndpointKey key;
+	ShardPlacement *placement;
+} WorkerEndpointEntry;
+
+static HTAB * BuildPlacementEndpointSet(List *placementList);
+static List * IntersectPlacementListHashed(List *lhsPlacementList,
+										   List *rhsPlacementList);
+
 
 /* intermediate value for INSERT processing */
 typedef struct InsertValues
@@ -120,6 +161,21 @@ typedef struct WalkerState
 
 bool EnableRouterExecution = true;
 bool EnableNonColocatedRouterQueryPushdown = false;
+
+/*
+ * FEATURE: T3
+ *
+ * When true (the default), the fast-path router exposes
+ * RouterFastPathCanSkipCoordinator() and the SQL-level
+ * pg_catalog.citus_fast_path_router_can_skip_coordinator() so an
+ * upstream pool/companion can route eligible single-shard requests
+ * directly to the local worker path without paying for a coordinator
+ * round-trip. The planner side is intentionally observational only;
+ * the in-tree executor still goes through the coordinator path so
+ * existing semantics are preserved. The skip is enforced by the
+ * pool/companion layer, which is gated on coord-less mode landing.
+ */
+bool EnableFastPathRouterSkipCoordinator = true;
 
 
 /* planner functions forward declarations */
@@ -3782,31 +3838,132 @@ MakeDummyColumnString(int dummyColumnId)
 List *
 IntersectPlacementList(List *lhsPlacementList, List *rhsPlacementList)
 {
-	ListCell *lhsPlacementCell = NULL;
+	/*
+	 * FEATURE: T4
+	 *
+	 * For tiny inputs the linear scan is faster than building a
+	 * dynahash. Replication factor 1 or 2 with no shard joins falls
+	 * in this bucket and is the most common path in production.
+	 */
+	int lhsLength = list_length(lhsPlacementList);
+	int rhsLength = list_length(rhsPlacementList);
+
+	if (lhsLength <= IntersectPlacementListLinearThreshold &&
+		rhsLength <= IntersectPlacementListLinearThreshold)
+	{
+		ListCell *lhsPlacementCell = NULL;
+		List *placementList = NIL;
+
+		/* Keep existing placement in the list if it is also present in new placement list */
+		foreach(lhsPlacementCell, lhsPlacementList)
+		{
+			ShardPlacement *lhsPlacement = (ShardPlacement *) lfirst(lhsPlacementCell);
+			ListCell *rhsPlacementCell = NULL;
+			foreach(rhsPlacementCell, rhsPlacementList)
+			{
+				ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
+				if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
+					strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
+							WORKER_LENGTH) == 0)
+				{
+					placementList = lappend(placementList, rhsPlacement);
+
+					/*
+					 * We don't need to add the same placement over and over again. This
+					 * could happen if both placements of a shard appear on the same node.
+					 */
+					break;
+				}
+			}
+		}
+
+		return placementList;
+	}
+
+	return IntersectPlacementListHashed(lhsPlacementList, rhsPlacementList);
+}
+
+
+/*
+ * FEATURE: T4
+ *
+ * BuildPlacementEndpointSet returns a dynahash mapping each placement
+ * endpoint (nodePort, nodeName) to a WorkerEndpointEntry. The caller
+ * owns the returned HTAB and must hash_destroy() it before returning.
+ */
+static HTAB *
+BuildPlacementEndpointSet(List *placementList)
+{
+	HASHCTL info;
+	MemSet(&info, 0, sizeof(info));
+	info.keysize = sizeof(WorkerEndpointKey);
+	info.entrysize = sizeof(WorkerEndpointEntry);
+	info.hash = tag_hash;
+	info.hcxt = CurrentMemoryContext;
+
+	long initialSize = Max(list_length(placementList), 4);
+	HTAB *endpointSet = hash_create("Router Placement Endpoint Set",
+									initialSize, &info,
+									HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
+
+	ListCell *placementCell = NULL;
+	foreach(placementCell, placementList)
+	{
+		ShardPlacement *placement = (ShardPlacement *) lfirst(placementCell);
+		WorkerEndpointKey key;
+
+		MemSet(&key, 0, sizeof(key));
+		key.nodePort = (uint32) placement->nodePort;
+		strlcpy(key.nodeName, placement->nodeName, sizeof(key.nodeName));
+
+		bool found = false;
+		WorkerEndpointEntry *entry =
+			(WorkerEndpointEntry *) hash_search(endpointSet, &key, HASH_ENTER, &found);
+		if (!found)
+		{
+			entry->placement = placement;
+		}
+	}
+
+	return endpointSet;
+}
+
+
+/*
+ * FEATURE: T4
+ *
+ * IntersectPlacementListHashed performs the same intersection as
+ * IntersectPlacementList() but in O(L + R). The right-hand list is
+ * indexed once; each lhs placement probes the index in constant time.
+ * The output preserves lhs ordering and appends the first matching rhs
+ * placement, matching the legacy inner-loop break.
+ */
+static List *
+IntersectPlacementListHashed(List *lhsPlacementList, List *rhsPlacementList)
+{
+	HTAB *rhsIndex = BuildPlacementEndpointSet(rhsPlacementList);
 	List *placementList = NIL;
 
-	/* Keep existing placement in the list if it is also present in new placement list */
+	ListCell *lhsPlacementCell = NULL;
 	foreach(lhsPlacementCell, lhsPlacementList)
 	{
 		ShardPlacement *lhsPlacement = (ShardPlacement *) lfirst(lhsPlacementCell);
-		ListCell *rhsPlacementCell = NULL;
-		foreach(rhsPlacementCell, rhsPlacementList)
-		{
-			ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
-			if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
-				strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
-						WORKER_LENGTH) == 0)
-			{
-				placementList = lappend(placementList, rhsPlacement);
+		WorkerEndpointKey key;
 
-				/*
-				 * We don't need to add the same placement over and over again. This
-				 * could happen if both placements of a shard appear on the same node.
-				 */
-				break;
-			}
+		MemSet(&key, 0, sizeof(key));
+		key.nodePort = (uint32) lhsPlacement->nodePort;
+		strlcpy(key.nodeName, lhsPlacement->nodeName, sizeof(key.nodeName));
+
+		bool found = false;
+		WorkerEndpointEntry *entry =
+			(WorkerEndpointEntry *) hash_search(rhsIndex, &key, HASH_FIND, &found);
+		if (found)
+		{
+			placementList = lappend(placementList, entry->placement);
 		}
 	}
+
+	hash_destroy(rhsIndex);
 
 	return placementList;
 }
@@ -4407,4 +4564,88 @@ CompareInsertValuesByShardId(const void *leftElement, const void *rightElement)
 			return 0;
 		}
 	}
+}
+
+
+/*
+ * FEATURE: T3
+ *
+ * RouterFastPathCanSkipCoordinator returns true when a single-shard
+ * query targeting shardId would not benefit from a coordinator round-
+ * trip because the shard has exactly one active placement and that
+ * placement lives on the local group. The check is intentionally
+ * conservative:
+ *
+ *   - The GUC citus.enable_fast_path_router_skip_coordinator must be
+ *     on. Operators can flip the GUC off if their pool is not yet
+ *     wired for the coord-less mode.
+ *   - The shard must exist and have a single active placement so the
+ *     pool does not have to choose between replicas without coordinator help.
+ *   - The placement must already live on the local group; the local
+ *     executor path can dispatch the query without a coordinator
+ *     deparse round-trip.
+ *
+ * The function reads the in-process shard cache, so it does not lock
+ * pg_dist_placement or pg_dist_shard. It is safe to call from the
+ * planner hot path and from a SQL-callable wrapper.
+ */
+bool
+RouterFastPathCanSkipCoordinator(uint64 shardId)
+{
+	if (!EnableFastPathRouterSkipCoordinator)
+	{
+		return false;
+	}
+
+	if (shardId == INVALID_SHARD_ID)
+	{
+		return false;
+	}
+
+	if (!ShardExists(shardId))
+	{
+		return false;
+	}
+
+	List *activePlacementList = ActiveShardPlacementList(shardId);
+	if (list_length(activePlacementList) != 1)
+	{
+		return false;
+	}
+
+	ShardPlacement *placement = (ShardPlacement *) linitial(activePlacementList);
+	int32 localGroupId = GetLocalGroupId();
+
+	return placement->groupId == localGroupId;
+}
+
+
+PG_FUNCTION_INFO_V1(citus_fast_path_router_can_skip_coordinator);
+
+/*
+ * FEATURE: T3
+ *
+ * citus_fast_path_router_can_skip_coordinator returns the SQL-level
+ * result of RouterFastPathCanSkipCoordinator() so a session pooler or
+ * the ai-blaise companion can probe locality without re-running the
+ * full router planner. The companion uses this to decide between the
+ * direct-to-worker fast path and the coordinator broker path.
+ */
+Datum
+citus_fast_path_router_can_skip_coordinator(PG_FUNCTION_ARGS)
+{
+	CheckCitusVersion(ERROR);
+
+	if (PG_ARGISNULL(0))
+	{
+		PG_RETURN_BOOL(false);
+	}
+
+	int64 shardIdArg = PG_GETARG_INT64(0);
+	if (shardIdArg <= 0)
+	{
+		PG_RETURN_BOOL(false);
+	}
+
+	PG_RETURN_BOOL(RouterFastPathCanSkipCoordinator((uint64) shardIdArg));
 }

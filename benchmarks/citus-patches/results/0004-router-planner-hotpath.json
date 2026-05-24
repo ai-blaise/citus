@@ -1,0 +1,24 @@
+{
+  "commands": [
+    "./configure PG_CONFIG=$(command -v pg_config) --without-pg-version-check && make -j2 V=0",
+    "REQUIRE_DOCKER=1 ROUTER_PATCH_REQUIRE_BUILD=1 bash ci/ai-blaise/router-patch-smoke.sh"
+  ],
+  "environment": "experiment-playground VM Docker using postgres:17-bookworm plus integrated Citus source build",
+  "evidence_boundary": "integrated Citus source build plus deterministic VM placement-intersection benchmark; not fleet-wide planner latency",
+  "git_sha": "8e96e5015bb9b9bb08f11741c20b7fc36e6366eb",
+  "hashed_p95_us_per_call": 28.662,
+  "hashed_us_per_call": 27.274,
+  "linear_p95_us_per_call": 712.26,
+  "linear_us_per_call": 446.823,
+  "live_citus_image": "ai-blaise-citus-router-patch:local",
+  "measured_at_utc": "2026-05-24T19:49:51Z",
+  "min_speedup": 1.5,
+  "mode": "measured",
+  "patch_id": "0004",
+  "planner_p95_us": 28.662,
+  "regression_pct": 0,
+  "sample_count": 30,
+  "schema_version": 1,
+  "source_build_passed": true,
+  "speedup": 16.383
+}

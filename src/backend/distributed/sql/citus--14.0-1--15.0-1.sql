@@ -23,6 +23,9 @@ DROP FUNCTION IF EXISTS pg_catalog.worker_apply_sequence_command(text, regtype);
 -- placement-generation UDF for pool-side plan-cache invalidation (FEATURE: T2)
 #include "udfs/citus_placement_generation/15.0-1.sql"
 
+-- fast-path router coordinator-skip locality probe (FEATURE: T3)
+#include "udfs/citus_fast_path_router_can_skip_coordinator/15.0-1.sql"
+
 -- cohabit clock-reservation UDF for pg_cron startup proof (FEATURE: TS19)
 #include "udfs/citus_cohabit_clock_tick_reserved/15.0-1.sql"
 

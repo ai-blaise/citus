@@ -226,9 +226,9 @@ diff --git a/src/backend/distributed/sql/citus--8.0-1.sql b/src/backend/distribu
 index 4aac44e2e..d76c27e93 100644
 --- a/src/backend/distributed/sql/citus--8.0-1.sql
 +++ b/src/backend/distributed/sql/citus--8.0-1.sql
-@@ -551,6 +551,14 @@ COMMENT ON FUNCTION pg_catalog.citus_placement_generation()
-     IS 'returns the current backend-local Citus placement generation counter for plan-cache invalidation';
- GRANT EXECUTE ON FUNCTION pg_catalog.citus_placement_generation() TO PUBLIC;
+@@ -558,6 +558,14 @@ COMMENT ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint)
+     IS 'returns true when a single-shard route can safely skip the coordinator and dispatch to the local worker path';
+ GRANT EXECUTE ON FUNCTION pg_catalog.citus_fast_path_router_can_skip_coordinator(shard_id bigint) TO PUBLIC;
  
 +CREATE FUNCTION pg_catalog.citus_cohabit_clock_tick_reserved()
 +    RETURNS boolean

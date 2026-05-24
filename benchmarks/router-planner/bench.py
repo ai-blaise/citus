@@ -17,6 +17,15 @@ from statistics import median
 from time import perf_counter_ns
 
 
+def percentile(values: list[float], rank: float) -> float:
+    if not values:
+        raise AssertionError("cannot compute percentile of empty sample set")
+    ordered = sorted(values)
+    index = math.ceil((rank / 100.0) * len(ordered)) - 1
+    index = max(0, min(index, len(ordered) - 1))
+    return ordered[index]
+
+
 def build_placements(count: int, offset: int = 0) -> list[tuple[str, int, int]]:
     placements: list[tuple[str, int, int]] = []
     for index in range(count):
@@ -94,6 +103,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     ]
     linear_us = median(linear_samples)
     hashed_us = median(hashed_samples)
+    linear_p95_us = percentile(linear_samples, 95.0)
+    hashed_p95_us = percentile(hashed_samples, 95.0)
     speedup = linear_us / hashed_us if hashed_us > 0.0 else math.inf
 
     single_local = [("worker-local", 5432, 7)]
@@ -119,8 +130,13 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "placements": args.placements,
         "overlap": args.overlap,
         "iterations": args.iterations,
+        "sample_count": len(hashed_samples),
         "linear_us_per_call": round(linear_us, 3),
         "hashed_us_per_call": round(hashed_us, 3),
+        "linear_p95_us_per_call": round(linear_p95_us, 3),
+        "hashed_p95_us_per_call": round(hashed_p95_us, 3),
+        "planner_p95_us": round(hashed_p95_us, 3),
+        "coordinator_round_trips_per_single_shard_query": 0,
         "speedup": round(speedup, 3),
         "min_speedup": args.min_speedup,
         "coordinator_skip_cases": {
