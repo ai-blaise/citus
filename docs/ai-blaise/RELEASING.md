@@ -17,6 +17,8 @@ production release must also pass:
 ci/ai-blaise/production-readiness-check.sh production-release
 ci/ai-blaise/production-gap-audit.sh
 ci/ai-blaise/docs-evidence-boundary-check.sh
+PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release \
+  make -f Makefile.ai-blaise performance-evidence-release-check
 ```
 
 The production-release mode intentionally fails while any release-scope custom
@@ -36,4 +38,5 @@ Release artifacts must include:
 - signed container images
 - updated `NEW_FEATURES.md`
 - updated `BENCHMARKS.md`
+- benchmark JSON artifacts validated against `benchmarks/performance-evidence-thresholds.json`
 - production-readiness audit evidence for every release-scope custom feature

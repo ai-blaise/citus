@@ -13,6 +13,8 @@ on:
     paths:
       - "benchmarks/microbenches/**"
       - "ci/ai-blaise/bundled-ext-microbenches-smoke.sh"
+      - "ci/ai-blaise/performance-evidence-check.sh"
+      - "benchmarks/performance-evidence-thresholds.json"
       - ".github/workflows/ci-microbench.yml"
   schedule:
     # Nightly at 03:14 UTC. Sized to land before the V2 release-gate
@@ -50,15 +52,24 @@ jobs:
           BENCH_RESULT_TAG: "quick"
         run: bash ci/ai-blaise/bundled-ext-microbenches-smoke.sh
       - name: Run microbench aggregate (full mode)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           BENCH_QUICK: ${{ github.event.inputs.bench_quick || '0' }}
           BENCH_RESULT_TAG: ${{ github.event.inputs.result_tag || 'release' }}
         run: bash benchmarks/microbenches/run-all.sh
       - name: Compare to baseline
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           BENCH_QUICK: ${{ github.event.inputs.bench_quick || '0' }}
           BENCH_RESULT_TAG: ${{ github.event.inputs.result_tag || 'release' }}
         run: bash benchmarks/microbenches/compare-to-baseline.sh
+      - name: Validate release evidence
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          PERF_EVIDENCE_MODE: release
+          PERF_EVIDENCE_SCOPE: microbench
+          BENCH_RESULT_TAG: ${{ github.event.inputs.result_tag || 'release' }}
+        run: bash ci/ai-blaise/performance-evidence-check.sh release
       - name: Upload aggregate report
         if: always()
         uses: actions/upload-artifact@v4

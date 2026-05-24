@@ -25,6 +25,11 @@ if [[ "${#mb_dirs[@]}" -eq 0 ]]; then
   bench_die "run-all.sh: no microbench directories under ${HARNESS_DIR}"
 fi
 
+bench_mode="quick"
+if [[ "${BENCH_QUICK}" == "0" ]]; then
+  bench_mode="full"
+fi
+
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 aggregate="${HARNESS_DIR}/results-${ts}.json"
 
@@ -48,6 +53,12 @@ for dir in "${mb_dirs[@]}"; do
     out='{"ext":"'"${ext_name}"'","error":"bench.sh failed"}'
   fi
 
+  if [[ "${BENCH_QUICK}" == "0" ]] && \
+      printf '%s\n' "${out}" | grep -Eq '"mode"[[:space:]]*:[[:space:]]*"scaffold"'; then
+    bench_log "run-all: ${ext_name} produced scaffold evidence in full mode (required psql/extension/cluster data missing)"
+    failures=$((failures + 1))
+  fi
+
   # bench.sh prints the JSON line to stdout (last line). Capture and tag.
   entries+=("${out}")
 done
@@ -59,7 +70,7 @@ done
   printf '  "ts": "%s",\n' "${ts}"
   printf '  "count": %d,\n' "${#entries[@]}"
   printf '  "failures": %d,\n' "${failures}"
-  printf '  "mode": "%s",\n' "${BENCH_QUICK:-1}"
+  printf '  "mode": "%s",\n' "${bench_mode}"
   printf '  "results": [\n'
   for i in "${!entries[@]}"; do
     if [[ $i -eq $((${#entries[@]} - 1)) ]]; then

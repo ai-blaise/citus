@@ -163,6 +163,10 @@ more production-ready than the artifacts justified.
     backed by the maintained PostgreSQL driver, native TLS support, read-only
     transactions, bounded result materialization, row/timeout ceilings,
     `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
+40. Benchmark smokes emitted JSON artifacts and docs listed SLO targets, but
+    the production path lacked one thresholded, fail-closed evidence checker.
+    Scaffold results, missing baselines, or missing driver data could therefore
+    look like benchmark coverage unless a human inspected the artifacts.
 
 ## Corrections
 
@@ -485,6 +489,15 @@ more production-ready than the artifacts justified.
 
 ## Verification Standard
 
+- Benchmark evidence now has a checked-in threshold manifest and a reusable
+  checker. Quick smoke runs call `ci/ai-blaise/performance-evidence-check.sh`
+  in exploratory mode, while release promotion must run
+  `make -f Makefile.ai-blaise performance-evidence-release-check` with
+  `PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release`. Release mode fails
+  closed on missing artifacts, scaffold notes, missing baselines, malformed
+  JSON, and SLO/capacity threshold misses without rerunning the expensive
+  benchmark jobs.
+
 Rule 10 completion for this branch requires local and VM verification of:
 
 - Rust formatting and compile/test gates for all changed packages.
@@ -604,6 +617,7 @@ Unix-domain-socket bridging under `cargo test -p ai_blaise_citus_sidecar_cdc`,
 `ci/ai-blaise/sidecar-realtime-smoke.sh`. External managed broker operations
 (NATS auth/TLS/JetStream, GCP Pub/Sub IAM/live publish, Kafka/Kinesis managed
 client operation) remain alpha unless covered by their own feature entry.
+
 
 
 

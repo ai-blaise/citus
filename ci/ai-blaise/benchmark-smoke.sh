@@ -65,4 +65,9 @@ if ! ls "${results_dir}"/sysbench-*-"${BENCH_RESULT_TAG}".json >/dev/null 2>&1; 
   exit 1
 fi
 
+PERF_EVIDENCE_MODE=exploratory \
+  PERF_EVIDENCE_SCOPE=core \
+  BENCH_RESULT_TAG="${BENCH_RESULT_TAG}" \
+  bash ci/ai-blaise/performance-evidence-check.sh exploratory
+
 echo "[benchmark-smoke] ok"
