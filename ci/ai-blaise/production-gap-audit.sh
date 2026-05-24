@@ -76,6 +76,7 @@ DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 TIMESCALE_BRIDGE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
+TIMESCALE_COHABITATION_DOCKERFILE = ROOT / "images/citus-timescale-cohabitation/Dockerfile"
 PG_CRON_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
 SQL_EXTENSION = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql"
@@ -1384,7 +1385,7 @@ for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready")
 timescale_bridge_smoke = read(TIMESCALE_BRIDGE_SMOKE)
 timescale_cohabitation_smoke = read(TIMESCALE_COHABITATION_SMOKE)
 ts_version_matrix_smoke = read(TS_VERSION_MATRIX_SMOKE)
-timescale_runtime_truth = compact(docs + "\n" + audit + "\n" + timescale_bridge_smoke + "\n" + timescale_cohabitation_smoke)
+timescale_runtime_truth = compact(docs + "\n" + audit + "\n" + timescale_bridge_smoke + "\n" + timescale_cohabitation_smoke + "\n" + read(TIMESCALE_COHABITATION_DOCKERFILE))
 for phrase in (
     "missing_citus_fail_closed",
     "policy_execution_scope",
@@ -1393,9 +1394,35 @@ for phrase in (
     "real_citus_distribution",
     "timescaledb_extversion",
     "does not claim full TimescaleDB functionality",
+    "timescale/timescaledb-ha:pg17-ts2.27",
+    "with_llvm=\"${WITH_LLVM}\"",
+    "postgresql-server-dev-17",
 ):
     if compact(phrase) not in timescale_runtime_truth:
         fail(f"Timescale runtime evidence boundary must preserve phrase: {phrase}")
+for feature_id, function_name in (
+    ("TS1", "apply_distribute_hypertable"),
+    ("TS2", "apply_compression_policy_distributed"),
+    ("TS3", "apply_continuous_aggregate_distributed"),
+    ("TS4", "apply_retention_policy_distributed"),
+    ("TS5", "apply_time_range_shard_pruner"),
+    ("TS12", "apply_reorder_policy_distributed"),
+):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready for bounded live Timescale bridge apply/catalog-state evidence")
+    body = compact(entry_by_id[feature_id]["body"])
+    for phrase in (
+        "Production evidence",
+        function_name,
+        "timescale/timescaledb-ha:pg17-ts2.27",
+        "policy_execution_scope=entrypoints-and-catalog-state-only",
+        "does not claim full TimescaleDB functionality",
+        "operator reconciliation",
+    ):
+        if compact(phrase) not in body:
+            fail(f"{feature_id} docs lost bounded Timescale production evidence phrase: {phrase}")
+if status_by_id.get("TS7") != "alpha":
+    fail("TS7 must remain alpha until Kubernetes Hypertable controller SQL execution and status reconciliation are live-proven")
 
 if "pg-cron-cohabitation-smoke.sh" not in read(CI_IMAGE_WORKFLOW):
     fail("ci-image workflow must run pg-cron-cohabitation-smoke for TS19 production evidence")

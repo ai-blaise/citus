@@ -21,7 +21,7 @@ setting should contain only extensions whose hook chain with Citus has been
 explicitly covered by live cohabitation evidence.
 
 `ci/ai-blaise/timescale-cohabitation-smoke.sh` is the production evidence path
-for TS6 and TS18. It builds a real image from `timescale/timescaledb:latest-pg17`
+for TS6 and TS18. It builds a real image from `timescale/timescaledb-ha:pg17-ts2.27`
 with this Citus fork and `ai_blaise_citus` installed, starts PostgreSQL with
 `shared_preload_libraries=timescaledb,citus` and
 `citus.cohabit_extensions=timescaledb`, creates real `citus`, `timescaledb`,
@@ -55,8 +55,8 @@ per-version cohabitation evidence file under `artifacts/`.
 
 | TS version | Pinned base image                         | Status as of 2026-05-24                | Matrix entry               |
 | ---------- | ----------------------------------------- | -------------------------------------- | -------------------------- |
-| 2.27       | `timescale/timescaledb:2.27.1-pg17`       | load-bearing, VM registry tag present  | `tests/cohab-matrix/2.27/` |
-| 2.28       | `timescale/timescaledb:2.28.0-pg17`       | skip-with-note, VM registry tag absent | `tests/cohab-matrix/2.28/` |
+| 2.27       | `timescale/timescaledb-ha:pg17-ts2.27`       | load-bearing, VM registry tag present  | `tests/cohab-matrix/2.27/` |
+| 2.28       | `timescale/timescaledb-ha:pg17-ts2.28`       | skip-with-note, VM registry tag absent | `tests/cohab-matrix/2.28/` |
 
 The 2.28 row does not promote TS 2.28 to production-ready. It is a guardrail:
 while the image tag is absent the matrix records `skip-with-note`; once the tag
@@ -69,7 +69,7 @@ The cohabitation contract spans the ai-blaise/citus PG-version matrix:
 
 | PG major | Cohabitation status                                                                               |
 | -------- | ------------------------------------------------------------------------------------------------- |
-| 17       | TS6 and TS18 production-ready against `timescale/timescaledb:latest-pg17`.                        |
+| 17       | TS6, TS18, and the bounded TS1/TS2/TS3/TS4/TS5/TS12 SQL apply/catalog-state surfaces production-ready against `timescale/timescaledb-ha:pg17-ts2.27`.                        |
 | 18       | TS6 source-path verified by `ci/ai-blaise/sql-extension-smoke.sh` PG18 matrix entry. TS18 real    |
 |          | Timescale+Citus image evidence stays alpha until a `latest-pg18` Timescale base is published.     |
 | 16       | Suppressed pending the `background_rebalance_parallel_reference_tables` upstream flake fix.       |

@@ -2,9 +2,9 @@
 
 TimescaleDB 2.28 is tracked here as a forward-compatibility row, not production
 evidence. A VM registry probe on 2026-05-24 found no published PG17 image for
-`timescale/timescaledb:2.28-pg17`, `timescale/timescaledb:2.28.0-pg17`, or
-`timescale/timescaledb:2.28.1-pg17`. The pinned candidate is recorded in
-`image-tag.txt` as `timescale/timescaledb:2.28.0-pg17` so CI can detect the
+`timescale/timescaledb-ha:pg17-ts2.28`, `timescale/timescaledb-ha:pg17-ts2.28.0`, or
+`timescale/timescaledb-ha:pg17-ts2.28.1`. The pinned candidate is recorded in
+`image-tag.txt` as `timescale/timescaledb-ha:pg17-ts2.28` so CI can detect the
 line as soon as Docker publishes it.
 
 ## Forecasted Hook Seam

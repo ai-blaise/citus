@@ -605,7 +605,7 @@ cannot silently skip this evidence.
 ### TS1: Distributed Hypertable Bridge
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -615,6 +615,19 @@ declarative-partitioned parent table through Citus while using TimescaleDB
 hypertables for worker-local partitions. The `apply_distribute_hypertable`
 SQL function executes the TimescaleDB and Citus calls when both extensions are
 loaded, then records bridge state for operator/readiness inspection.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` proves
+`apply_distribute_hypertable(...)` fails closed when the Citus distribution
+entrypoint is absent, then calls real TimescaleDB `create_hypertable(...)` in
+`timescale/timescaledb-ha:pg17-ts2.27` with only the Citus entrypoint stubbed.
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` then builds this fork into the
+same pinned HA image, creates real `citus`, `timescaledb`, and
+`ai_blaise_citus`, runs `apply_distribute_hypertable(...)`, verifies a real
+Timescale hypertable plus Citus `pg_dist_partition` metadata, and records
+`policy_execution_scope=entrypoints-and-catalog-state-only` evidence. This is
+the bounded bridge-entrypoint/catalog-state claim; it does not claim full
+TimescaleDB functionality, multi-worker fanout, rebalance behavior, planner
+pushdown, or operator reconciliation.
 
 **Motivation**: Vanilla Citus does not understand TimescaleDB hypertables.
 The bridge uses TimescaleDB's partitioned-hypertable seam without forking
@@ -648,7 +661,7 @@ partitions, but it has no distributed-hypertable orchestration.
 ### TS2: Distributed Compression Policy
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -656,6 +669,17 @@ partitions, but it has no distributed-hypertable orchestration.
 **Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
 recording, and a `pg18`-gated pgrx surface for worker-fanned distributed
 compression policy creation.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` and
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` execute
+`apply_compression_policy_distributed(...)` against
+`timescale/timescaledb-ha:pg17-ts2.27`; the non-stubbed cohabitation run uses
+real `citus`, `timescaledb`, and `ai_blaise_citus`, verifies bridge-state rows,
+and records `policy_execution_scope=entrypoints-and-catalog-state-only`. This
+is production-ready for the bounded SQL apply/catalog-state surface only; it
+does not claim full TimescaleDB functionality, compression background job
+completion, compressed-chunk performance, multi-worker policy fanout, or
+operator reconciliation.
 
 **Motivation**: Distributed hypertables need compression policies that are
 declared once and applied consistently across worker-local hypertables.
@@ -673,7 +697,7 @@ policy setup.
 ### TS3: Distributed Continuous Aggregate Partials
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -681,6 +705,18 @@ policy setup.
 **Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
 recording, and a `pg18`-gated pgrx surface for distributed continuous
 aggregate definitions and refresh-policy arguments.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` and
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` execute
+`apply_continuous_aggregate_distributed(...)` against
+`timescale/timescaledb-ha:pg17-ts2.27`; the non-stubbed cohabitation run uses
+real `citus`, `timescaledb`, and `ai_blaise_citus`, verifies the continuous
+aggregate relation is created, verifies bridge-state rows, and records
+`policy_execution_scope=entrypoints-and-catalog-state-only`. This is
+production-ready for the bounded SQL apply/catalog-state surface only; it does
+not claim full TimescaleDB functionality, continuous aggregate refresh or
+materialized-result correctness, worker partial/final planning, or operator
+reconciliation.
 
 **Motivation**: Continuous aggregates must be coordinated through the same
 bridge as distributed hypertables so worker partials and coordinator finals are
@@ -699,7 +735,7 @@ aggregates across shards.
 ### TS4: Distributed Retention Policy
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -707,6 +743,17 @@ aggregates across shards.
 **Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
 recording, and a `pg18`-gated pgrx surface for cluster-wide retention policy
 setup.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` and
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` execute
+`apply_retention_policy_distributed(...)` against
+`timescale/timescaledb-ha:pg17-ts2.27`; the non-stubbed cohabitation run uses
+real `citus`, `timescaledb`, and `ai_blaise_citus`, verifies bridge-state rows,
+and records `policy_execution_scope=entrypoints-and-catalog-state-only`. This
+is production-ready for the bounded SQL apply/catalog-state surface only; it
+does not claim full TimescaleDB functionality, retention background job
+completion, chunk-drop scheduling, multi-worker policy fanout, or operator
+reconciliation.
 
 **Motivation**: Retention should drop old chunks across all worker-local
 hypertables without requiring operator-authored per-worker SQL.
@@ -724,7 +771,7 @@ policy fanout.
 ### TS5: Time-Range Shard Pruner
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `timescaledb`
@@ -733,6 +780,16 @@ policy fanout.
 TimescaleDB time dimensions to prune shards for time-bound predicates. The SQL
 extension now records enabled pruner state through an executable
 `apply_time_range_shard_pruner` surface.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` and
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` execute
+`apply_time_range_shard_pruner(...)` against
+`timescale/timescaledb-ha:pg17-ts2.27`; the non-stubbed cohabitation run uses
+real `citus`, `timescaledb`, and `ai_blaise_citus`, verifies bridge-state rows,
+and records `policy_execution_scope=entrypoints-and-catalog-state-only`. This
+is production-ready for the bounded SQL enablement/catalog-state surface only;
+it does not claim full TimescaleDB functionality, live planner pushdown,
+shard-pruning latency, multi-worker fanout, or operator reconciliation.
 
 **Motivation**: Distributed hypertables need shard pruning by tenant and time to
 avoid scanning irrelevant worker-local hypertable chunks.
@@ -795,7 +852,7 @@ load time. With TS6 enabled, ai-blaise/citus remains the outer Citus hook while
 delegating to trusted preexisting hooks where the Citus path can safely do so.
 
 Production evidence: `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds a
-real `timescale/timescaledb:latest-pg17` image with this Citus fork installed,
+real `timescale/timescaledb-ha:pg17-ts2.27` image with this Citus fork installed,
 starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
 `citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
 and `ai_blaise_citus` in the same server. The VM run in the production audit
@@ -813,9 +870,10 @@ iterates the TS minor lines pinned under `tests/cohab-matrix/`, reads each
 exact `image-tag.txt`, runs the single-version cohabitation smoke for
 published images, and compares the running container against the per-version
 expected hook-claim table. TS 2.27 is load-bearing through
-`timescale/timescaledb:2.27.1-pg17`. TS 2.28 is not production evidence yet:
-the VM registry probe on 2026-05-24 found no `2.28-pg17`, `2.28.0-pg17`, or
-`2.28.1-pg17` image, so the 2.28 row records `skip-with-note` until the tag
+`timescale/timescaledb-ha:pg17-ts2.27`. TS 2.28 is not production evidence yet:
+the VM registry probe on 2026-05-24 found no `timescale/timescaledb-ha:pg17-ts2.28`,
+`timescale/timescaledb-ha:pg17-ts2.28.0`, or
+`timescale/timescaledb-ha:pg17-ts2.28.1` image, so the 2.28 row records `skip-with-note` until the tag
 is published and all `unknown` hook rows are measured.
 
 **References**:
@@ -937,7 +995,7 @@ Timescale-aware cohabitation doctor rules.
 ### TS12: Distributed Reorder Policy
 
 **Overlay**: `companion/citus_timescale`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
@@ -945,6 +1003,17 @@ Timescale-aware cohabitation doctor rules.
 **Summary**: Adds SQL-plan rendering, SQL apply execution, bridge-state
 recording, and a `pg18`-gated pgrx surface for worker-fanned TimescaleDB
 reorder policy setup.
+
+Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` and
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` execute
+`apply_reorder_policy_distributed(...)` against
+`timescale/timescaledb-ha:pg17-ts2.27`; the non-stubbed cohabitation run uses
+real `citus`, `timescaledb`, and `ai_blaise_citus`, verifies bridge-state rows,
+and records `policy_execution_scope=entrypoints-and-catalog-state-only`. This
+is production-ready for the bounded SQL apply/catalog-state surface only; it
+does not claim full TimescaleDB functionality, reorder background job
+completion, chunk reorder performance, multi-worker policy fanout, or operator
+reconciliation.
 
 **Motivation**: Reorder policies need to target worker-local hypertables while
 remaining declarative at the coordinator/operator layer.
@@ -984,19 +1053,21 @@ emulate dependency calls, requires durable `companion_timescale_bridge_state`
 rows for all six bridge feature ids, and verifies that compression/CAGG apply
 paths fail closed when TimescaleDB dependency functions are absent.
 `ci/ai-blaise/timescale-bridge-smoke.sh` then installs the same extension into
-a real `timescale/timescaledb:latest-pg17` container, verifies that
+a real `timescale/timescaledb-ha:pg17-ts2.27` container, verifies that
 `apply_distribute_hypertable(...)` fails closed before a Citus distribution
 entrypoint is visible, stubs only that Citus distribution entrypoint, and
 records `policy_execution_scope=entrypoints-and-catalog-state-only` evidence
 for real TimescaleDB entrypoint calls and bridge-state rows.
 `ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous stub gap by
-building this Citus fork into a real TimescaleDB PG17 image, loading
+building this Citus fork into the pinned TimescaleDB HA PG17/TS2.27 image, loading
 `timescaledb,citus` with `citus.cohabit_extensions=timescaledb`, creating real
 `citus`, `timescaledb`, and `ai_blaise_citus` extensions, enforcing the
 expected PG/Timescale minor when configured by the version matrix, requiring
 real `create_distributed_table` rows in `pg_dist_partition`, and executing the
 TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live cohabiting server
-without defining any Citus stub.
+without defining any Citus stub. Those six feature entries are production-ready
+for the same bounded SQL apply/catalog-state surface, while TS7 remains alpha
+until Kubernetes controller execution and status reconciliation are live-proven.
 
 The TS18 production-ready boundary is intentionally narrow: it proves SQL
 apply functions invoke the expected TimescaleDB/Citus entrypoints, create the

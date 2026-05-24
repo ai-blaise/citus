@@ -38,12 +38,12 @@ exploratory local probe. CI and release gates must not set that escape hatch.
 ## Status As Of 2026-05-24
 
 - `2.27/` is load-bearing. The pinned image is
-  `timescale/timescaledb:2.27.1-pg17`, and the VM registry probe confirmed it
+  `timescale/timescaledb-ha:pg17-ts2.27`, and the VM registry probe confirmed it
   exists. This is also the line currently covered by the single-version
-  `timescale/timescaledb:latest-pg17` cohabitation smoke.
+  `timescale/timescaledb-ha:pg17-ts2.27` cohabitation smoke.
 - `2.28/` is a forward-compatibility row, not production evidence. The pinned
-  image is `timescale/timescaledb:2.28.0-pg17`; the VM registry probe on
-  2026-05-24 confirmed that `2.28-pg17`, `2.28.0-pg17`, and `2.28.1-pg17` are
+  image is `timescale/timescaledb-ha:pg17-ts2.28`; the VM registry probe on
+  2026-05-24 confirmed that `timescale/timescaledb-ha:pg17-ts2.28`, `timescale/timescaledb-ha:pg17-ts2.28.0`, and `timescale/timescaledb-ha:pg17-ts2.28.1` are
   not published. The matrix records `skip-with-note` while the tag is absent
   and does not promote TS 2.28 to production-ready.
 

@@ -5,7 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
 control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
-timescale_image="${TIMESCALE_BRIDGE_SMOKE_IMAGE:-timescale/timescaledb:latest-pg17}"
+timescale_image="${TIMESCALE_BRIDGE_SMOKE_IMAGE:-timescale/timescaledb-ha:pg17-ts2.27}"
 require_docker="${REQUIRE_DOCKER:-0}"
 evidence_file="${TIMESCALE_BRIDGE_SMOKE_EVIDENCE:-artifacts/timescale-bridge-smoke.tsv}"
 

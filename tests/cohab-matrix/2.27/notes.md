@@ -2,7 +2,7 @@
 
 This is the load-bearing TS line for the ai-blaise/citus cohabitation seam at
 the time this matrix lands. Production evidence is `ci/ai-blaise/timescale-cohabitation-smoke.sh`
-against `timescale/timescaledb:latest-pg17`, which currently resolves to the 2.27.x line; the matrix pins `timescale/timescaledb:2.27.1-pg17`.
+against `timescale/timescaledb-ha:pg17-ts2.27`, which currently resolves to the 2.27.x line; the matrix pins `timescale/timescaledb-ha:pg17-ts2.27`.
 
 ## Hook seam summary
 

@@ -78,7 +78,7 @@ def ensure_source_image():
     run([
         "docker", "build",
         "--file", str(COHAB_DOCKERFILE),
-        "--build-arg", os.environ.get("TIMESCALE_COHABITATION_BASE_ARG", "BASE_IMAGE=timescale/timescaledb:latest-pg17"),
+        "--build-arg", os.environ.get("TIMESCALE_COHABITATION_BASE_ARG", "BASE_IMAGE=timescale/timescaledb-ha:pg17-ts2.27"),
         "--build-arg", os.environ.get("TIMESCALE_COHABITATION_MAKE_ARG", "MAKE_JOBS=4"),
         "--tag", SOURCE_IMAGE,
         os.getcwd(),

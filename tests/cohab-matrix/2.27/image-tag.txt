@@ -1,1 +1,1 @@
-timescale/timescaledb:2.27.1-pg17
+timescale/timescaledb-ha:pg17-ts2.27

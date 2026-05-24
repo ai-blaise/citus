@@ -41,7 +41,7 @@ Captured from GitHub bookkeeping on `2026-05-24T06:14:25Z` for the final release
 - Draft blockers: none expected after the direct final release/patch integration batch closes draft PR #109 by ancestry.
 - Non-draft merge-order blockers: none expected after the direct final release/patch integration batch closes PR #97 by ancestry.
 - PRs #97, #99, #100, #102, #103, #105, and #109 are recorded as landed by the direct final release/patch integration batch after focused VM verification.
-- PRs #87, #96, #98, #101, and #104 were integrated by the direct runtime durability/upgrade/pool batch after focused VM verification and the Timescale 2.27 Docker cohabitation smoke passed; Timescale 2.28 remains a truthful pass-with-note until `timescale/timescaledb:2.28.0-pg17` exists.
+- PRs #87, #96, #98, #101, and #104 were integrated by the direct runtime durability/upgrade/pool batch after focused VM verification and the Timescale 2.27 Docker cohabitation smoke passed; Timescale 2.28 remains a truthful pass-with-note until `timescale/timescaledb-ha:pg17-ts2.28` exists.
 - Earlier direct bootstrap-v2 batches recorded PRs #70-#86, #88-#95, and #106-#108 as landed.
 - CI state is volatile and is not used as a merge-order drift signal. The plan requires title, head branch, base branch, and draft state to match live GitHub metadata when active PRs are present.
 

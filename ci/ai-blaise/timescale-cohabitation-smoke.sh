@@ -5,7 +5,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 dockerfile="${repo_root}/images/citus-timescale-cohabitation/Dockerfile"
-base_image="${TIMESCALE_COHABITATION_BASE_IMAGE:-timescale/timescaledb:latest-pg17}"
+base_image="${TIMESCALE_COHABITATION_BASE_IMAGE:-timescale/timescaledb-ha:pg17-ts2.27}"
 image="${TIMESCALE_COHABITATION_IMAGE:-}"
 tag="${TIMESCALE_COHABITATION_TAG:-ai-blaise-citus-timescale-cohabitation:local}"
 make_jobs="${TIMESCALE_COHABITATION_MAKE_JOBS:-4}"
@@ -16,8 +16,12 @@ expected_pg_major="${TIMESCALE_COHABITATION_EXPECTED_PG_MAJOR:-}"
 
 if [[ -z "${expected_ts_minor}" && "${base_image}" =~ :([0-9]+\.[0-9]+)(\.[0-9]+)?-pg[0-9]+$ ]]; then
   expected_ts_minor="${BASH_REMATCH[1]}"
+elif [[ -z "${expected_ts_minor}" && "${base_image}" =~ [:/-]pg[0-9]+-ts([0-9]+\.[0-9]+)(\.[0-9]+)?$ ]]; then
+  expected_ts_minor="${BASH_REMATCH[1]}"
 fi
 if [[ -z "${expected_pg_major}" && "${base_image}" =~ -pg([0-9]+)$ ]]; then
+  expected_pg_major="${BASH_REMATCH[1]}"
+elif [[ -z "${expected_pg_major}" && "${base_image}" =~ [:/-]pg([0-9]+)-ts[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
   expected_pg_major="${BASH_REMATCH[1]}"
 fi
 

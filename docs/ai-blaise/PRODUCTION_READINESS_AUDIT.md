@@ -360,7 +360,7 @@ more production-ready than the artifacts justified.
   `ci/ai-blaise/patches-check.sh` accepts either clean application to an
   upstream-like tree or clean reverse application when the patch is already
   integrated. `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds this Citus
-  fork into `timescale/timescaledb:latest-pg17`, starts PostgreSQL with
+  fork into `timescale/timescaledb-ha:pg17-ts2.27`, starts PostgreSQL with
   `shared_preload_libraries=timescaledb,citus` and
   `citus.cohabit_extensions=timescaledb`, creates real `citus`,
   `timescaledb`, and `ai_blaise_citus` extensions, verifies real
@@ -420,7 +420,7 @@ more production-ready than the artifacts justified.
 - `TS18` now has real Citus+TimescaleDB cohabitation evidence without a stubbed
   distribution entrypoint. The VM run built
   `ai-blaise-citus-timescale-cohabitation:local` from
-  `timescale/timescaledb:latest-pg17`, installed this Citus fork and the
+  `timescale/timescaledb-ha:pg17-ts2.27`, installed this Citus fork and the
   `ai_blaise_citus` SQL extension, created real `citus`, `timescaledb`, and
   `ai_blaise_citus` extensions, inserted through a real Citus distributed
   table, and then executed the bridge apply functions against the cohabiting
@@ -501,7 +501,9 @@ more production-ready than the artifacts justified.
 - The TS-version matrix gate now pins TimescaleDB minor-line image tags under
   `tests/cohab-matrix/`, requires 2.27 to run live, and records 2.28 as
   `skip-with-note` only because the VM registry probe on 2026-05-24 found no
-  `2.28-pg17`, `2.28.0-pg17`, or `2.28.1-pg17` image. This does not promote
+  `timescale/timescaledb-ha:pg17-ts2.28`,
+  `timescale/timescaledb-ha:pg17-ts2.28.0`, or
+  `timescale/timescaledb-ha:pg17-ts2.28.1` image. This does not promote
   TS 2.28 to production-ready; a published 2.28 image fails the matrix until
   any `unknown` hook rows are measured and updated.
 - The pool proxy smoke now opens a raw PostgreSQL protocol client through the

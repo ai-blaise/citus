@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 # FEATURE: TS6 TS18
 
-ARG BASE_IMAGE=timescale/timescaledb:latest-pg17
+ARG BASE_IMAGE=timescale/timescaledb-ha:pg17-ts2.27
 FROM ${BASE_IMAGE}
 
 ARG MAKE_JOBS=4
+ARG WITH_LLVM=no
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION=0.1.0
 
 LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
@@ -15,40 +16,68 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
 USER root
 
 RUN set -eux; \
-    apk add --no-cache \
-      autoconf \
-      automake \
-      bash \
-      bison \
-      build-base \
-      clang19 \
-      curl-dev \
-      flex \
-      git \
-      icu-dev \
-      krb5-dev \
-      libxml2-dev \
-      libxslt-dev \
-      libtool \
-      lz4-dev \
-      llvm19-dev \
-      openssl-dev \
-      perl \
-      python3 \
-      readline-dev \
-      zlib-dev \
-      zstd-dev
+    if command -v apk >/dev/null 2>&1; then \
+      apk add --no-cache \
+        autoconf \
+        automake \
+        bash \
+        bison \
+        build-base \
+        curl-dev \
+        flex \
+        git \
+        icu-dev \
+        krb5-dev \
+        libxml2-dev \
+        libxslt-dev \
+        libtool \
+        lz4-dev \
+        openssl-dev \
+        perl \
+        python3 \
+        readline-dev \
+        zlib-dev \
+        zstd-dev; \
+    else \
+      apt-get update; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        bison \
+        build-essential \
+        ca-certificates \
+        flex \
+        git \
+        libcurl4-openssl-dev \
+        libicu-dev \
+        libkrb5-dev \
+        liblz4-dev \
+        libreadline-dev \
+        libssl-dev \
+        libtool \
+        libxml2-dev \
+        libxslt1-dev \
+        libzstd-dev \
+        perl \
+        pkg-config \
+        postgresql-server-dev-17 \
+        python3 \
+        zlib1g-dev; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /build/citus
 COPY . /build/citus
 
 RUN set -eux; \
     ./configure PG_CONFIG="$(command -v pg_config)" --without-pg-version-check; \
-    make -j"${MAKE_JOBS}"; \
-    make install; \
+    make -j"${MAKE_JOBS}" with_llvm="${WITH_LLVM}"; \
+    make install with_llvm="${WITH_LLVM}"; \
     extension_dir="$(pg_config --sharedir)/extension"; \
     install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus.control \
       "${extension_dir}/ai_blaise_citus.control"; \
     install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql \
       "${extension_dir}/ai_blaise_citus--0.1.0.sql"; \
     rm -rf /build/citus
+
+USER postgres
