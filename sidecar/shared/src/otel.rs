@@ -720,4 +720,47 @@ mod tests {
             Some("keep=1")
         );
     }
+
+    #[test]
+    fn trace_context_round_trips_across_http_grpc_and_pg_carriers() {
+        let parent = TraceParent::parse(SAMPLE_TRACEPARENT).unwrap();
+        let state = TraceState::new("vendor=opaque");
+
+        let mut http = HeaderMap::new();
+        http.inject(&parent, &state);
+        let (http_parent, http_state) = http.extract().unwrap();
+        assert_eq!(http_parent, parent);
+        assert_eq!(http_state.as_str(), "vendor=opaque");
+
+        let mut grpc = MetadataMap::new();
+        grpc.inject(&http_parent, &http_state);
+        let (grpc_parent, grpc_state) = grpc.extract().unwrap();
+        assert_eq!(grpc_parent, parent);
+        assert_eq!(grpc_state.as_str(), "vendor=opaque");
+
+        let mut set_local = SetLocalBuilder::new();
+        set_local.inject(&grpc_parent, &grpc_state);
+        let rendered = set_local.render().unwrap();
+        assert!(rendered.contains(&format!("SET LOCAL trace.parent = '{SAMPLE_TRACEPARENT}'")));
+        assert!(rendered.contains("SET LOCAL trace.state = 'vendor=opaque'"));
+        let (pg_parent, pg_state) = set_local.extract().unwrap();
+        assert_eq!(pg_parent, parent);
+        assert_eq!(pg_state.as_str(), "vendor=opaque");
+    }
+
+    #[test]
+    fn trace_context_injection_removes_stale_tracestate_when_empty() {
+        let parent = TraceParent::parse(SAMPLE_TRACEPARENT).unwrap();
+        let mut http = HeaderMap::new();
+        http.insert("tracestate", "stale=1");
+        http.inject(&parent, &TraceState::default());
+        assert_eq!(http.get(TRACEPARENT_HEADER), Some(SAMPLE_TRACEPARENT));
+        assert_eq!(http.get(TRACESTATE_HEADER), None);
+
+        let mut grpc = MetadataMap::new();
+        grpc.insert("tracestate", "stale=1");
+        grpc.inject(&parent, &TraceState::default());
+        assert_eq!(grpc.get(TRACEPARENT_HEADER), Some(SAMPLE_TRACEPARENT));
+        assert_eq!(grpc.get(TRACESTATE_HEADER), None);
+    }
 }

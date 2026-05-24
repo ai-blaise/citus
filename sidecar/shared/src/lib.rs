@@ -20,8 +20,8 @@ pub use ha::{
     EndpointStatus, RetargetConfig, RetargetDecision, RetargetError,
 };
 pub use log_schema::{
-    canonical_sidecar_log_schemas, LogField, LogFieldKind, LogRecord, LogSchema, LogSchemaError,
-    LogSeverity, SidecarLogSchema,
+    canonical_sidecar_log_records, canonical_sidecar_log_schemas, validate_sidecar_log_json,
+    LogField, LogFieldKind, LogRecord, LogSchema, LogSchemaError, LogSeverity, SidecarLogSchema,
 };
 pub use otel::{
     parse_application_name, ApplicationNameFields, HeaderMap, MetadataMap, SetLocalBuilder,

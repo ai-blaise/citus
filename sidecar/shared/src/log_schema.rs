@@ -17,6 +17,10 @@
 use std::error::Error;
 use std::fmt;
 
+use serde_json::{Map, Number, Value};
+
+use crate::otel::TraceParent;
+
 /// Severity levels mirror RFC 5424 / OpenTelemetry severity numbers but the
 /// emitted JSON uses the canonical short names below.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
@@ -39,6 +43,13 @@ impl LogSeverity {
             Self::Error => "error",
             Self::Critical => "critical",
         }
+    }
+
+    fn is_valid(value: &str) -> bool {
+        matches!(
+            value,
+            "trace" | "debug" | "info" | "warn" | "error" | "critical"
+        )
     }
 }
 
@@ -63,6 +74,21 @@ impl LogFieldKind {
             Self::Float => "double precision",
             Self::Bool => "boolean",
             Self::Json => "jsonb",
+        }
+    }
+
+    fn matches_json_value(self, value: &Value) -> bool {
+        match self {
+            Self::Timestamp | Self::String => value.is_string(),
+            Self::Integer => {
+                value.as_i64().is_some()
+                    || value
+                        .as_u64()
+                        .is_some_and(|value| i64::try_from(value).is_ok())
+            }
+            Self::Float => value.is_number(),
+            Self::Bool => value.is_boolean(),
+            Self::Json => value.is_object() || value.is_array(),
         }
     }
 }
@@ -138,6 +164,65 @@ impl LogSchema {
     pub fn all_fields(&self) -> impl Iterator<Item = &LogField> {
         self.common.iter().chain(self.extensions.iter())
     }
+
+    /// Validate one emitted JSON log line against this schema.
+    ///
+    /// The check is fail-closed for sidecar-specific fields: extension values
+    /// must live under the `fields` object, must be declared by the schema,
+    /// and must match the declared logical type. Top-level unknown fields are
+    /// tolerated so platform log shippers can add envelope metadata without
+    /// invalidating the sidecar contract.
+    pub fn validate_json_line(&self, line: &str) -> Result<(), LogSchemaError> {
+        self.validate()?;
+        let value: Value = serde_json::from_str(line)
+            .map_err(|error| LogSchemaError::InvalidJson(error.to_string()))?;
+        let object = value.as_object().ok_or(LogSchemaError::JsonRootNotObject)?;
+
+        for field in self.common {
+            validate_top_level_field(field, object)?;
+        }
+
+        let sidecar = object
+            .get("sidecar")
+            .and_then(Value::as_str)
+            .ok_or(LogSchemaError::MissingLogField("sidecar"))?;
+        if sidecar != self.component {
+            return Err(LogSchemaError::SidecarMismatch {
+                expected: self.component,
+                actual: sidecar.to_string(),
+            });
+        }
+
+        if let Some(traceparent) = object.get("traceparent") {
+            let raw = traceparent
+                .as_str()
+                .ok_or(LogSchemaError::InvalidFieldKind {
+                    field: "traceparent".to_string(),
+                    expected: LogFieldKind::String,
+                })?;
+            TraceParent::parse(raw)
+                .map_err(|error| LogSchemaError::InvalidTraceparent(error.to_string()))?;
+        }
+
+        let extension_object = match object.get("fields") {
+            Some(Value::Object(fields)) => Some(fields),
+            Some(_) => return Err(LogSchemaError::FieldsEnvelopeNotObject),
+            None => None,
+        };
+
+        for field in self.extensions {
+            validate_extension_field(field, extension_object)?;
+        }
+        if let Some(fields) = extension_object {
+            for key in fields.keys() {
+                if !self.extensions.iter().any(|field| field.name == key) {
+                    return Err(LogSchemaError::UnknownExtensionField(key.clone()));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Named sidecar schema, used by `canonical_sidecar_log_schemas` to expose
@@ -200,6 +285,117 @@ impl LogRecord {
     }
 }
 
+/// Return one valid, typed example log record for every canonical sidecar
+/// schema. The examples exercise every sidecar-specific field, making them
+/// useful as executable schema fixtures in CI.
+pub fn canonical_sidecar_log_records() -> Vec<LogRecord> {
+    canonical_sidecar_log_schemas()
+        .iter()
+        .map(canonical_log_record)
+        .collect()
+}
+
+/// Validate a JSON log line for a named sidecar against the canonical schema.
+pub fn validate_sidecar_log_json(sidecar: &str, line: &str) -> Result<(), LogSchemaError> {
+    let schema = canonical_sidecar_log_schemas()
+        .iter()
+        .find(|candidate| candidate.sidecar == sidecar)
+        .ok_or_else(|| LogSchemaError::UnknownSidecar(sidecar.to_string()))?;
+    schema.schema.validate_json_line(line)
+}
+
+fn canonical_log_record(sidecar: &SidecarLogSchema) -> LogRecord {
+    let mut extension_fields = Map::new();
+    for field in sidecar.schema.extensions {
+        extension_fields.insert(field.name.to_string(), sample_json_value(field));
+    }
+    LogRecord {
+        timestamp_rfc3339: "2026-05-24T11:00:00Z".to_string(),
+        level: LogSeverity::Info,
+        component: sidecar.sidecar.to_string(),
+        message: format!("{} canonical structured log", sidecar.sidecar),
+        traceparent: Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".to_string()),
+        tenant_id: Some("tenant-a".to_string()),
+        request_id: Some(format!("req-{}", sidecar.sidecar)),
+        version: Some("0.1.0".to_string()),
+        error: None,
+        fields_json: Value::Object(extension_fields).to_string(),
+    }
+}
+
+fn sample_json_value(field: &LogField) -> Value {
+    match field.kind {
+        LogFieldKind::Timestamp | LogFieldKind::String => {
+            Value::String(format!("{}_sample", field.name))
+        }
+        LogFieldKind::Integer => Value::Number(Number::from(1_i64)),
+        LogFieldKind::Float => Number::from_f64(1.25)
+            .map(Value::Number)
+            .expect("finite sample float"),
+        LogFieldKind::Bool => Value::Bool(true),
+        LogFieldKind::Json => {
+            let mut object = Map::new();
+            object.insert("sample".to_string(), Value::Bool(true));
+            Value::Object(object)
+        }
+    }
+}
+
+fn validate_top_level_field(
+    field: &LogField,
+    object: &Map<String, Value>,
+) -> Result<(), LogSchemaError> {
+    let Some(value) = object.get(field.name) else {
+        if field.required {
+            return Err(LogSchemaError::MissingLogField(field.name));
+        }
+        return Ok(());
+    };
+    if !field.kind.matches_json_value(value) {
+        return Err(LogSchemaError::InvalidFieldKind {
+            field: field.name.to_string(),
+            expected: field.kind,
+        });
+    }
+    if field.name == "level" {
+        let Some(level) = value.as_str() else {
+            return Err(LogSchemaError::InvalidFieldKind {
+                field: field.name.to_string(),
+                expected: field.kind,
+            });
+        };
+        if !LogSeverity::is_valid(level) {
+            return Err(LogSchemaError::InvalidSeverity(level.to_string()));
+        }
+    }
+    Ok(())
+}
+
+fn validate_extension_field(
+    field: &LogField,
+    object: Option<&Map<String, Value>>,
+) -> Result<(), LogSchemaError> {
+    let Some(object) = object else {
+        if field.required {
+            return Err(LogSchemaError::MissingLogField(field.name));
+        }
+        return Ok(());
+    };
+    let Some(value) = object.get(field.name) else {
+        if field.required {
+            return Err(LogSchemaError::MissingLogField(field.name));
+        }
+        return Ok(());
+    };
+    if !field.kind.matches_json_value(value) {
+        return Err(LogSchemaError::InvalidFieldKind {
+            field: field.name.to_string(),
+            expected: field.kind,
+        });
+    }
+    Ok(())
+}
+
 fn write_json_field(output: &mut String, name: &str, value: &str, leading_comma: bool) {
     if leading_comma {
         output.push(',');
@@ -234,6 +430,22 @@ pub enum LogSchemaError {
     EmptyComponent,
     ConflictingField(&'static str),
     MissingCommonField(&'static str),
+    UnknownSidecar(String),
+    InvalidJson(String),
+    JsonRootNotObject,
+    MissingLogField(&'static str),
+    InvalidFieldKind {
+        field: String,
+        expected: LogFieldKind,
+    },
+    InvalidSeverity(String),
+    SidecarMismatch {
+        expected: &'static str,
+        actual: String,
+    },
+    InvalidTraceparent(String),
+    FieldsEnvelopeNotObject,
+    UnknownExtensionField(String),
 }
 
 impl fmt::Display for LogSchemaError {
@@ -252,6 +464,44 @@ impl fmt::Display for LogSchemaError {
                     "log schema is missing required common field '{name}'"
                 )
             }
+            Self::UnknownSidecar(sidecar) => {
+                write!(formatter, "unknown sidecar log schema '{sidecar}'")
+            }
+            Self::InvalidJson(error) => write!(formatter, "invalid structured-log JSON: {error}"),
+            Self::JsonRootNotObject => {
+                write!(formatter, "structured-log JSON root must be an object")
+            }
+            Self::MissingLogField(name) => {
+                write!(
+                    formatter,
+                    "structured-log record is missing required field '{name}'"
+                )
+            }
+            Self::InvalidFieldKind { field, expected } => write!(
+                formatter,
+                "structured-log field '{field}' does not match expected kind {:?}",
+                expected,
+            ),
+            Self::InvalidSeverity(level) => {
+                write!(formatter, "invalid structured-log severity '{level}'")
+            }
+            Self::SidecarMismatch { expected, actual } => write!(
+                formatter,
+                "structured-log sidecar mismatch: expected '{expected}', got '{actual}'"
+            ),
+            Self::InvalidTraceparent(error) => {
+                write!(formatter, "invalid structured-log traceparent: {error}")
+            }
+            Self::FieldsEnvelopeNotObject => {
+                write!(
+                    formatter,
+                    "structured-log fields envelope must be an object"
+                )
+            }
+            Self::UnknownExtensionField(field) => write!(
+                formatter,
+                "unknown sidecar-specific structured-log field '{field}'"
+            ),
         }
     }
 }
@@ -825,5 +1075,50 @@ mod tests {
         assert!(sidecars.contains(&"raft"));
         // The workspace ships 17 sidecars; the schema catalog must cover them all.
         assert_eq!(sidecars.len(), 17);
+    }
+
+    #[test]
+    fn canonical_records_validate_against_sidecar_specific_fields() {
+        for (schema, record) in canonical_sidecar_log_schemas()
+            .iter()
+            .zip(canonical_sidecar_log_records())
+        {
+            let rendered = record.to_json_line();
+            schema
+                .schema
+                .validate_json_line(&rendered)
+                .unwrap_or_else(|error| panic!("record {} failed: {error}", schema.sidecar));
+            validate_sidecar_log_json(schema.sidecar, &rendered).unwrap();
+        }
+    }
+
+    #[test]
+    fn validator_rejects_wrong_extension_field_type() {
+        let bad = r#"{"timestamp":"2026-05-24T11:00:00Z","level":"info","sidecar":"vectorizer","message":"bad","fields":{"tokens":"not-an-int"}}"#;
+        assert_eq!(
+            validate_sidecar_log_json("vectorizer", bad).unwrap_err(),
+            LogSchemaError::InvalidFieldKind {
+                field: "tokens".to_string(),
+                expected: LogFieldKind::Integer,
+            },
+        );
+    }
+
+    #[test]
+    fn validator_rejects_unknown_extension_field() {
+        let bad = r#"{"timestamp":"2026-05-24T11:00:00Z","level":"info","sidecar":"cdc","message":"bad","fields":{"slot_name":"s1","not_in_schema":true}}"#;
+        assert_eq!(
+            validate_sidecar_log_json("cdc", bad).unwrap_err(),
+            LogSchemaError::UnknownExtensionField("not_in_schema".to_string()),
+        );
+    }
+
+    #[test]
+    fn validator_rejects_corrupted_traceparent() {
+        let bad = r#"{"timestamp":"2026-05-24T11:00:00Z","level":"info","sidecar":"auth","message":"bad","traceparent":"not-a-traceparent","fields":{"issuer":"issuer-a"}}"#;
+        assert!(matches!(
+            validate_sidecar_log_json("auth", bad),
+            Err(LogSchemaError::InvalidTraceparent(_))
+        ));
     }
 }
