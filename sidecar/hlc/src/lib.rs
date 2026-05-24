@@ -151,13 +151,42 @@ pub struct FollowerReadPlan {
 
 impl FollowerReadPlan {
     pub fn validate(&self) -> Result<(), HlcError> {
+        match self.decision()? {
+            FollowerReadDecision::ServeFromFollower { .. } => Ok(()),
+            FollowerReadDecision::RejectNotClosed { .. } => Err(HlcError::TimestampNotClosed),
+        }
+    }
+
+    pub fn decision(&self) -> Result<FollowerReadDecision, HlcError> {
         validate_required("follower_read.replica", &self.replica)?;
         self.closed_timestamp.validate()?;
         if self.as_of > self.closed_timestamp.closed_at {
-            return Err(HlcError::TimestampNotClosed);
+            return Ok(FollowerReadDecision::RejectNotClosed {
+                replica: self.replica.clone(),
+                as_of: self.as_of,
+                closed_at: self.closed_timestamp.closed_at,
+            });
         }
-        Ok(())
+        Ok(FollowerReadDecision::ServeFromFollower {
+            replica: self.replica.clone(),
+            as_of: self.as_of,
+            closed_at: self.closed_timestamp.closed_at,
+        })
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum FollowerReadDecision {
+    ServeFromFollower {
+        replica: String,
+        as_of: HlcTimestamp,
+        closed_at: HlcTimestamp,
+    },
+    RejectNotClosed {
+        replica: String,
+        as_of: HlcTimestamp,
+        closed_at: HlcTimestamp,
+    },
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -314,6 +343,30 @@ mod tests {
         };
 
         assert_eq!(plan.validate(), Err(HlcError::TimestampNotClosed));
+        assert!(matches!(
+            plan.decision(),
+            Ok(FollowerReadDecision::RejectNotClosed { .. })
+        ));
+    }
+
+    #[test]
+    fn follower_read_decision_serves_closed_timestamp() {
+        let plan = canonical_follower_read_plan();
+
+        assert_eq!(
+            plan.decision(),
+            Ok(FollowerReadDecision::ServeFromFollower {
+                replica: "worker-a-replica".to_string(),
+                as_of: HlcTimestamp {
+                    physical_ms: 1_700_000_000,
+                    logical: 9,
+                },
+                closed_at: HlcTimestamp {
+                    physical_ms: 1_700_000_000,
+                    logical: 10,
+                },
+            })
+        );
     }
 
     #[test]

@@ -433,13 +433,16 @@ more production-ready than the artifacts justified.
 - The Raft/HLC/transaction-status triad now has executable sidecar runtime
   evidence: `sidecar-raft-smoke.sh` proves deterministic election,
   AppendEntries replication, quorum commit, durable log replay, and snapshot
-  watermarking; HLC runtime canonical output proves peer clock exchange and
-  closed-timestamp derivation; `parallel-commits-smoke.sh` proves staging,
-  finalize, and modeled fast-path step count; and `sql-extension-smoke.sh`
-  installs `companion.txn_stage`/`companion.txn_finalize` into real PostgreSQL.
-  S5, S9, MR6, and T5 remain alpha for the broader distributed-database
-  behavior until networked multi-process Raft, MVCC follower-read execution,
-  PostgreSQL-core patch integration, Citus executor integration, and Kubernetes
+  watermarking; `topology-consensus-smoke.sh` proves S4 coordinator-less pool
+  admission, S5 fail-closed placement/member validation, and S9/MR6 closed
+  timestamp follower-read serve/reject gates; HLC runtime canonical output
+  proves peer clock exchange and closed-timestamp derivation;
+  `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
+  step count; and `sql-extension-smoke.sh` installs `companion.txn_stage`/
+  `companion.txn_finalize` into real PostgreSQL. S4, S5, S9, MR6, and T5
+  remain alpha for the broader distributed-database behavior until networked
+  multi-process Raft, MVCC follower-read execution, PostgreSQL-core patch
+  integration, Citus executor integration, pool routing, and Kubernetes
   operator reconciliation are live-gated.
 - The auto-API and edge-functions sidecars now have a bounded
   process/socket runtime smoke for the canonical API contracts. The smoke

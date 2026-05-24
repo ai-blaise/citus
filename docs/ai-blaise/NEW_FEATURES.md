@@ -1475,6 +1475,11 @@ Kubernetes-native CRD for topology spread constraints.
 **Summary**: Allows any node to serve as the entry point for single-shard
 queries while multi-shard plans route to a chosen plan leader.
 
+**Current boundary**: The CRD admission surface now rejects coordinator-less
+specs that omit the pool entry point and the reconciler keeps the dedicated
+coordinator count at zero. Real worker-local query serving, pool routing, MX
+metadata synchronization, and multi-shard plan-leader execution remain alpha.
+
 **Motivation**: The classic coordinator is a throughput and availability
 bottleneck.
 
@@ -1487,6 +1492,7 @@ not ship ai-blaise's pool/operator topology mode.
 - In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 
 ### S5: Raft Per Shard Group
 
@@ -1513,10 +1519,14 @@ consensus logic into Postgres backends.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-durable-canonical`
 - CI: `ci/ai-blaise/sidecar-raft-smoke.sh`
+- CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 - Current boundary: the sidecar now has deterministic election, quorum commit,
-  AppendEntries replication, durable log, and snapshot-boundary evidence. Real
-  multi-process network transport, operator-driven membership changes, CNPG
-  failover execution, and Citus placement synchronization remain alpha.
+  AppendEntries replication, durable log, snapshot-boundary evidence, and
+  fail-closed placement admission for duplicate members, unknown leader/lease
+  and placement references, non-voting leaders, stale placement generations,
+  unknown live-node reports, and missing voter quorum. Real multi-process
+  network transport, operator-driven membership changes, CNPG failover
+  execution, and Citus placement synchronization remain alpha.
 
 ### S6: Per-Shard Placement Generation
 
@@ -1580,10 +1590,11 @@ reads.
 - In-source: `FEATURE: S9` in `sidecar/hlc/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
+- CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 - Current boundary: the sidecar now has deterministic peer clock-exchange,
-  closed-timestamp derivation, `/closed_ts`, health, readiness, and metrics
-  surfaces. MVCC snapshot execution, replica routing, and stale-read planner
-  integration remain alpha.
+  closed-timestamp derivation, explicit follower-read serve/reject decisions,
+  `/closed_ts`, health, readiness, and metrics surfaces. MVCC snapshot
+  execution, replica routing, and stale-read planner integration remain alpha.
 
 ### S10: Schema-Based Tenancy
 
@@ -7584,6 +7595,7 @@ travel.
 - In-source: `FEATURE: MR6` in `sidecar/hlc/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
+- CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 
 ### MR9: Region Survival Runbook
 

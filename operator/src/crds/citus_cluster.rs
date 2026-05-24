@@ -36,6 +36,9 @@ impl CitusClusterSpec {
             }
             _ => {}
         }
+        if matches!(self.topology, CitusTopology::CoordinatorLess) && self.pool.is_none() {
+            return Err(CitusClusterSpecError::MissingRequiredComponent("pool"));
+        }
 
         validate_optional_list("extensions", &self.extensions)?;
         if self.timescale_enabled && !contains_extension(&self.extensions, TIMESCALEDB_EXTENSION) {
@@ -123,6 +126,7 @@ pub enum CitusClusterSpecError {
     InvalidCoordinatorCount,
     InvalidReplicaCount(&'static str),
     MissingExtension(&'static str),
+    MissingRequiredComponent(&'static str),
     MissingRequiredField(&'static str),
 }
 
@@ -138,6 +142,9 @@ impl fmt::Display for CitusClusterSpecError {
             }
             Self::MissingExtension(extension) => {
                 write!(formatter, "extensions must include {extension}")
+            }
+            Self::MissingRequiredComponent(component) => {
+                write!(formatter, "coordinator-less topology requires {component}")
             }
             Self::MissingRequiredField(field) => {
                 write!(formatter, "{field} must not be empty")
@@ -213,10 +220,26 @@ mod tests {
         let mut spec = minimal_spec();
         spec.topology = CitusTopology::CoordinatorLess;
         spec.coordinators = 1;
+        spec.pool = Some(PoolSpec {
+            replicas: 2,
+            geoip_db: None,
+        });
 
         assert_eq!(
             spec.validate(),
             Err(CitusClusterSpecError::InvalidCoordinatorCount)
+        );
+    }
+
+    #[test]
+    fn coordinator_less_requires_pool_entrypoint() {
+        let mut spec = minimal_spec();
+        spec.topology = CitusTopology::CoordinatorLess;
+        spec.coordinators = 0;
+
+        assert_eq!(
+            spec.validate(),
+            Err(CitusClusterSpecError::MissingRequiredComponent("pool"))
         );
     }
 

@@ -34,14 +34,64 @@ impl RaftShardGroupPlan {
         if self.members.is_empty() {
             return Err(RaftSidecarError::MissingRequiredField("members"));
         }
+        let mut member_ids = BTreeSet::new();
+        let mut voter_count = 0;
         for member in &self.members {
             member.validate()?;
+            if !member_ids.insert(member.node_id.as_str()) {
+                return Err(RaftSidecarError::DuplicateMember(member.node_id.clone()));
+            }
+            if member.voter {
+                voter_count += 1;
+            }
         }
+        if voter_count == 0 {
+            return Err(RaftSidecarError::NoVotingMembers);
+        }
+
         self.lease.validate()?;
+        if self.member_by_id(&self.lease.holder).is_none() {
+            return Err(RaftSidecarError::UnknownMemberReference {
+                field: "lease.holder",
+                value: self.lease.holder.clone(),
+            });
+        }
+
+        if let Some(leader) = &self.leader {
+            let leader_member = self.member_by_id(leader).ok_or_else(|| {
+                RaftSidecarError::UnknownMemberReference {
+                    field: "leader",
+                    value: leader.clone(),
+                }
+            })?;
+            if !leader_member.voter {
+                return Err(RaftSidecarError::LeaderMustBeVoter(leader.clone()));
+            }
+            if self.lease.holder != *leader {
+                return Err(RaftSidecarError::LeaseHolderMismatch {
+                    leader: leader.clone(),
+                    holder: self.lease.holder.clone(),
+                });
+            }
+        }
+
         for intent in &self.placement_intents {
             intent.validate()?;
+            let target = self.member_by_id(&intent.target_node).ok_or_else(|| {
+                RaftSidecarError::UnknownMemberReference {
+                    field: "placement.target_node",
+                    value: intent.target_node.clone(),
+                }
+            })?;
+            if intent.placement_generation < target.placement_generation {
+                return Err(RaftSidecarError::InvalidPlacementGeneration);
+            }
         }
         Ok(())
+    }
+
+    fn member_by_id(&self, node_id: &str) -> Option<&RaftMember> {
+        self.members.iter().find(|member| member.node_id == node_id)
     }
 
     pub fn quorum_size(&self) -> usize {
@@ -55,6 +105,11 @@ impl RaftShardGroupPlan {
         observed_at: HlcTimestamp,
     ) -> Result<FailoverDecision, RaftSidecarError> {
         self.validate()?;
+        for node in live_nodes {
+            if self.member_by_id(node).is_none() {
+                return Err(RaftSidecarError::UnknownLiveNode(node.clone()));
+            }
+        }
         let live: BTreeSet<_> = live_nodes.iter().map(String::as_str).collect();
         let live_voters = self
             .members
@@ -146,23 +201,49 @@ pub enum FailoverDecision {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum RaftSidecarError {
+    DuplicateMember(String),
     InvalidPlacementGeneration,
     InvalidShardId,
     InvalidTerm,
+    LeaderMustBeVoter(String),
+    LeaseHolderMismatch { leader: String, holder: String },
     MissingRequiredField(&'static str),
     NoPromotionCandidate,
+    NoVotingMembers,
+    UnknownLiveNode(String),
+    UnknownMemberReference { field: &'static str, value: String },
 }
 
 impl fmt::Display for RaftSidecarError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DuplicateMember(node) => write!(formatter, "duplicate raft member: {node}"),
             Self::InvalidPlacementGeneration => {
-                write!(formatter, "placement_generation must be greater than zero")
+                write!(
+                    formatter,
+                    "placement_generation must be greater than zero and not move backwards"
+                )
             }
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
             Self::InvalidTerm => write!(formatter, "term must be greater than zero"),
+            Self::LeaderMustBeVoter(node) => {
+                write!(formatter, "leader must be a voting raft member: {node}")
+            }
+            Self::LeaseHolderMismatch { leader, holder } => write!(
+                formatter,
+                "lease holder {holder} does not match current leader {leader}"
+            ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::NoPromotionCandidate => write!(formatter, "no live voter can be promoted"),
+            Self::NoVotingMembers => {
+                write!(formatter, "raft group must include at least one voter")
+            }
+            Self::UnknownLiveNode(node) => {
+                write!(formatter, "live node is not a raft member: {node}")
+            }
+            Self::UnknownMemberReference { field, value } => {
+                write!(formatter, "{field} references unknown raft member {value}")
+            }
         }
     }
 }
@@ -307,6 +388,71 @@ mod tests {
         plan.placement_intents[0].shard_id = 0;
 
         assert_eq!(plan.validate(), Err(RaftSidecarError::InvalidShardId));
+    }
+
+    #[test]
+    fn duplicate_members_are_rejected() {
+        let mut plan = valid_plan();
+        plan.members[1].node_id = "worker-a".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(RaftSidecarError::DuplicateMember("worker-a".to_string()))
+        );
+    }
+
+    #[test]
+    fn leader_must_be_known_voter() {
+        let mut plan = valid_plan();
+        plan.members[0].voter = false;
+
+        assert_eq!(
+            plan.validate(),
+            Err(RaftSidecarError::LeaderMustBeVoter("worker-a".to_string()))
+        );
+    }
+
+    #[test]
+    fn lease_holder_must_match_leader() {
+        let mut plan = valid_plan();
+        plan.lease.holder = "worker-b".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(RaftSidecarError::LeaseHolderMismatch {
+                leader: "worker-a".to_string(),
+                holder: "worker-b".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn placement_target_must_be_known_member() {
+        let mut plan = valid_plan();
+        plan.placement_intents[0].target_node = "worker-z".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(RaftSidecarError::UnknownMemberReference {
+                field: "placement.target_node",
+                value: "worker-z".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn unknown_live_node_is_rejected() {
+        let error = valid_plan()
+            .failover_decision(
+                &["worker-b".to_string(), "worker-z".to_string()],
+                timestamp(1_700_010_000),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            RaftSidecarError::UnknownLiveNode("worker-z".to_string())
+        );
     }
 
     #[test]

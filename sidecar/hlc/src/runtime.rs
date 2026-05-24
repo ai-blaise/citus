@@ -13,7 +13,9 @@
 // FEATURE: S9
 // FEATURE: MR6
 
-use crate::{ClosedTimestampPlan, HlcClock, HlcError, HlcTimestamp};
+use crate::{
+    ClosedTimestampPlan, FollowerReadDecision, FollowerReadPlan, HlcClock, HlcError, HlcTimestamp,
+};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -175,6 +177,22 @@ impl HlcRuntime {
         };
         plan.validate()?;
         Ok(plan)
+    }
+
+    /// Decide whether a follower read can be served from this runtime's
+    /// current closed timestamp, returning a fail-closed decision instead of
+    /// silently routing a too-new AS OF timestamp.
+    pub fn follower_read_decision(
+        &self,
+        replica: impl Into<String>,
+        as_of: HlcTimestamp,
+    ) -> Result<FollowerReadDecision, HlcRuntimeError> {
+        let plan = FollowerReadPlan {
+            replica: replica.into(),
+            as_of,
+            closed_timestamp: self.closed_timestamp_plan()?,
+        };
+        Ok(plan.decision()?)
     }
 
     fn refresh_closed_at(&mut self) {
@@ -377,6 +395,35 @@ mod tests {
         assert_eq!(report.shard_group, "orders-sg");
         assert_eq!(report.peers.len(), 2);
         assert!(report.closed_at.physical_ms <= report.local_clock.physical_ms);
+    }
+
+    #[test]
+    fn runtime_follower_read_gate_serves_only_closed_timestamps() {
+        let mut runtime = HlcRuntime::new(
+            "orders-sg",
+            fixture_clock(),
+            vec!["worker-b".to_string()],
+            2,
+            5_000,
+        )
+        .expect("runtime");
+        runtime.tick(1_700_000_100).expect("tick");
+        let closed_at = runtime.closed_timestamp();
+
+        assert!(matches!(
+            runtime.follower_read_decision("worker-a-replica", closed_at),
+            Ok(FollowerReadDecision::ServeFromFollower { .. })
+        ));
+        assert!(matches!(
+            runtime.follower_read_decision(
+                "worker-a-replica",
+                HlcTimestamp {
+                    physical_ms: closed_at.physical_ms + 1,
+                    logical: 0,
+                },
+            ),
+            Ok(FollowerReadDecision::RejectNotClosed { .. })
+        ));
     }
 
     #[test]
