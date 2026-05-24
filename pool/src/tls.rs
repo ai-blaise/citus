@@ -2,13 +2,10 @@
 
 //! TLS session-ticket key rotation.
 //!
-//! rustls supports session resumption via a 32-byte ticket key. The pool
-//! rotates the key on a configurable schedule (default 24h) while keeping the
-//! previous key around for one rotation period so in-flight resumptions don't
-//! break across restarts.
-//!
-//! Key material is loaded from a Kubernetes Secret mounted on the pool pod;
-//! the file path is configurable via `AI_BLAISE_POOL_TLS_TICKET_KEY_PATH`.
+//! This module validates ticket-key material, keeps a bounded current/previous
+//! key ring, and emits non-secret rotation evidence. It does not claim live
+//! rustls listener integration, external Secret mounting, or production TLS
+//! infrastructure.
 
 use crate::{PoolRuntimeError, TlsSessionTicketPolicy};
 use std::error::Error;
@@ -32,10 +29,13 @@ impl TicketKey {
         }
     }
 
-    /// Construct a key from a hex-encoded string (64 lowercase hex chars).
+    /// Construct a key from a hex-encoded string (64 hex chars).
     pub fn from_hex(input: &str, created_at: SystemTime) -> Result<Self, TlsTicketError> {
         if input.len() != TICKET_KEY_LEN * 2 {
             return Err(TlsTicketError::InvalidKeyLength(input.len()));
+        }
+        if !input.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(TlsTicketError::InvalidHex);
         }
         let mut material = [0_u8; TICKET_KEY_LEN];
         for index in 0..TICKET_KEY_LEN {
@@ -45,6 +45,18 @@ impl TicketKey {
         }
         Ok(Self::new(material, created_at))
     }
+
+    pub fn redacted_fingerprint(&self) -> String {
+        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+
+        let mut hash = FNV_OFFSET;
+        for byte in self.material {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        format!("{hash:016x}")
+    }
 }
 
 impl fmt::Debug for TicketKey {
@@ -52,6 +64,7 @@ impl fmt::Debug for TicketKey {
         formatter
             .debug_struct("TicketKey")
             .field("material", &"<redacted>")
+            .field("fingerprint", &self.redacted_fingerprint())
             .field("created_at", &self.created_at)
             .finish()
     }
@@ -88,13 +101,18 @@ impl TicketKeyRing {
     /// Check whether the supplied wall-clock time falls within either key's
     /// validity window. Used by tests + admin probes.
     pub fn validates(&self, now: SystemTime) -> bool {
-        let in_current = self.is_within_window(&self.current, now);
-        let in_previous = self
-            .previous
+        self.accepts_current(now) || self.accepts_previous(now)
+    }
+
+    pub fn accepts_current(&self, now: SystemTime) -> bool {
+        self.is_within_window(&self.current, now)
+    }
+
+    pub fn accepts_previous(&self, now: SystemTime) -> bool {
+        self.previous
             .as_ref()
             .map(|previous| self.is_within_window(previous, now))
-            .unwrap_or(false);
-        in_current || in_previous
+            .unwrap_or(false)
     }
 
     fn is_within_window(&self, key: &TicketKey, now: SystemTime) -> bool {
@@ -111,19 +129,47 @@ impl TicketKeyRing {
             .map(|elapsed| elapsed >= self.rotation)
             .unwrap_or(false)
     }
+
+    pub fn rotation_report(&self, now: SystemTime) -> TicketRotationReport {
+        TicketRotationReport {
+            rotation_seconds: self.rotation.as_secs(),
+            rotation_due: self.rotation_due(now),
+            current_key_accepted: self.accepts_current(now),
+            previous_key_present: self.previous.is_some(),
+            previous_key_accepted: self.accepts_previous(now),
+            current_key_fingerprint: self.current.redacted_fingerprint(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TicketRotationReport {
+    pub rotation_seconds: u64,
+    pub rotation_due: bool,
+    pub current_key_accepted: bool,
+    pub previous_key_present: bool,
+    pub previous_key_accepted: bool,
+    pub current_key_fingerprint: String,
 }
 
 /// Construct a ticket-key ring from policy + a hex-encoded material string.
-/// The created-at timestamp is the current wall clock.
 pub fn ring_from_policy(
     policy: &TlsSessionTicketPolicy,
     hex_material: &str,
+) -> Result<TicketKeyRing, TlsTicketError> {
+    ring_from_policy_at(policy, hex_material, SystemTime::now())
+}
+
+pub fn ring_from_policy_at(
+    policy: &TlsSessionTicketPolicy,
+    hex_material: &str,
+    created_at: SystemTime,
 ) -> Result<TicketKeyRing, TlsTicketError> {
     policy.validate().map_err(TlsTicketError::Runtime)?;
     if !policy.enabled {
         return Err(TlsTicketError::Disabled);
     }
-    let key = TicketKey::from_hex(hex_material, SystemTime::now())?;
+    let key = TicketKey::from_hex(hex_material, created_at)?;
     TicketKeyRing::new(key, Duration::from_secs(policy.rotation_seconds as u64))
 }
 
@@ -194,6 +240,14 @@ mod tests {
     }
 
     #[test]
+    fn redacted_fingerprint_is_stable_and_secret_free() {
+        let key = TicketKey::from_hex(SAMPLE_HEX, SystemTime::now()).expect("key");
+        let fingerprint = key.redacted_fingerprint();
+        assert_eq!(fingerprint.len(), 16);
+        assert!(!fingerprint.contains("012345"));
+    }
+
+    #[test]
     fn rotation_zero_rejected() {
         let result = TicketKeyRing::new(current_key(Duration::ZERO), Duration::ZERO);
         assert!(matches!(result, Err(TlsTicketError::InvalidRotation)));
@@ -238,5 +292,26 @@ mod tests {
             ring_from_policy(&policy, SAMPLE_HEX),
             Err(TlsTicketError::Disabled)
         ));
+    }
+
+    #[test]
+    fn rotation_report_keeps_key_material_redacted() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+        let mut ring = ring_from_policy_at(
+            &TlsSessionTicketPolicy {
+                enabled: true,
+                rotation_seconds: 60,
+            },
+            SAMPLE_HEX,
+            now - Duration::from_secs(61),
+        )
+        .expect("ring");
+        assert!(ring.rotation_due(now));
+        ring.rotate(TicketKey::from_hex(SAMPLE_HEX, now).expect("key"));
+        let report = ring.rotation_report(now);
+        assert!(report.current_key_accepted);
+        assert!(report.previous_key_present);
+        assert!(report.previous_key_accepted);
+        assert_eq!(report.current_key_fingerprint.len(), 16);
     }
 }

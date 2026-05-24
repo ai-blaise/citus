@@ -43,6 +43,7 @@ SIDECAR_REALTIME_README = ROOT / "sidecar/realtime/README.md"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
+POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
@@ -288,6 +289,7 @@ for path in (
     SIDECAR_REALTIME_README,
     STORAGE_RUNTIME_SMOKE,
     POOL_PROXY_SMOKE,
+    POOL_ROUTING_SECURITY_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -536,12 +538,33 @@ if "### T7: Pipelined Client Protocol In Pool" in docs:
         if required not in t7_section:
             fail(f"T7 production boundary lost required docs phrase: {required}")
 
+pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
+for required in (
+    "mirror_decision_bucket",
+    "htap_fail_closed_rejections",
+    "geo_invalid_cidr_rejections",
+    "tls_key_fingerprint_len",
+    "pool-routing-security-smoke ok",
+):
+    if required not in pool_routing_smoke:
+        fail(f"pool routing/security smoke lost required assertion: {required}")
+
+for phrase in (
+    "live canary mirroring",
+    "managed GeoIP databases",
+    "rustls listener/session-resumption traffic",
+    "analytical sidecar query execution",
+):
+    if phrase.lower() not in audit_compact:
+        fail(f"production audit lost pool routing/security caveat: {phrase}")
+
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
 gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 for target in (
     "citus-patch-production-audit",
     "sidecar-api-runtime-smoke",
     "storage-sidecar-runtime-smoke",
+    "pool-routing-security-smoke",
     "runbook-command-check",
 ):
     if target not in phony_lines:

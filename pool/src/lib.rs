@@ -28,11 +28,16 @@ pub use auth_introspection::{
     VerifiedPoolClaims,
 };
 pub use geoip::{
-    policy_with_default, route_for_client, ClosestReplicaTable, GeoIpError, RegionReplica,
+    policy_with_default, route_for_client, route_report_for_client, ClosestReplicaTable,
+    GeoIpError, GeoRouteReport, RegionReplica,
 };
-pub use htap::{classify as classify_htap_query, HtapClassifierError, HtapDecision, QueryFeatures};
+pub use htap::{
+    classify as classify_htap_query, route_report as htap_route_report, HtapClassifierError,
+    HtapDecision, HtapRouteReport, QueryFeatures,
+};
 pub use mirror::{
-    MirrorDecision, MirrorPolicyError, QueryClass, TenantMirrorPolicy, TenantMirrorRule,
+    MirrorDecision, MirrorDecisionReport, MirrorPolicyError, QueryClass, TenantMirrorPolicy,
+    TenantMirrorRule,
 };
 pub use pipeline::{DescribeTarget, ExtendedFrame, ExtendedPipelineBuffer, PipelineError};
 pub use placement_subscriber::{PlacementDelta, PlacementSubscriber, PlacementSubscriberError};
@@ -42,7 +47,10 @@ pub use realtime_hook::{
 };
 pub use settings_bucket::{SettingsBucketEntry, SettingsBucketError, SettingsBucketPoolMap};
 pub use tenant_quota::{TenantAdmission, TenantQuotaError, TenantQuotaState, TenantQuotaTable};
-pub use tls::{ring_from_policy, TicketKey, TicketKeyRing, TlsTicketError, TICKET_KEY_LEN};
+pub use tls::{
+    ring_from_policy, ring_from_policy_at, TicketKey, TicketKeyRing, TicketRotationReport,
+    TlsTicketError, TICKET_KEY_LEN,
+};
 pub use virtual_pid::{
     encode_cancel_request, parse_cancel_request, RealBackend, VirtualPidError, VirtualPidTable,
     PGWIRE_CANCEL_MAGIC,
