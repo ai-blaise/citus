@@ -15,8 +15,9 @@ lag in one direction.
 
 - `SurvivalGoal` is configured for at least two regions
   (`operator/src/crds/survival_goal.rs`).
-- `sidecar/hlc` is enabled on every region's worker fleet so closed
-  timestamps are comparable across regions
+- `sidecar/hlc` is explicitly enabled on every region's worker fleet by a
+  promoted command-center release overlay so closed timestamps are comparable
+  across regions
   (`sidecar/hlc/src/lib.rs`, `FEATURE: S9`).
 - `pgactive` conflict policy is declared via the `ConflictPolicy` CR
   (`operator/src/crds/conflict_policy.rs`, `FEATURE: C4`, `C5`).

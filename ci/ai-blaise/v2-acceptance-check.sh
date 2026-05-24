@@ -16,3 +16,4 @@ fi
 # check is a release prerequisite, not production evidence for alpha features.
 bash ci/ai-blaise/upstream-merge-dry.sh
 bash ci/ai-blaise/production-readiness-check.sh
+bash ci/ai-blaise/docs-evidence-boundary-check.sh

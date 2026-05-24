@@ -13,8 +13,10 @@ reports `WaitForQuorum` or fails to elect a new leader on its own.
 ## Pre-conditions
 
 - The `CitusCluster` CR exists and the coordinator pod is reachable.
-- `sidecar/raft` is enabled in `values-prod.yaml` for the affected
-  shard group (`sidecars[name=raft].enabled: true`).
+- `sidecar/raft` is explicitly enabled for the affected shard group by a
+  promoted command-center release overlay. The default production profile keeps
+  alpha sidecars disabled until their feature status and measured evidence are
+  promoted in `docs/ai-blaise/NEW_FEATURES.md`.
 - At least one non-failed placement of the shard exists in
   `pg_dist_placement`, or a recent encrypted base backup plus WAL archive
   is available from the `sidecar/backup` archive URI.

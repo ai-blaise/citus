@@ -16,6 +16,7 @@ production release must also pass:
 ```bash
 ci/ai-blaise/production-readiness-check.sh production-release
 ci/ai-blaise/production-gap-audit.sh
+ci/ai-blaise/docs-evidence-boundary-check.sh
 ```
 
 The production-release mode intentionally fails while any release-scope custom

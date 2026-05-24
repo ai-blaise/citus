@@ -19,5 +19,7 @@ operand image build/initdb smoke that proves required extension control files
 and `CREATE EXTENSION` execution end to end.
 
 `images/rust-runtime` is the shared Rust app runtime for the operator, pool,
-sidecars, and tools; use `scripts/citus-scale/build-app-images.sh` to build the
-production-verified app image matrix.
+sidecars, and tools; use `scripts/citus-scale/build-app-images.sh` to build and
+optionally push the release app image matrix. Production promotion requires
+`artifacts/ai-blaise-image-digests.tsv` with immutable repo digest rows for the
+exact images installed by the command-center chart.

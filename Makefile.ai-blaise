@@ -361,8 +361,12 @@ slop-scan:
 production-readiness-check:
 	@ci/ai-blaise/production-readiness-check.sh
 
-production-gap-audit:
+production-gap-audit: docs-evidence-boundary-check
 	@ci/ai-blaise/production-gap-audit.sh
+
+.PHONY: docs-evidence-boundary-check
+docs-evidence-boundary-check:
+	@ci/ai-blaise/docs-evidence-boundary-check.sh
 
 v2-closure-check:
 	@bash ci/ai-blaise/v2-closure-check.sh
