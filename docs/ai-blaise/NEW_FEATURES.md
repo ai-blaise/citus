@@ -184,8 +184,12 @@ contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
 
-**Summary**: Defines the operand-image manifest, preload order, and required
-extension initialization SQL for the V2 bundled-extension surface.
+**Summary**: Defines the operand-image manifest, preload order, required
+extension initialization SQL, and explicit PG17 source-build targets for the
+feasible PGDG-missing Bundle1 extensions. The feature remains alpha because the
+full required bundle is not yet production-ready as a whole: plrust has an
+upstream PG17 blocker and the complete initdb path still needs full-bundle
+live evidence.
 
 **Motivation**: The fork needs one machine-checkable contract for always-on,
 optional, and hard-blocked extensions before image builds and Helm values can
@@ -199,6 +203,8 @@ federation extension policy.
 
 - Design: `docs/ai-blaise/BUNDLED_EXTENSIONS.md`
 - CI: `ci/ai-blaise/image-check.sh`
+- Source-build smoke: `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+- Evidence file: `images/citus-pg-overlay/bundle1-source-build-evidence.tsv`
 - In-source: `FEATURE: Bundle1` in
   `images/citus-pg-overlay/extension-manifest.tsv`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical`

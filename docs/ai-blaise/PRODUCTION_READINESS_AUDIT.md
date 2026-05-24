@@ -210,10 +210,11 @@ more production-ready than the artifacts justified.
   where the docs still require a live Postgres/PostgREST/pg_graphql/Deno/Bun
   deployment before production promotion.
 - The bundled-extension docs and operand-image README now explicitly state that
-  `FEATURE: Bundle1` is a manifest/init contract, not production evidence that
-  every binary package is installed in a runnable operand image. The production
-  gap audit rejects the old operand-image overclaim until a real full-bundle
-  image build smoke exists.
+  `FEATURE: Bundle1` is not production-ready as a whole. The PG17 source-build
+  path has targeted live evidence for feasible PGDG-missing extensions, but the
+  complete operand initdb contract remains alpha until the plrust upstream PG17
+  blocker and full-bundle image smoke are closed. The production gap audit
+  rejects the old operand-image overclaim until that full-bundle evidence exists.
 - Production values now keep alpha runtime/security intent controls disabled by
   default. The deploy check and production gap audit reject production values
   that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
@@ -694,3 +695,5 @@ Production Helm values must also keep alpha sidecars disabled by default.
 `ci/ai-blaise/deploy-check.sh` rejects production values that enable any alpha
 sidecar before the corresponding feature is promoted with measured production
 evidence.
+
+- Current inventory: contains 273 source `feature:` markers and 273 feature headings; 125 narrow headings are `Status: production-ready`; the other 148 feature headings remain `Status: alpha`.

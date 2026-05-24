@@ -137,10 +137,55 @@ fi
 
 grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgvector,pgaudit,pgsodium,pg_cron,age,plrust,companion,pg_hint_plan,sr_plan'" "${load_order}"
 grep -Fq "citus.cohabit_extensions = 'timescaledb'" "${load_order}"
-grep -Fq "COPY extension-manifest.tsv" "${dockerfile}"
-grep -Fq "COPY extensions/ai_blaise_citus.control" "${dockerfile}"
-grep -Fq "COPY extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extension-manifest.tsv" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm.control" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/bin/pgsodium_getkey" "${dockerfile}"
+grep -Fq 'install -m 0755 /usr/local/share/ai-blaise/citus/pgsodium_getkey "/usr/share/postgresql/${PG_MAJOR}/extension/pgsodium_getkey"' "${dockerfile}"
+# Bundle1 source-build path: PGDG-missing PG17 extensions must have pinned
+# builder stages or an explicit alpha boundary when upstream PG17 is blocked.
+bundle1_source_build_stages=(
+  build-pgsodium
+  build-topn
+  build-pg-jsonschema
+  build-pg-graphql
+  build-pg-search
+  build-plv8
+  build-citus
+)
+for stage in "${bundle1_source_build_stages[@]}"; do
+  if ! grep -Fq "AS ${stage}" "${dockerfile}"; then
+    echo "bundle1 source-build stage missing from Dockerfile: ${stage}" >&2
+    exit 1
+  fi
+done
+grep -Fq "ARG PGSODIUM_TAG=v3.1.9" "${dockerfile}"
+grep -Fq "ARG PGSODIUM_REF=7222ebc5ed87084a68d526aef977be0f4eb319a2" "${dockerfile}"
+grep -Fq "ARG TOPN_TAG=v2.7.0" "${dockerfile}"
+grep -Fq "ARG TOPN_REF=f636ff1b3586025c81fb84c20483412f3991ed84" "${dockerfile}"
+grep -Fq "ARG PG_JSONSCHEMA_TAG=v0.3.4" "${dockerfile}"
+grep -Fq "ARG PG_JSONSCHEMA_REF=cbe74b570d38aa0c4d42914e7a118bcb3adaee7a" "${dockerfile}"
+grep -Fq "ARG PG_GRAPHQL_TAG=v1.6.1" "${dockerfile}"
+grep -Fq "ARG PG_GRAPHQL_REF=66d4c551db213000506fd858676269ba8f801a44" "${dockerfile}"
+grep -Fq "ARG PG_SEARCH_TAG=v0.20.11" "${dockerfile}"
+grep -Fq "ARG PG_SEARCH_REF=cd1ba46a116c5a98bd6fe9ae370a2f260aee1394" "${dockerfile}"
+grep -Fq "ARG PLRUST_TAG=v1.2.8" "${dockerfile}"
+grep -Fq "ARG PLRUST_REF=bd76906a43c05a2afdb7839263431a066f5b42fb" "${dockerfile}"
+grep -Fq "alpha-upstream-pg17-blocked" "${dockerfile}"
+grep -Fq "ARG PLV8_TAG=v3.2.4" "${dockerfile}"
+grep -Fq "ARG PLV8_REF=cafc37f7aee850de5478773a4e56f7fadfad8e00" "${dockerfile}"
+grep -Fq "ARG CITUS_TAG=v13.3.0" "${dockerfile}"
+grep -Fq "AS bundle1-final-light" "${dockerfile}"
+grep -Fq "AS bundle1-final-full" "${dockerfile}"
+grep -Fq "BUNDLE1_BUILD_IMAGE" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "BUNDLE1_BUILD_HEAVY" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "BUNDLE1_EVIDENCE_FILE" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "source-build-deferred|EF6|none" "${manifest}"
+grep -Fq "local pg_prewarm-backed shim" "${manifest}"
 grep -Fq "FEATURE: Bundle1" "${image_overview}"
 grep -Fq "full required binary extension bundle is installed" "${image_overview}"
 grep -Fq "build/initdb smoke" "${image_overview}"
@@ -240,6 +285,7 @@ custom_probe_contract_file() {
 has_http_probe_contract() {
   local main_file="${1}"
   local probe_file
+  local src_dir
 
   if grep -Fq 'run_probe_server' "${main_file}"; then
     return 0
@@ -257,6 +303,15 @@ has_http_probe_contract() {
     fi
   fi
 
+  src_dir="${main_file%/main.rs}"
+  if [[ -d "${src_dir}" ]] \
+    && grep -R -Fq 'TcpListener::bind' "${src_dir}" \
+    && grep -R -Fq '"/healthz"' "${src_dir}" \
+    && grep -R -Fq '"/readyz"' "${src_dir}" \
+    && grep -R -Fq '"/metrics"' "${src_dir}"; then
+    return 0
+  fi
+
   return 1
 }
 
@@ -269,7 +324,7 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
   elif ! has_http_probe_contract "${main_file}"; then
-    echo "serve main lacks HTTP probe contract: ${main_file}" >&2
+    echo "serve path lacks HTTP probe contract: ${main_file}" >&2
     exit 1
   fi
 done

@@ -3,11 +3,9 @@ set -euo pipefail
 
 # Smoke matrix: ai_blaise_citus companion SQL extension across the PostgreSQL
 # major versions ai-blaise/citus supports. The same SQL surface must come up
-# against PG17 and PG18 operand bases. PG18 adds `io_method` as a configured
-# GUC; this harness asserts it accepts the contract value without breaking
-# Citus or any bundled extension. PG16 stays out of the matrix until the
-# upstream `background_rebalance_parallel_reference_tables` flake fix lands
-# (tracked alongside the PG-version coverage in the smoke runbook).
+# against PG16, PG17, and PG18 operand bases. PG18 adds `io_method` as a
+# configured GUC; this harness asserts it accepts the contract value without
+# breaking Citus or any bundled extension.
 
 repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
@@ -15,19 +13,21 @@ control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
 require_docker="${REQUIRE_DOCKER:-0}"
 
-# PG_MAJOR matrix is explicit: PG17 (current operand default) plus PG18
-# (forward target for T6 io_method). Override with SQL_EXTENSION_SMOKE_PG_MAJORS
+# PG_MAJOR matrix is explicit: PG16 and PG17 production operands plus PG18
+# forward coverage for T6 io_method. Override with SQL_EXTENSION_SMOKE_PG_MAJORS
 # (whitespace-separated) for local repro, e.g.
 #   SQL_EXTENSION_SMOKE_PG_MAJORS=18 bash ci/ai-blaise/sql-extension-smoke.sh
-# TODO: re-enable 16 once the
-# `background_rebalance_parallel_reference_tables` upstream flake fix merges.
-pg_majors_default="17 18"
+pg_majors_default="16 17 18"
 read -r -a pg_majors <<<"${SQL_EXTENSION_SMOKE_PG_MAJORS:-${pg_majors_default}}"
 
 # PG18 ships io_method as a real GUC. Default to the safe `worker` value (also
 # the upstream PG18 default) so the smoke matches stock container kernels.
 # Operators verifying io_uring kernels can set io_method=io_uring explicitly.
 pg18_io_method="${SQL_EXTENSION_SMOKE_IO_METHOD:-worker}"
+bundle1_build_image="${BUNDLE1_BUILD_IMAGE:-0}"
+bundle1_build_heavy="${BUNDLE1_BUILD_HEAVY:-0}"
+bundle1_image="${BUNDLE1_IMAGE:-ai-blaise-citus-overlay:bundle1-source-smoke-pg17}"
+bundle1_evidence_file="${BUNDLE1_EVIDENCE_FILE:-}"
 
 for file in "${control_file}" "${sql_file}"; do
   if [[ ! -s "${file}" ]]; then
@@ -2034,6 +2034,107 @@ SQL
   echo "ai_blaise_citus SQL extension smoke passed with ${postgres_image}"
 }
 
+
+run_bundle1_source_build_smoke() {
+  local target="bundle1-final-light"
+  local preload_libraries="citus,pgsodium"
+  local -a expected_extensions=(
+    ai_blaise_citus
+    citus
+    pgsodium
+    topn
+    pg_jsonschema
+    pg_graphql
+    pg_prewarm
+    pg_warm
+  )
+  if [[ "${bundle1_build_heavy}" == "1" ]]; then
+    target="bundle1-final-full"
+    preload_libraries="citus,pgsodium,pg_search"
+    expected_extensions+=(pg_search plv8)
+  fi
+
+  echo "=== bundle1 source-build smoke (${target}) ==="
+  docker build \
+    -f images/citus-pg-overlay/Dockerfile \
+    --target "${target}" \
+    --build-arg PG_MAJOR=17 \
+    --build-arg BASE_IMAGE=postgres:17-bookworm \
+    -t "${bundle1_image}" \
+    .
+
+  local container="ai-blaise-bundle1-source-smoke-${RANDOM}-$$"
+  active_container="${container}"
+  docker run \
+    --name "${container}" \
+    -e POSTGRES_PASSWORD=postgres \
+    -e PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    -d "${bundle1_image}" \
+    -c "shared_preload_libraries=${preload_libraries}" >/dev/null
+
+  local ready=0
+  local _
+  for _ in $(seq 1 120); do
+    if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ready}" != "1" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "bundle1 source-build container did not become ready" >&2
+    exit 1
+  fi
+
+  local extension
+  for extension in "${expected_extensions[@]}"; do
+    docker exec "${container}" test -s "/usr/share/postgresql/17/extension/${extension}.control"
+  done
+
+  docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION citus;
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION pgsodium;
+CREATE EXTENSION topn;
+CREATE EXTENSION pg_jsonschema;
+CREATE EXTENSION pg_graphql;
+CREATE EXTENSION pg_prewarm;
+CREATE EXTENSION pg_warm;
+CREATE EXTENSION ai_blaise_citus;
+CREATE TABLE bundle1_warm_smoke(id integer PRIMARY KEY);
+INSERT INTO bundle1_warm_smoke VALUES (1);
+SELECT pg_warm('bundle1_warm_smoke'::regclass);
+SELECT companion_internal.seed_extension_catalog();
+SQL
+
+  if [[ "${bundle1_build_heavy}" == "1" ]]; then
+    docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION pg_search;
+CREATE EXTENSION plv8;
+SELECT plv8_version();
+SQL
+  fi
+
+  local image_id
+  image_id="$(docker image inspect -f '{{.Id}}' "${bundle1_image}")"
+  if [[ -n "${bundle1_evidence_file}" ]]; then
+    if [[ ! -f "${bundle1_evidence_file}" ]]; then
+      printf 'observed_at\tgit_sha\ttarget\timage_id\textensions\n' >"${bundle1_evidence_file}"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+      "$(date -Is)" \
+      "$(git rev-parse HEAD)" \
+      "${target}" \
+      "${image_id}" \
+      "${expected_extensions[*]}" >>"${bundle1_evidence_file}"
+  fi
+
+  docker rm -f "${container}" >/dev/null 2>&1 || true
+  active_container=""
+  echo "bundle1 source-build smoke passed for ${target}: ${expected_extensions[*]}"
+}
+
 for pg_major in "${pg_majors[@]}"; do
   if ! [[ "${pg_major}" =~ ^[0-9]+$ ]]; then
     echo "invalid PG_MAJOR value: '${pg_major}' (must be numeric)" >&2
@@ -2043,3 +2144,7 @@ for pg_major in "${pg_majors[@]}"; do
 done
 
 echo "ai_blaise_citus SQL extension smoke passed across PG majors: ${pg_majors[*]}"
+
+if [[ "${bundle1_build_image}" == "1" ]]; then
+  run_bundle1_source_build_smoke
+fi
