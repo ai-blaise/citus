@@ -17,6 +17,17 @@ proxy with a separate admin health port:
 - `AI_BLAISE_POOL_UPSTREAM_ADDR`: required PostgreSQL upstream target
 - `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST`: optional comma-separated CIDR list
   for PostgreSQL data-port clients; empty means allow all
+- `AI_BLAISE_POOL_MAX_ACTIVE_CONNECTIONS`: optional active data-connection
+  limit; when full, the pool waits up to `AI_BLAISE_POOL_ADMISSION_TIMEOUT_MS`
+  and then rejects without opening an upstream connection
+- `AI_BLAISE_POOL_ADMISSION_TIMEOUT_MS`: overload backpressure wait budget,
+  default `0` for fail-fast admission
+- `AI_BLAISE_POOL_STARTUP_TIMEOUT_MS`: maximum time to wait for a complete
+  PostgreSQL startup envelope, default `2000` and minimum `500`
+- `AI_BLAISE_POOL_QUOTA_TENANT_ID`, `AI_BLAISE_POOL_QUOTA_BURST`, and
+  `AI_BLAISE_POOL_QUOTA_REFILL_PER_SECOND`: optional single-tenant token bucket
+  for data-plane connection admission; when enabled, missing, unknown, or
+  over-budget tenant startup packets fail closed before upstream routing
 
 The proxy keeps the data plane byte-transparent while the shard-map router and
 plan-cache logic mature behind the same binary. Readiness checks connect to the
@@ -25,6 +36,11 @@ cannot reach Postgres.
 `FEATURE: Sec13` is enforced in the live proxy: clients outside the configured
 CIDR allowlist are rejected before an upstream connection is opened, and
 `ai_blaise_citus_pool_rejected_connections_total` records those denials.
+`FEATURE: Sec12` is enforced for the narrow pool data-plane quota surface:
+tenant IDs are read from the PostgreSQL startup envelope (`application_name`,
+`options`, or explicit startup parameter), token-bucket denials return a
+PostgreSQL startup error, and overload/quota/upstream fail-closed paths expose
+Prometheus counters.
 
 Current implemented surface:
 
@@ -51,4 +67,6 @@ selection.
 execution summary for the pool runtime and shard-map contracts used by CI.
 `ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL
 through the pool listener, proves CIDR-allowed and CIDR-denied data-port
-traffic, and asserts readiness plus Prometheus counters.
+traffic, exercises active-connection overload, tenant-quota fail-closed denial,
+and upstream-unreachable fail-closed routing, and asserts readiness plus
+Prometheus counters.

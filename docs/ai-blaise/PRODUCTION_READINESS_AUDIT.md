@@ -617,7 +617,7 @@ streaming standby, `O6` for the live-installed Grafana dashboard ConfigMap,
 installable idle transaction detection SQL surface, `TS6` for the integrated
 trusted hook-coextension source path under real Timescale/Citus cohabitation,
 `TS18` for the installable bridge-state SQL surface under real Timescale/Citus
-cohabitation, `Sec13` for pool CIDR access control with live allowed and
+cohabitation, `Sec12` for narrow pool data-plane tenant quota admission, `Sec13` for pool CIDR access control with live allowed and
 denied SQL traffic proof, plus `T15` for raw PostgreSQL simple-query
 pipelining through the real pool proxy data port, plus `Auth1` for the real HS256 auth sidecar issuer, verifier,
 introspection, refresh, logout, and schema smoke, plus `Auth2` for installable

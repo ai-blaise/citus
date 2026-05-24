@@ -1,6 +1,7 @@
 //! Shard-aware pool primitives.
 
 pub mod admin;
+pub mod admission;
 pub mod auth_cache;
 pub mod execution;
 pub mod geoip;
@@ -42,6 +43,11 @@ pub use virtual_pid::{
     PGWIRE_CANCEL_MAGIC,
 };
 
+pub use admission::{
+    tenant_id_from_startup, PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError,
+    PoolConnectionPermit, TenantQuotaAdmission, TenantQuotaBucket, TenantQuotaConfig,
+    TenantQuotaSnapshot, DEFAULT_STARTUP_TIMEOUT,
+};
 pub use execution::{
     canonical_pool_execution_report, canonical_pool_runtime_contract, PoolExecutionError,
     PoolExecutionReport,

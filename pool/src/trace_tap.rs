@@ -37,6 +37,7 @@ const STARTUP_MESSAGE_MAX_BYTES: usize = 30_000;
 pub struct StartupTraceTap {
     pub fields: ApplicationNameFields,
     pub buffered_bytes: Vec<u8>,
+    pub parameters: Vec<(String, String)>,
     /// `true` when the client opened the connection with an `SSLRequest`,
     /// `GSSENCRequest`, or `CancelRequest` envelope. These envelopes are
     /// not startup packets so no traceparent can be extracted from them.
@@ -54,6 +55,13 @@ impl StartupTraceTap {
 
     pub fn application_name(&self) -> Option<&str> {
         self.fields.application.as_deref()
+    }
+
+    pub fn startup_parameter(&self, name: &str) -> Option<&str> {
+        self.parameters
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
     }
 }
 
@@ -93,6 +101,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
         return Ok(StartupTraceTap {
             fields: ApplicationNameFields::default(),
             buffered_bytes,
+            parameters: Vec::new(),
             special_envelope: true,
         });
     }
@@ -107,6 +116,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
         return Ok(StartupTraceTap {
             fields: ApplicationNameFields::default(),
             buffered_bytes,
+            parameters: Vec::new(),
             special_envelope: true,
         });
     }
@@ -117,6 +127,7 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
     Ok(StartupTraceTap {
         fields,
         buffered_bytes,
+        parameters: params,
         special_envelope: false,
     })
 }
