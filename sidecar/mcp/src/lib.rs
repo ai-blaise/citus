@@ -179,6 +179,14 @@ pub fn handle_mcp_sidecar_stdio_request(line: &str) -> Result<String, McpSidecar
 }
 
 pub fn handle_mcp_sidecar_http_bytes(request: &[u8]) -> Result<HttpProbeResponse, McpSidecarError> {
+    let mut runtime = SidecarRuntime::ready("mcp-sidecar");
+    handle_mcp_sidecar_http_bytes_with_runtime(&mut runtime, request)
+}
+
+pub fn handle_mcp_sidecar_http_bytes_with_runtime(
+    runtime: &mut SidecarRuntime,
+    request: &[u8],
+) -> Result<HttpProbeResponse, McpSidecarError> {
     let request =
         std::str::from_utf8(request).map_err(|_| McpSidecarError::MalformedHttpRequest)?;
     let (method, path, body) = parse_http_request(request)?;
@@ -197,10 +205,7 @@ pub fn handle_mcp_sidecar_http_bytes(request: &[u8]) -> Result<HttpProbeResponse
             "application/json",
             "{\"error\":\"method not allowed\"}\n",
         )),
-        _ => {
-            let mut runtime = SidecarRuntime::ready("mcp-sidecar");
-            Ok(runtime.handle_http_bytes(request.as_bytes())?)
-        }
+        _ => Ok(runtime.handle_http_bytes(request.as_bytes())?),
     }
 }
 
@@ -212,17 +217,19 @@ pub fn serve_mcp_sidecar_http_forever(default_addr: &str) -> Result<(), McpSidec
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise mcp-sidecar HTTP server listening on {listen_addr}");
+    let mut runtime = SidecarRuntime::ready("mcp-sidecar");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_mcp_sidecar_http_bytes(&request).unwrap_or_else(|error| {
-            HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )
-        });
+        let response = handle_mcp_sidecar_http_bytes_with_runtime(&mut runtime, &request)
+            .unwrap_or_else(|error| {
+                HttpProbeResponse::new(
+                    400,
+                    "application/json",
+                    format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+                )
+            });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
 
@@ -352,6 +359,49 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_stdio_reports_malformed_jsonrpc_as_response() {
+        let response = handle_mcp_sidecar_stdio_request(r#"{"#).expect("sidecar stdio response");
+
+        assert!(response.contains(r#""code":-32700"#));
+        assert!(response.contains("parse error"));
+    }
+
+    #[test]
+    fn sidecar_stdio_reports_unknown_method_as_response() {
+        let response = handle_mcp_sidecar_stdio_request(
+            r#"{"jsonrpc":"2.0","id":9,"method":"resources/list"}"#,
+        )
+        .expect("sidecar stdio response");
+
+        assert!(response.contains(r#""id":9"#));
+        assert!(response.contains(r#""code":-32601"#));
+        assert!(response.contains("unknown method: resources/list"));
+    }
+
+    #[test]
+    fn sidecar_stdio_lists_complete_tool_registry() {
+        let response =
+            handle_mcp_sidecar_stdio_request(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
+                .expect("sidecar stdio response");
+
+        assert_eq!(response.matches(r#""name":"#).count(), 9);
+        for expected in [
+            "list_shards",
+            "list_hypertables",
+            "run_explain",
+            "rebalance_dry_run",
+            "suggest_index",
+            "query_with_timeout",
+            "current_lag",
+            "current_replication_status",
+            "tenant_archive",
+        ] {
+            assert!(response.contains(expected), "tools/list missing {expected}");
+        }
+        assert!(response.contains("inputSchema"));
+    }
+
+    #[test]
     fn sidecar_stdio_initialize_identifies_sidecar_server() {
         let response =
             handle_mcp_sidecar_stdio_request(r#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
@@ -406,6 +456,50 @@ mod tests {
     }
 
     #[test]
+    fn sidecar_http_serves_readiness_and_metrics() {
+        let ready = handle_mcp_sidecar_http_bytes(b"GET /readyz HTTP/1.1\r\nHost: local\r\n\r\n")
+            .expect("ready response");
+        assert_eq!(ready.status_code, 200);
+        assert!(ready.body.contains(r#""component":"mcp-sidecar""#));
+
+        let metrics =
+            handle_mcp_sidecar_http_bytes(b"GET /metrics HTTP/1.1\r\nHost: local\r\n\r\n")
+                .expect("metrics response");
+        assert_eq!(metrics.status_code, 200);
+        assert_eq!(metrics.content_type, "text/plain; version=0.0.4");
+        assert!(metrics
+            .body
+            .contains("ai_blaise_sidecar_ready{component=\"mcp-sidecar\"} 1"));
+    }
+
+    #[test]
+    fn sidecar_http_persists_probe_runtime_state() {
+        let mut runtime = SidecarRuntime::ready("mcp-sidecar");
+        let drain = handle_mcp_sidecar_http_bytes_with_runtime(
+            &mut runtime,
+            b"POST /drain HTTP/1.1\r\nHost: local\r\n\r\n",
+        )
+        .expect("drain response");
+        assert_eq!(drain.status_code, 202);
+
+        let ready = handle_mcp_sidecar_http_bytes_with_runtime(
+            &mut runtime,
+            b"GET /readyz HTTP/1.1\r\nHost: local\r\n\r\n",
+        )
+        .expect("ready response");
+        assert_eq!(ready.status_code, 503);
+
+        let metrics = handle_mcp_sidecar_http_bytes_with_runtime(
+            &mut runtime,
+            b"GET /metrics HTTP/1.1\r\nHost: local\r\n\r\n",
+        )
+        .expect("metrics response");
+        assert!(metrics
+            .body
+            .contains("ai_blaise_sidecar_ready{component=\"mcp-sidecar\"} 0"));
+    }
+
+    #[test]
     fn sidecar_http_posts_mcp_jsonrpc() {
         let response = handle_mcp_sidecar_http_bytes(
             b"POST /mcp HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"initialize\"}",
@@ -417,6 +511,30 @@ mod tests {
         assert!(response
             .body
             .contains(r#""name":"ai-blaise-citus-mcp-sidecar""#));
+    }
+
+    #[test]
+    fn sidecar_http_preserves_jsonrpc_parse_errors() {
+        let response = handle_mcp_sidecar_http_bytes(
+            b"POST /mcp HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\n\r\n{",
+        )
+        .expect("MCP HTTP response");
+
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains(r#""code":-32700"#));
+        assert!(response.body.contains("parse error"));
+    }
+
+    #[test]
+    fn sidecar_http_preserves_jsonrpc_unknown_method_errors() {
+        let response = handle_mcp_sidecar_http_bytes(
+            b"POST /mcp HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"resources/list\"}",
+        )
+        .expect("MCP HTTP response");
+
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains(r#""id":8"#));
+        assert!(response.body.contains(r#""code":-32601"#));
     }
 
     #[test]

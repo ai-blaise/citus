@@ -4883,6 +4883,19 @@ deployed exhaustive-profile sidecar `POST /mcp` traffic.
 
 Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They launch the real `tools/citus-mcp` and `sidecar/mcp` stdio/HTTP processes, verify JSON-RPC initialize and tool-list behavior, execute a read-only tenant query against a real PostgreSQL container, list Citus shard metadata from `pg_dist_shard`, and verify safe-mode destructive denial plus cross-schema rejection. This promotes the MCP server, sidecar bridge, and read-only database execution boundary; mutating database/Kubernetes execution remains outside the production scope.
 
+Sidecar-specific evidence now also proves malformed JSON-RPC returns JSON-RPC
+errors without terminating the process, unknown methods fail with `-32601`, the
+tool registry exposes the exact nine expected descriptors with object input
+schemas, `/healthz`, `/readyz`, `/metrics`, and `/drain` are live HTTP
+responses with persistent readiness state, malformed HTTP is rejected with 400,
+and an unreachable `AI_BLAISE_MCP_DATABASE_URL` returns MCP `isError: true`
+while subsequent requests still succeed. The sidecar claim is not a full
+external MCP service claim: authentication token verification, durable MCP
+sessions, streaming remote transport, sidecar-owned live database execution,
+Kubernetes execution, and mutating tool execution remain alpha. The real
+read-only database execution production claim remains `FEATURE: MCP4` in
+`tools/citus-mcp`.
+
 **Motivation**: AI agents need a narrow, typed operation surface rather than
 direct database or Kubernetes access.
 
@@ -4912,6 +4925,10 @@ direct database or Kubernetes access.
 tool requests by default.
 
 Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They drive real JSON-RPC `tools/call` requests through stdio, sidecar HTTP, and database-backed modes, and verify destructive `tenant_archive` calls return `isError: true` with the safe-mode denial message while allowed read-only calls execute or validate successfully.
+
+For `sidecar/mcp`, this remains a safe-mode bridge and fail-closed boundary: it
+does not prove mutating tools, Kubernetes operations, per-user authorization, or
+external MCP session enforcement.
 
 **Motivation**: Agent operations should be inspect-first and dry-run-biased
 unless explicitly allowed.
@@ -4943,6 +4960,10 @@ requests, including fail-closed rejection for obvious cross-schema SQL/table
 references.
 
 Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They verify tenant-scoped requests include tenant metadata, reject missing tenant scope, reject `tenant_b` SQL when only `tenant_a` is allowed, and execute allowed read-only SQL against a real PostgreSQL tenant schema. Per-user authentication and mutating tool authorization remain separate feature scope.
+
+For `sidecar/mcp`, tenant scope is request-policy evidence only; it is not a
+claim for authenticated user/tenant binding, externally durable sessions, or
+sidecar-owned database execution.
 
 **Motivation**: Agent-visible tools must enforce tenant boundaries before
 multi-tenant operator usage.
