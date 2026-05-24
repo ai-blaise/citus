@@ -908,6 +908,11 @@ BEGIN
   IF migration_sql NOT LIKE 'ALTER TABLE control_plane_smoke_orders ADD COLUMN IF NOT EXISTS region text DEFAULT %' THEN
     RAISE EXCEPTION 'M1 migration_add_column did not render bounded expand DDL: %', migration_sql;
   END IF;
+  PERFORM companion_internal.migration_register_invariant(
+    'orders-expand-contract',
+    'amount-cents-shadow-check',
+    'SELECT true AS passed, count(*) AS rows_checked FROM control_plane_smoke_orders'
+  );
   migration_sql := companion_internal.migration_online_type_change(
     'amount_cents',
     'integer',
@@ -932,7 +937,15 @@ BEGIN
     FROM companion_migration_operations
     WHERE migration_name = 'orders-expand-contract'
   ) <> 2 THEN
-    RAISE EXCEPTION 'M1/M11 migration operations were not recorded';
+    RAISE EXCEPTION 'M1/M11 migration operations were not recorded idempotently';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM companion_migration_invariant_checks
+    WHERE migration_name = 'orders-expand-contract'
+      AND check_name = 'amount-cents-shadow-check'
+      AND passed_at IS NOT NULL
+  ) THEN
+    RAISE EXCEPTION 'M1/M11 migration invariant did not pass';
   END IF;
   BEGIN
     PERFORM companion_internal.migration_drop_column('orphan_column');

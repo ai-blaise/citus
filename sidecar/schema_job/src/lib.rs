@@ -50,7 +50,14 @@ impl SchemaJobWorkerPlan {
                 batch_size: self.backfill.batch_size,
                 max_parallel_shards: self.backfill.max_parallel_shards,
             },
-            SchemaJobState::Public => SchemaJobAction::Publish,
+            SchemaJobState::Public => {
+                if self.safety.require_data_invariants && !self.safety.data_invariants_verified {
+                    return Err(SchemaJobSidecarError::DataInvariantsNotVerified {
+                        job_name: self.job.name.clone(),
+                    });
+                }
+                SchemaJobAction::Publish
+            }
             SchemaJobState::Paused => SchemaJobAction::StopPaused,
             SchemaJobState::Canceled => SchemaJobAction::StopCanceled,
         })
@@ -98,6 +105,8 @@ pub struct OnlineDdlSafetyPlan {
     pub max_replication_lag_bytes: u64,
     pub max_lock_ms: u32,
     pub allow_blocking_cutover: bool,
+    pub require_data_invariants: bool,
+    pub data_invariants_verified: bool,
 }
 
 impl OnlineDdlSafetyPlan {
@@ -157,6 +166,7 @@ pub enum SchemaJobSidecarError {
     InvalidReplicationLagBudget,
     InvalidTimestamp(&'static str),
     MissingRequiredField(&'static str),
+    DataInvariantsNotVerified { job_name: String },
 }
 
 impl fmt::Display for SchemaJobSidecarError {
@@ -180,6 +190,10 @@ impl fmt::Display for SchemaJobSidecarError {
                 write!(formatter, "{field} must be an RFC3339 UTC timestamp")
             }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::DataInvariantsNotVerified { job_name } => write!(
+                formatter,
+                "data invariants are not verified for schema job {job_name}"
+            ),
         }
     }
 }
@@ -269,6 +283,8 @@ pub fn canonical_schema_job_worker_plan() -> SchemaJobWorkerPlan {
             max_replication_lag_bytes: 16_777_216,
             max_lock_ms: 500,
             allow_blocking_cutover: false,
+            require_data_invariants: true,
+            data_invariants_verified: true,
         },
         shadow: Some(GhOstShadowPlan {
             source_table: "public.users".to_string(),
@@ -347,6 +363,21 @@ mod tests {
         assert_eq!(report.worker.job.name, "users-add-display-name");
         assert_eq!(report.worker.worker_id, "schema-worker-a");
         assert_eq!(report.action, SchemaJobAction::ApplyDeleteOnly);
+    }
+
+    #[test]
+    fn publish_requires_verified_data_invariants() {
+        let mut plan = valid_worker_plan();
+        plan.job.state = SchemaJobState::Public;
+        plan.safety.require_data_invariants = true;
+        plan.safety.data_invariants_verified = false;
+
+        assert_eq!(
+            plan.next_action(),
+            Err(SchemaJobSidecarError::DataInvariantsNotVerified {
+                job_name: "users-add-display-name".to_string()
+            })
+        );
     }
 
     fn valid_worker_plan() -> SchemaJobWorkerPlan {

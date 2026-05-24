@@ -6,8 +6,8 @@
 //! schema-job state machine and the two-version invariant (2VI).
 
 use ai_blaise_citus_companion::{
-    verify_two_version_invariant_sql, SchemaJobOperation, SchemaJobPlan, SchemaJobState,
-    TransitionGate,
+    assert_migration_data_invariants_sql, verify_two_version_invariant_sql, SchemaJobOperation,
+    SchemaJobPlan, SchemaJobState, TransitionGate,
 };
 use std::error::Error;
 use std::fmt;
@@ -30,6 +30,8 @@ pub struct MigrationReconcilePlan {
     pub gate: TransitionGate,
     pub expected_workers: Vec<String>,
     pub invariant_check_sql: String,
+    pub data_invariants_verified: bool,
+    pub data_invariant_check_sql: String,
 }
 
 impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
@@ -62,6 +64,12 @@ impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
             });
         }
 
+        if target_state == SchemaJobState::Public && !command.data_invariants_verified {
+            return Err(MigrationReconcileError::DataInvariantsNotVerified(
+                command.job_name.clone(),
+            ));
+        }
+
         let gate = gate_from_conflict(command.spec.on_conflict);
 
         Ok(Self {
@@ -72,6 +80,9 @@ impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
             gate,
             expected_workers: command.workers.clone(),
             invariant_check_sql: verify_two_version_invariant_sql().to_string(),
+            data_invariants_verified: command.data_invariants_verified,
+            data_invariant_check_sql: assert_migration_data_invariants_sql(&command.job_name)
+                .map_err(|error| MigrationReconcileError::PlanInvalid(error.to_string()))?,
         })
     }
 }
@@ -99,6 +110,10 @@ impl MigrationReconcilePlan {
 
     pub fn invariant_preflight_sql(&self) -> &str {
         &self.invariant_check_sql
+    }
+
+    pub fn data_invariant_preflight_sql(&self) -> &str {
+        &self.data_invariant_check_sql
     }
 
     pub fn apply_plan(&self) -> MigrationApplyPlan {
@@ -137,6 +152,11 @@ impl MigrationReconcilePlan {
         steps.push(MigrationApplyStep::new(
             "verify_two_version_invariant",
             self.invariant_check_sql.clone(),
+            true,
+        ));
+        steps.push(MigrationApplyStep::new(
+            "verify_migration_data_invariants",
+            self.data_invariant_check_sql.clone(),
             true,
         ));
 
@@ -211,6 +231,7 @@ pub struct MigrationCommand {
     pub operations: Vec<SchemaJobOperation>,
     pub lease_seconds: u32,
     pub workers: Vec<String>,
+    pub data_invariants_verified: bool,
 }
 
 fn next_state_after(current: SchemaJobState) -> Option<SchemaJobState> {
@@ -299,6 +320,7 @@ pub enum MigrationReconcileError {
     },
     NoForwardTransition(SchemaJobState),
     NoWorkers,
+    DataInvariantsNotVerified(String),
 }
 
 impl fmt::Display for MigrationReconcileError {
@@ -318,6 +340,10 @@ impl fmt::Display for MigrationReconcileError {
                 state.as_canonical()
             ),
             Self::NoWorkers => write!(formatter, "no workers attached to migration"),
+            Self::DataInvariantsNotVerified(job_name) => write!(
+                formatter,
+                "data invariants are not verified for migration {job_name}"
+            ),
         }
     }
 }
@@ -355,6 +381,7 @@ mod tests {
             ],
             lease_seconds: 60,
             workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+            data_invariants_verified: true,
         }
     }
 
@@ -372,6 +399,9 @@ mod tests {
         assert!(plan
             .invariant_preflight_sql()
             .contains("verify_two_version_invariant"));
+        assert!(plan
+            .data_invariant_preflight_sql()
+            .contains("migration_assert_invariants"));
     }
 
     #[test]
@@ -403,17 +433,31 @@ mod tests {
         ))
         .unwrap();
         let apply = plan.apply_plan();
-        assert_eq!(apply.steps.len(), 6);
+        assert_eq!(apply.steps.len(), 7);
         assert!(apply.sql_script().contains(SCHEMA_JOB_START_FUNCTION));
         assert!(apply
             .sql_script()
             .contains(SCHEMA_JOB_ADD_OPERATION_FUNCTION));
         assert!(apply.sql_script().contains(SCHEMA_JOB_ADVANCE_FUNCTION));
         assert!(apply.sql_script().contains("verify_two_version_invariant"));
+        assert!(apply.sql_script().contains("migration_assert_invariants"));
         assert!(plan.status_sql().contains(SCHEMA_JOB_STATUS_VIEW));
         assert!(plan
             .teardown_sql(MigrationTeardownAction::Pause)
             .contains("'paused'"));
+    }
+
+    #[test]
+    fn publish_requires_verified_data_invariants() {
+        let mut cmd = command(SchemaJobState::Backfill, MigrationConflictAction::Replace);
+        cmd.data_invariants_verified = false;
+
+        assert_eq!(
+            MigrationReconcilePlan::try_from(&cmd),
+            Err(MigrationReconcileError::DataInvariantsNotVerified(
+                "users-display-name".to_string()
+            ))
+        );
     }
 
     #[test]

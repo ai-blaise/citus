@@ -18,6 +18,8 @@ jobs:
         run: bash ci/ai-blaise/app-image-digest-manifest-smoke.sh
       - name: Smoke SQL companion extension (PG17 + PG18 matrix)
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
+      - name: Smoke migration durability invariants
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/migration-invariants-smoke.sh
       - name: Smoke Timescale bridge against real TimescaleDB
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh
       - name: Smoke real Timescale and Citus cohabitation

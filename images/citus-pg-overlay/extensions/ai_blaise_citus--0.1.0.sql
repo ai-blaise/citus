@@ -97,6 +97,23 @@ CREATE TABLE IF NOT EXISTS companion_internal.migration_operations (
     recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS companion_internal.migration_invariant_checks (
+    migration_name text NOT NULL
+        REFERENCES companion_internal.migration_runs(migration_name) ON DELETE CASCADE,
+    check_name text NOT NULL,
+    check_sql text NOT NULL,
+    last_result jsonb,
+    passed_at timestamptz,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (migration_name, check_name),
+    CHECK (btrim(check_name) <> ''),
+    CHECK (btrim(check_sql) <> '')
+);
+
+CREATE INDEX IF NOT EXISTS migration_invariant_checks_unpassed_idx
+    ON companion_internal.migration_invariant_checks(migration_name)
+    WHERE passed_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS companion_internal.index_advisor_candidates (
     candidate_id bigserial PRIMARY KEY,
     workload_window text NOT NULL,
@@ -1513,6 +1530,7 @@ LANGUAGE plpgsql
 VOLATILE
 AS $$
 DECLARE
+    existing_job record;
     table_regclass regclass;
 BEGIN
     IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
@@ -1524,6 +1542,30 @@ BEGIN
     table_regclass := p_table_name::regclass;
     IF p_lease_seconds IS NULL OR p_lease_seconds <= 0 THEN
         RAISE EXCEPTION 'lease_seconds must be greater than zero';
+    END IF;
+
+    SELECT *
+    INTO existing_job
+    FROM companion_internal.schema_jobs
+    WHERE job_name = btrim(p_job_name)
+    FOR UPDATE;
+
+    IF FOUND THEN
+        IF existing_job.table_name <> table_regclass::text THEN
+            RAISE EXCEPTION 'schema job re-entry conflicts with existing table: %', p_job_name;
+        END IF;
+        IF existing_job.state <> 'delete_only' THEN
+            RAISE EXCEPTION 'schema job cannot restart from state %', existing_job.state;
+        END IF;
+
+        UPDATE companion_internal.schema_jobs
+        SET lease_seconds = p_lease_seconds,
+            lease_expires_at = now() + make_interval(secs => p_lease_seconds),
+            updated_at = now()
+        WHERE job_name = btrim(p_job_name)
+          AND state = 'delete_only';
+
+        RETURN;
     END IF;
 
     INSERT INTO companion_internal.schema_jobs(
@@ -1539,13 +1581,7 @@ BEGIN
         'delete_only',
         p_lease_seconds,
         now() + make_interval(secs => p_lease_seconds)
-    )
-    ON CONFLICT (job_name) DO UPDATE
-    SET table_name = EXCLUDED.table_name,
-        state = 'delete_only',
-        lease_seconds = EXCLUDED.lease_seconds,
-        lease_expires_at = EXCLUDED.lease_expires_at,
-        updated_at = now();
+    );
 END;
 $$;
 
@@ -1563,19 +1599,24 @@ VOLATILE
 AS $$
 DECLARE
     job_table text;
+    job_state text;
     normalized_operation text;
+    existing_sql text;
     rendered_sql text;
 BEGIN
     IF p_job_name IS NULL OR btrim(p_job_name) = '' THEN
         RAISE EXCEPTION 'job_name must not be empty';
     END IF;
-    SELECT table_name
-    INTO job_table
+    SELECT table_name, state
+    INTO job_table, job_state
     FROM companion_internal.schema_jobs
     WHERE job_name = btrim(p_job_name)
       AND state <> 'canceled';
     IF NOT FOUND THEN
         RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+    IF job_state <> 'delete_only' THEN
+        RAISE EXCEPTION 'schema job operations cannot be changed after delete_only: %', p_job_name;
     END IF;
     normalized_operation := lower(btrim(p_operation_type));
     IF normalized_operation NOT IN ('add_column', 'backfill', 'swap_column', 'drop_column') THEN
@@ -1624,6 +1665,32 @@ BEGIN
         );
     END IF;
 
+    SELECT op.rendered_sql
+    INTO existing_sql
+    FROM companion_internal.schema_job_operations AS op
+    WHERE op.job_name = btrim(p_job_name)
+      AND op.operation_type = normalized_operation
+      AND op.column_name IS NOT DISTINCT FROM NULLIF(btrim(COALESCE(p_column_name, '')), '')
+      AND op.sql_type IS NOT DISTINCT FROM NULLIF(btrim(COALESCE(p_sql_type, '')), '')
+      AND op.statement IS NOT DISTINCT FROM NULLIF(btrim(COALESCE(p_statement, '')), '')
+      AND op.new_column_name IS NOT DISTINCT FROM NULLIF(btrim(COALESCE(p_new_column_name, '')), '')
+    ORDER BY op.operation_id
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN existing_sql;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM companion_internal.schema_job_operations AS op
+        WHERE op.job_name = btrim(p_job_name)
+          AND op.operation_type = normalized_operation
+          AND op.column_name IS NOT DISTINCT FROM NULLIF(btrim(COALESCE(p_column_name, '')), '')
+    ) THEN
+        RAISE EXCEPTION 'schema job operation re-entry conflicts with existing operation: %.%', p_job_name, p_column_name;
+    END IF;
+
     INSERT INTO companion_internal.schema_job_operations(
         job_name,
         operation_type,
@@ -1670,9 +1737,14 @@ BEGIN
     SELECT state
     INTO current_state
     FROM companion_internal.schema_jobs
-    WHERE job_name = btrim(p_job_name);
+    WHERE job_name = btrim(p_job_name)
+    FOR UPDATE;
     IF NOT FOUND THEN
         RAISE EXCEPTION 'schema job is not registered: %', p_job_name;
+    END IF;
+
+    IF current_state = normalized_next THEN
+        RETURN normalized_next;
     END IF;
 
     IF NOT (
@@ -2676,6 +2748,16 @@ SELECT
     recorded_at
 FROM companion_internal.migration_operations;
 
+CREATE VIEW companion_migration_invariant_checks AS
+SELECT
+    migration_name,
+    check_name,
+    check_sql,
+    last_result,
+    passed_at,
+    recorded_at
+FROM companion_internal.migration_invariant_checks;
+
 CREATE FUNCTION companion_internal.current_migration_name()
 RETURNS text
 LANGUAGE plpgsql
@@ -2703,6 +2785,7 @@ LANGUAGE plpgsql
 VOLATILE
 AS $$
 DECLARE
+    existing_run record;
     table_regclass regclass;
 BEGIN
     IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
@@ -2719,6 +2802,33 @@ BEGIN
         RAISE EXCEPTION 'backfill_batch_size must be greater than zero';
     END IF;
 
+    SELECT *
+    INTO existing_run
+    FROM companion_internal.migration_runs
+    WHERE migration_name = btrim(p_migration_name)
+    FOR UPDATE;
+
+    IF FOUND THEN
+        IF existing_run.table_name <> table_regclass::text
+            OR existing_run.lock_timeout_ms <> p_lock_timeout_ms
+            OR existing_run.backfill_batch_size <> p_backfill_batch_size THEN
+            RAISE EXCEPTION 'migration re-entry conflicts with existing run: %', p_migration_name;
+        END IF;
+
+        IF existing_run.status = 'completed' THEN
+            PERFORM set_config('ai_blaise.current_migration_name', '', true);
+            RETURN;
+        END IF;
+
+        UPDATE companion_internal.migration_runs
+        SET status = 'running'
+        WHERE migration_name = btrim(p_migration_name)
+          AND status = 'running';
+
+        PERFORM set_config('ai_blaise.current_migration_name', btrim(p_migration_name), true);
+        RETURN;
+    END IF;
+
     INSERT INTO companion_internal.migration_runs(
         migration_name,
         table_name,
@@ -2733,15 +2843,142 @@ BEGIN
         p_backfill_batch_size,
         'running'
     )
-    ON CONFLICT (migration_name) DO UPDATE
-    SET table_name = EXCLUDED.table_name,
-        lock_timeout_ms = EXCLUDED.lock_timeout_ms,
-        backfill_batch_size = EXCLUDED.backfill_batch_size,
-        status = 'running',
-        started_at = now(),
-        completed_at = NULL;
+    ON CONFLICT (migration_name) DO NOTHING;
 
     PERFORM set_config('ai_blaise.current_migration_name', btrim(p_migration_name), true);
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_register_invariant(
+    p_migration_name text,
+    p_check_name text,
+    p_check_sql text
+)
+RETURNS text
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    normalized_sql text;
+BEGIN
+    IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
+        RAISE EXCEPTION 'migration_name must not be empty';
+    END IF;
+    IF p_check_name IS NULL OR btrim(p_check_name) = '' THEN
+        RAISE EXCEPTION 'check_name must not be empty';
+    END IF;
+    IF p_check_sql IS NULL OR btrim(p_check_sql) = '' THEN
+        RAISE EXCEPTION 'check_sql must not be empty';
+    END IF;
+    normalized_sql := btrim(regexp_replace(btrim(p_check_sql), ';+$', ''));
+    IF lower(normalized_sql) !~ '^(select|with)[[:space:]]' OR position(';' in normalized_sql) > 0 THEN
+        RAISE EXCEPTION 'data invariant SQL must be a single read-only SELECT or WITH query';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.migration_runs
+        WHERE migration_name = btrim(p_migration_name)
+          AND status = 'running'
+    ) THEN
+        RAISE EXCEPTION 'migration is not running: %', p_migration_name;
+    END IF;
+
+    INSERT INTO companion_internal.migration_invariant_checks(
+        migration_name,
+        check_name,
+        check_sql
+    )
+    VALUES (
+        btrim(p_migration_name),
+        btrim(p_check_name),
+        normalized_sql
+    )
+    ON CONFLICT (migration_name, check_name) DO UPDATE
+    SET check_sql = EXCLUDED.check_sql,
+        last_result = NULL,
+        passed_at = NULL,
+        recorded_at = now();
+
+    RETURN btrim(p_check_name);
+END;
+$$;
+
+CREATE FUNCTION companion_internal.migration_assert_invariants(p_migration_name text)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    check_record record;
+    check_result jsonb;
+    check_result_count integer;
+    destructive_operation_count integer;
+    passed_count integer := 0;
+BEGIN
+    IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
+        RAISE EXCEPTION 'migration_name must not be empty';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.migration_runs
+        WHERE migration_name = btrim(p_migration_name)
+          AND status IN ('running', 'completed')
+    ) THEN
+        RAISE EXCEPTION 'migration is not registered: %', p_migration_name;
+    END IF;
+
+    SELECT count(*)
+    INTO destructive_operation_count
+    FROM companion_internal.migration_operations
+    WHERE migration_name = btrim(p_migration_name)
+      AND operation_type IN ('drop_column', 'rename_column', 'online_type_change');
+
+    IF destructive_operation_count > 0 AND NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.migration_invariant_checks
+        WHERE migration_name = btrim(p_migration_name)
+    ) THEN
+        RAISE EXCEPTION 'data invariant check is required before completing migration: %', p_migration_name;
+    END IF;
+
+    FOR check_record IN
+        SELECT check_name, check_sql
+        FROM companion_internal.migration_invariant_checks
+        WHERE migration_name = btrim(p_migration_name)
+        ORDER BY check_name
+    LOOP
+        EXECUTE format(
+            'SELECT count(*), (jsonb_agg(to_jsonb(invariant_result)) -> 0) FROM (%s) AS invariant_result',
+            check_record.check_sql
+        )
+        INTO check_result_count, check_result;
+
+        IF check_result_count <> 1 THEN
+            RAISE EXCEPTION 'data invariant check must return exactly one row: %', check_record.check_name;
+        END IF;
+
+        IF COALESCE((check_result->>'passed')::boolean, false) IS DISTINCT FROM true THEN
+            UPDATE companion_internal.migration_invariant_checks
+            SET last_result = check_result,
+                passed_at = NULL
+            WHERE migration_name = btrim(p_migration_name)
+              AND check_name = check_record.check_name;
+            RAISE EXCEPTION 'data invariant check failed: %', check_record.check_name;
+        END IF;
+
+        UPDATE companion_internal.migration_invariant_checks
+        SET last_result = check_result,
+            passed_at = now()
+        WHERE migration_name = btrim(p_migration_name)
+          AND check_name = check_record.check_name;
+        passed_count := passed_count + 1;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'migration_name', btrim(p_migration_name),
+        'destructive_operations', destructive_operation_count,
+        'passed_checks', passed_count
+    );
 END;
 $$;
 
@@ -2761,8 +2998,58 @@ LANGUAGE plpgsql
 VOLATILE
 AS $$
 DECLARE
-    migration_name text := companion_internal.current_migration_name();
+    active_migration_name text := companion_internal.current_migration_name();
+    existing_sql text;
+    normalized_operation text := lower(btrim(p_operation_type));
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM companion_internal.migration_runs
+        WHERE migration_runs.migration_name = active_migration_name
+          AND status = 'running'
+    ) THEN
+        RAISE EXCEPTION 'migration is not running: %', active_migration_name;
+    END IF;
+
+    IF normalized_operation IN ('drop_column', 'rename_column', 'online_type_change')
+        AND NOT EXISTS (
+            SELECT 1
+            FROM companion_internal.migration_invariant_checks
+            WHERE migration_invariant_checks.migration_name = active_migration_name
+        ) THEN
+        RAISE EXCEPTION 'data invariant check is required before destructive migration operation';
+    END IF;
+
+    SELECT op.rendered_sql
+    INTO existing_sql
+    FROM companion_internal.migration_operations AS op
+    WHERE op.migration_name = active_migration_name
+      AND op.operation_type = normalized_operation
+      AND op.column_name = p_column_name
+      AND op.sql_type IS NOT DISTINCT FROM p_sql_type
+      AND op.default_expression IS NOT DISTINCT FROM p_default_expression
+      AND op.new_column_name IS NOT DISTINCT FROM p_new_column_name
+      AND op.from_type IS NOT DISTINCT FROM p_from_type
+      AND op.to_type IS NOT DISTINCT FROM p_to_type
+      AND op.cast_expression IS NOT DISTINCT FROM p_cast_expression
+      AND op.rendered_sql = p_rendered_sql
+    ORDER BY op.operation_id
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN existing_sql;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM companion_internal.migration_operations AS op
+        WHERE op.migration_name = active_migration_name
+          AND op.operation_type = normalized_operation
+          AND op.column_name = p_column_name
+    ) THEN
+        RAISE EXCEPTION 'migration operation re-entry conflicts with existing operation: %.%', active_migration_name, p_column_name;
+    END IF;
+
     INSERT INTO companion_internal.migration_operations(
         migration_name,
         operation_type,
@@ -2776,8 +3063,8 @@ BEGIN
         rendered_sql
     )
     VALUES (
-        migration_name,
-        p_operation_type,
+        active_migration_name,
+        normalized_operation,
         p_column_name,
         p_sql_type,
         p_default_expression,
@@ -2820,6 +3107,9 @@ BEGIN
     FROM companion_internal.migration_runs
     WHERE migration_name = active_migration_name
       AND status = 'running';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not running: %', active_migration_name;
+    END IF;
 
     rendered_sql := format(
         'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I %s%s;',
@@ -2864,6 +3154,9 @@ BEGIN
     FROM companion_internal.migration_runs
     WHERE migration_name = active_migration_name
       AND status = 'running';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not running: %', active_migration_name;
+    END IF;
 
     rendered_sql := format(
         'ALTER TABLE %s DROP COLUMN IF EXISTS %I;',
@@ -2909,6 +3202,9 @@ BEGIN
     FROM companion_internal.migration_runs
     WHERE migration_name = active_migration_name
       AND status = 'running';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not running: %', active_migration_name;
+    END IF;
 
     rendered_sql := format(
         'ALTER TABLE %s RENAME COLUMN %I TO %I;',
@@ -2966,6 +3262,9 @@ BEGIN
     FROM companion_internal.migration_runs
     WHERE migration_name = active_migration_name
       AND status = 'running';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not running: %', active_migration_name;
+    END IF;
 
     rendered_sql := format(
         'ALTER TABLE %s ADD COLUMN IF NOT EXISTS %I__ai_blaise_new %s; UPDATE %s SET %I__ai_blaise_new = %s WHERE %I__ai_blaise_new IS NULL;',
@@ -2997,10 +3296,29 @@ RETURNS void
 LANGUAGE plpgsql
 VOLATILE
 AS $$
+DECLARE
+    current_status text;
 BEGIN
     IF p_migration_name IS NULL OR btrim(p_migration_name) = '' THEN
         RAISE EXCEPTION 'migration_name must not be empty';
     END IF;
+
+    SELECT status
+    INTO current_status
+    FROM companion_internal.migration_runs
+    WHERE migration_name = btrim(p_migration_name)
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'migration is not registered: %', p_migration_name;
+    END IF;
+
+    IF current_status = 'completed' THEN
+        PERFORM set_config('ai_blaise.current_migration_name', '', true);
+        RETURN;
+    END IF;
+
+    PERFORM companion_internal.migration_assert_invariants(btrim(p_migration_name));
 
     UPDATE companion_internal.migration_runs
     SET status = 'completed',
@@ -5179,6 +5497,25 @@ BEGIN
     IF p_workers_acknowledged IS NULL THEN
         RAISE EXCEPTION 'workers_acknowledged must not be null';
     END IF;
+
+    SELECT log_id
+    INTO inserted_id
+    FROM companion_internal.schema_job_phase_log
+    WHERE job_name = btrim(p_job_name)
+      AND from_state = lower(btrim(p_from_state))
+      AND to_state = lower(btrim(p_to_state))
+      AND started_at = p_started_at
+      AND completed_at = p_completed_at
+      AND workers_acknowledged = p_workers_acknowledged
+      AND gate = lower(btrim(p_gate))
+      AND is_rollback = false
+    ORDER BY log_id
+    LIMIT 1;
+
+    IF FOUND THEN
+        RETURN inserted_id;
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1
         FROM companion_internal.schema_jobs

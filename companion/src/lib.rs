@@ -84,9 +84,10 @@ pub use lsp_metadata::{
     LspMetadataError, LspMetadataSqlPlan, LspMetadataView, LspMetadataViewPlan,
 };
 pub use migration::{
-    canonical_migration_runtime_report, MigrationError, MigrationOperation, MigrationPlan,
-    MigrationRuntime, MigrationRuntimeAction, MigrationRuntimeDecision,
-    MigrationRuntimeObservation, MigrationRuntimePhase, MigrationRuntimeReport, MigrationSqlPlan,
+    assert_migration_data_invariants_sql, canonical_migration_runtime_report,
+    MigrationDataInvariant, MigrationError, MigrationOperation, MigrationPlan, MigrationRuntime,
+    MigrationRuntimeAction, MigrationRuntimeDecision, MigrationRuntimeObservation,
+    MigrationRuntimePhase, MigrationRuntimeReport, MigrationSqlPlan,
 };
 pub use observability::{
     IdleTransactionDetectorPlan, LatencyPercentile, LocalActivityStatPlan, ObservabilityError,
