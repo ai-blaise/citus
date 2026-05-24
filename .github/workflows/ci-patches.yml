@@ -14,3 +14,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify quilt patches apply cleanly
         run: make -f Makefile.ai-blaise patches-check
+      - name: Audit Citus patch production gates
+        run: make -f Makefile.ai-blaise citus-patch-production-audit

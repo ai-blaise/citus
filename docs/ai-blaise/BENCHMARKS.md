@@ -72,6 +72,30 @@ inside each microbench's `README.md` and `baseline.json`). They are refined
 to the 3-worker kind-cluster reality after the first nightly `ci-microbench`
 run lands its measured aggregate.
 
+## Citus patch production gates (0004/0006/0007/0008)
+
+Custom Citus patches `0004`, `0006`, `0007`, and `0008` use the fail-closed
+manifest at `benchmarks/citus-patches/production-gates.json`. The manifest is a
+gate contract, not benchmark evidence. A patch cannot be treated as
+production-ready until its `patches/*.patch` artifact exists, the artifact is
+listed in `patches/series`, `make -f Makefile.ai-blaise patches-check` passes,
+and the declared result under `benchmarks/citus-patches/results/` is a measured
+non-scaffold JSON result with the listed threshold fields.
+
+Current `bootstrap-v2` status:
+
+| Patch | Required result | Fail-closed threshold | Current state |
+| ----- | --------------- | --------------------- | ------------- |
+| `0004` | `0004-router-planner-hotpath.json` | measured planner p95, max 10% regression, at least 30 samples | roster-only; not production-ready |
+| `0006` | `0006-fast-path-router-skip.json` | measured coordinator round trips per single-shard query must be `0`, at least 30 samples | roster-only; not production-ready |
+| `0007` | `0007-pg-cron-cohabit.json` | measured boot success rate `1` and zero registration conflicts | roster-only; not production-ready |
+| `0008` | `0008-detection-matrix.json` | measured detection matrix pass with at least three extension cases | roster-only; not production-ready |
+
+No placeholder or skipped quick-mode result is allowed in this directory. The
+bounded CI check is `make -f Makefile.ai-blaise citus-patch-production-audit`;
+it rejects docs that mark these patch IDs production-ready before the patch
+artifact and measured result both exist.
+
 ## Initial harness target thresholds (alpha)
 
 | Harness            | Metric                        | Threshold (alpha)              |
