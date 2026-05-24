@@ -731,7 +731,13 @@ real `timescale/timescaledb:latest-pg17` image with this Citus fork installed,
 starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
 `citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
 and `ai_blaise_citus` in the same server. The VM run in the production audit
-records the Git SHA, image identity, and command path, and the smoke is part of
+records the Git SHA, image identity, command path, PostgreSQL version,
+TimescaleDB extension version, Citus extension version, and explicit
+`real_citus_distribution=true` / `stubbed_citus_distribution=false` evidence.
+This proves the trusted cohabitation startup/loading guard for the measured
+image only; it does not prove full TimescaleDB planner pushdown, distributed
+hypertable execution correctness, background policy execution, compression job
+completion, or continuous aggregate refresh. The smoke is part of
 `make -f Makefile.ai-blaise gate-close`.
 
 Forward-compatibility gate: `ci/ai-blaise/ts-version-matrix-smoke.sh`
@@ -907,16 +913,28 @@ emulate dependency calls, requires durable `companion_timescale_bridge_state`
 rows for all six bridge feature ids, and verifies that compression/CAGG apply
 paths fail closed when TimescaleDB dependency functions are absent.
 `ci/ai-blaise/timescale-bridge-smoke.sh` then installs the same extension into
-a real `timescale/timescaledb:latest-pg17` container, stubs only the Citus
-distribution entrypoint, and verifies real TimescaleDB hypertable,
-compression, retention, reorder, continuous aggregate, and bridge-state
-behavior. `ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous
-stub gap by building this Citus fork into a real TimescaleDB PG17 image,
-loading `timescaledb,citus` with `citus.cohabit_extensions=timescaledb`,
-creating real `citus`, `timescaledb`, and `ai_blaise_citus` extensions,
-requiring real `create_distributed_table` rows in `pg_dist_partition`, and
-then executing the TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live
-cohabiting server without defining any Citus stub.
+a real `timescale/timescaledb:latest-pg17` container, verifies that
+`apply_distribute_hypertable(...)` fails closed before a Citus distribution
+entrypoint is visible, stubs only that Citus distribution entrypoint, and
+records `policy_execution_scope=entrypoints-and-catalog-state-only` evidence
+for real TimescaleDB entrypoint calls and bridge-state rows.
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous stub gap by
+building this Citus fork into a real TimescaleDB PG17 image, loading
+`timescaledb,citus` with `citus.cohabit_extensions=timescaledb`, creating real
+`citus`, `timescaledb`, and `ai_blaise_citus` extensions, enforcing the
+expected PG/Timescale minor when configured by the version matrix, requiring
+real `create_distributed_table` rows in `pg_dist_partition`, and executing the
+TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live cohabiting server
+without defining any Citus stub.
+
+The TS18 production-ready boundary is intentionally narrow: it proves SQL
+apply functions invoke the expected TimescaleDB/Citus entrypoints, create the
+measured coordinator catalog objects, fail closed when required dependency
+functions are absent, and record deterministic bridge-state rows. It does not
+claim full TimescaleDB functionality, continuous aggregate refresh/materialized
+execution, compression/retention/reorder background job completion,
+distributed hypertables across workers, planner pushdown, rebalance behavior,
+or production cohabitation beyond the measured startup/load/apply guard.
 
 **References**:
 

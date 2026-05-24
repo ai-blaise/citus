@@ -11,6 +11,15 @@ tag="${TIMESCALE_COHABITATION_TAG:-ai-blaise-citus-timescale-cohabitation:local}
 make_jobs="${TIMESCALE_COHABITATION_MAKE_JOBS:-4}"
 require_docker="${REQUIRE_DOCKER:-0}"
 evidence_file="${TIMESCALE_COHABITATION_EVIDENCE:-artifacts/timescale-cohabitation-evidence.tsv}"
+expected_ts_minor="${TIMESCALE_COHABITATION_EXPECTED_TS_MINOR:-}"
+expected_pg_major="${TIMESCALE_COHABITATION_EXPECTED_PG_MAJOR:-}"
+
+if [[ -z "${expected_ts_minor}" && "${base_image}" =~ :([0-9]+\.[0-9]+)(\.[0-9]+)?-pg[0-9]+$ ]]; then
+  expected_ts_minor="${BASH_REMATCH[1]}"
+fi
+if [[ -z "${expected_pg_major}" && "${base_image}" =~ -pg([0-9]+)$ ]]; then
+  expected_pg_major="${BASH_REMATCH[1]}"
+fi
 
 if [[ ! -s "${dockerfile}" ]]; then
   echo "missing Timescale cohabitation Dockerfile: ${dockerfile}" >&2
@@ -180,6 +189,33 @@ if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 
+runtime_metadata="$(docker exec -i "${container}" psql -U postgres -AtX -v ON_ERROR_STOP=1 -F $'\t' <<'SQL'
+SELECT
+  current_setting('server_version_num', true),
+  current_setting('server_version', true),
+  current_setting('shared_preload_libraries', true),
+  current_setting('citus.cohabit_extensions', true),
+  (SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'),
+  (SELECT extversion FROM pg_extension WHERE extname = 'citus'),
+  (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus'),
+  (SELECT count(DISTINCT feature_id)::text FROM companion_timescale_bridge_state WHERE feature_id IN ('TS1', 'TS2', 'TS3', 'TS4', 'TS5', 'TS12'));
+SQL
+)"
+IFS=$'\t' read -r server_version_num server_version shared_preload_libraries cohabit_extensions timescaledb_extversion citus_extversion ai_blaise_citus_extversion bridge_features <<<"${runtime_metadata}"
+if [[ ! "${server_version_num:-}" =~ ^[0-9]+$ || "${bridge_features:-}" != "6" ]]; then
+  echo "Timescale/Citus cohabitation metadata query returned unusable evidence: ${runtime_metadata}" >&2
+  exit 1
+fi
+actual_pg_major="$((server_version_num / 10000))"
+if [[ -n "${expected_pg_major}" && "${actual_pg_major}" != "${expected_pg_major}" ]]; then
+  echo "Timescale/Citus cohabitation PG major mismatch: expected ${expected_pg_major}, got ${actual_pg_major} from server_version_num=${server_version_num}" >&2
+  exit 1
+fi
+if [[ -n "${expected_ts_minor}" && "${timescaledb_extversion}" != "${expected_ts_minor}".* && "${timescaledb_extversion}" != "${expected_ts_minor}" ]]; then
+  echo "Timescale/Citus cohabitation TimescaleDB minor mismatch: expected ${expected_ts_minor}.x, got ${timescaledb_extversion}" >&2
+  exit 1
+fi
+
 base_digest="$(
   { docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${base_image}" 2>/dev/null || true; } |
     awk 'NR == 1 { print; exit }'
@@ -193,16 +229,27 @@ fi
 git_sha="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 command_path="postgres -c shared_preload_libraries=timescaledb,citus -c citus.cohabit_extensions=timescaledb"
 {
-  printf 'git_sha\timage\timage_id\tbase_image\tbase_digest\tcommand_path\tshared_preload_libraries\tcohabit_extensions\n'
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf 'git_sha\timage\timage_id\tbase_image\tbase_digest\tcommand_path\tserver_version_num\tserver_version\ttimescaledb_extversion\tcitus_extversion\tai_blaise_citus_extversion\tshared_preload_libraries\tcohabit_extensions\texpected_pg_major\texpected_ts_minor\treal_citus_distribution\tstubbed_citus_distribution\tbridge_features\tpolicy_execution_scope\n'
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "${git_sha}" \
     "${image}" \
     "${image_id}" \
     "${base_image}" \
     "${base_digest}" \
     "${command_path}" \
-    "timescaledb,citus" \
-    "timescaledb"
+    "${server_version_num}" \
+    "${server_version}" \
+    "${timescaledb_extversion}" \
+    "${citus_extversion}" \
+    "${ai_blaise_citus_extversion}" \
+    "${shared_preload_libraries}" \
+    "${cohabit_extensions}" \
+    "${expected_pg_major:-}" \
+    "${expected_ts_minor:-}" \
+    "true" \
+    "false" \
+    "${bridge_features}" \
+    "entrypoints-and-catalog-state-only"
 } >"${evidence_file}"
 
 echo "ai_blaise_citus Timescale/Citus cohabitation smoke passed with ${image}"

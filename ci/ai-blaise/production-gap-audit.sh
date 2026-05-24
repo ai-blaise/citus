@@ -54,6 +54,9 @@ KIND_PRODUCTION_SMOKE = ROOT / "ci/ai-blaise/kind-production-smoke.sh"
 LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
 DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
+TIMESCALE_BRIDGE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
+TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
+TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -537,6 +540,41 @@ for phrase in (
 for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready"):
     if compact(pattern) in matrix_truth:
         fail(f"Timescale 2.28 matrix overclaims production readiness: {pattern}")
+
+timescale_bridge_smoke = read(TIMESCALE_BRIDGE_SMOKE)
+timescale_cohabitation_smoke = read(TIMESCALE_COHABITATION_SMOKE)
+ts_version_matrix_smoke = read(TS_VERSION_MATRIX_SMOKE)
+timescale_runtime_truth = compact(docs + "\n" + audit + "\n" + timescale_bridge_smoke + "\n" + timescale_cohabitation_smoke)
+for phrase in (
+    "missing_citus_fail_closed",
+    "policy_execution_scope",
+    "entrypoints-and-catalog-state-only",
+    "stubbed_citus_distribution",
+    "real_citus_distribution",
+    "timescaledb_extversion",
+    "does not claim full TimescaleDB functionality",
+):
+    if compact(phrase) not in timescale_runtime_truth:
+        fail(f"Timescale runtime evidence boundary must preserve phrase: {phrase}")
+
+for phrase in (
+    "TIMESCALE_COHABITATION_EXPECTED_TS_MINOR",
+    "TimescaleDB minor mismatch",
+    "docker_manifest_available",
+    "required_version",
+):
+    if phrase not in (timescale_cohabitation_smoke + "\n" + ts_version_matrix_smoke):
+        fail(f"Timescale version matrix must preserve fail-closed/version evidence phrase: {phrase}")
+
+for pattern in (
+    "full TimescaleDB functionality is production-ready",
+    "continuous aggregate execution is production-ready",
+    "compression policies execution is production-ready",
+    "distributed hypertables production-ready",
+    "planner pushdown production-ready",
+):
+    if compact(pattern) in compact(docs + "\n" + audit):
+        fail(f"Timescale docs overclaim production readiness: {pattern}")
 
 for path in (
     K8S_GUARDRAIL_RENDERER,

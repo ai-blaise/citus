@@ -98,8 +98,13 @@ write_matrix_note_evidence() {
   fi
 
   {
-    printf 'ts_version\tbase_image\tstatus\tnote\texpected_hook_claims_sha256\n'
-    printf '%s\t%s\t%s\t%s\t%s\n' "${ts_version}" "${base_image}" "${status}" "${note}" "${expected_sha}"
+    local required="false"
+    if is_required_version "${ts_version}"; then
+      required="true"
+    fi
+
+    printf 'ts_version\tbase_image\tstatus\tnote\tdocker_manifest_available\trequired_version\texpected_hook_claims_sha256\n'
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${ts_version}" "${base_image}" "${status}" "${note}" "false" "${required}" "${expected_sha}"
   } >"${evidence_file}"
 }
 
@@ -155,6 +160,7 @@ for ts_version in "${versions[@]}"; do
   if TIMESCALE_COHABITATION_BASE_IMAGE="${base_image}" \
      TIMESCALE_COHABITATION_TAG="${image_tag}" \
      TIMESCALE_COHABITATION_EVIDENCE="${cohab_evidence}" \
+     TIMESCALE_COHABITATION_EXPECTED_TS_MINOR="${ts_version}" \
      "${inner_smoke}"; then
     container="ai-blaise-cohab-matrix-${ts_version//./-}-$$"
     cleanup_probe() {

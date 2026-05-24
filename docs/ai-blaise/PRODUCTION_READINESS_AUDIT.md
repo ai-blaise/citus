@@ -320,11 +320,14 @@ more production-ready than the artifacts justified.
   `shared_preload_libraries=timescaledb,citus` and
   `citus.cohabit_extensions=timescaledb`, creates real `citus`,
   `timescaledb`, and `ai_blaise_citus` extensions, verifies real
-  `pg_dist_partition` rows, and executes TS1/TS2/TS3/TS4/TS5/TS12 apply
-  functions without defining a Citus stub. TS6 and TS18 are therefore
-  production-ready narrow surfaces; the broader distributed Timescale feature
-  entries remain alpha until multi-worker fanout, rebalance, and operator
-  reconciliation are proven end to end.
+  `pg_dist_partition` rows, records observed PostgreSQL/TimescaleDB/Citus
+  versions, and executes TS1/TS2/TS3/TS4/TS5/TS12 apply functions without
+  defining a Citus stub. The evidence is explicitly scoped as
+  `entrypoints-and-catalog-state-only`: TS6 and TS18 are therefore
+  production-ready narrow startup/load/apply guard surfaces, while the broader
+  distributed Timescale feature entries remain alpha until multi-worker fanout,
+  background policy execution, continuous aggregate refresh, rebalance, and
+  operator reconciliation are proven end to end.
 - The Helm image helper now supports digest-pinned images, and the default
   `values.yaml` profile and `values-prod.yaml` both set
   `global.requireImageDigest: true` so production rendering fails unless the
@@ -363,7 +366,12 @@ more production-ready than the artifacts justified.
   `ai_blaise_citus` extensions, inserted through a real Citus distributed
   table, and then executed the bridge apply functions against the cohabiting
   server. The generated evidence file is
-  `artifacts/timescale-cohabitation-evidence.tsv`.
+  `artifacts/timescale-cohabitation-evidence.tsv` and includes
+  `timescaledb_extversion`, `citus_extversion`, `real_citus_distribution=true`,
+  `stubbed_citus_distribution=false`, bridge feature counts, and
+  `policy_execution_scope=entrypoints-and-catalog-state-only` so the evidence
+  cannot be mistaken for full TimescaleDB policy execution or planner
+  correctness.
 - The D8 deploy wrapper install path is now live-gated: the `values-prod.yaml`
   phase of `kind-production-smoke.sh` installs through
   `scripts/citus-scale/deploy.sh MODE=install` instead of bypassing the wrapper.
@@ -591,8 +599,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   GitHub; rendered Helm checks must use `REQUIRE_HELM=1` so missing Helm is a
   failure, not a skipped evidence path.
 - Production-ready Timescale/Citus claims require a real cohabitation run; the
-  stubbed Timescale bridge smoke remains useful contract evidence, but promoted
-  TS6/TS18 evidence must come from the non-stubbed cohabitation smoke.
+  stubbed Timescale bridge smoke remains useful contract evidence and must keep
+  its missing-Citus fail-closed assertion, but promoted TS6/TS18 evidence must
+  come from the non-stubbed cohabitation smoke and remain bounded to
+  entrypoint/catalog-state behavior, not full TimescaleDB runtime correctness.
 - Production-ready observability chart claims require parsed Grafana JSON,
   exact panel/PromQL contracts, live installed ConfigMap/PrometheusRule
   resources, and guarded pool error-rate expressions.
