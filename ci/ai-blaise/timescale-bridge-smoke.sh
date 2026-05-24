@@ -7,6 +7,7 @@ control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
 timescale_image="${TIMESCALE_BRIDGE_SMOKE_IMAGE:-timescale/timescaledb:latest-pg17}"
 require_docker="${REQUIRE_DOCKER:-0}"
+evidence_file="${TIMESCALE_BRIDGE_SMOKE_EVIDENCE:-artifacts/timescale-bridge-smoke.tsv}"
 
 for file in "${control_file}" "${sql_file}"; do
   if [[ ! -s "${file}" ]]; then
@@ -71,6 +72,27 @@ fi
 
 docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+
+CREATE TABLE timescale_missing_citus (
+  metric_time timestamptz NOT NULL,
+  tenant_id integer NOT NULL,
+  value double precision NOT NULL
+);
+
+DO $$
+BEGIN
+  BEGIN
+    PERFORM apply_distribute_hypertable('timescale_missing_citus', 'metric_time', '1 day', 2);
+    RAISE EXCEPTION 'expected apply_distribute_hypertable to fail without Citus create_distributed_table';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%requires visible function create_distributed_table from extension citus%' THEN
+      RAISE EXCEPTION 'apply_distribute_hypertable failed with unexpected message: %', SQLERRM;
+    END IF;
+  END;
+END $$;
+
+DROP TABLE timescale_missing_citus;
 
 CREATE TABLE citus_bridge_call_log (
   function_name text NOT NULL,
@@ -102,7 +124,7 @@ BEGIN
 END;
 $$;
 
-CREATE EXTENSION ai_blaise_citus;
+CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
 
 CREATE TABLE timescale_smoke_metrics (
   metric_time timestamptz NOT NULL,
@@ -171,4 +193,42 @@ BEGIN
 END $$;
 SQL
 
-echo "ai_blaise_citus Timescale bridge smoke passed with ${timescale_image}"
+mkdir -p "$(dirname "${evidence_file}")"
+image_id="$(docker image inspect --format '{{.Id}}' "${timescale_image}")"
+if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "Timescale bridge smoke image did not report a stable image identity: ${image_id}" >&2
+  exit 1
+fi
+runtime_metadata="$(docker exec -i "${container}" psql -U postgres -AtX -v ON_ERROR_STOP=1 -F $'\t' <<'SQL'
+SELECT
+  current_setting('server_version_num', true),
+  current_setting('server_version', true),
+  (SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'),
+  (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus'),
+  (SELECT count(DISTINCT feature_id)::text FROM companion_timescale_bridge_state WHERE feature_id IN ('TS1', 'TS2', 'TS3', 'TS4', 'TS5', 'TS12'));
+SQL
+)"
+IFS=$'\t' read -r server_version_num server_version timescaledb_extversion ai_blaise_citus_extversion bridge_features <<<"${runtime_metadata}"
+if [[ ! "${server_version_num:-}" =~ ^[0-9]+$ || "${bridge_features:-}" != "6" ]]; then
+  echo "Timescale bridge smoke metadata query returned unusable evidence: ${runtime_metadata}" >&2
+  exit 1
+fi
+git_sha="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
+{
+  printf 'git_sha\timage\timage_id\tserver_version_num\tserver_version\ttimescaledb_extversion\tai_blaise_citus_extversion\treal_timescaledb\tstubbed_citus_distribution\tmissing_citus_fail_closed\tbridge_features\tpolicy_execution_scope\n'
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "${git_sha}" \
+    "${timescale_image}" \
+    "${image_id}" \
+    "${server_version_num}" \
+    "${server_version}" \
+    "${timescaledb_extversion}" \
+    "${ai_blaise_citus_extversion}" \
+    "true" \
+    "true" \
+    "true" \
+    "${bridge_features}" \
+    "entrypoints-and-catalog-state-only"
+} >"${evidence_file}"
+
+echo "ai_blaise_citus Timescale bridge smoke passed with ${timescale_image}; evidence at ${evidence_file}"
