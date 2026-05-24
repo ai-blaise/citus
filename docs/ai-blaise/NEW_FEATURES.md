@@ -6579,9 +6579,11 @@ HTTP header carrier injection/extraction, gRPC metadata carrier
 injection/extraction, PostgreSQL `SET LOCAL` GUC rendering/extraction, startup
 parameter priority (`traceparent` over `options` over `application_name`), and
 fail-closed handling for corrupt startup traceparents. With `REQUIRE_KIND=1`
-the smoke additionally boots a 3-node kind cluster with Jaeger and asserts the
-trace lands at Jaeger.
-This remains alpha until sidecar/companion propagation and release dashboard
+the smoke additionally boots a 3-node kind cluster with Jaeger, sends a
+synthetic OTLP span keyed to the trace ID accepted by the pool tap, and queries
+Jaeger's `/api/traces/<trace_id>` endpoint for `pool.trace_tap`. This proves the
+Jaeger correlation harness, not automatic pool/companion/sidecar span export.
+O14 remains alpha until sidecar/companion propagation and release dashboard
 correlation are measured end to end and the feature status is promoted.
 
 **References**:

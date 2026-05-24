@@ -14,9 +14,11 @@ set -euo pipefail
 #
 #   * Optional KIND mode (REQUIRE_KIND=1 plus a kind binary on PATH): in
 #     addition to the default mode, launches a 3-node kind cluster with a
-#     Jaeger all-in-one deployment, deploys the pool image, runs the same
-#     traceparent assertion through a Kubernetes-routed connection, and
-#     queries the Jaeger HTTP API to confirm the trace shows up.
+#     Jaeger all-in-one deployment, verifies the in-cluster PostgreSQL trace
+#     GUC path, sends a synthetic OTLP span keyed to the accepted trace_id, and
+#     queries the Jaeger HTTP API to confirm that trace is retrievable. This is
+#     a correlation-harness proof, not automatic pool/companion/sidecar span
+#     export.
 #
 # Both modes degrade gracefully when their prerequisites are absent so the CI
 # matrix can include this script unconditionally.
@@ -249,9 +251,14 @@ nodes:
   - role: worker
 KIND
 
+otlp_payload=""
+
 kind_cleanup() {
   cleanup
   rm -f "${kind_config}"
+  if [[ -n "${otlp_payload}" ]]; then
+    rm -f "${otlp_payload}"
+  fi
   kind delete cluster --name "${kind_cluster}" >/dev/null 2>&1 || true
 }
 trap kind_cleanup EXIT
@@ -293,11 +300,10 @@ JAEGER
 
 kubectl --context "kind-${kind_cluster}" wait deployment/jaeger --for condition=Available --timeout=180s >/dev/null
 
-# In KIND mode the pool's `trace_tap=present` log line plus the Jaeger UI
-# probe are the assertion surfaces. We do not require the chart deployment
-# here; the smoke runs the pool binary in the kind worker net namespace via
-# `kubectl debug` so the traceparent value survives an in-cluster routed
-# psql connection.
+# In KIND mode the pool's `trace_tap=present` log line, the in-cluster
+# PostgreSQL trace GUC, and a Jaeger API lookup for the same trace_id are the
+# assertion surfaces. The synthetic OTLP span keeps this bounded to a
+# correlation-harness proof; automatic span export remains outside this smoke.
 kubectl --context "kind-${kind_cluster}" run otel-smoke-postgres \
   --image="${postgres_image}" \
   --env=POSTGRES_PASSWORD=postgres \
@@ -307,7 +313,86 @@ kubectl --context "kind-${kind_cluster}" run otel-smoke-postgres \
 kubectl --context "kind-${kind_cluster}" wait pod/otel-smoke-postgres \
   --for=condition=Ready --timeout=120s >/dev/null
 
+kind_postgres_ready=0
+for _ in $(seq 1 120); do
+  if kubectl --context "kind-${kind_cluster}" exec otel-smoke-postgres -- \
+    psql -U postgres -d postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+    kind_postgres_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "${kind_postgres_ready}" != "1" ]]; then
+  kubectl --context "kind-${kind_cluster}" logs otel-smoke-postgres >&2 || true
+  echo "kind postgres pod did not become SQL-ready" >&2
+  exit 1
+fi
+
 kubectl --context "kind-${kind_cluster}" exec otel-smoke-postgres -- \
   psql -U postgres -d postgres -c "SET trace.parent TO '${traceparent}'; SELECT current_setting('trace.parent', true);" >/dev/null
 
-echo "ai_blaise_citus pool proxy traceparent tap smoke passed (kind mode)"
+otlp_payload="$(mktemp -t ai-blaise-otel-jaeger.XXXXXX.json)"
+start_ns="$(date +%s%N)"
+end_ns="$((start_ns + 1000000))"
+cat >"${otlp_payload}" <<OTLP
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "ai-blaise-otel-smoke"}},
+          {"key": "deployment.environment", "value": {"stringValue": "kind"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "ai-blaise-otel-trace-propagation-smoke"},
+          "spans": [
+            {
+              "traceId": "${trace_id}",
+              "spanId": "1111111111111111",
+              "parentSpanId": "${parent_id}",
+              "name": "pool.trace_tap",
+              "kind": 2,
+              "startTimeUnixNano": "${start_ns}",
+              "endTimeUnixNano": "${end_ns}",
+              "attributes": [
+                {"key": "traceparent", "value": {"stringValue": "${traceparent}"}},
+                {"key": "component", "value": {"stringValue": "pool"}},
+                {"key": "evidence_scope", "value": {"stringValue": "synthetic-jaeger-correlation-harness"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+OTLP
+
+kubectl --context "kind-${kind_cluster}" run "otel-smoke-otlp-${RANDOM}" \
+  --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- \
+  curl -fsS -X POST "http://jaeger:4318/v1/traces" \
+  -H "content-type: application/json" --data-binary @- \
+  <"${otlp_payload}" >/dev/null
+
+jaeger_trace_found=0
+for attempt in $(seq 1 60); do
+  query_output="$(kubectl --context "kind-${kind_cluster}" run "otel-smoke-jaeger-query-${attempt}-${RANDOM}" \
+    --rm -i --restart=Never --image=curlimages/curl:8.10.1 --command -- \
+    curl -fsS "http://jaeger:16686/api/traces/${trace_id}" 2>/dev/null || true)"
+  if grep -Fq "pool.trace_tap" <<<"${query_output}" && \
+     grep -Fq "${trace_id}" <<<"${query_output}" && \
+     grep -Fq "synthetic-jaeger-correlation-harness" <<<"${query_output}"; then
+    jaeger_trace_found=1
+    break
+  fi
+  sleep 2
+done
+
+if [[ "${jaeger_trace_found}" != "1" ]]; then
+  echo "Jaeger API did not return the synthetic trace_id ${trace_id}" >&2
+  exit 1
+fi
+
+echo "ai_blaise_citus pool proxy traceparent tap smoke passed (kind mode with Jaeger API correlation)"

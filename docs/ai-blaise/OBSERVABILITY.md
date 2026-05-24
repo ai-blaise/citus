@@ -98,10 +98,11 @@ according to its native encoding.
 - The pool's `traceparent_tapped_total` counter increments by one.
 - A follow-up connection without a traceparent increments
   `traceparent_absent_total`.
-- When `REQUIRE_KIND=1`, an end-to-end kind-cluster scenario boots Jaeger,
-  routes a traceparent-bearing connection through the proxy, and asserts
-  the trace lands at Jaeger with three spans (pool, companion, sidecar)
-  chained to the same trace-id.
+- When `REQUIRE_KIND=1`, a kind-cluster scenario boots Jaeger, verifies the
+  in-cluster PostgreSQL `trace.parent` GUC path, sends a synthetic OTLP span
+  keyed to the accepted trace ID, and asserts that trace is queryable from
+  Jaeger. This proves the correlation harness, not automatic pool, companion,
+  or sidecar span export.
 
 ## Structured-log schemas
 

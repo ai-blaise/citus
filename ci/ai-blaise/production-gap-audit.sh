@@ -737,6 +737,19 @@ for required in (
 
 if status_by_id.get("O14") != "alpha":
     fail("O14 must remain alpha until full trace propagation and dashboard correlation are measured")
+otel_trace_smoke = read(ROOT / "ci/ai-blaise/otel-trace-propagation-smoke.sh")
+for phrase in (
+    "resourceSpans",
+    "http://jaeger:4318/v1/traces",
+    "http://jaeger:16686/api/traces/${trace_id}",
+    "pool.trace_tap",
+    "synthetic-jaeger-correlation-harness",
+    "automatic pool/companion/sidecar span",
+):
+    if phrase not in otel_trace_smoke:
+        fail(f"O14 KIND Jaeger correlation smoke lost required phrase: {phrase}")
+if "Jaeger correlation harness, not automatic pool/companion/sidecar span export" not in entry_by_id["O14"]["body"]:
+    fail("O14 docs must keep the Jaeger correlation proof boundary explicit")
 if status_by_id.get("O15") != "production-ready":
     fail("O15 structured-log schema must be production-ready after PostgreSQL ingestion smoke evidence")
 o15_body = compact(entry_by_id["O15"]["body"])
