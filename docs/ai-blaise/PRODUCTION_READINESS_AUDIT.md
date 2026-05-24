@@ -297,6 +297,13 @@ more production-ready than the artifacts justified.
   search validation query evidence. With `REQUIRE_DOCKER=1`, it also runs a
   real PostgreSQL PITR smoke using `pg_basebackup`, WAL archiving,
   `recovery_target_time`, and restored-row verification.
+- B1/B3/B4/B6 backup sidecar production-ready evidence is bounded to the
+  local sidecar runtime: strict config validation, WAL-G command materialization
+  and execution against deterministic local fakes, HTTP status/control paths,
+  scheduler state, retention/failure accounting, metrics, PITR job records, and
+  queryable branch read-only probes. It does not claim live S3/GCS/Azure
+  credentials, managed WAL-G object-store success, Kubernetes CronJob execution,
+  or live production-cluster PITR.
 - Custom component READMEs, CRD/catalog docs, benchmark docs, and image
   overview docs now carry a shared production boundary: unless a feature is
   explicitly `Status: production-ready` in `docs/ai-blaise/NEW_FEATURES.md`,

@@ -201,7 +201,10 @@ impl WalgRunner {
 /// Render the deterministic WAL-G environment map for a backup job plan.
 pub fn walg_env_from_plan(plan: &BackupJobPlan) -> Vec<(&'static str, String)> {
     let mut env = Vec::with_capacity(8);
-    env.push(("WALG_S3_PREFIX", plan.contract.archive_uri.clone()));
+    env.push((
+        walg_provider_prefix_key(&plan.contract.archive_uri),
+        plan.contract.archive_uri.clone(),
+    ));
     env.push((
         "WALG_FILE_PREFIX_OVERRIDE",
         plan.base_backup.destination_uri.clone(),
@@ -230,6 +233,16 @@ pub fn walg_env_from_plan(plan: &BackupJobPlan) -> Vec<(&'static str, String)> {
         env.push(("WALG_GPG_KEY_ID", encryption.kms_key_ref.clone()));
     }
     env
+}
+
+fn walg_provider_prefix_key(uri: &str) -> &'static str {
+    if uri.starts_with("gs://") {
+        "WALG_GS_PREFIX"
+    } else if uri.starts_with("az://") {
+        "WALG_AZ_PREFIX"
+    } else {
+        "WALG_S3_PREFIX"
+    }
 }
 
 /// Captured output of a successful (or failed) WAL-G invocation.
@@ -333,6 +346,25 @@ mod tests {
             Err(WalgError::MissingEncryptionEnv)
         );
         assert_eq!(runner.validate_encryption_env(false), Ok(()));
+    }
+
+    #[test]
+    fn runner_uses_provider_specific_walg_prefix_env() {
+        let mut plan = canonical_backup_job();
+        plan.contract.archive_uri = "gs://backups/prod".to_string();
+        let gcs = WalgRunner::from_plan("/usr/bin/wal-g", &plan);
+        assert_eq!(
+            gcs.env().get(&OsString::from("WALG_GS_PREFIX")),
+            Some(&OsString::from("gs://backups/prod"))
+        );
+        assert_eq!(gcs.env().get(&OsString::from("WALG_S3_PREFIX")), None);
+
+        plan.contract.archive_uri = "az://backups/prod".to_string();
+        let azure = WalgRunner::from_plan("/usr/bin/wal-g", &plan);
+        assert_eq!(
+            azure.env().get(&OsString::from("WALG_AZ_PREFIX")),
+            Some(&OsString::from("az://backups/prod"))
+        );
     }
 
     #[test]

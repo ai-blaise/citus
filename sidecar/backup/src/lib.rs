@@ -37,6 +37,7 @@ impl BackupJobPlan {
     pub fn validate(&self) -> Result<(), BackupSidecarError> {
         validate_required("cluster", &self.cluster)?;
         self.contract.validate()?;
+        validate_uri("backup.archive_uri", &self.contract.archive_uri)?;
         self.base_backup.validate()?;
         self.wal_archive.validate()?;
         if let Some(encryption) = &self.encryption {
@@ -125,7 +126,7 @@ pub struct QueryableBackupBranchPlan {
 
 impl QueryableBackupBranchPlan {
     pub fn validate(&self) -> Result<(), BackupSidecarError> {
-        validate_required("branch_name", &self.branch_name)?;
+        validate_branch_name(&self.branch_name)?;
         validate_uri("source_archive_uri", &self.source_archive_uri)?;
         validate_timestamp(&self.target_time)?;
         if !self.read_only {
@@ -138,7 +139,9 @@ impl QueryableBackupBranchPlan {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum BackupSidecarError {
     ArchiveMismatch,
+    InvalidBranchName,
     InvalidConcurrency,
+    InvalidPort,
     InvalidRetention,
     InvalidTimestamp,
     InvalidUri(&'static str),
@@ -166,7 +169,12 @@ impl fmt::Display for BackupSidecarError {
                     "restore or branch archive does not match backup job"
                 )
             }
+            Self::InvalidBranchName => write!(
+                formatter,
+                "branch_name must contain only ASCII letters, digits, '.', '_', or '-' and must not contain path traversal"
+            ),
             Self::InvalidConcurrency => write!(formatter, "concurrency must be greater than zero"),
+            Self::InvalidPort => write!(formatter, "queryable branch port must be between 1024 and 65535"),
             Self::InvalidRetention => write!(formatter, "retention_days must be greater than zero"),
             Self::InvalidTimestamp => {
                 write!(formatter, "target_time must be an RFC3339 UTC timestamp")
@@ -243,20 +251,118 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), BackupSidec
 
 fn validate_uri(field: &'static str, value: &str) -> Result<(), BackupSidecarError> {
     validate_required(field, value)?;
-    if value.starts_with("s3://") || value.starts_with("gs://") || value.starts_with("az://") {
-        Ok(())
-    } else {
-        Err(BackupSidecarError::InvalidUri(field))
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return Err(BackupSidecarError::InvalidUri(field));
+    };
+    if !matches!(scheme, "s3" | "gs" | "az") || rest.is_empty() {
+        return Err(BackupSidecarError::InvalidUri(field));
     }
+    if rest
+        .chars()
+        .any(|ch| ch.is_ascii_whitespace() || ch.is_control())
+    {
+        return Err(BackupSidecarError::InvalidUri(field));
+    }
+    let mut parts = rest.split('/');
+    let bucket = parts.next().unwrap_or_default();
+    if bucket.is_empty() || bucket == "." || bucket == ".." {
+        return Err(BackupSidecarError::InvalidUri(field));
+    }
+    let mut has_prefix = false;
+    for part in parts {
+        if part == ".." {
+            return Err(BackupSidecarError::InvalidUri(field));
+        }
+        if !part.is_empty() && part != "." {
+            has_prefix = true;
+        }
+    }
+    if !has_prefix {
+        return Err(BackupSidecarError::InvalidUri(field));
+    }
+    Ok(())
 }
 
 fn validate_timestamp(value: &str) -> Result<(), BackupSidecarError> {
     validate_required("target_time", value)?;
-    if value.len() >= 20 && value.contains('T') && value.ends_with('Z') {
+    if is_canonical_utc_timestamp(value) {
         Ok(())
     } else {
         Err(BackupSidecarError::InvalidTimestamp)
     }
+}
+
+fn validate_branch_name(value: &str) -> Result<(), BackupSidecarError> {
+    validate_required("branch_name", value)?;
+    if value == "." || value == ".." || value.contains("..") {
+        return Err(BackupSidecarError::InvalidBranchName);
+    }
+    if value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        Ok(())
+    } else {
+        Err(BackupSidecarError::InvalidBranchName)
+    }
+}
+
+fn validate_queryable_port(port: u16) -> Result<(), BackupSidecarError> {
+    if (1024..=65535).contains(&port) {
+        Ok(())
+    } else {
+        Err(BackupSidecarError::InvalidPort)
+    }
+}
+
+fn is_canonical_utc_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
+        return false;
+    }
+    for index in [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18] {
+        if !bytes[index].is_ascii_digit() {
+            return false;
+        }
+    }
+    let year = parse_fixed_u32(&bytes[0..4]);
+    let month = parse_fixed_u32(&bytes[5..7]);
+    let day = parse_fixed_u32(&bytes[8..10]);
+    let hour = parse_fixed_u32(&bytes[11..13]);
+    let minute = parse_fixed_u32(&bytes[14..16]);
+    let second = parse_fixed_u32(&bytes[17..19]);
+    if year == 0 || !(1..=12).contains(&month) {
+        return false;
+    }
+    let max_day = days_in_month(year, month);
+    (1..=max_day).contains(&day) && hour < 24 && minute < 60 && second < 60
+}
+
+fn parse_fixed_u32(bytes: &[u8]) -> u32 {
+    bytes
+        .iter()
+        .fold(0_u32, |acc, byte| acc * 10 + u32::from(byte - b'0'))
+}
+
+fn days_in_month(year: u32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: u32) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -299,6 +405,8 @@ pub struct BackupRuntimeState {
     pub archived_wal_segments: u64,
     pub pitr_restores: u64,
     pub queryable_branches: u64,
+    pub retention_deletions: u64,
+    pub failed_walg_invocations: u64,
     pub encrypted_artifacts: u64,
 }
 
@@ -327,6 +435,8 @@ impl BackupRuntime {
                 archived_wal_segments: 0,
                 pitr_restores: 0,
                 queryable_branches: 0,
+                retention_deletions: 0,
+                failed_walg_invocations: 0,
                 encrypted_artifacts: 0,
             },
         })
@@ -681,20 +791,38 @@ impl BackupEngine {
     }
 
     pub fn run_base_backup(&self) -> Result<BackupArtifact, BackupSidecarError> {
-        let invocation = self.walg.base_backup(&self.primary_pgdata)?;
+        let invocation = match self.walg.base_backup(&self.primary_pgdata) {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.record_walg_failure("base_backup", &error);
+                return Err(error.into());
+            }
+        };
         self.record_walg_invocation("base_backup", &invocation);
         let mut runtime = self.runtime.lock().expect("backup runtime mutex poisoned");
         runtime.run_backup_cycle()
     }
 
     pub fn wal_archive_status(&self) -> Result<WalgInvocation, BackupSidecarError> {
-        let invocation = self.walg.wal_archive_status()?;
+        let invocation = match self.walg.wal_archive_status() {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.record_walg_failure("wal_archive_status", &error);
+                return Err(error.into());
+            }
+        };
         self.record_walg_invocation("wal_archive_status", &invocation);
         Ok(invocation)
     }
 
     pub fn list_backups(&self) -> Result<WalgInvocation, BackupSidecarError> {
-        let invocation = self.walg.backup_list()?;
+        let invocation = match self.walg.backup_list() {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.record_walg_failure("backup_list", &error);
+                return Err(error.into());
+            }
+        };
         self.record_walg_invocation("backup_list", &invocation);
         Ok(invocation)
     }
@@ -739,17 +867,20 @@ impl BackupEngine {
                     stdout_excerpt: invocation.stdout.chars().take(512).collect(),
                 }
             }
-            Err(error) => PitrRestoreJob {
-                job_id: job_id.clone(),
-                target_time: plan.target_time.clone(),
-                source_archive_uri: plan.source_archive_uri.clone(),
-                target_cluster: plan.target_cluster.clone(),
-                target_directory: target_directory.clone(),
-                status: PitrRestoreStatus::Failed(error.to_string()),
-                started_at_epoch_seconds: now_epoch_seconds,
-                finished_at_epoch_seconds: Some(now_epoch_seconds),
-                stdout_excerpt: String::new(),
-            },
+            Err(error) => {
+                self.record_walg_failure("pitr_restore", &error);
+                PitrRestoreJob {
+                    job_id: job_id.clone(),
+                    target_time: plan.target_time.clone(),
+                    source_archive_uri: plan.source_archive_uri.clone(),
+                    target_cluster: plan.target_cluster.clone(),
+                    target_directory: target_directory.clone(),
+                    status: PitrRestoreStatus::Failed(error.to_string()),
+                    started_at_epoch_seconds: now_epoch_seconds,
+                    finished_at_epoch_seconds: Some(now_epoch_seconds),
+                    stdout_excerpt: String::new(),
+                }
+            }
         };
 
         let mut jobs = self.pitr_jobs.lock().expect("pitr jobs mutex poisoned");
@@ -786,7 +917,13 @@ impl BackupEngine {
         }
 
         let data_dir = self.branches.data_directory(plan);
-        let invocation = self.walg.pitr_restore(&data_dir, &plan.target_time)?;
+        let invocation = match self.walg.pitr_restore(&data_dir, &plan.target_time) {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.record_walg_failure("queryable_branch_restore", &error);
+                return Err(error.into());
+            }
+        };
         self.record_walg_invocation("queryable_branch_restore", &invocation);
         self.branches.write_recovery_config(plan, port)?;
         self.branches
@@ -820,8 +957,16 @@ impl BackupEngine {
     }
 
     pub fn delete_old(&self, retention_days: u32) -> Result<WalgInvocation, BackupSidecarError> {
-        let invocation = self.walg.delete_old(retention_days)?;
+        let invocation = match self.walg.delete_old(retention_days) {
+            Ok(invocation) => invocation,
+            Err(error) => {
+                self.record_walg_failure("delete_old", &error);
+                return Err(error.into());
+            }
+        };
         self.record_walg_invocation("delete_old", &invocation);
+        let mut runtime = self.runtime.lock().expect("backup runtime mutex poisoned");
+        runtime.state.retention_deletions += 1;
         Ok(invocation)
     }
 
@@ -911,6 +1056,16 @@ impl BackupEngine {
             .lock()
             .expect("walg invocation mutex poisoned");
         *last = Some(WalgInvocationRecord::from_invocation(operation, invocation));
+    }
+
+    fn record_walg_failure(&self, operation: &str, error: &WalgError) {
+        if let WalgError::NonZeroExit(invocation) = error {
+            self.record_walg_invocation(operation, invocation);
+        }
+        if matches!(error, WalgError::NonZeroExit(_) | WalgError::Spawn(_)) {
+            let mut runtime = self.runtime.lock().expect("backup runtime mutex poisoned");
+            runtime.state.failed_walg_invocations += 1;
+        }
     }
 }
 
@@ -1157,7 +1312,8 @@ fn parse_queryable_branch_body(
     let branch_name = json_field(body, "branch_name")?;
     let source_archive_uri = json_field(body, "source_archive_uri")?;
     let target_time = json_field(body, "target_time")?;
-    let port = json_u16(body, "port").unwrap_or(6543);
+    let port = json_optional_u16(body, "port")?.unwrap_or(6543);
+    validate_queryable_port(port)?;
     let plan = QueryableBackupBranchPlan {
         branch_name,
         source_archive_uri,
@@ -1194,28 +1350,56 @@ fn json_field(body: &str, key: &str) -> Result<String, BackupSidecarError> {
     Ok(after_quote[..end_quote].to_string())
 }
 
-fn json_u16(body: &str, key: &str) -> Option<u16> {
-    let needle = format!("\"{key}\"");
-    let start = body.find(&needle)?;
-    let after_key = &body[start + needle.len()..];
-    let colon = after_key.find(':')?;
-    let rest = after_key[colon + 1..].trim_start();
-    let end = rest
-        .find(|ch: char| !ch.is_ascii_digit())
-        .unwrap_or(rest.len());
-    rest[..end].parse::<u16>().ok()
+fn json_optional_u16(body: &str, key: &str) -> Result<Option<u16>, BackupSidecarError> {
+    let Some((digits, trailing)) = json_unsigned_number(body, key)? else {
+        return Ok(None);
+    };
+    validate_json_number_trailing(trailing)?;
+    digits
+        .parse::<u16>()
+        .map(Some)
+        .map_err(|_| BackupSidecarError::InvalidPort)
 }
 
 fn json_u32(body: &str, key: &str) -> Option<u32> {
+    let Some((digits, trailing)) = json_unsigned_number(body, key).ok().flatten() else {
+        return None;
+    };
+    if validate_json_number_trailing(trailing).is_err() {
+        return None;
+    }
+    digits.parse::<u32>().ok()
+}
+
+fn json_unsigned_number<'a>(
+    body: &'a str,
+    key: &str,
+) -> Result<Option<(&'a str, &'a str)>, BackupSidecarError> {
     let needle = format!("\"{key}\"");
-    let start = body.find(&needle)?;
+    let Some(start) = body.find(&needle) else {
+        return Ok(None);
+    };
     let after_key = &body[start + needle.len()..];
-    let colon = after_key.find(':')?;
+    let colon = after_key
+        .find(':')
+        .ok_or(BackupSidecarError::MalformedHttpRequest)?;
     let rest = after_key[colon + 1..].trim_start();
     let end = rest
         .find(|ch: char| !ch.is_ascii_digit())
         .unwrap_or(rest.len());
-    rest[..end].parse::<u32>().ok()
+    if end == 0 {
+        return Err(BackupSidecarError::MalformedHttpRequest);
+    }
+    Ok(Some((&rest[..end], &rest[end..])))
+}
+
+fn validate_json_number_trailing(trailing: &str) -> Result<(), BackupSidecarError> {
+    let trimmed = trailing.trim_start();
+    if trimmed.is_empty() || trimmed.starts_with(',') || trimmed.starts_with('}') {
+        Ok(())
+    } else {
+        Err(BackupSidecarError::MalformedHttpRequest)
+    }
 }
 
 fn field_name_for(key: &str) -> &'static str {
@@ -1323,11 +1507,13 @@ fn backup_status_json(status: &BackupStatus) -> String {
         .map(|value| json_string(value))
         .unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"completed_base_backups\":{},\"archived_wal_segments\":{},\"pitr_restores\":{},\"queryable_branches\":{},\"encrypted_artifacts\":{},\"next_scheduled_epoch_minute\":{},\"last_scheduled_run_epoch_seconds\":{},\"last_scheduler_error\":{},\"last_walg_invocation\":{}}}\n",
+        "{{\"completed_base_backups\":{},\"archived_wal_segments\":{},\"pitr_restores\":{},\"queryable_branches\":{},\"retention_deletions\":{},\"failed_walg_invocations\":{},\"encrypted_artifacts\":{},\"next_scheduled_epoch_minute\":{},\"last_scheduled_run_epoch_seconds\":{},\"last_scheduler_error\":{},\"last_walg_invocation\":{}}}\n",
         status.state.completed_base_backups,
         status.state.archived_wal_segments,
         status.state.pitr_restores,
         status.state.queryable_branches,
+        status.state.retention_deletions,
+        status.state.failed_walg_invocations,
         status.state.encrypted_artifacts,
         status.scheduler.next_epoch_minute,
         last_run,
@@ -1343,25 +1529,54 @@ fn backup_prometheus_metrics(status: &BackupStatus) -> String {
         .map(|invocation| invocation.elapsed_ms)
         .unwrap_or(0);
     format!(
-        "# HELP ai_blaise_backup_completed_base_backups Completed base backup count.\n\
-         # TYPE ai_blaise_backup_completed_base_backups counter\n\
-         ai_blaise_backup_completed_base_backups {}\n\
-         # HELP ai_blaise_backup_archived_wal_segments Archived WAL segment count.\n\
-         # TYPE ai_blaise_backup_archived_wal_segments counter\n\
-         ai_blaise_backup_archived_wal_segments {}\n\
-         # HELP ai_blaise_backup_pitr_restores PITR restore count.\n\
-         # TYPE ai_blaise_backup_pitr_restores counter\n\
-         ai_blaise_backup_pitr_restores {}\n\
-         # HELP ai_blaise_backup_queryable_branches Queryable read-only branch count.\n\
-         # TYPE ai_blaise_backup_queryable_branches gauge\n\
-         ai_blaise_backup_queryable_branches {}\n\
-         # HELP ai_blaise_backup_last_walg_elapsed_ms Last WAL-G invocation elapsed milliseconds.\n\
-         # TYPE ai_blaise_backup_last_walg_elapsed_ms gauge\n\
-         ai_blaise_backup_last_walg_elapsed_ms {}\n",
+        "# HELP ai_blaise_backup_completed_base_backups Completed base backup count.
+\
+         # TYPE ai_blaise_backup_completed_base_backups counter
+\
+         ai_blaise_backup_completed_base_backups {}
+\
+         # HELP ai_blaise_backup_archived_wal_segments Archived WAL segment count.
+\
+         # TYPE ai_blaise_backup_archived_wal_segments counter
+\
+         ai_blaise_backup_archived_wal_segments {}
+\
+         # HELP ai_blaise_backup_pitr_restores PITR restore count.
+\
+         # TYPE ai_blaise_backup_pitr_restores counter
+\
+         ai_blaise_backup_pitr_restores {}
+\
+         # HELP ai_blaise_backup_queryable_branches Queryable read-only branch count.
+\
+         # TYPE ai_blaise_backup_queryable_branches gauge
+\
+         ai_blaise_backup_queryable_branches {}
+\
+         # HELP ai_blaise_backup_retention_deletions Retention delete operation count.
+\
+         # TYPE ai_blaise_backup_retention_deletions counter
+\
+         ai_blaise_backup_retention_deletions {}
+\
+         # HELP ai_blaise_backup_failed_walg_invocations Failed WAL-G invocation count.
+\
+         # TYPE ai_blaise_backup_failed_walg_invocations counter
+\
+         ai_blaise_backup_failed_walg_invocations {}
+\
+         # HELP ai_blaise_backup_last_walg_elapsed_ms Last WAL-G invocation elapsed milliseconds.
+\
+         # TYPE ai_blaise_backup_last_walg_elapsed_ms gauge
+\
+         ai_blaise_backup_last_walg_elapsed_ms {}
+",
         status.state.completed_base_backups,
         status.state.archived_wal_segments,
         status.state.pitr_restores,
         status.state.queryable_branches,
+        status.state.retention_deletions,
+        status.state.failed_walg_invocations,
         last_elapsed,
     )
 }
@@ -1581,6 +1796,8 @@ mod tests {
         assert_eq!(report.state.archived_wal_segments, 3);
         assert_eq!(report.state.pitr_restores, 1);
         assert_eq!(report.state.queryable_branches, 1);
+        assert_eq!(report.state.retention_deletions, 0);
+        assert_eq!(report.state.failed_walg_invocations, 0);
         assert_eq!(report.state.encrypted_artifacts, 4);
     }
 
@@ -1608,6 +1825,34 @@ mod tests {
     }
 
     #[test]
+    fn pitr_restore_rejects_calendar_invalid_timestamp() {
+        let mut restore = canonical_pitr_restore_plan();
+        restore.target_time = "2026-02-30T12:00:00Z".to_string();
+
+        assert_eq!(
+            restore.validate(),
+            Err(BackupSidecarError::InvalidTimestamp)
+        );
+    }
+
+    #[test]
+    fn backup_job_rejects_malformed_object_store_uri() {
+        let mut job = canonical_backup_job();
+        job.contract.archive_uri = "s3://backups/../prod".to_string();
+
+        assert_eq!(
+            job.validate(),
+            Err(BackupSidecarError::InvalidUri("backup.archive_uri"))
+        );
+
+        job.contract.archive_uri = "file:///tmp/backups".to_string();
+        assert_eq!(
+            job.validate(),
+            Err(BackupSidecarError::InvalidUri("backup.archive_uri"))
+        );
+    }
+
+    #[test]
     fn queryable_branch_must_be_read_only() {
         let mut branch = canonical_queryable_branch_plan();
         branch.read_only = false;
@@ -1615,6 +1860,17 @@ mod tests {
         assert_eq!(
             branch.validate(),
             Err(BackupSidecarError::QueryableBranchMustBeReadOnly)
+        );
+    }
+
+    #[test]
+    fn queryable_branch_rejects_path_like_name() {
+        let mut branch = canonical_queryable_branch_plan();
+        branch.branch_name = "../prod".to_string();
+
+        assert_eq!(
+            branch.validate(),
+            Err(BackupSidecarError::InvalidBranchName)
         );
     }
 
@@ -1678,6 +1934,7 @@ mod tests {
             .expect("pitr job records failure result");
 
         assert_eq!(job.status.as_str(), "failed");
+        assert_eq!(engine.status().state.failed_walg_invocations, 1);
     }
 
     #[test]
@@ -1756,6 +2013,17 @@ mod tests {
             .expect("delete-old response");
         assert_eq!(deleted.status_code, 202);
         assert!(deleted.body.contains("\"operation\":\"delete_old\""));
+
+        let status = handle_backup_http_bytes(
+            &engine,
+            b"GET /backups/status HTTP/1.1
+Host: local
+
+",
+            1_716_148_800,
+        )
+        .expect("status after delete-old");
+        assert!(status.body.contains("\"retention_deletions\":1"));
     }
 
     #[test]
@@ -1813,6 +2081,42 @@ mod tests {
         assert_eq!(response.status_code, 202);
         assert!(response.body.contains("\"status\":\"succeeded\""));
         assert!(response.body.contains("\"target_cluster\""));
+    }
+
+    #[test]
+    fn http_branches_queryable_rejects_invalid_or_malformed_port() {
+        let engine = test_engine("/usr/bin/true");
+        let low_port = "{\"branch_name\":\"prod-at-noon\",\"source_archive_uri\":\"s3://backups/prod\",\"target_time\":\"2026-05-19T12:00:00Z\",\"port\":80}";
+        let request = format!(
+            "POST /branches/queryable HTTP/1.1
+Host: local
+Content-Type: application/json
+Content-Length: {}
+
+{}",
+            low_port.len(),
+            low_port
+        );
+        assert_eq!(
+            handle_backup_http_bytes(&engine, request.as_bytes(), 1_716_148_800),
+            Err(BackupSidecarError::InvalidPort)
+        );
+
+        let junk_port = "{\"branch_name\":\"prod-at-noon\",\"source_archive_uri\":\"s3://backups/prod\",\"target_time\":\"2026-05-19T12:00:00Z\",\"port\":6543junk}";
+        let request = format!(
+            "POST /branches/queryable HTTP/1.1
+Host: local
+Content-Type: application/json
+Content-Length: {}
+
+{}",
+            junk_port.len(),
+            junk_port
+        );
+        assert_eq!(
+            handle_backup_http_bytes(&engine, request.as_bytes(), 1_716_148_800),
+            Err(BackupSidecarError::MalformedHttpRequest)
+        );
     }
 
     #[test]

@@ -72,10 +72,10 @@ fn run_runtime_canonical() {
     });
 
     println!(
-        "cluster\tbase_destination\twal_archive\twal_segments\tbase_size_bytes\tencrypted\tpitr_target\ttarget_cluster\tqueryable_branch\tread_only\tcompleted_base_backups\tarchived_wal_segments\tpitr_restores\tqueryable_branches\tencrypted_artifacts"
+        "cluster\tbase_destination\twal_archive\twal_segments\tbase_size_bytes\tencrypted\tpitr_target\ttarget_cluster\tqueryable_branch\tread_only\tcompleted_base_backups\tarchived_wal_segments\tpitr_restores\tqueryable_branches\tretention_deletions\tfailed_walg_invocations\tencrypted_artifacts"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.backup.cluster,
         report.backup.base_destination_uri,
         report.backup.wal_archive_uri,
@@ -90,6 +90,8 @@ fn run_runtime_canonical() {
         report.state.archived_wal_segments,
         report.state.pitr_restores,
         report.state.queryable_branches,
+        report.state.retention_deletions,
+        report.state.failed_walg_invocations,
         report.state.encrypted_artifacts,
     );
 }
