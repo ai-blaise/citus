@@ -1,0 +1,992 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "repository": "ai-blaise/citus",
+    "base_branch": "bootstrap-v2",
+    "reference_branch": "bootstrap-v2-intermediate",
+    "reference_branch_use": "reference only; do not base merge-order work on this branch",
+    "pr_number_min": 70,
+    "captured_at": "2026-05-24T02:53:14Z",
+    "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url"
+  },
+  "checklist": [
+    {
+      "id": "before-each-merge",
+      "required": [
+        "Confirm the PR is open against bootstrap-v2 and the head branch matches this plan.",
+        "Do not merge a draft PR; convert the known blocker into a resolved note before promoting it.",
+        "Review the PR diff for shared-file conflicts in Makefile.ai-blaise, docs/ai-blaise/NEW_FEATURES.md, docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md, ci/ai-blaise/image-check.sh, ci/ai-blaise/v2-closure-check.sh, and benchmarks/timescale-ingest/ingest.py.",
+        "Run the PR's focused smoke/check commands after conflict resolution."
+      ]
+    },
+    {
+      "id": "after-each-batch",
+      "required": [
+        "Rebase or refresh remaining PRs against the updated bootstrap-v2 tip before continuing.",
+        "Run ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live and update this plan if metadata drifted.",
+        "Run the expensive Citus matrix only when the batch or path rules below require it."
+      ]
+    },
+    {
+      "id": "final-release-prep",
+      "required": [
+        "All PRs in this manifest must be merged or deliberately removed with a replacement plan.",
+        "ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live --require-no-drafts must pass immediately before promotion.",
+        "The final integrated bootstrap-v2 commit must run the expensive Citus matrix and the ai-blaise release gates."
+      ]
+    }
+  ],
+  "expensive_citus_matrix_policy": {
+    "default_rule": "Batch meaningful work first. Do not spend a full Citus matrix run on every metadata-only rebase, doc-only conflict, or isolated sidecar smoke if the focused gate covers the changed runtime. Run the matrix at the batch boundaries and high-risk path triggers below.",
+    "run_full_matrix_after_batches": [
+      "source-patch-foundation",
+      "ready-runtime-foundation",
+      "ready-operator-k8s",
+      "ready-release-evidence",
+      "draft-runtime-durability-upgrade-pool",
+      "draft-release-and-patch-audit"
+    ],
+    "run_immediately_when": [
+      "A merge or conflict resolution edits src/backend/distributed/**, src/include/distributed/**, src/test/regress/**, or patches/series.",
+      "A merge or conflict resolution edits images/citus-pg-overlay/extensions/**, SQL upgrade manifests, or installable extension SQL.",
+      "A merge changes .github/workflows/build_and_test.yml, .github/workflows/run_tests.yml, packaging-test-pipelines.yml, or the Citus test-matrix fanout itself.",
+      "A draft blocker is resolved by changing production runtime semantics rather than only metadata, docs, or CI wiring.",
+      "The integrated branch is being considered for release promotion or for replacing bootstrap-v2 as the active release train."
+    ],
+    "do_not_run_when": [
+      "Only this merge-plan JSON, its checker, or its Markdown companion changed.",
+      "Only PR titles, draft state, labels, or plan comments changed and the live metadata validator is the only failing check.",
+      "A PR was rebased with no semantic diff and focused checks already passed on the same patch content."
+    ],
+    "minimum_non_matrix_validation": [
+      "python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --offline",
+      "python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live",
+      "git diff --check"
+    ]
+  },
+  "integration_batches": [
+    {
+      "id": "merge-plan-governance",
+      "summary": "Merge the metadata-only plan and validator first so the remaining bootstrap-v2 train has a canonical checklist.",
+      "prs": [
+        107
+      ],
+      "run_expensive_citus_matrix_after": false,
+      "matrix_reason": "Docs and metadata-only validator; do not run the expensive Citus matrix for this batch unless conflict resolution touches source or matrix workflow paths."
+    },
+    {
+      "id": "source-patch-foundation",
+      "summary": "Merge upstream-targetable Citus patch artifacts and the operand extension build substrate before higher-level production evidence depends on them.",
+      "prs": [
+        78,
+        77,
+        81
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "PRs in this batch touch Citus patch series, distributed source, installable extension packaging, and PG17/PG18 operand image assumptions."
+    },
+    {
+      "id": "ready-runtime-foundation",
+      "summary": "Merge non-draft sidecar, pool, companion, auth, API, vectorizer, tool, and transaction-runtime surfaces after the patch foundation is stable.",
+      "prs": [
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        82,
+        86,
+        84,
+        85
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "Batch contains extension SQL and broad Cargo workspace/runtime wiring; run focused smokes first, then one batched matrix."
+    },
+    {
+      "id": "ready-operator-k8s",
+      "summary": "Merge non-draft operator reconciler, EndpointSlice, security, deployment guardrail, and live Kubernetes harness work once runtime contracts exist.",
+      "prs": [
+        79,
+        80,
+        83,
+        89,
+        90,
+        93,
+        91,
+        92
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "Kubernetes and operator changes do not all require per-PR Citus matrices, but the integrated tranche needs one matrix before release monitoring claims it is stable."
+    },
+    {
+      "id": "ready-release-evidence",
+      "summary": "Merge non-draft release monitor, observability contract, and DR restore-depth evidence after the runtime and operator surfaces are present.",
+      "prs": [
+        88,
+        94,
+        95
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "The tranche closes broad release evidence loops; run focused gates first, then one matrix before moving into remaining draft blockers."
+    },
+    {
+      "id": "draft-runtime-durability-upgrade-pool",
+      "summary": "Hold cohabitation matrix, sidecar API runtime closure, migration durability, upgrade rollback, and pool load behavior until draft blockers and focused checks clear.",
+      "prs": [
+        87,
+        104,
+        101,
+        96,
+        98
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "Cohabitation, sidecar runtime closure, SQL invariants, upgrade, and pool data-plane semantics should receive one batched matrix after focused gates pass."
+    },
+    {
+      "id": "draft-release-and-patch-audit",
+      "summary": "Land patch audit, environment preflight, performance evidence, runbook command validation, machine-derived gap inventory, agentmemory recovery docs, and release publishability last so final manifests reflect all merged evidence.",
+      "prs": [
+        99,
+        100,
+        102,
+        105,
+        103,
+        106,
+        97
+      ],
+      "run_expensive_citus_matrix_after": true,
+      "matrix_reason": "This is the final pre-promotion tranche; run the complete Citus matrix and ai-blaise release gates at its integrated tip."
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 107,
+      "order": 1,
+      "batch": "merge-plan-governance",
+      "title": "[codex] Add bootstrap-v2 merge order plan",
+      "head": "codex/merge-order-integration-plan-20260524",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "This metadata-only plan PR should be reviewed and merged first so subsequent PRs can validate against the canonical order."
+      ],
+      "watch_paths": [
+        "ci/ai-blaise/bootstrap-v2-merge-plan-check.py",
+        "docs/ai-blaise/BOOTSTRAP_V2_MERGE_PLAN.md",
+        "docs/ai-blaise/bootstrap-v2-merge-plan.json"
+      ]
+    },
+    {
+      "number": 78,
+      "order": 2,
+      "batch": "source-patch-foundation",
+      "title": "Add router planner Citus patch artifacts",
+      "head": "codex/prod-citus-patches-0004-0006-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "patches/series",
+        "patches/0004-hashtable-on-planner-hotpath.patch",
+        "patches/0006-fast-path-router-no-coord-rt.patch",
+        "companion/src/router_assist.rs",
+        "ci/ai-blaise/patches-check.sh"
+      ]
+    },
+    {
+      "number": 77,
+      "order": 3,
+      "batch": "source-patch-foundation",
+      "title": "Add cohabit clock and detection patches",
+      "head": "codex/prod-citus-patches-0007-0008-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        78
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "patches/series",
+        "patches/0007-citus-clock-cohabit-pg-cron.patch",
+        "patches/0008-cohabit-extensions-detection-api.patch",
+        "src/backend/distributed/clock",
+        "src/include/distributed"
+      ]
+    },
+    {
+      "number": 70,
+      "order": 4,
+      "batch": "ready-runtime-foundation",
+      "title": "Add production backup WAL-G runtime",
+      "head": "codex/prod-backup-walg-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/backup",
+        "ci/ai-blaise/sidecar-backup-smoke.sh",
+        "Makefile.ai-blaise",
+        "docs/ai-blaise/NEW_FEATURES.md"
+      ]
+    },
+    {
+      "number": 71,
+      "order": 5,
+      "batch": "ready-runtime-foundation",
+      "title": "Harden CDC and realtime runtimes",
+      "head": "codex/prod-cdc-realtime-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/cdc",
+        "sidecar/realtime",
+        "ci/ai-blaise/sidecar-cdc-smoke.sh",
+        "ci/ai-blaise/sidecar-realtime-smoke.sh",
+        "Cargo.lock"
+      ]
+    },
+    {
+      "number": 72,
+      "order": 6,
+      "batch": "ready-runtime-foundation",
+      "title": "Harden pool runtime depth",
+      "head": "codex/prod-pool-depth-hardening-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "pool/src",
+        "pool/README.md",
+        "ci/ai-blaise/mcp-db-smoke.sh",
+        "ci/ai-blaise/image-check.sh"
+      ]
+    },
+    {
+      "number": 73,
+      "order": 7,
+      "batch": "ready-runtime-foundation",
+      "title": "Add production auth sidecar runtime",
+      "head": "codex/prod-auth-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/auth",
+        "sidecar/auth/migrations",
+        "ci/ai-blaise/auth-sidecar-smoke.sh",
+        "ci/ai-blaise/features-doc-check.sh"
+      ]
+    },
+    {
+      "number": 74,
+      "order": 8,
+      "batch": "ready-runtime-foundation",
+      "title": "Add production API trio runtime gates",
+      "head": "codex/prod-api-trio-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        73
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/postgrest",
+        "sidecar/graphql",
+        "sidecar/edge_functions",
+        "sidecar/shared/src/runtime.rs",
+        "ci/ai-blaise/api-trio-runtime-smoke.sh"
+      ]
+    },
+    {
+      "number": 75,
+      "order": 9,
+      "batch": "ready-runtime-foundation",
+      "title": "[codex] Add production vectorizer runtime",
+      "head": "codex/prod-vectorizer-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/vectorizer",
+        "ci/ai-blaise/sidecar-vectorizer-smoke.sh",
+        "Cargo.lock",
+        "docs/ai-blaise/NEW_FEATURES.md"
+      ]
+    },
+    {
+      "number": 76,
+      "order": 10,
+      "batch": "ready-runtime-foundation",
+      "title": "Harden Raft HLC txn-status runtimes",
+      "head": "codex/prod-raft-hlc-txn-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/raft",
+        "sidecar/hlc",
+        "sidecar/txn_status",
+        "companion/src/txn_coord.rs",
+        "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql"
+      ]
+    },
+    {
+      "number": 79,
+      "order": 11,
+      "batch": "ready-operator-k8s",
+      "title": "Add production reconcilers batch A",
+      "head": "codex/prod-reconcilers-a-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/controllers",
+        "operator/src/reconcile",
+        "ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh",
+        "operator/README.md"
+      ]
+    },
+    {
+      "number": 80,
+      "order": 12,
+      "batch": "ready-operator-k8s",
+      "title": "Add production reconcilers batch B",
+      "head": "codex/prod-reconcilers-b-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        79
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/controllers",
+        "operator/src/reconcile",
+        "operator/CRDS.md",
+        "operator/MODIFICATION.md"
+      ]
+    },
+    {
+      "number": 81,
+      "order": 13,
+      "batch": "source-patch-foundation",
+      "title": "[codex] Add Bundle1 PG17 source-build path",
+      "head": "codex/prod-bundle1-source-build-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        78,
+        77
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "images/citus-pg-overlay/Dockerfile",
+        "images/citus-pg-overlay/extensions",
+        "docs/ai-blaise/BUNDLED_EXTENSIONS.md",
+        "ci/ai-blaise/sql-extension-smoke.sh"
+      ]
+    },
+    {
+      "number": 82,
+      "order": 14,
+      "batch": "ready-runtime-foundation",
+      "title": "Add companion runtime depth A",
+      "head": "codex/prod-companion-runtime-depth-a-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "companion/src/migration.rs",
+        "companion/src/queue.rs",
+        "companion/src/replication_conflict.rs",
+        "ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
+      ]
+    },
+    {
+      "number": 83,
+      "order": 15,
+      "batch": "ready-operator-k8s",
+      "title": "Add Batch C operator reconcilers",
+      "head": "codex/prod-reconcilers-c-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        79,
+        80
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/controllers",
+        "operator/src/reconcile",
+        "docs/ai-blaise/MIGRATIONS.md",
+        "ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh"
+      ]
+    },
+    {
+      "number": 84,
+      "order": 16,
+      "batch": "ready-runtime-foundation",
+      "title": "[codex] Add sidecar HA retarget primitives",
+      "head": "codex/prod-sidecar-ha-retarget-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "sidecar/shared/src/ha.rs",
+        "sidecar/shared/src/main.rs",
+        "sidecar/shared/README.md",
+        "images/citus-timescale-cohabitation/Dockerfile"
+      ]
+    },
+    {
+      "number": 85,
+      "order": 17,
+      "batch": "ready-runtime-foundation",
+      "title": "[codex] Add snapshot-backed tools UI runtimes",
+      "head": "codex/prod-tools-ui-runtime-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [],
+      "known_blockers": [],
+      "watch_paths": [
+        "tools/citus-admin",
+        "tools/citus-schema-designer",
+        "tools/citus-tui",
+        "tools/citus-watch",
+        "ci/ai-blaise/tools-ui-runtime-smoke.sh"
+      ]
+    },
+    {
+      "number": 86,
+      "order": 18,
+      "batch": "ready-runtime-foundation",
+      "title": "[codex] add companion plan runtime depth B",
+      "head": "codex/prod-companion-runtime-depth-b-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        82
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "companion/src/plan_runtime.rs",
+        "companion/src/bin/companion_contracts.rs",
+        "ci/ai-blaise/companion-plan-runtime-smoke.sh",
+        "companion/README.md"
+      ]
+    },
+    {
+      "number": 89,
+      "order": 19,
+      "batch": "ready-operator-k8s",
+      "title": "[codex] Harden operator execution boundary",
+      "head": "codex/prod-operator-status-boundary-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        79,
+        80,
+        83
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/controllers/boundary.rs",
+        "operator/src/controllers",
+        "ci/ai-blaise/operator-boundary-smoke.sh",
+        "operator/CRDS.md"
+      ]
+    },
+    {
+      "number": 90,
+      "order": 20,
+      "batch": "ready-operator-k8s",
+      "title": "Add sidecar EndpointSlice retarget contract",
+      "head": "codex/prod-endpointslice-retarget-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        84,
+        89
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/reconcile/sidecar_endpoint.rs",
+        "sidecar/shared/src/ha.rs",
+        "ci/ai-blaise/endpointslice-retarget-smoke.sh",
+        ".github/workflows/ci-operator.yml"
+      ]
+    },
+    {
+      "number": 93,
+      "order": 21,
+      "batch": "ready-operator-k8s",
+      "title": "Add operator security enforcement contracts",
+      "head": "codex/prod-security-enforcement-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        89
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "operator/src/reconcile/security.rs",
+        "operator/src/reconcile/citus_cluster.rs",
+        "ci/ai-blaise/security-enforcement-smoke.sh",
+        "Cargo.lock"
+      ]
+    },
+    {
+      "number": 91,
+      "order": 22,
+      "batch": "ready-operator-k8s",
+      "title": "[codex] Add Kubernetes deployment guardrail contract",
+      "head": "codex/prod-k8s-deployment-guardrails-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        89,
+        90,
+        93
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "deploy/contracts",
+        "ci/ai-blaise/deploy-check.sh",
+        "ci/ai-blaise/k8s-guardrails-check.sh",
+        "docs/ai-blaise/RUNBOOKS/production.md"
+      ]
+    },
+    {
+      "number": 92,
+      "order": 23,
+      "batch": "ready-operator-k8s",
+      "title": "Add live Kubernetes e2e harness",
+      "head": "codex/prod-live-k8s-e2e-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        91
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/live-k8s-e2e.sh",
+        "ci/ai-blaise/kind-production-smoke.sh",
+        "docs/ai-blaise/LIVE_K8S_E2E.md",
+        "deploy/README.md"
+      ]
+    },
+    {
+      "number": 88,
+      "order": 24,
+      "batch": "ready-release-evidence",
+      "title": "Add production release gate monitor",
+      "head": "codex/prod-release-gate-monitor-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/release-gate-monitor.sh",
+        ".github/workflows/ci-release-gate-monitor.yml",
+        "docs/ai-blaise/RELEASE_GATE_MONITOR.md",
+        "docs/ai-blaise/RELEASING.md"
+      ]
+    },
+    {
+      "number": 94,
+      "order": 25,
+      "batch": "ready-release-evidence",
+      "title": "Add observability contract smoke",
+      "head": "codex/prod-observability-contracts-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        82,
+        84,
+        86,
+        89,
+        90,
+        91,
+        92,
+        93
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/observability-contracts-check.sh",
+        ".github/workflows/ci-observability-contracts.yml",
+        "docs/ai-blaise/OBSERVABILITY.md",
+        "sidecar/shared/src/main.rs"
+      ]
+    },
+    {
+      "number": 95,
+      "order": 26,
+      "batch": "ready-release-evidence",
+      "title": "Add DR restore depth verification gate",
+      "head": "codex/prod-dr-restore-depth-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        70
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/dr-restore-depth-check.sh",
+        "e2e/src/dr_restore_depth.rs",
+        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
+        "docs/ai-blaise/RUNBOOKS/pitr-restore.md"
+      ]
+    },
+    {
+      "number": 87,
+      "order": 27,
+      "batch": "draft-runtime-durability-upgrade-pool",
+      "title": "[codex] Add Timescale 2.28 cohabitation matrix",
+      "head": "codex/prod-timescale-228-matrix-20260523",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        77,
+        81
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "PR body states Timescale 2.28 evidence depends on the published timescale/timescaledb:2.28.0-pg17 image tag; keep the skip-with-note truthful until upstream publication is verified.",
+        "Full Citus matrix jobs were still pending when metadata was refreshed."
+      ],
+      "watch_paths": [
+        "ci/ai-blaise/ts-version-matrix-smoke.sh",
+        "tests/cohab-matrix",
+        "docs/ai-blaise/COHABITATION.md",
+        ".github/workflows/ci-image.yml"
+      ]
+    },
+    {
+      "number": 104,
+      "order": 28,
+      "batch": "draft-runtime-durability-upgrade-pool",
+      "title": "[codex] Add sidecar API runtime smoke",
+      "head": "codex/sidecar-runtime-contract-smoke-20260524",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        74
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "Sidecar API runtime smoke should land after PR #74 so PostgREST, GraphQL, and edge-function runtime checks build on the API trio surface.",
+        "Touches production-gap-audit and shared runtime code; run focused sidecar API smoke before the batch matrix."
+      ],
+      "watch_paths": [
+        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
+        "sidecar/shared/src/runtime.rs",
+        "sidecar/edge_functions/src/lib.rs",
+        "sidecar/graphql/README.md",
+        "ci/ai-blaise/production-gap-audit.sh"
+      ]
+    },
+    {
+      "number": 101,
+      "order": 29,
+      "batch": "draft-runtime-durability-upgrade-pool",
+      "title": "[codex] Add migration durability invariant gates",
+      "head": "codex/data-durability-invariants",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        76,
+        83,
+        89
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/migration-invariants-smoke.sh",
+        "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql",
+        "companion/src/migration.rs",
+        "operator/src/reconcile/migration.rs",
+        "sidecar/schema_job/src/lib.rs"
+      ]
+    },
+    {
+      "number": 96,
+      "order": 30,
+      "batch": "draft-runtime-durability-upgrade-pool",
+      "title": "[codex] Add upgrade rollback guardrails",
+      "head": "codex/upgrade-rollback-guardrails-20260523-235847",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        76,
+        81,
+        101
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/upgrade-rollback-guardrails.sh",
+        "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv",
+        "images/citus-pg-overlay/Dockerfile",
+        "docs/ai-blaise/RUNBOOKS/upgrade.md"
+      ]
+    },
+    {
+      "number": 98,
+      "order": 31,
+      "batch": "draft-runtime-durability-upgrade-pool",
+      "title": "[codex] Harden pool load failure behavior",
+      "head": "codex/prod-pool-load-depth-20260523",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        72
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "pool/src/admission.rs",
+        "pool/src/proxy.rs",
+        "ci/ai-blaise/pool-proxy-smoke.sh",
+        "pool/README.md"
+      ]
+    },
+    {
+      "number": 99,
+      "order": 32,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Add Citus patch production gate audit",
+      "head": "codex/patch-production-integration-audit-20260524020118",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        78,
+        77
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "benchmarks/citus-patches/production-gates.json",
+        "ci/ai-blaise/citus-patch-production-audit.sh",
+        "docs/ai-blaise/UPSTREAM_SYNC.md",
+        ".github/workflows/ci-patches.yml"
+      ]
+    },
+    {
+      "number": 100,
+      "order": 33,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Add release environment preflight checks",
+      "head": "codex/release-env-preflight",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        88
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "ci/ai-blaise/env-preflight.sh",
+        "Makefile.ai-blaise",
+        "ci/ai-blaise/benchmark-smoke.sh",
+        "ci/ai-blaise/license-check.sh",
+        "docs/ai-blaise/DEVELOPER_ENVIRONMENT.md"
+      ]
+    },
+    {
+      "number": 102,
+      "order": 34,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Harden performance evidence gates",
+      "head": "codex/slo-performance-evidence-hardening-20260524015908",
+      "base": "bootstrap-v2",
+      "status": "ready",
+      "is_draft": false,
+      "dependency_hints": [
+        88,
+        99,
+        100
+      ],
+      "known_blockers": [],
+      "watch_paths": [
+        "benchmarks/performance-evidence-thresholds.json",
+        "ci/ai-blaise/performance-evidence-check.sh",
+        "benchmarks/microbenches/run-all.sh",
+        "ci/ai-blaise/production-gap-audit.sh",
+        "docs/ai-blaise/BENCHMARKS.md"
+      ]
+    },
+    {
+      "number": 105,
+      "order": 35,
+      "batch": "draft-release-and-patch-audit",
+      "title": "Add runbook command validation gate",
+      "head": "codex/runbook-command-checks-20260524-022745",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        95,
+        96,
+        100
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "Runbook command validation should land after DR restore, upgrade rollback, and release environment preflight checks so documented operational commands match the integrated gates.",
+        "Touches production-readiness workflow and operational runbooks; keep in the final release-hardening tranche."
+      ],
+      "watch_paths": [
+        "ci/ai-blaise/runbook-command-check.sh",
+        ".github/workflows/ci-production-readiness.yml",
+        "docs/ai-blaise/RUNBOOKS/disaster-recovery.md",
+        "docs/ai-blaise/RUNBOOKS/production.md",
+        "docs/ai-blaise/RUNBOOKS/upgrade.md"
+      ]
+    },
+    {
+      "number": 103,
+      "order": 36,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Make production gap inventory machine-derived",
+      "head": "codex/production-gap-inventory-audit",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        88,
+        102,
+        104
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "Machine-derived production gap inventory should land after sidecar API runtime and performance evidence changes so the final audit vocabulary reflects all release evidence gates.",
+        "Touches production-gap-audit and production readiness prose; keep in the final release-hardening tranche to avoid stale count churn."
+      ],
+      "watch_paths": [
+        "ci/ai-blaise/production-gap-audit.sh",
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
+      ]
+    },
+    {
+      "number": 106,
+      "order": 37,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Document agentmemory VM recovery",
+      "head": "codex/agentmemory-recovery-ops-note-20260524",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        103
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T02:53:14Z.",
+        "Agentmemory recovery docs reference the production inventory audit gap covered by PR #103, so keep them behind the machine-derived audit update.",
+        "Docs-only operational recovery evidence; validate with docs/feature gates rather than a Citus matrix unless conflicts touch matrix paths."
+      ],
+      "watch_paths": [
+        "docs/ai-blaise/AGENTMEMORY_RECOVERY.md"
+      ]
+    },
+    {
+      "number": 97,
+      "order": 38,
+      "batch": "draft-release-and-patch-audit",
+      "title": "Harden ai-blaise release image publishability",
+      "head": "codex/release-publishability-20260523-2357",
+      "base": "bootstrap-v2",
+      "status": "blocked",
+      "is_draft": false,
+      "dependency_hints": [
+        81,
+        88,
+        91,
+        96,
+        100,
+        102,
+        103,
+        105,
+        106
+      ],
+      "known_blockers": [
+        "Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan.",
+        "Release publishability should land last after environment, performance, gap-audit, runbook, agentmemory recovery, upgrade, image, deployment, and release-monitor gates are integrated."
+      ],
+      "watch_paths": [
+        "scripts/citus-scale/build-app-images.sh",
+        "ci/ai-blaise/release-publishability-check.sh",
+        "docs/ai-blaise/RELEASING.md",
+        "images/README.ai-blaise.md"
+      ]
+    }
+  ]
+}
