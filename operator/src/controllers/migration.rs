@@ -340,8 +340,10 @@ mod tests {
             .command_for_resource("users-display-name", &None)
             .expect("command");
         let plan = MigrationReconcilePlan::try_from(&command).expect("plan");
+        let apply = plan.apply_plan();
         assert_eq!(plan.target_state, SchemaJobState::WriteOnly);
-        assert_eq!(plan.apply_plan().steps.len(), 5);
+        assert_eq!(apply.steps.len(), 6);
+        assert!(apply.sql_script().contains("migration_assert_invariants"));
     }
 
     #[test]
