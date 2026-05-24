@@ -42,6 +42,26 @@ infrastructure and recorded with measured evidence.
    index freshness against the source cluster.
 4. Keep the restored branch read-only until application owners sign off.
 
+## Machine-Verifiable Restore Depth Gate
+
+Before a release can cite this runbook as DR readiness evidence, run the
+restore-depth gate from the repo root:
+
+```bash
+REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh
+```
+
+The gate fails closed unless the model covers a read-only branch before any
+destructive restore, a destructive plan id for in-place restore, two distinct
+operator approvals, KMS evidence, WAL archive continuity, PITR evidence, and
+validation-query evidence. With Docker required, the same gate runs a real
+PostgreSQL PITR smoke: it takes a `pg_basebackup`, archives WAL with
+`archive_command`, restores to `recovery_target_time`, promotes the restored
+cluster, and emits `dr_restore_depth_postgres_smoke` proving the before-target
+row is present while the after-target row is absent. This is not production
+evidence by itself; it is the executable minimum that keeps the checklist from
+becoming only prose.
+
 ## Exit Criteria
 
 - Region failover completes within the declared survival objective.

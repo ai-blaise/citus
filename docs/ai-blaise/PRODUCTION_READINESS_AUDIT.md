@@ -281,6 +281,14 @@ more production-ready than the artifacts justified.
   artifact restore, sidecar readiness, and conflict-policy evidence is measured
   against real runtime infrastructure. The production gap audit machine-checks
   that guardrail.
+- The backup/PITR runbooks now have a restore-depth gate backed by
+  `ci/ai-blaise/dr-restore-depth-check.sh`. The gate validates fail-closed
+  restore configuration, read-only branch-before-restore policy, destructive
+  plan-id requirements, two-operator approval evidence, KMS evidence, WAL
+  archive continuity, PITR target/replay evidence, and tenant/placement/ledger/
+  search validation query evidence. With `REQUIRE_DOCKER=1`, it also runs a
+  real PostgreSQL PITR smoke using `pg_basebackup`, WAL archiving,
+  `recovery_target_time`, and restored-row verification.
 - Custom component READMEs, CRD/catalog docs, benchmark docs, and image
   overview docs now carry a shared production boundary: unless a feature is
   explicitly `Status: production-ready` in `docs/ai-blaise/NEW_FEATURES.md`,
@@ -651,6 +659,7 @@ alpha: TS19 has a patch-level clock reservation but no live Citus+pg_cron boot
 evidence yet, and TS20 has deterministic companion detection proof but no live
 patched-Citus C API caller yet. The other 113 feature headings remain
 `Status: alpha`. There are no remaining source-only feature markers: the
+
 former V2 addendum rows were promoted to alpha feature headings with
 deterministic executable evidence. This is acceptable for catalog integrity,
 but it is not a production claim for the full feature plan.

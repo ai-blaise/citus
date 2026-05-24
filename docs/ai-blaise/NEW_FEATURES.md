@@ -2948,7 +2948,10 @@ code executes recovery.
 - In-source: `FEATURE: B3` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: B3` in `sidecar/backup/src/lib.rs`
 - In-source: `FEATURE: B3` in `tools/citusctl/src/lib.rs`
+- In-source: `FEATURE: B3` in `e2e/src/dr_restore_depth.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_backup -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
+- CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 
 ### B4: Backup-As-Data-Source
 
@@ -3054,6 +3057,8 @@ deployment-specific tooling.
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-a`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`
+- Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
+- CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 
 ## Tenant Operations
 
@@ -7567,6 +7572,8 @@ alpha.
 
 - In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
+- CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 - Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
   `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
   acceptance; alpha until full runs land)

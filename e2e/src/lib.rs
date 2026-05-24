@@ -1,10 +1,15 @@
 //! ai-blaise Citus critical-path acceptance harness.
 
+pub mod dr_restore_depth;
 pub mod operator_catalog;
 pub mod release_gates;
 pub mod runtime_contracts;
 pub mod timescale_on_citus;
 
+pub use dr_restore_depth::{
+    DrRestoreDepthAcceptance, DrRestoreDepthError, DrRestoreDepthReport, DrRestoreGate,
+    PitrEvidence, RestoreDrillConfig, RestoreMode, ValidationQueryEvidence, WalArchiveEvidence,
+};
 pub use operator_catalog::{
     OperatorCatalogGate, V2OperatorCatalogAcceptance, V2OperatorCatalogAcceptanceError,
     V2OperatorCatalogPlan,
