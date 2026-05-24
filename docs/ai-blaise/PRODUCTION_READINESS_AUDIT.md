@@ -163,6 +163,11 @@ more production-ready than the artifacts justified.
     backed by the maintained PostgreSQL driver, native TLS support, read-only
     transactions, bounded result materialization, row/timeout ceilings,
     `EXPLAIN ANALYZE` rejection, and a real PostgreSQL smoke.
+40. Release and PR integration status could be checked only by reading several
+    separate local gates plus GitHub check pages. That left room for stale V2
+    command counts, missing production evidence, toy or alpha overclaims,
+    missing benchmark formatting, or broad matrix failures to be overlooked
+    while still claiming release readiness.
 
 ## Corrections
 
@@ -706,3 +711,9 @@ sidecar before the corresponding feature is promoted with measured production
 evidence.
 
 - Current inventory: contains 276 source `FEATURE:` markers and 276 feature headings; 163 narrow headings are `Status: production-ready`; the other 113 feature headings remain `Status: alpha`.
+- The release gate monitor now centralizes the bounded integration contract for
+  production wording, executable evidence, V2 domain-command freshness,
+  benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
+  and parallel matrix monitoring via `gh pr checks`. It is wired into
+  `gate-close` and the `release-gate-monitor` workflow, while the repository
+  remains not production-ready as a whole until production-release mode passes.

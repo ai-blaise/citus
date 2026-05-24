@@ -61,6 +61,10 @@ try:
     else:
         raise AssertionError("mcp-sidecar HTTP server did not become ready")
 
+    status, data = request("GET", "/healthz")
+    assert status == 200
+    assert '"component":"mcp-sidecar"' in data
+
     status, data = request("GET", "/metrics")
     assert status == 200
     assert 'ai_blaise_sidecar_ready{component="mcp-sidecar"} 1' in data
