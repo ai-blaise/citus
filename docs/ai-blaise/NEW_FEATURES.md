@@ -7673,8 +7673,10 @@ claims for the full feature behavior.
 API keys outside literal values and points operators at External Secrets.
 
 **Current boundary**: The executable operations runner validates the expected
-secret-control shape, while live External Secrets reconciliation and provider
-credential rotation remain alpha.
+secret-control shape. The operator security supply-chain runner additionally
+validates deterministic ExternalSecret manifest shape for runtime Secret refs
+and fail-closed missing-binding behavior. Live External Secrets reconciliation,
+provider credential rotation, and controller/provider status remain alpha.
 
 **Citus comparison**: Vanilla Citus does not define vector-provider secret
 binding.
@@ -7685,6 +7687,7 @@ binding.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
 
 ### A10: Streaming Chat Completion UDF
 
@@ -8298,10 +8301,12 @@ overlay credentials.
 
 **Current boundary**: The operations runner verifies the intended control,
 and the operator security runner rejects inline secret values, requires named
-Secret references for pool and sidecar workloads, and fails closed unless each
-runtime Secret reference has an ExternalSecret binding with a SecretStore,
-target key, remote key, remote property, and positive refresh interval. Live
-External Secrets controller reconciliation and rotation evidence remain alpha.
+Secret references for pool and sidecar workloads, renders deterministic
+ExternalSecret manifest metadata, and fails closed unless each runtime Secret
+reference has an ExternalSecret binding with a SecretStore, target key, remote
+key, remote property, and positive refresh interval. Live External Secrets
+controller reconciliation, provider authentication, status conditions, and
+rotation evidence remain alpha.
 
 **Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
 
@@ -8313,6 +8318,8 @@ External Secrets controller reconciliation and rotation evidence remain alpha.
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
+- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
 
 ### Sec8: TLS Everywhere
 
@@ -8329,9 +8336,10 @@ sidecar-to-sidecar traffic.
 security runner requires TLS 1.3, client certificates, certificate Secret
 references, ExternalSecret-backed runtime Secret refs, fail-closed auth
 boundaries, no Secret RBAC grants, and restricted pod/container security
-contexts for pool and sidecar workloads. Certificate issuance, actual
-Kubernetes mounts, mTLS traffic enforcement, and live rotation
-tests remain alpha.
+contexts for pool and sidecar workloads. The supply-chain runner also validates
+the rendered TLS Secret-reference shape (`tls.crt`, `tls.key`, `ca.crt`) and
+weak-TLS fail-closed behavior. Certificate issuance, actual Kubernetes mounts,
+mTLS traffic enforcement, and live rotation tests remain alpha.
 
 **Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
 contract.
@@ -8344,6 +8352,8 @@ contract.
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
+- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
 
 ### Sec9: SBOM And Cosign Attestation
 
@@ -8357,8 +8367,12 @@ contract.
 metadata.
 
 **Current boundary**: The operations runner validates the control record;
-signed artifact publication, verification policy, and admission enforcement
-remain alpha.
+the operator security supply-chain runner validates deterministic SBOM/cosign
+metadata contracts for digest-pinned images, `.spdx.json` SBOM artifact paths,
+`.sigstore.json` cosign bundle paths, SLSA provenance predicate metadata, and
+fail-closed mutable-image or malformed-SBOM inputs. It does not publish SBOMs,
+sign images, verify a registry signature, enforce admission policy, or prove a
+release artifact exists in a registry; those remain alpha.
 
 **Citus comparison**: Vanilla Citus does not require ai-blaise release
 attestations.
@@ -8366,9 +8380,12 @@ attestations.
 **References**:
 
 - In-source: `FEATURE: Sec9` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: Sec9` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI: `ci/ai-blaise/security-supply-chain-smoke.sh`
 
 ### Sto2: file_attachment Domain Type
 

@@ -29,3 +29,5 @@ jobs:
         run: bash ci/ai-blaise/endpointslice-retarget-smoke.sh
       - name: Run operator security enforcement smoke
         run: bash ci/ai-blaise/security-enforcement-smoke.sh
+      - name: Run security supply-chain smoke
+        run: bash ci/ai-blaise/security-supply-chain-smoke.sh

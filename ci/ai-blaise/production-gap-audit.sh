@@ -44,7 +44,9 @@ STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
+SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
+OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
 RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
@@ -641,6 +643,32 @@ for phrase in (
     if phrase.lower() not in audit_compact:
         fail(f"production audit lost pool routing/security caveat: {phrase}")
 
+security_supply_chain_smoke = read(SECURITY_SUPPLY_CHAIN_SMOKE)
+for required in (
+    "run-security-supply-chain-canonical",
+    "external-secrets.io/v1beta1",
+    "MutableImageReference",
+    "InvalidSbomPath",
+    "slsa.dev/provenance/v1",
+    "security-supply-chain-smoke ok",
+):
+    if required not in security_supply_chain_smoke:
+        fail(f"security supply-chain smoke lost required assertion: {required}")
+
+operator_workflow = read(OPERATOR_WORKFLOW)
+if "security-supply-chain-smoke.sh" not in operator_workflow:
+    fail("operator workflow must run security-supply-chain-smoke.sh")
+
+for phrase in (
+    "ExternalSecret manifest",
+    "TLS Secret-reference",
+    "SBOM/cosign metadata",
+    "does not publish SBOMs",
+    "does not verify a registry signature",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"production audit lost security supply-chain boundary phrase: {phrase}")
+
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
 gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 for target in (
@@ -648,6 +676,8 @@ for target in (
     "sidecar-api-runtime-smoke",
     "storage-sidecar-runtime-smoke",
     "pool-routing-security-smoke",
+    "security-enforcement-smoke",
+    "security-supply-chain-smoke",
     "runbook-command-check",
 ):
     if target not in phony_lines:

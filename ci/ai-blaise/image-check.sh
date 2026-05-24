@@ -24,6 +24,7 @@ observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
+security_supply_chain_smoke="ci/ai-blaise/security-supply-chain-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -54,7 +55,8 @@ for file in \
   "${observability_replication_smoke}" \
   "${app_digest_smoke}" \
   "${observability_contracts_check}" \
-  "${ai_sql_contract_smoke}"; do
+  "${ai_sql_contract_smoke}" \
+  "${security_supply_chain_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -99,6 +101,10 @@ if [[ ! -x "${app_digest_smoke}" ]]; then
 fi
 if [[ ! -x "${observability_contracts_check}" ]]; then
   echo "missing executable observability contracts smoke: ${observability_contracts_check}" >&2
+  exit 1
+fi
+if [[ ! -x "${security_supply_chain_smoke}" ]]; then
+  echo "missing executable security supply-chain smoke: ${security_supply_chain_smoke}" >&2
   exit 1
 fi
 
@@ -599,7 +605,7 @@ grep -Fq "ai_blaise_citus_pool_requests_total" "${pool_proxy_smoke}"
 grep -Fq "ai_blaise_citus_pool_rejected_connections_total" "${pool_proxy_smoke}"
 grep -Fq "pool CIDR deny smoke unexpectedly allowed PostgreSQL traffic" "${pool_proxy_smoke}"
 grep -Fq "PostgreSQL init process complete" "${pool_proxy_smoke}"
-grep -Fq "raw PostgreSQL pipelined simple-query smoke passed through pool proxy" "${pool_proxy_smoke}"
+grep -Fq "raw PostgreSQL pipelined simple-query and settings-bucket smoke passed through pool proxy" "${pool_proxy_smoke}"
 grep -Fq "pack_simple_query(\"SELECT 'pipeline_one'::text\")" "${pool_proxy_smoke}"
 grep -Fq "pack_simple_query(\"SELECT 'pipeline_two'::text\")" "${pool_proxy_smoke}"
 grep -Fq 'expected = [["pipeline_one"], ["pipeline_two"]]' "${pool_proxy_smoke}"
@@ -669,6 +675,9 @@ grep -Fq "Sec5 ledger entries must reject mutation" ci/ai-blaise/sql-extension-s
 grep -Fq "Sec6 ledger seals must reject deletion" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "Sec6 ledger seal accepted an unsupported algorithm" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "uid claim must not be empty" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "run-security-supply-chain-canonical" "${security_supply_chain_smoke}"
+grep -Fq "slsa.dev/provenance/v1" "${security_supply_chain_smoke}"
+grep -Fq "security-supply-chain-smoke ok" "${security_supply_chain_smoke}"
 grep -Fq "companion_internal.seed_extension_catalog" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_extension_feature_coverage" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_extension_required('A7')" ci/ai-blaise/sql-extension-smoke.sh
