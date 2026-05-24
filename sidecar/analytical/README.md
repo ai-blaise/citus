@@ -20,11 +20,13 @@ Current implemented surface:
 - `DuckDbExtensionCatalog`
 - `MotherDuckConnector`
 - `AnalyticalRuntime`
+- `AnalyticalRuntimePolicy`
 - `AnalyticalRuntimeReport`
 - `canonical_analytical_execution_plan()`
 - `canonical_analytical_runtime_report()`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 These contracts cover `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 `FEATURE: L4`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`,
@@ -32,3 +34,10 @@ and `FEATURE: L13`. The runtime flow validates mirror/object-store alignment,
 DataFusion pushdown shape preservation, Iceberg snapshot commit reporting,
 federated catalog publication, DuckDB extension loading, MotherDuck session
 accounting, and logical-replication mirror materialization counters.
+
+Current runtime reports `external_io_attempted=false`,
+`query_engine_executed=false`, and
+`evidence_boundary=deterministic-runtime-report-only`. This is alpha
+hardening for validation and accounting, not production evidence for live
+DataFusion, DuckDB, MotherDuck, Iceberg commits, object-store IO, or Citus
+planner integration.

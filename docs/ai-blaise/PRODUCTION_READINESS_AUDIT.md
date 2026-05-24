@@ -604,6 +604,12 @@ Rule 10 completion for this branch requires local and VM verification of:
   not be cited as evidence for planner hint enforcement, background
   auto-promotion workers, distributed workload baselining, external durable
   storage, or pg_hint_plan/sr_plan runtime integration.
+- Analytical/lakehouse hardening now adds fail-closed runtime-policy checks and
+  a deterministic canonical smoke for L1/L2/L3/L4/L5/L6/L8/L12/L13. The smoke
+  records `external_io_attempted=false`, `query_engine_executed=false`, and
+  `evidence_boundary=deterministic-runtime-report-only`, so it must not be cited
+  as production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg
+  commits, object-store IO, or Citus planner integration.
 - Agentmemory checkpointing for this depth-B slice was unavailable on the VM
   because `http://127.0.0.1:3911` refused connections; no memory files were
   edited or erased.

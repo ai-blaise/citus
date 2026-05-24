@@ -3442,6 +3442,14 @@ sidecar.
 - In-source: `FEATURE: L1` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
+
+**Current boundary**: The L1/L2/L3/L4/L5/L6/L8/L12/L13 analytical runtime is
+an alpha deterministic report path. It records `external_io_attempted=false`,
+`query_engine_executed=false`, and
+`evidence_boundary=deterministic-runtime-report-only`; this must not be cited as
+production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg commits,
+object-store IO, or Citus planner integration.
 
 ### L2: Rust Analytical Server
 
@@ -3465,6 +3473,7 @@ analytical server.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L2` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L3: Iceberg, Parquet, and Delta Reads
 
@@ -3488,6 +3497,7 @@ tables through a sidecar.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L3` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L4: DataFusion Pushdown
 
@@ -3510,6 +3520,7 @@ predicate intent instead of scanning full object-store tables.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L4` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L5: Iceberg Snapshot Commit At Prepare
 
@@ -3533,6 +3544,7 @@ transaction boundaries.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L5` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L6: Lakehouse Federation Catalogs
 
@@ -3557,6 +3569,7 @@ external engines.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L6` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L8: Mooncake-Style Logical-Replication Mirror
 
@@ -3584,6 +3597,7 @@ analytical mirror.
 - In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L9: Two-Step Aggregates Push To Workers
 
@@ -3641,6 +3655,7 @@ code from extension repositories.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L12` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L13: MotherDuck Connector
 
@@ -3663,6 +3678,7 @@ binding rather than an ambient runtime setting.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L13` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ## Auto API
 

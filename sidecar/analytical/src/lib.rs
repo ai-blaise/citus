@@ -65,8 +65,8 @@ impl LakehouseReadPlan {
     fn validate(&self) -> Result<(), AnalyticalSidecarError> {
         validate_qualified_name("lakehouse.table", &self.table)?;
         validate_object_uri("lakehouse.object_uri", &self.object_uri)?;
-        validate_required_list("lakehouse.projected_columns", &self.projected_columns)?;
-        validate_optional_list("lakehouse.predicates", &self.predicates)
+        validate_identifier_list("lakehouse.projected_columns", &self.projected_columns)?;
+        validate_predicates("lakehouse.predicates", &self.predicates)
     }
 }
 
@@ -88,8 +88,8 @@ pub struct DataFusionPushdownPlan {
 impl DataFusionPushdownPlan {
     fn validate(&self) -> Result<(), AnalyticalSidecarError> {
         validate_required("pushdown.plan_id", &self.plan_id)?;
-        validate_required_list("pushdown.projected_columns", &self.projected_columns)?;
-        validate_optional_list("pushdown.predicates", &self.predicates)
+        validate_identifier_list("pushdown.projected_columns", &self.projected_columns)?;
+        validate_predicates("pushdown.predicates", &self.predicates)
     }
 }
 
@@ -139,7 +139,7 @@ pub struct DuckDbExtensionCatalog {
 
 impl DuckDbExtensionCatalog {
     fn validate(&self) -> Result<(), AnalyticalSidecarError> {
-        validate_required_list("duckdb.allowed_extensions", &self.allowed_extensions)
+        validate_identifier_list("duckdb.allowed_extensions", &self.allowed_extensions)
     }
 }
 
@@ -161,7 +161,9 @@ pub enum AnalyticalSidecarError {
     InvalidIdentifier(&'static str),
     InvalidLsn,
     InvalidObjectUri(&'static str),
+    InvalidPredicate(&'static str),
     MissingRequiredField(&'static str),
+    UnsupportedRuntimeConfig(&'static str),
     MirrorStorageMismatch,
     PushdownShapeMismatch,
     SharedContract(String),
@@ -173,7 +175,13 @@ impl fmt::Display for AnalyticalSidecarError {
             Self::InvalidIdentifier(field) => write!(formatter, "{field} must be a SQL identifier"),
             Self::InvalidLsn => write!(formatter, "LSN must use the PostgreSQL HEX/HEX form"),
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
+            Self::InvalidPredicate(field) => {
+                write!(formatter, "{field} contains an unsupported predicate shape")
+            }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::UnsupportedRuntimeConfig(reason) => {
+                write!(formatter, "unsupported analytical runtime config: {reason}")
+            }
             Self::MirrorStorageMismatch => {
                 write!(
                     formatter,
@@ -226,6 +234,38 @@ fn validate_optional_list(
     Ok(())
 }
 
+fn validate_identifier_list(
+    field: &'static str,
+    values: &[String],
+) -> Result<(), AnalyticalSidecarError> {
+    validate_required_list(field, values)?;
+    for value in values {
+        validate_identifier(field, value)?;
+    }
+    Ok(())
+}
+
+fn validate_predicates(
+    field: &'static str,
+    values: &[String],
+) -> Result<(), AnalyticalSidecarError> {
+    validate_optional_list(field, values)?;
+    for value in values {
+        if !value.chars().all(is_supported_predicate_character) {
+            return Err(AnalyticalSidecarError::InvalidPredicate(field));
+        }
+    }
+    Ok(())
+}
+
+fn is_supported_predicate_character(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(
+            character,
+            ' ' | '_' | '.' | '<' | '>' | '=' | '!' | '(' | ')' | '\'' | '"' | '-' | ','
+        )
+}
+
 fn validate_identifier(field: &'static str, value: &str) -> Result<(), AnalyticalSidecarError> {
     validate_required(field, value)?;
     if value
@@ -272,6 +312,39 @@ fn validate_lsn(value: &str) -> Result<(), AnalyticalSidecarError> {
         Ok(())
     } else {
         Err(AnalyticalSidecarError::InvalidLsn)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AnalyticalRuntimePolicy {
+    pub allowed_engines: Vec<AnalyticalEngine>,
+    pub allowed_object_uri_schemes: Vec<String>,
+    pub max_pushdown_limit: u64,
+    pub external_io_enabled: bool,
+}
+
+impl AnalyticalRuntimePolicy {
+    fn validate(&self) -> Result<(), AnalyticalSidecarError> {
+        if self.allowed_engines.is_empty() {
+            return Err(AnalyticalSidecarError::MissingRequiredField(
+                "runtime.allowed_engines",
+            ));
+        }
+        validate_identifier_list(
+            "runtime.allowed_object_uri_schemes",
+            &self.allowed_object_uri_schemes,
+        )?;
+        if self.max_pushdown_limit == 0 {
+            return Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "runtime.max_pushdown_limit must be greater than zero",
+            ));
+        }
+        if self.external_io_enabled {
+            return Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "external object-store IO is not implemented in this runtime boundary",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -325,20 +398,34 @@ pub struct AnalyticalRuntimeReport {
     pub duckdb_extensions: Vec<String>,
     pub motherduck_database: Option<String>,
     pub state: AnalyticalRuntimeState,
+    pub runtime_policy: AnalyticalRuntimePolicy,
+    pub external_io_attempted: bool,
+    pub query_engine_executed: bool,
+    pub evidence_boundary: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AnalyticalRuntime {
     plan: AnalyticalSidecarPlan,
+    policy: AnalyticalRuntimePolicy,
     state: AnalyticalRuntimeState,
 }
 
 impl AnalyticalRuntime {
     pub fn new(plan: AnalyticalSidecarPlan) -> Result<Self, AnalyticalSidecarError> {
+        Self::new_with_policy(plan, canonical_analytical_runtime_policy())
+    }
+
+    pub fn new_with_policy(
+        plan: AnalyticalSidecarPlan,
+        policy: AnalyticalRuntimePolicy,
+    ) -> Result<Self, AnalyticalSidecarError> {
         plan.validate()?;
+        policy.validate()?;
 
         Ok(Self {
             plan,
+            policy,
             state: AnalyticalRuntimeState {
                 lakehouse_reads: 0,
                 pushed_down_plans: 0,
@@ -359,7 +446,9 @@ impl AnalyticalRuntime {
         &mut self,
     ) -> Result<AnalyticalRuntimeReport, AnalyticalSidecarError> {
         self.plan.validate()?;
+        self.policy.validate()?;
         self.ensure_runtime_shape()?;
+        self.ensure_runtime_policy()?;
 
         let pushed_down = true;
         let mirrored_cdc_events = deterministic_mirrored_events(&self.plan);
@@ -418,6 +507,10 @@ impl AnalyticalRuntime {
             duckdb_extensions,
             motherduck_database,
             state: self.state.clone(),
+            runtime_policy: self.policy.clone(),
+            external_io_attempted: false,
+            query_engine_executed: false,
+            evidence_boundary: "deterministic-runtime-report-only".to_string(),
         })
     }
 
@@ -432,6 +525,42 @@ impl AnalyticalRuntime {
         }
         Ok(())
     }
+
+    fn ensure_runtime_policy(&self) -> Result<(), AnalyticalSidecarError> {
+        if !self.policy.allowed_engines.contains(&self.plan.engine) {
+            return Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "analytical engine is not enabled by runtime policy",
+            ));
+        }
+        let scheme = object_uri_scheme(&self.plan.lakehouse.object_uri).ok_or(
+            AnalyticalSidecarError::InvalidObjectUri("lakehouse.object_uri"),
+        )?;
+        if !self
+            .policy
+            .allowed_object_uri_schemes
+            .iter()
+            .any(|allowed| allowed == scheme)
+        {
+            return Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "lakehouse object URI scheme is not enabled by runtime policy",
+            ));
+        }
+        if self
+            .plan
+            .pushdown
+            .limit
+            .is_some_and(|limit| limit > self.policy.max_pushdown_limit)
+        {
+            return Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "pushdown limit exceeds runtime policy",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn object_uri_scheme(value: &str) -> Option<&str> {
+    value.split_once("://").map(|(scheme, _)| scheme)
 }
 
 fn deterministic_mirrored_events(plan: &AnalyticalSidecarPlan) -> u64 {
@@ -489,6 +618,15 @@ pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
             database: "analytics".to_string(),
             token_secret_ref: "motherduck-token".to_string(),
         }),
+    }
+}
+
+pub fn canonical_analytical_runtime_policy() -> AnalyticalRuntimePolicy {
+    AnalyticalRuntimePolicy {
+        allowed_engines: vec![AnalyticalEngine::DataFusion],
+        allowed_object_uri_schemes: vec!["s3".to_string()],
+        max_pushdown_limit: 50_000,
+        external_io_enabled: false,
     }
 }
 
@@ -554,6 +692,79 @@ mod tests {
     }
 
     #[test]
+    fn analytical_runtime_reports_non_live_boundary() {
+        let report = canonical_analytical_runtime_report().expect("runtime report");
+
+        assert!(!report.external_io_attempted);
+        assert!(!report.query_engine_executed);
+        assert_eq!(
+            report.evidence_boundary,
+            "deterministic-runtime-report-only"
+        );
+        assert_eq!(
+            report.runtime_policy.allowed_engines,
+            [AnalyticalEngine::DataFusion]
+        );
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_disabled_engine() {
+        let mut plan = canonical_analytical_plan();
+        plan.engine = AnalyticalEngine::DuckDb;
+        let mut runtime = AnalyticalRuntime::new(plan).expect("runtime");
+
+        assert_eq!(
+            runtime.execute_lakehouse_query(),
+            Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "analytical engine is not enabled by runtime policy"
+            ))
+        );
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_external_io_enabled_policy() {
+        let mut policy = canonical_analytical_runtime_policy();
+        policy.external_io_enabled = true;
+
+        assert_eq!(
+            AnalyticalRuntime::new_with_policy(canonical_analytical_plan(), policy),
+            Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "external object-store IO is not implemented in this runtime boundary"
+            ))
+        );
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_unallowed_object_scheme() {
+        let mut policy = canonical_analytical_runtime_policy();
+        policy.allowed_object_uri_schemes = vec!["gs".to_string()];
+        let mut runtime = AnalyticalRuntime::new_with_policy(canonical_analytical_plan(), policy)
+            .expect("runtime");
+
+        assert_eq!(
+            runtime.execute_lakehouse_query(),
+            Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "lakehouse object URI scheme is not enabled by runtime policy"
+            ))
+        );
+    }
+
+    #[test]
+    fn analytical_runtime_rejects_pushdown_limit_over_policy() {
+        let mut policy = canonical_analytical_runtime_policy();
+        policy.max_pushdown_limit = 1_000;
+        let mut runtime = AnalyticalRuntime::new_with_policy(canonical_analytical_plan(), policy)
+            .expect("runtime");
+
+        assert_eq!(
+            runtime.execute_lakehouse_query(),
+            Err(AnalyticalSidecarError::UnsupportedRuntimeConfig(
+                "pushdown limit exceeds runtime policy"
+            ))
+        );
+    }
+
+    #[test]
     fn analytical_runtime_rejects_mirror_storage_mismatch() {
         let mut plan = canonical_analytical_plan();
         plan.lakehouse.object_uri = "s3://lake/warehouse/other".to_string();
@@ -574,6 +785,32 @@ mod tests {
         assert_eq!(
             runtime.execute_lakehouse_query(),
             Err(AnalyticalSidecarError::PushdownShapeMismatch)
+        );
+    }
+
+    #[test]
+    fn lakehouse_read_rejects_invalid_projection_identifier() {
+        let mut plan = canonical_analytical_plan();
+        plan.lakehouse.projected_columns = vec!["tenant id".to_string()];
+
+        assert_eq!(
+            plan.validate(),
+            Err(AnalyticalSidecarError::InvalidIdentifier(
+                "lakehouse.projected_columns"
+            ))
+        );
+    }
+
+    #[test]
+    fn lakehouse_read_rejects_unsupported_predicate_shape() {
+        let mut plan = canonical_analytical_plan();
+        plan.lakehouse.predicates = vec!["total > 0; drop table public.orders".to_string()];
+
+        assert_eq!(
+            plan.validate(),
+            Err(AnalyticalSidecarError::InvalidPredicate(
+                "lakehouse.predicates"
+            ))
         );
     }
 

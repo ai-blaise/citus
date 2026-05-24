@@ -23,6 +23,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-canonical
       - name: Run canonical analytical runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical
+      - name: Run analytical runtime smoke
+        run: bash ci/ai-blaise/sidecar-analytical-smoke.sh
 
   shared:
     runs-on: ubuntu-latest
