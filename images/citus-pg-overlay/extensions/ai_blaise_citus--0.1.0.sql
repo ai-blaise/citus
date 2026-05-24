@@ -2,6 +2,7 @@
 
 CREATE SCHEMA IF NOT EXISTS companion_internal;
 CREATE SCHEMA IF NOT EXISTS companion;
+CREATE SCHEMA IF NOT EXISTS storage;
 
 
 CREATE TABLE IF NOT EXISTS companion_internal.txn_status_records (
@@ -382,6 +383,221 @@ CREATE TABLE IF NOT EXISTS companion_internal.extension_catalog_contracts (
     registered_at timestamptz NOT NULL DEFAULT now()
 );
 
+
+-- FEATURE: Sto2
+CREATE FUNCTION storage.file_attachment_is_valid(p_value jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+DECLARE
+    bucket text;
+    content_type text;
+    object_key text;
+    object_metadata jsonb;
+    payload_key text;
+    sha256 text;
+    size_bytes numeric;
+BEGIN
+    IF jsonb_typeof(p_value) <> 'object' THEN
+        RETURN false;
+    END IF;
+
+    FOR payload_key IN SELECT jsonb_object_keys(p_value) LOOP
+        IF payload_key NOT IN (
+            'bucket',
+            'object_key',
+            'content_type',
+            'size_bytes',
+            'sha256',
+            'metadata'
+        ) THEN
+            RETURN false;
+        END IF;
+    END LOOP;
+
+    IF NOT p_value ?& ARRAY['bucket', 'object_key', 'content_type', 'size_bytes', 'sha256'] THEN
+        RETURN false;
+    END IF;
+    IF jsonb_typeof(p_value->'bucket') <> 'string'
+       OR jsonb_typeof(p_value->'object_key') <> 'string'
+       OR jsonb_typeof(p_value->'content_type') <> 'string'
+       OR jsonb_typeof(p_value->'size_bytes') <> 'number'
+       OR jsonb_typeof(p_value->'sha256') <> 'string' THEN
+        RETURN false;
+    END IF;
+
+    bucket := p_value->>'bucket';
+    object_key := p_value->>'object_key';
+    content_type := p_value->>'content_type';
+    sha256 := p_value->>'sha256';
+    size_bytes := (p_value->>'size_bytes')::numeric;
+    object_metadata := COALESCE(p_value->'metadata', '{}'::jsonb);
+
+    IF bucket !~ '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$'
+       OR bucket LIKE '%.%.'
+       OR bucket LIKE '%..%'
+       OR bucket LIKE '%.-%'
+       OR bucket LIKE '%-.%' THEN
+        RETURN false;
+    END IF;
+    IF object_key = ''
+       OR length(object_key) > 1024
+       OR object_key LIKE '/%'
+       OR object_key LIKE '%//%'
+       OR object_key ~ '(^|/)\.\.?($|/)'
+       OR position(chr(92) IN object_key) > 0 THEN
+        RETURN false;
+    END IF;
+    IF content_type = ''
+       OR length(content_type) > 255
+       OR content_type !~ '^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$' THEN
+        RETURN false;
+    END IF;
+    IF size_bytes <> trunc(size_bytes)
+       OR size_bytes < 0
+       OR size_bytes > 5497558138880 THEN
+        RETURN false;
+    END IF;
+    IF sha256 !~ '^[0-9a-f]{64}$' THEN
+        RETURN false;
+    END IF;
+    IF jsonb_typeof(object_metadata) <> 'object' THEN
+        RETURN false;
+    END IF;
+
+    RETURN true;
+EXCEPTION WHEN OTHERS THEN
+    RETURN false;
+END;
+$$;
+
+CREATE DOMAIN storage.file_attachment AS jsonb
+CHECK (storage.file_attachment_is_valid(VALUE));
+
+CREATE FUNCTION storage.file_attachment(
+    p_bucket text,
+    p_object_key text,
+    p_content_type text,
+    p_size_bytes bigint,
+    p_sha256 text,
+    p_metadata jsonb DEFAULT '{}'::jsonb
+)
+RETURNS storage.file_attachment
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+AS $$
+    SELECT jsonb_build_object(
+        'bucket', p_bucket,
+        'object_key', p_object_key,
+        'content_type', p_content_type,
+        'size_bytes', p_size_bytes,
+        'sha256', p_sha256,
+        'metadata', COALESCE(p_metadata, '{}'::jsonb)
+    )::storage.file_attachment;
+$$;
+
+CREATE FUNCTION storage.file_attachment_bucket(p_attachment storage.file_attachment)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT p_attachment::jsonb->>'bucket';
+$$;
+
+CREATE FUNCTION storage.file_attachment_object_key(p_attachment storage.file_attachment)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT p_attachment::jsonb->>'object_key';
+$$;
+
+CREATE FUNCTION storage.file_attachment_content_type(p_attachment storage.file_attachment)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT p_attachment::jsonb->>'content_type';
+$$;
+
+CREATE FUNCTION storage.file_attachment_size_bytes(p_attachment storage.file_attachment)
+RETURNS bigint
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT (p_attachment::jsonb->>'size_bytes')::bigint;
+$$;
+
+CREATE FUNCTION storage.file_attachment_sha256(p_attachment storage.file_attachment)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT p_attachment::jsonb->>'sha256';
+$$;
+
+CREATE FUNCTION storage.file_attachment_metadata(p_attachment storage.file_attachment)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT COALESCE(p_attachment::jsonb->'metadata', '{}'::jsonb);
+$$;
+
+CREATE FUNCTION storage.file_attachment_uri(p_attachment storage.file_attachment)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+    SELECT 'storage://' || storage.file_attachment_bucket(p_attachment)
+        || '/' || storage.file_attachment_object_key(p_attachment);
+$$;
+
+CREATE TABLE IF NOT EXISTS storage.file_attachment_refs (
+    ref_id bigserial PRIMARY KEY,
+    tenant_id text NOT NULL CHECK (btrim(tenant_id) <> ''),
+    owner_id text NOT NULL CHECK (btrim(owner_id) <> ''),
+    owner_kind text NOT NULL DEFAULT 'user' CHECK (btrim(owner_kind) <> ''),
+    attachment storage.file_attachment NOT NULL,
+    bucket text GENERATED ALWAYS AS (storage.file_attachment_bucket(attachment)) STORED,
+    object_key text GENERATED ALWAYS AS (storage.file_attachment_object_key(attachment)) STORED,
+    content_type text GENERATED ALWAYS AS (storage.file_attachment_content_type(attachment)) STORED,
+    size_bytes bigint GENERATED ALWAYS AS (storage.file_attachment_size_bytes(attachment)) STORED,
+    sha256 text GENERATED ALWAYS AS (storage.file_attachment_sha256(attachment)) STORED,
+    object_metadata jsonb GENERATED ALWAYS AS (storage.file_attachment_metadata(attachment)) STORED,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    deleted_at timestamptz,
+    UNIQUE (tenant_id, bucket, object_key)
+);
+
+CREATE INDEX IF NOT EXISTS file_attachment_refs_tenant_owner_created_idx
+    ON storage.file_attachment_refs(tenant_id, owner_kind, owner_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS file_attachment_refs_sha256_idx
+    ON storage.file_attachment_refs(sha256);
+CREATE INDEX IF NOT EXISTS file_attachment_refs_bucket_object_idx
+    ON storage.file_attachment_refs(bucket, object_key);
+CREATE INDEX IF NOT EXISTS file_attachment_refs_metadata_idx
+    ON storage.file_attachment_refs USING gin (object_metadata);
+
 CREATE FUNCTION companion_feature_status()
 RETURNS TABLE(feature_id text, feature_name text, status text)
 LANGUAGE sql
@@ -429,6 +645,7 @@ AS $$
         ('O2', 'local activity stats view', 'sql-runtime'),
         ('O3', 'replication lag view', 'sql-runtime'),
         ('R4', 'idle transaction detector', 'sql-runtime'),
+        ('Sto2', 'file_attachment domain type', 'sql-runtime'),
         ('Auth2', 'tenant-aware claims', 'sql-runtime'),
         ('Sec1', 'RLS helpers', 'sql-runtime'),
         ('Sec2', 'JWT verification UDF', 'sql-runtime'),

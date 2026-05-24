@@ -330,6 +330,10 @@ DECLARE
   tenant_archive_id bigint;
   extension_seed_count integer;
   extension_preload_libraries text[];
+  sto2_attachment storage.file_attachment;
+  sto2_ref_id bigint;
+  sto2_uri text;
+  sto2_metadata jsonb;
 BEGIN
   SELECT count(*) INTO status_count FROM companion_feature_status();
   IF status_count < 60 THEN
@@ -367,10 +371,10 @@ BEGIN
       'JS2', 'M13', 'Geo2', 'Geo3',
       'A1', 'TS9', 'M7', 'T8', 'L9', 'TS13', 'TS14', 'TS15', 'TS16', 'TS17',
       'C10', 'M2', 'S14', 'TO3', 'TO4', 'TO5',
-      'O1', 'O2', 'O3', 'R4'
+      'O1', 'O2', 'O3', 'R4', 'Sto2'
     )
       AND status = 'sql-runtime'
-  ) <> 43 THEN
+  ) <> 44 THEN
     RAISE EXCEPTION 'companion_feature_status must mark custom SQL runtime features as sql-runtime';
   END IF;
   IF (
@@ -455,6 +459,93 @@ BEGIN
     IF SQLERRM <> 'unsupported extension tier: experimental' THEN
       RAISE;
     END IF;
+  END;
+
+
+  sto2_attachment := storage.file_attachment(
+    'tenant-files',
+    'uploads/report.pdf',
+    'application/pdf',
+    1024,
+    repeat('a', 64),
+    jsonb_build_object('original_name', 'report.pdf', 'scan_status', 'pending')
+  );
+  IF storage.file_attachment_bucket(sto2_attachment) <> 'tenant-files'
+     OR storage.file_attachment_object_key(sto2_attachment) <> 'uploads/report.pdf'
+     OR storage.file_attachment_content_type(sto2_attachment) <> 'application/pdf'
+     OR storage.file_attachment_size_bytes(sto2_attachment) <> 1024
+     OR storage.file_attachment_sha256(sto2_attachment) <> repeat('a', 64) THEN
+    RAISE EXCEPTION 'Sto2 file_attachment accessors returned unexpected values';
+  END IF;
+  sto2_metadata := storage.file_attachment_metadata(sto2_attachment);
+  IF sto2_metadata->>'scan_status' <> 'pending' THEN
+    RAISE EXCEPTION 'Sto2 metadata accessor returned unexpected value: %', sto2_metadata;
+  END IF;
+  sto2_uri := storage.file_attachment_uri(sto2_attachment);
+  IF sto2_uri <> 'storage://tenant-files/uploads/report.pdf' THEN
+    RAISE EXCEPTION 'Sto2 file_attachment URI mismatch: %', sto2_uri;
+  END IF;
+  INSERT INTO storage.file_attachment_refs(tenant_id, owner_id, owner_kind, attachment)
+  VALUES ('tenant-a', 'user-123', 'user', sto2_attachment)
+  RETURNING ref_id INTO sto2_ref_id;
+  IF sto2_ref_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM storage.file_attachment_refs
+    WHERE ref_id = sto2_ref_id
+      AND tenant_id = 'tenant-a'
+      AND owner_id = 'user-123'
+      AND bucket = 'tenant-files'
+      AND object_key = 'uploads/report.pdf'
+      AND content_type = 'application/pdf'
+      AND size_bytes = 1024
+      AND sha256 = repeat('a', 64)
+      AND object_metadata->>'original_name' = 'report.pdf'
+  ) THEN
+    RAISE EXCEPTION 'Sto2 file_attachment_refs persistence failed';
+  END IF;
+  BEGIN
+    PERFORM storage.file_attachment(
+      'Tenant_Files',
+      'uploads/report.pdf',
+      'application/pdf',
+      1024,
+      repeat('a', 64)
+    );
+    RAISE EXCEPTION 'Sto2 accepted invalid bucket';
+  EXCEPTION WHEN check_violation THEN
+  END;
+  BEGIN
+    PERFORM storage.file_attachment(
+      'tenant-files',
+      '../secrets.txt',
+      'text/plain',
+      8,
+      repeat('b', 64)
+    );
+    RAISE EXCEPTION 'Sto2 accepted path traversal';
+  EXCEPTION WHEN check_violation THEN
+  END;
+  BEGIN
+    PERFORM storage.file_attachment(
+      'tenant-files',
+      'uploads/bad-sha.txt',
+      'text/plain',
+      8,
+      upper(repeat('c', 64))
+    );
+    RAISE EXCEPTION 'Sto2 accepted malformed sha256';
+  EXCEPTION WHEN check_violation THEN
+  END;
+  BEGIN
+    PERFORM storage.file_attachment(
+      'tenant-files',
+      'uploads/negative.txt',
+      'text/plain',
+      -1,
+      repeat('d', 64)
+    );
+    RAISE EXCEPTION 'Sto2 accepted negative size_bytes';
+  EXCEPTION WHEN check_violation THEN
   END;
 
   vectorizer_sql := companion_internal.register_vectorizer(
