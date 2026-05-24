@@ -7,15 +7,26 @@
 > Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
-GraphQL endpoint built on bundled `pg_graphql` and companion helper metadata.
+GraphQL endpoint boundary for bundled `pg_graphql` and companion distributed
+metadata.
 
-Current implemented surface:
+Implemented surface:
 
-- `GraphqlSidecarPlan`
-- `GraphqlSchemaBinding`
-- `DistributedGraphqlBinding`
-- `GraphqlAuthPolicy`
-- `canonical_graphql_execution_plan()`
-- `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`
+- `GraphqlSidecarPlan`, `GraphqlSchemaBinding`, `DistributedGraphqlBinding`,
+  and `GraphqlAuthPolicy` validation.
+- RLS/JWT tenant-claim enforcement before request planning.
+- SQL rendering through the `graphql.resolve(...)` pg_graphql boundary with
+  request JWT claims installed through `set_config('request.jwt.claims', ...)`.
+- Deterministic persisted-plan and subscription registration state.
+- HTTP front door for `/healthz`, `/readyz`, `/metrics`, GraphiQL, `/graphql/v1`,
+  and the `/graphql/ws` subscription transport boundary.
+- `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`.
+- `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`.
+- `bash ci/ai-blaise/api-trio-runtime-smoke.sh` boots the service and verifies
+  readiness, query handling, and subscription-boundary registration over real
+  TCP.
 
 These contracts cover `FEATURE: API3`, `FEATURE: API4`, and `FEATURE: API5`.
+`FEATURE: API4` has separate production-ready SQL evidence. The GraphQL server
+runtime remains alpha until a live Postgres/pg_graphql-backed execution smoke
+records database results instead of deterministic boundary responses.

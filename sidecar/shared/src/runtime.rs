@@ -411,8 +411,10 @@ fn component_state(state: ComponentState) -> &'static str {
 fn status_reason(status_code: u16) -> &'static str {
     match status_code {
         200 => "OK",
+        101 => "Switching Protocols",
         202 => "Accepted",
         400 => "Bad Request",
+        426 => "Upgrade Required",
         404 => "Not Found",
         405 => "Method Not Allowed",
         503 => "Service Unavailable",

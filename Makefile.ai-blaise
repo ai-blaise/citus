@@ -137,6 +137,12 @@ run-edge-functions-canonical:
 run-edge-functions-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
 
+run-edge-functions-registry-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical
+
+api-trio-runtime-smoke:
+	@bash ci/ai-blaise/api-trio-runtime-smoke.sh
+
 build-sidecar-analytical:
 	cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
 
@@ -182,6 +188,9 @@ test-sidecar-postgrest:
 run-postgrest-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_postgrest -- run-canonical
 
+run-postgrest-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical
+
 build-sidecar-graphql:
 	cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
 
@@ -190,6 +199,9 @@ test-sidecar-graphql:
 
 run-graphql-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-canonical
+
+run-graphql-runtime-canonical:
+	cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical
 
 build-sidecar-mcp:
 	cargo check -p ai_blaise_citus_sidecar_mcp --all-targets

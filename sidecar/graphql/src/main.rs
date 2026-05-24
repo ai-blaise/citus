@@ -2,8 +2,10 @@
 // FEATURE: API4
 // FEATURE: API5
 
-use ai_blaise_citus_sidecar_graphql::canonical_graphql_execution_plan;
-use ai_blaise_citus_sidecar_shared::run_probe_server;
+use ai_blaise_citus_sidecar_graphql::{
+    canonical_graphql_execution_plan, canonical_graphql_runtime_report,
+    serve_graphql_sidecar_http_forever,
+};
 use std::env;
 use std::process;
 
@@ -15,7 +17,12 @@ fn main() {
     }
 
     if args == ["serve"] {
-        run_server("graphql", "0.0.0.0:8080");
+        run_http_server("0.0.0.0:8080");
+        return;
+    }
+
+    if args == ["run-runtime-canonical"] {
+        run_runtime_canonical();
         return;
     }
 
@@ -50,13 +57,37 @@ fn main() {
 }
 
 fn print_usage() {
-    println!("usage: graphql [serve|run-canonical]");
-    println!("runs the deterministic canonical GraphQL sidecar plan and emits TSV");
+    println!("usage: graphql [serve|run-canonical|run-runtime-canonical]");
+    println!("serves the GraphQL sidecar HTTP front door or emits a deterministic TSV plan");
 }
 
-fn run_server(component: &str, default_addr: &str) {
-    if let Err(error) = run_probe_server(component, default_addr) {
-        eprintln!("{component}: probe server failed: {error}");
+fn run_http_server(default_addr: &str) {
+    if let Err(error) = serve_graphql_sidecar_http_forever(default_addr) {
+        eprintln!("graphql: HTTP server failed: {error}");
         process::exit(1);
     }
+}
+
+fn run_runtime_canonical() {
+    let report = canonical_graphql_runtime_report().unwrap_or_else(|error| {
+        eprintln!("graphql: canonical runtime report failed: {error}");
+        process::exit(1);
+    });
+    println!(
+        "endpoint\tnamespace\tqueries_resolved\tsubscriptions_registered\tplans_persisted\ttenant_id\tdistributed_types\tsubscription_field"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.plan.endpoint_path,
+        report.plan.schema_bindings[0].graphql_namespace,
+        report.state.queries_resolved,
+        report.state.subscriptions_registered,
+        report.state.plans_persisted,
+        report
+            .response
+            .tenant_id
+            .unwrap_or_else(|| "none".to_string()),
+        report.response.execution_plan.distributed_types.join(","),
+        report.subscription.field,
+    );
 }
