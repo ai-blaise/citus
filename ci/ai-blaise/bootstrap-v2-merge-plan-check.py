@@ -170,8 +170,10 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
         dependencies = require_list(pr.get("dependency_hints"), f"PR #{number}.dependency_hints", errors)
         blockers = require_list(pr.get("known_blockers"), f"PR #{number}.known_blockers", errors)
         require_list(pr.get("watch_paths"), f"PR #{number}.watch_paths", errors)
-        if pr.get("status") == "draft-blocked" and not blockers:
-            errors.append(f"PR #{number} is draft-blocked but has no known_blockers")
+        if pr.get("status") in {"draft-blocked", "blocked"} and not blockers:
+            errors.append(
+                f"PR #{number} status {pr.get('status')!r} requires known_blockers"
+            )
         if pr.get("is_draft") and pr.get("status") != "draft-blocked":
             errors.append(f"PR #{number} is_draft=true must use status draft-blocked")
 
