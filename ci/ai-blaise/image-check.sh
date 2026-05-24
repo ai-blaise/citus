@@ -10,11 +10,13 @@ init_sql="${image_dir}/initdb.d/00-ai-blaise-extensions.sql"
 image_overview="images/README.ai-blaise.md"
 runtime_dockerfile="images/rust-runtime/Dockerfile"
 timescale_cohabitation_dockerfile="images/citus-timescale-cohabitation/Dockerfile"
+pg_cron_cohabitation_dockerfile="images/citus-pg-cron-cohabitation/Dockerfile"
 build_app_images="scripts/citus-scale/build-app-images.sh"
 dockerignore=".dockerignore"
 pool_proxy_smoke="ci/ai-blaise/pool-proxy-smoke.sh"
 timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
+pg_cron_cohabitation_smoke="ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 ts_version_matrix_smoke="ci/ai-blaise/ts-version-matrix-smoke.sh"
 cohab_matrix_dir="tests/cohab-matrix"
 cohab_matrix_compare="${cohab_matrix_dir}/compare-hook-claims.sh"
@@ -33,10 +35,12 @@ for file in \
   "${image_dir}/README.md" \
   "${runtime_dockerfile}" \
   "${timescale_cohabitation_dockerfile}" \
+  "${pg_cron_cohabitation_dockerfile}" \
   "${build_app_images}" \
   "${pool_proxy_smoke}" \
   "${timescale_bridge_smoke}" \
   "${timescale_cohabitation_smoke}" \
+  "${pg_cron_cohabitation_smoke}" \
   "${ts_version_matrix_smoke}" \
   "${cohab_matrix_compare}" \
   "${cohab_matrix_dir}/README.md" \
@@ -65,6 +69,10 @@ if [[ ! -x "${timescale_bridge_smoke}" ]]; then
 fi
 if [[ ! -x "${timescale_cohabitation_smoke}" ]]; then
   echo "missing executable Timescale/Citus cohabitation smoke: ${timescale_cohabitation_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${pg_cron_cohabitation_smoke}" ]]; then
+  echo "missing executable pg_cron cohabitation smoke: ${pg_cron_cohabitation_smoke}" >&2
   exit 1
 fi
 if [[ ! -x "${ts_version_matrix_smoke}" ]]; then
@@ -405,7 +413,7 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'runtime::serve' "${main_file}"
     continue
   fi
-  if has_http_probe_contract "${main_file}"; then
+  if has_custom_http_probe "${main_file}" || has_http_probe_contract "${main_file}"; then
     continue
   fi
   echo "${main_file} must expose serve-mode HTTP probes through run_probe_server, a custom HTTP probe implementation, or a custom runtime::serve implementation" >&2
@@ -684,6 +692,21 @@ grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_cohabitation_smoke}
 grep -Fq "pg_dist_partition" "${timescale_cohabitation_smoke}"
 grep -Fq "expected six Timescale bridge feature ids" "${timescale_cohabitation_smoke}"
 grep -Fq "timescale-cohabitation-evidence.tsv" "${timescale_cohabitation_smoke}"
+grep -Fq "FEATURE: Bundle1 TS19 TS20" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "postgres:17-bookworm" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "postgresql-17-cron" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "make install" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "ai_blaise_citus--0.1.0.sql" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "FEATURE: Bundle1 TS19 TS20" "${pg_cron_cohabitation_smoke}"
+grep -Fq "shared_preload_libraries=pg_cron,citus" "${pg_cron_cohabitation_smoke}"
+grep -Fq "citus.cohabit_extensions=pg_cron" "${pg_cron_cohabitation_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS pg_cron" "${pg_cron_cohabitation_smoke}"
+grep -Fq "SELECT companion_internal.assert_cohabit_extension_ready('pg_cron')" "${pg_cron_cohabitation_smoke}"
+grep -Fq "cron.schedule('ai_blaise_pg_cron_cohabit_smoke'" "${pg_cron_cohabitation_smoke}"
+grep -Fq "missing-citus-cohabit-extensions" "${pg_cron_cohabitation_smoke}"
+grep -Fq "pg-cron-cohabitation-evidence.tsv" "${pg_cron_cohabitation_smoke}"
+grep -Fq "cohabit_extension_detection_report" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "assert_cohabit_extension_ready" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "stable image identity" "${timescale_cohabitation_smoke}"
 grep -Fq "docker buildx imagetools inspect" "${timescale_cohabitation_smoke}"
 grep -Fq "git_sha" "${timescale_cohabitation_smoke}"

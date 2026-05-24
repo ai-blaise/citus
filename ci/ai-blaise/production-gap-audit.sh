@@ -202,6 +202,9 @@ for phrase in (
     "modeled release gates",
     "canonical model data rather than results from live performance",
     "v2 acceptance model must not be cited as production evidence",
+    "pg_cron cohabitation smoke is subset evidence only",
+    "does not prove the unexposed TS19 in-shmem clock-reservation flag",
+    "TS20 C API being called by a live C extension",
 ):
     if compact(phrase) not in audit_compact:
         fail(

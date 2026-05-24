@@ -127,6 +127,39 @@ CREATE EXTENSION pgcrypto;
 SELECT pg_stat_statements_reset();
 SELECT 1 AS ai_blaise_pg_stat_statements_seed;
 CREATE EXTENSION ai_blaise_citus;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_internal.cohabit_extension_detection_report(
+      ARRAY['timescaledb','pg_cron'],
+      ARRAY['timescaledb','pg_cron'],
+      ARRAY['timescaledb','pg_cron','pg_partman']
+    )
+    WHERE extension_name = 'pg_cron'
+      AND role = 'clock-worker'
+      AND ready
+      AND reason IS NULL
+  ) THEN
+    RAISE EXCEPTION 'expected pg_cron cohabit detector to report ready clock-worker';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM companion_internal.cohabit_extension_detection_report(
+      ARRAY['pg_cron'],
+      ARRAY['pg_cron','pg_stat_statements'],
+      ARRAY['pg_cron']
+    )
+    WHERE extension_name = 'pg_stat_statements'
+      AND role = 'unsupported'
+      AND NOT ready
+      AND reason = 'unsupported-configured-extension'
+  ) THEN
+    RAISE EXCEPTION 'expected cohabit detector to fail closed for unsupported configured extension';
+  END IF;
+END;
+$$;
 CREATE TABLE timescale_smoke_metrics (
   metric_time timestamptz NOT NULL,
   value double precision NOT NULL

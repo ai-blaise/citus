@@ -222,10 +222,13 @@ more production-ready than the artifacts justified.
   deployment before production promotion.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is not production-ready as a whole. The PG17 source-build
-  path has targeted live evidence for feasible PGDG-missing extensions, but the
-  complete operand initdb contract remains alpha until the plrust upstream PG17
-  blocker and full-bundle image smoke are closed. The production gap audit
-  rejects the old operand-image overclaim until that full-bundle evidence exists.
+  path has targeted live evidence for feasible PGDG-missing extensions, and the
+  pg_cron cohabitation smoke is subset evidence only for a real PG17
+  Citus+pg_cron boot, SQL-visible detection, job registration, and
+  missing-allowlist fail-closed behavior. The complete operand initdb contract
+  remains alpha until the plrust upstream PG17 blocker and full-bundle image
+  smoke are closed. The production gap audit rejects the old operand-image
+  overclaim until that full-bundle evidence exists.
 - Production values now keep alpha runtime/security intent controls disabled by
   default. The deploy check and production gap audit reject production values
   that enable protocol pipelining, PG18 `io_uring`, External Secrets, TLS,
@@ -344,6 +347,16 @@ more production-ready than the artifacts justified.
 - The Makefile release gate now runs `image-check` and `deploy-check` directly.
   The `deploy-check` target sets `REQUIRE_HELM=1`, so missing Helm is a release
   gate failure instead of a skipped rendered-chart evidence path.
+- `TS19` and `TS20` gained a narrow real pg_cron cohabitation smoke, but they
+  remain alpha as whole features. The smoke builds a PG17 image with PGDG
+  `pg_cron`, this Citus fork, and `ai_blaise_citus`, boots with
+  `shared_preload_libraries=pg_cron,citus` and
+  `citus.cohabit_extensions=pg_cron`, creates real extensions, registers a cron
+  job, records `artifacts/pg-cron-cohabitation-evidence.tsv`, and verifies the
+  SQL-visible cohabit detector fails closed when the allowlist entry is absent.
+  It does not prove the unexposed TS19 in-shmem clock-reservation flag,
+  long-running pg_cron worker execution, the TS20 C API being called by a live C
+  extension, or broad production cohabitation.
 - `TS18` now has real Citus+TimescaleDB cohabitation evidence without a stubbed
   distribution entrypoint. The VM run built
   `ai-blaise-citus-timescale-cohabitation:local` from
