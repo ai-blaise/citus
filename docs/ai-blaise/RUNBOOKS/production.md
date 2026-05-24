@@ -170,8 +170,11 @@ admin probe access, and matching selectors for the folded chart labels.
 - `FEATURE: Sec8`: TLS for clients, Postgres backends, and sidecar-to-sidecar
   HTTP remains an alpha intent until certificates, mounts, probes, and traffic
   tests are wired.
-- `FEATURE: Sec9`: SBOM and cosign attestation records remain release-intent
-  gates until the release workflow publishes and verifies them for each image.
+- `FEATURE: Sec9`: SBOM and cosign attestations are production-ready for the
+  registry-backed generation/sign/verify flow proven by
+  `ci/ai-blaise/security-sbom-cosign-live-smoke.sh`; public-registry
+  publication, keyless transparency-log policy, and admission enforcement stay
+  separate release controls.
 - `FEATURE: T6`: PG18 `io_uring` remains alpha intent until the operand image
   and kernel/runtime compatibility smoke prove it on the target node class.
 - `FEATURE: T7`: pool protocol pipelining remains alpha intent until the pool

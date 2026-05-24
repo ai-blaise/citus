@@ -262,16 +262,21 @@ more production-ready than the artifacts justified.
   sidecar runtime Secret refs are not backed by ExternalSecret binding metadata,
   validates deterministic ExternalSecret manifest and TLS Secret-reference
   shape, and still requires TLS 1.3, client certificates, restricted security
-  contexts, and no Secret RBAC grants. The new security supply-chain smoke also
-  validates the narrow SBOM/cosign metadata contract for digest-pinned fixture
-  image refs, `.spdx.json` SBOM paths, `.sigstore.json` cosign bundles, SLSA
-  provenance predicate metadata, and mutable-image/malformed-SBOM fail-closed
-  behavior. This does not publish SBOMs, does not sign images, does not
-  verify a registry signature, enforce admission policy, prove cert-manager
-  issuance, or prove External Secrets controller reconciliation; those remain
-  alpha. The deploy
-  check and production gap audit reject wildcard CRD resources or Secret
-  permissions in the operator role and require the security supply-chain gate.
+  contexts, and no Secret RBAC grants. The security supply-chain smoke validates
+  the narrow SBOM/cosign metadata contract for digest-pinned fixture image refs,
+  `.spdx.json` SBOM paths, `.sigstore.json` cosign bundles, SLSA provenance
+  predicate metadata, and mutable-image/malformed-SBOM fail-closed behavior.
+  Sec9 release-artifact readiness for the registry-backed
+  generation/sign/verify flow is now proven by
+  `ci/ai-blaise/security-sbom-cosign-live-smoke.sh`: it starts a local OCI
+  registry, pushes a digest-pinned ai-blaise Citus image, generates an SPDX 2.3
+  SBOM with Syft, signs and verifies the image digest with Cosign, verifies SPDX
+  and SLSA provenance attestations, and verifies the `.sigstore.json` SBOM
+  bundle. Kubernetes admission enforcement, public registry publication,
+  keyless transparency-log policy, cert-manager issuance, and External Secrets
+  controller reconciliation remain separate alpha boundaries. The deploy check
+  and production gap audit reject wildcard CRD resources or Secret permissions
+  in the operator role and require both security supply-chain gates.
 - Production/default Helm profiles now render only the operator ServiceAccount;
   controller-grade operator ClusterRole and ClusterRoleBinding resources are
   gated behind the explicit alpha `operator.controllerRbac.enabled` flag and

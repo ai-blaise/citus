@@ -8493,7 +8493,7 @@ contract.
 ### Sec9: SBOM And Cosign Attestation
 
 **Overlay**: `companion/src/ops_contracts.rs` and release gates
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -8501,13 +8501,21 @@ contract.
 **Summary**: Captures the release-attestation requirement for SBOM and cosign
 metadata.
 
-**Current boundary**: The operations runner validates the control record;
-the operator security supply-chain runner validates deterministic SBOM/cosign
-metadata contracts for digest-pinned images, `.spdx.json` SBOM artifact paths,
-`.sigstore.json` cosign bundle paths, SLSA provenance predicate metadata, and
-fail-closed mutable-image or malformed-SBOM inputs. It does not publish SBOMs,
-sign images, verify a registry signature, enforce admission policy, or prove a
-release artifact exists in a registry; those remain alpha.
+Production evidence: VM proof run
+`bash ci/ai-blaise/security-sbom-cosign-live-smoke.sh` starts a local OCI
+registry, pushes the digest-pinned
+`ai-blaise-citus-timescale-cohabitation:local` image, generates a real SPDX
+2.3 SBOM with Syft, signs the image digest with Cosign, verifies the signature
+by public key and annotation, attaches and verifies both SPDX and SLSA
+provenance attestations with Cosign, and signs/verifies the SBOM blob with a
+`.sigstore.json` bundle. The older
+`bash ci/ai-blaise/security-supply-chain-smoke.sh` remains the fast contract
+proof for fail-closed mutable-image, malformed-SBOM, and metadata-shape
+validation. The production-ready claim covers release artifact
+SBOM/signature/attestation generation and verification in a registry-backed
+flow; Kubernetes admission-policy enforcement, public release registry
+publication, and keyless transparency-log policy remain outside this feature
+boundary.
 
 **Citus comparison**: Vanilla Citus does not require ai-blaise release
 attestations.
@@ -8521,6 +8529,7 @@ attestations.
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-security-supply-chain-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/security-supply-chain-smoke.sh`
+- CI: `ci/ai-blaise/security-sbom-cosign-live-smoke.sh`
 
 ### Sto2: file_attachment Domain Type
 

@@ -55,6 +55,7 @@ SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
 PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
+SECURITY_SBOM_COSIGN_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-sbom-cosign-live-smoke.sh"
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
@@ -942,16 +943,54 @@ for required in (
     if required not in security_supply_chain_smoke:
         fail(f"security supply-chain smoke lost required assertion: {required}")
 
+sec9_live_smoke = read(SECURITY_SBOM_COSIGN_LIVE_SMOKE)
+for required in (
+    "SEC9_SYFT_IMAGE",
+    "ghcr.io/anchore/syft:v1.18.1",
+    "SEC9_COSIGN_IMAGE",
+    "gcr.io/projectsigstore/cosign:v2.4.1",
+    "registry:2",
+    "spdx-json=/work/sec9.spdx.json",
+    "slsa.dev/provenance/v1=sec9-live-smoke",
+    "verify-attestation",
+    "slsaprovenance1",
+    "sec9.spdx.sigstore.json",
+    "verify-blob",
+):
+    if required not in sec9_live_smoke:
+        fail(f"Sec9 live SBOM/cosign smoke lost required assertion: {required}")
+
 operator_workflow = read(OPERATOR_WORKFLOW)
 if "security-supply-chain-smoke.sh" not in operator_workflow:
     fail("operator workflow must run security-supply-chain-smoke.sh")
+
+if status_by_id.get("Sec9") != "production-ready":
+    fail("Sec9 must remain production-ready after registry-backed SBOM/cosign proof")
+for feature_id in ("Sec7", "Sec8"):
+    if status_by_id.get(feature_id) != "alpha":
+        fail(f"{feature_id} must remain alpha until live external-secret/TLS proof exists")
+sec9_body = compact(entry_by_id["Sec9"]["body"])
+for phrase in (
+    "Production evidence",
+    "security-sbom-cosign-live-smoke.sh",
+    "local OCI registry",
+    "SPDX 2.3 SBOM with Syft",
+    "Cosign",
+    "SLSA provenance attestations",
+    ".sigstore.json` bundle",
+    "Kubernetes admission-policy enforcement",
+    "public release registry publication",
+):
+    if compact(phrase) not in sec9_body:
+        fail(f"Sec9 production boundary lost docs phrase: {phrase}")
 
 for phrase in (
     "ExternalSecret manifest",
     "TLS Secret-reference",
     "SBOM/cosign metadata",
-    "does not publish SBOMs",
-    "does not verify a registry signature",
+    "registry-backed generation/sign/verify flow",
+    "Kubernetes admission enforcement",
+    "public registry publication",
 ):
     if compact(phrase) not in audit_compact:
         fail(f"production audit lost security supply-chain boundary phrase: {phrase}")
