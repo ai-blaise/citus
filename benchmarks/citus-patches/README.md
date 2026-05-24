@@ -16,8 +16,8 @@ Current `bootstrap-v2` status:
 | ----- | ------------- | ---------------------------- |
 | `0004` | patch artifact landed; not production-ready until measured gate result exists | router planner hot-path benchmark with fail-closed p95 and sample thresholds |
 | `0006` | patch artifact landed; not production-ready until measured gate result exists | fast-path-router coordinator-skip result with measured round-trip threshold |
-| `0007` | patch artifact landed; not production-ready until measured gate result exists | real Citus + `pg_cron` cohabitation smoke with zero registration conflicts |
-| `0008` | patch artifact landed; not production-ready until measured gate result exists | companion detection matrix covering TimescaleDB, `pg_cron`, and `pg_partman` |
+| `0007` | measured gate passed in `results/0007-pg-cron-cohabit.json` | real Citus + `pg_cron` cohabitation smoke with zero registration conflicts |
+| `0008` | measured gate passed in `results/0008-detection-matrix.json` | companion and live SQL-visible Citus detection matrix covering TimescaleDB, `pg_cron`, and `pg_partman` |
 
 The CI entry point is:
 

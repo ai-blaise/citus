@@ -97,8 +97,8 @@ Current `bootstrap-v2` status:
 | ----- | --------------- | --------------------- | ------------- |
 | `0004` | `0004-router-planner-hotpath.json` | measured planner p95, max 10% regression, at least 30 samples | roster-only; not production-ready |
 | `0006` | `0006-fast-path-router-skip.json` | measured coordinator round trips per single-shard query must be `0`, at least 30 samples | roster-only; not production-ready |
-| `0007` | `0007-pg-cron-cohabit.json` | measured boot success rate `1` and zero registration conflicts | roster-only; not production-ready |
-| `0008` | `0008-detection-matrix.json` | measured detection matrix pass with at least three extension cases | roster-only; not production-ready |
+| `0007` | `0007-pg-cron-cohabit.json` | measured boot success rate `1` and zero registration conflicts | measured gate passed |
+| `0008` | `0008-detection-matrix.json` | measured detection matrix pass with at least three extension cases | measured gate passed |
 
 No placeholder or skipped quick-mode result is allowed in this directory. The
 bounded CI check is `make -f Makefile.ai-blaise citus-patch-production-audit`;

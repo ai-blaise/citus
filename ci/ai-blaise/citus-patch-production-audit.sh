@@ -208,5 +208,5 @@ if errors:
         print(f"  - {error}", file=sys.stderr)
     sys.exit(1)
 
-print("citus patch production audit ok: 0004/0006/0007/0008 remain fail-closed until measured patch gates exist")
+print("citus patch production audit ok: measured gates present where production_ready=true; missing gates remain fail-closed")
 PY

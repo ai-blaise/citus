@@ -1,0 +1,22 @@
+{
+  "citus_cohabit_extensions": "pg_cron",
+  "citus_extversion": "15.0-1",
+  "clock_tick_reserved": true,
+  "cohabit_boot_success_rate": 1,
+  "command": "MAKE_JOBS=2 REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh",
+  "cron_clock_reserved_runs": 1,
+  "cron_job_registered": 1,
+  "cron_node_clock_samples": 1,
+  "environment": "experiment-playground VM Docker using postgres:17-bookworm",
+  "max_registration_conflicts": 0,
+  "measured_at_utc": "2026-05-24T18:29:00Z",
+  "mode": "measured",
+  "negative_clock_tick_reserved": false,
+  "negative_missing_cohabit_guc": "pass",
+  "patch_id": "0007",
+  "pg_cron_extversion": "1.6",
+  "registration_conflicts": 0,
+  "schema_version": 1,
+  "server_version_num": 170010,
+  "shared_preload_libraries": "pg_cron,citus"
+}

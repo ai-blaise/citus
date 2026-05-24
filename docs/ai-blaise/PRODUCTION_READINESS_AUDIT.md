@@ -929,10 +929,11 @@ and parallel matrix monitoring via `gh pr checks`. It is wired into
 remains not production-ready as a whole until production-release mode passes.
 
 The Citus patch production integration audit keeps custom patch artifacts
-`0004`, `0006`, `0007`, and `0008` explicitly not production-ready until their
-measured gates exist. `ci/ai-blaise/citus-patch-production-audit.sh` fails
+`0004` and `0006` explicitly not production-ready until their measured gates
+exist. Patch gates `0007` and `0008` now have measured JSON results from the
+VM pg_cron cohabitation and cohabit detection smokes. `ci/ai-blaise/citus-patch-production-audit.sh` fails
 closed unless each artifact is listed in `patches/series`, future patch roster
 entries stay documented as roster-only until artifacts land, and any production
 claim has a measured non-scaffold result with thresholds in
-`benchmarks/citus-patches/production-gates.json`. This is negative evidence for
-the current branch, not a runtime signoff for those patch IDs.
+`benchmarks/citus-patches/production-gates.json`. This remains negative evidence for patch IDs without measured results, while
+measured JSON is required for any patch-gate signoff.

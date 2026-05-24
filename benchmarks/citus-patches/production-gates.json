@@ -56,8 +56,8 @@
       "title": "citus clock cohabit pg_cron",
       "expected_patch_path": "patches/0007-citus-clock-cohabit-pg-cron.patch",
       "required_patch_series": "patches/series",
-      "status": "artifact-landed",
-      "production_ready": false,
+      "status": "measured-gate-passed",
+      "production_ready": true,
       "required_evidence": [
         "patch artifact exists under patches/ and is listed in patches/series",
         "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",
@@ -80,8 +80,8 @@
       "title": "cohabit-extensions detection API",
       "expected_patch_path": "patches/0008-cohabit-extensions-detection-api.patch",
       "required_patch_series": "patches/series",
-      "status": "artifact-landed",
-      "production_ready": false,
+      "status": "measured-gate-passed",
+      "production_ready": true,
       "required_evidence": [
         "patch artifact exists under patches/ and is listed in patches/series",
         "make -f Makefile.ai-blaise patches-check applies or reverse-applies it cleanly",

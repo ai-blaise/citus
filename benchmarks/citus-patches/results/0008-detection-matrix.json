@@ -1,0 +1,64 @@
+{
+  "case_count": 5,
+  "cases": [
+    {
+      "configured": true,
+      "extension": "pg_cron",
+      "role": "clock-worker",
+      "source": "live Citus SQL UDF"
+    },
+    {
+      "configured": null,
+      "extension": "timescaledb",
+      "role": "trusted-hook",
+      "source": "live Citus SQL UDF classifier"
+    },
+    {
+      "configured": null,
+      "extension": "pg_partman",
+      "role": "partition-manager",
+      "source": "live Citus SQL UDF classifier"
+    },
+    {
+      "configured": false,
+      "extension": "unknown_extension",
+      "role": "unsupported",
+      "source": "live Citus SQL UDF"
+    },
+    {
+      "configured": false,
+      "extension": "pg_cron",
+      "role": "clock-worker",
+      "source": "negative live Citus SQL UDF"
+    }
+  ],
+  "commands": [
+    "bash ci/ai-blaise/cohabit-detection-smoke.sh",
+    "MAKE_JOBS=2 REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
+  ],
+  "companion_matrix": {
+    "pg_cron": {
+      "configured": true,
+      "ready": true,
+      "role": "clock-worker"
+    },
+    "pg_partman": {
+      "configured": false,
+      "ready": true,
+      "role": "partition-manager"
+    },
+    "summary": "detected=3 ready=3 hard_failures=0 unsupported=0",
+    "timescaledb": {
+      "configured": true,
+      "ready": true,
+      "role": "trusted-hook"
+    }
+  },
+  "detection_matrix_passed": true,
+  "environment": "experiment-playground VM Docker using postgres:17-bookworm plus companion detection smoke",
+  "measured_at_utc": "2026-05-24T18:29:00Z",
+  "min_cases": 3,
+  "mode": "measured",
+  "patch_id": "0008",
+  "schema_version": 1
+}
