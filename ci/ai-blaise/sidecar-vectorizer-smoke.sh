@@ -66,7 +66,13 @@ if [[ -z "${postgres_port}" ]]; then
   exit 1
 fi
 postgres_url="postgres://postgres@127.0.0.1:${postgres_port}/postgres"
-listen_port="$((1024 + RANDOM % 50000))"
+listen_port="$(python3 - <<'ENDPORT'
+import socket
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+ENDPORT
+)"
 
 # Launch the sidecar binary against the container.
 AI_BLAISE_LISTEN_ADDR="127.0.0.1:${listen_port}" \
@@ -155,6 +161,38 @@ rm -f "/tmp/vectorize-${$}.json"
 
 queue_status="$(curl -sf "http://127.0.0.1:${listen_port}/queue/status?tenant=smoke-tenant")"
 echo "queue_status_payload=${queue_status}"
+
+metrics_payload="$(curl -sf "http://127.0.0.1:${listen_port}/metrics")"
+if ! printf '%s\n' "${metrics_payload}" | grep -Fq "ai_blaise_vectorizer_rows_embedded_total"; then
+  echo "vectorizer metrics did not expose embedded row counter" >&2
+  printf '%s\n' "${metrics_payload}" >&2
+  exit 1
+fi
+
+# Confirm /vectorize rejects malformed/manual requests before spending budget.
+invalid_body='{"tenant_id":"smoke-tenant","provider":"mock;drop","model":"embed-v1","source_table":"public.documents","source_pk":"bad-provider","source_text":"manual smoke embedding"}'
+invalid_status="$(curl -s -o /tmp/invalid-vectorize-${$}.json -w '%{http_code}' \
+  -H 'content-type: application/json' \
+  -X POST "http://127.0.0.1:${listen_port}/vectorize" \
+  -d "${invalid_body}")"
+if [[ "${invalid_status}" != "400" ]]; then
+  echo "expected /vectorize to return 400 for invalid provider name, got ${invalid_status}" >&2
+  cat "/tmp/invalid-vectorize-${$}.json" >&2 || true
+  exit 1
+fi
+rm -f "/tmp/invalid-vectorize-${$}.json"
+
+empty_text_body='{"tenant_id":"smoke-tenant","provider":"mock","model":"embed-v1","source_table":"public.documents","source_pk":"empty-text","source_text":""}'
+empty_text_status="$(curl -s -o /tmp/empty-text-${$}.json -w '%{http_code}' \
+  -H 'content-type: application/json' \
+  -X POST "http://127.0.0.1:${listen_port}/vectorize" \
+  -d "${empty_text_body}")"
+if [[ "${empty_text_status}" != "400" ]]; then
+  echo "expected /vectorize to return 400 for empty source_text, got ${empty_text_status}" >&2
+  cat "/tmp/empty-text-${$}.json" >&2 || true
+  exit 1
+fi
+rm -f "/tmp/empty-text-${$}.json"
 
 # Confirm /vectorize returns 402 when the tenant has no budget row.
 no_budget_status="$(curl -s -o /tmp/no-budget-${$}.json -w '%{http_code}' \

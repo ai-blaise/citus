@@ -49,6 +49,24 @@ impl RuntimeConfig {
                 "must be greater than zero".to_string(),
             ));
         }
+        if self.poll_interval.is_zero() {
+            return Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS",
+                "must be greater than zero".to_string(),
+            ));
+        }
+        if self.visibility_timeout.is_zero() {
+            return Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_VISIBILITY_TIMEOUT_SECONDS",
+                "must be greater than zero".to_string(),
+            ));
+        }
+        if self.retry_initial_backoff.is_zero() {
+            return Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_RETRY_INITIAL_BACKOFF_MS",
+                "must be greater than zero".to_string(),
+            ));
+        }
         if self.provider_max_attempts == 0 {
             return Err(RuntimeError::InvalidEnv(
                 "AI_BLAISE_VECTORIZER_PROVIDER_MAX_ATTEMPTS",
@@ -912,6 +930,51 @@ mod tests {
         assert!(validate_qualified_table_name("T", "ai.usage_log").is_ok());
         assert!(validate_qualified_table_name("T", "ai.usage_log;drop").is_err());
         assert!(validate_qualified_table_name("T", "usage_log").is_err());
+    }
+
+    #[test]
+    fn runtime_config_rejects_zero_duration_knobs() {
+        let mut config = RuntimeConfig {
+            database_url: "postgres://localhost/test".to_string(),
+            queue_table: "ai.vectorizer_queue".to_string(),
+            budget_table: "ai.tenant_budget".to_string(),
+            usage_log_table: "ai.usage_log".to_string(),
+            listen_addr: "127.0.0.1:0".to_string(),
+            batch_size: 8,
+            poll_interval: Duration::from_millis(0),
+            visibility_timeout: Duration::from_secs(30),
+            retry_initial_backoff: Duration::from_millis(1),
+            provider_max_attempts: 3,
+            mock_dimensions: 4,
+            provider_mode: "mock".to_string(),
+        };
+        assert!(matches!(
+            config.validate(),
+            Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS",
+                _
+            ))
+        ));
+
+        config.poll_interval = Duration::from_millis(1);
+        config.visibility_timeout = Duration::from_secs(0);
+        assert!(matches!(
+            config.validate(),
+            Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_VISIBILITY_TIMEOUT_SECONDS",
+                _
+            ))
+        ));
+
+        config.visibility_timeout = Duration::from_secs(1);
+        config.retry_initial_backoff = Duration::from_millis(0);
+        assert!(matches!(
+            config.validate(),
+            Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_RETRY_INITIAL_BACKOFF_MS",
+                _
+            ))
+        ));
     }
 
     #[test]
