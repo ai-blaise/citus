@@ -7265,12 +7265,19 @@ binding.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the required policy inputs for a tenant-budgeted
-streaming chat completion SQL surface.
+**Summary**: Adds an installable SQL contract for registering a
+redacted AI provider binding and requesting a tenant-scoped chat completion
+intent from SQL.
 
-**Current boundary**: The advanced-planner runner proves the contract metadata
-is present and valid; no provider call path, streaming SRF, or billing
-enforcement is production-ready yet.
+**Current boundary**: The SQL extension installs
+`companion_internal.register_ai_provider_binding`,
+`companion_ai_provider_bindings`, and `companion_ai_chat_stream`. The smoke
+`ci/ai-blaise/ai-sql-contract-smoke.sh` proves deterministic input validation,
+secret-reference redaction, tenant binding checks, and the
+`sql-intent-fail-closed-only` payload. A10 remains alpha and not
+production-ready: it does not call a live model provider, does not produce real
+streaming provider chunks, and raises a fail-closed error if provider execution
+is requested.
 
 **Citus comparison**: Vanilla Citus does not define streaming LLM SQL
 surfaces.
@@ -7288,12 +7295,20 @@ surfaces.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records the catalog and tenant-scope inputs needed before a
-semantic text-to-SQL planner can be wired to real metadata.
+**Summary**: Adds an installable SQL contract for registering a
+semantic catalog object and emitting a deterministic text-to-SQL request intent
+for a tenant-scoped catalog object.
 
-**Current boundary**: The contract runner verifies shape and coverage only;
-semantic retrieval, SQL generation, authorization, and query execution remain
-alpha.
+**Current boundary**: The SQL extension installs
+`companion_internal.register_semantic_catalog_object`,
+`companion_semantic_catalog_objects`, and
+`companion_semantic_text_to_sql_intent`. The smoke
+`ci/ai-blaise/ai-sql-contract-smoke.sh` proves strict catalog-object,
+identifier, question-shape, and optional provider-binding validation, then
+emits a `sql-intent-fail-closed-only` JSON report with a deterministic template.
+A11 remains alpha and not production-ready: it does not call a live text-to-SQL
+model, does not execute generated SQL, and raises a fail-closed error if query
+execution is requested.
 
 **Citus comparison**: Vanilla Citus does not include a tenant-scoped semantic
 catalog.

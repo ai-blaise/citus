@@ -173,6 +173,12 @@ more production-ready than the artifacts justified.
     Scaffold results, missing baselines, or missing driver data could therefore
     look like benchmark coverage unless a human inspected the artifacts.
 
+42. `FEATURE: A10` and `FEATURE: A11` previously described AI SQL
+    intent surfaces without an installable fail-closed SQL contract. A10 and
+    A11 remain alpha: the corrected boundary is `sql-intent-fail-closed-only`,
+    with no live provider call, no real streaming provider chunks, and no
+    generated-query execution.
+
 ## Corrections
 
 - `images/rust-runtime/Dockerfile` and
