@@ -36,6 +36,7 @@ async fn end_to_end_embeds_inserted_rows_with_mock_provider() {
         provider_max_attempts: 3,
         mock_dimensions: 4,
         provider_mode: "mock".into(),
+        dimension_contract: None,
     };
 
     let runtime = Arc::new(VectorizerRuntime::new(
@@ -164,6 +165,7 @@ async fn end_to_end_rejects_oversized_jobs_with_budget_exceeded() {
         provider_max_attempts: 3,
         mock_dimensions: 4,
         provider_mode: "mock".into(),
+        dimension_contract: None,
     };
 
     let runtime = VectorizerRuntime::new(
@@ -231,6 +233,7 @@ async fn app_state_clones_runtime_handle() {
         provider_max_attempts: 3,
         mock_dimensions: 2,
         provider_mode: "mock".into(),
+        dimension_contract: None,
     };
 
     let runtime = Arc::new(VectorizerRuntime::new(

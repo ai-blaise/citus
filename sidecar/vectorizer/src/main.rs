@@ -344,6 +344,18 @@ fn default_cost_table() -> StaticCostTable {
         .with("mock", 1)
 }
 
+fn provider_name(provider: &EmbeddingProvider) -> &'static str {
+    match provider {
+        EmbeddingProvider::OpenAi => "openai",
+        EmbeddingProvider::AzureOpenAi => "azure_openai",
+        EmbeddingProvider::Anthropic => "anthropic",
+        EmbeddingProvider::Cohere => "cohere",
+        EmbeddingProvider::Voyage => "voyage",
+        EmbeddingProvider::Ollama => "ollama",
+        EmbeddingProvider::VertexAi => "vertex_ai",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::is_truthy_env;
@@ -356,17 +368,5 @@ mod tests {
         assert!(!is_truthy_env(""));
         assert!(!is_truthy_env("0"));
         assert!(!is_truthy_env("enabled"));
-    }
-}
-
-fn provider_name(provider: &EmbeddingProvider) -> &'static str {
-    match provider {
-        EmbeddingProvider::OpenAi => "openai",
-        EmbeddingProvider::AzureOpenAi => "azure_openai",
-        EmbeddingProvider::Anthropic => "anthropic",
-        EmbeddingProvider::Cohere => "cohere",
-        EmbeddingProvider::Voyage => "voyage",
-        EmbeddingProvider::Ollama => "ollama",
-        EmbeddingProvider::VertexAi => "vertex_ai",
     }
 }

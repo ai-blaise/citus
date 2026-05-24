@@ -8,6 +8,7 @@
 // FEATURE: A6
 
 use crate::runtime::budget::{BudgetError, BudgetStore};
+use crate::runtime::contract::VectorizerRuntimeContract;
 use crate::runtime::provider::{
     AsyncEmbeddingProvider, EmbeddingError, EmbeddingResponse, ProviderRegistry,
 };
@@ -33,6 +34,7 @@ pub struct RuntimeConfig {
     pub provider_max_attempts: u32,
     pub mock_dimensions: usize,
     pub provider_mode: String,
+    pub dimension_contract: Option<VectorizerRuntimeContract>,
 }
 
 impl RuntimeConfig {
@@ -78,6 +80,29 @@ impl RuntimeConfig {
                 "AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS",
                 "must be greater than zero".to_string(),
             ));
+        }
+        if let Some(contract) = &self.dimension_contract {
+            contract.validate().map_err(|error| {
+                RuntimeError::InvalidEnv("AI_BLAISE_VECTORIZER_CONTRACT_*", error.to_string())
+            })?;
+            if self.provider_mode == "mock" && contract.provider != "mock" {
+                return Err(RuntimeError::InvalidEnv(
+                    "AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER",
+                    "provider mode mock can only satisfy a mock vectorizer contract".to_string(),
+                ));
+            }
+            if self.provider_mode == "mock"
+                && contract.provider == "mock"
+                && contract.dimensions != self.mock_dimensions
+            {
+                return Err(RuntimeError::InvalidEnv(
+                    "AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS",
+                    format!(
+                        "must equal AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS ({})",
+                        contract.dimensions
+                    ),
+                ));
+            }
         }
         validate_qualified_table_name("AI_BLAISE_VECTORIZER_QUEUE_TABLE", &self.queue_table)?;
         validate_qualified_table_name("AI_BLAISE_VECTORIZER_BUDGET_TABLE", &self.budget_table)?;
@@ -169,6 +194,10 @@ impl VectorizerRuntime {
         &self.config
     }
 
+    pub fn dimension_contract(&self) -> Option<&VectorizerRuntimeContract> {
+        self.config.dimension_contract.as_ref()
+    }
+
     pub fn shutdown_handle(&self) -> Arc<Notify> {
         self.shutdown.clone()
     }
@@ -210,6 +239,16 @@ impl VectorizerRuntime {
 
     async fn process_provider_group(&self, group: ProviderGroup) -> Result<usize, RuntimeError> {
         let total_rows = group.rows.len();
+        if let Some(contract) = self.dimension_contract() {
+            if let Err(error) = contract.assert_route(&group.provider, &group.model) {
+                let detail = error.to_string();
+                self.fail_rows(&group.rows, &detail).await;
+                let mut metrics = self.metrics.lock().await;
+                metrics.last_error = Some(detail);
+                return Ok(total_rows);
+            }
+        }
+
         let provider = match self.providers.get(&group.provider) {
             Some(provider) => provider,
             None => {
@@ -319,6 +358,19 @@ impl VectorizerRuntime {
             let mut metrics = self.metrics.lock().await;
             metrics.last_error = Some(detail);
             return Ok(());
+        }
+
+        if let Some(contract) = self.dimension_contract() {
+            if let Err(error) = contract.assert_embeddings(&response.embeddings) {
+                let detail = error.to_string();
+                for (row, estimate) in group.rows.iter().zip(reservations.iter()) {
+                    let _ = self.budgets.refund_tokens(&row.tenant_id, *estimate).await;
+                }
+                self.fail_rows(&group.rows, &detail).await;
+                let mut metrics = self.metrics.lock().await;
+                metrics.last_error = Some(detail);
+                return Ok(());
+            }
         }
 
         let billed_tokens = allocate_tokens(&reservations, response.total_tokens);
@@ -667,6 +719,7 @@ mod tests {
             provider_max_attempts: 3,
             mock_dimensions: dimensions,
             provider_mode: "mock".to_string(),
+            dimension_contract: None,
         };
         let runtime = VectorizerRuntime::new(
             config,
@@ -806,6 +859,7 @@ mod tests {
                 provider_max_attempts: 3,
                 mock_dimensions: 4,
                 provider_mode: "mock".into(),
+                dimension_contract: None,
             },
             queue.clone(),
             budgets,
@@ -847,6 +901,7 @@ mod tests {
                 provider_max_attempts: 3,
                 mock_dimensions: 4,
                 provider_mode: "mock".into(),
+                dimension_contract: None,
             },
             queue.clone(),
             budgets,
@@ -925,6 +980,118 @@ mod tests {
         assert_eq!(allocate_tokens(&[10, 10], 1), vec![1, 1]);
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_one_batch_fails_route_mismatch_before_budget() {
+        let queue = Arc::new(InMemoryQueueStore::new());
+        let budgets = Arc::new(InMemoryBudgetStore::new());
+        budgets.seed("tenant-a", 1_000).await;
+        let usage_log = Arc::new(InMemoryUsageLog::new());
+        let mut registry = ProviderRegistry::new();
+        registry.insert(Arc::new(MockProvider::new("mock", 8, 1)));
+        let runtime = VectorizerRuntime::new(
+            RuntimeConfig {
+                database_url: "x".into(),
+                queue_table: "ai.vectorizer_queue".into(),
+                budget_table: "ai.tenant_budget".into(),
+                usage_log_table: "ai.usage_log".into(),
+                listen_addr: "127.0.0.1:0".into(),
+                batch_size: 4,
+                poll_interval: Duration::from_millis(1),
+                visibility_timeout: Duration::from_secs(30),
+                retry_initial_backoff: Duration::from_millis(1),
+                provider_max_attempts: 3,
+                mock_dimensions: 8,
+                provider_mode: "mock".into(),
+                dimension_contract: Some(VectorizerRuntimeContract::new("mock", "embed-v1", 8)),
+            },
+            queue.clone(),
+            budgets.clone(),
+            usage_log.clone(),
+            Arc::new(registry),
+            Arc::new(StaticCostTable::new(1).with("mock", 1)),
+            "worker-1",
+        );
+        queue
+            .enqueue(
+                "tenant-a",
+                "mock",
+                "embed-v2",
+                "public.docs",
+                "doc-1",
+                "hello",
+            )
+            .await;
+
+        let processed = runtime.process_one_batch().await.expect("process");
+
+        assert_eq!(processed, 1);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 1_000);
+        assert!(usage_log.entries().await.is_empty());
+        let snapshot = queue.snapshot().await;
+        assert_eq!(snapshot[0].1, "Failed");
+        assert!(snapshot[0]
+            .3
+            .as_deref()
+            .unwrap_or("")
+            .contains("vectorizer contract mismatch"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn process_one_batch_fails_embedding_dimension_mismatch_and_refunds() {
+        let queue = Arc::new(InMemoryQueueStore::new());
+        let budgets = Arc::new(InMemoryBudgetStore::new());
+        budgets.seed("tenant-a", 1_000).await;
+        let usage_log = Arc::new(InMemoryUsageLog::new());
+        let mut registry = ProviderRegistry::new();
+        registry.insert(Arc::new(MockProvider::new("mock", 7, 1)));
+        let runtime = VectorizerRuntime::new(
+            RuntimeConfig {
+                database_url: "x".into(),
+                queue_table: "ai.vectorizer_queue".into(),
+                budget_table: "ai.tenant_budget".into(),
+                usage_log_table: "ai.usage_log".into(),
+                listen_addr: "127.0.0.1:0".into(),
+                batch_size: 4,
+                poll_interval: Duration::from_millis(1),
+                visibility_timeout: Duration::from_secs(30),
+                retry_initial_backoff: Duration::from_millis(1),
+                provider_max_attempts: 3,
+                mock_dimensions: 7,
+                provider_mode: "mixed".into(),
+                dimension_contract: Some(VectorizerRuntimeContract::new("mock", "embed-v1", 8)),
+            },
+            queue.clone(),
+            budgets.clone(),
+            usage_log.clone(),
+            Arc::new(registry),
+            Arc::new(StaticCostTable::new(1).with("mock", 1)),
+            "worker-1",
+        );
+        queue
+            .enqueue(
+                "tenant-a",
+                "mock",
+                "embed-v1",
+                "public.docs",
+                "doc-1",
+                "hello world",
+            )
+            .await;
+
+        let processed = runtime.process_one_batch().await.expect("process");
+
+        assert_eq!(processed, 1);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 1_000);
+        assert!(usage_log.entries().await.is_empty());
+        let snapshot = queue.snapshot().await;
+        assert_eq!(snapshot[0].1, "Failed");
+        assert!(snapshot[0]
+            .3
+            .as_deref()
+            .unwrap_or("")
+            .contains("embedding dimension mismatch"));
+    }
+
     #[test]
     fn validates_runtime_table_identifiers() {
         assert!(validate_qualified_table_name("T", "ai.usage_log").is_ok());
@@ -947,6 +1114,7 @@ mod tests {
             provider_max_attempts: 3,
             mock_dimensions: 4,
             provider_mode: "mock".to_string(),
+            dimension_contract: None,
         };
         assert!(matches!(
             config.validate(),
@@ -967,6 +1135,15 @@ mod tests {
         ));
 
         config.visibility_timeout = Duration::from_secs(1);
+        config.dimension_contract = Some(VectorizerRuntimeContract::new("mock", "embed-v1", 8));
+        assert!(matches!(
+            config.validate(),
+            Err(RuntimeError::InvalidEnv(
+                "AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS",
+                _
+            ))
+        ));
+        config.dimension_contract = None;
         config.retry_initial_backoff = Duration::from_millis(0);
         assert!(matches!(
             config.validate(),

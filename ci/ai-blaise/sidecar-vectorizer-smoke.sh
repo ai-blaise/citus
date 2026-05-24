@@ -6,6 +6,7 @@ set -euo pipefail
 # FEATURE: A4
 # FEATURE: A5
 # FEATURE: A6
+# FEATURE: A8
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -81,6 +82,9 @@ AI_BLAISE_VECTORIZER_PROVIDER_MODE=mock \
 AI_BLAISE_VECTORIZER_BATCH_SIZE=16 \
 AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS=50 \
 AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS=8 \
+AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER=mock \
+AI_BLAISE_VECTORIZER_CONTRACT_MODEL=embed-v1 \
+AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS=8 \
 RUST_LOG=info \
 target/debug/ai_blaise_citus_sidecar_vectorizer serve \
   >"${binary_log}" 2>&1 &
@@ -157,7 +161,27 @@ if [[ "${vectorize_status}" != "200" ]]; then
   cat "/tmp/vectorize-${$}.json" >&2 || true
   exit 1
 fi
+python3 - "/tmp/vectorize-${$}.json" <<'ENDPY'
+import json
+import sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if payload.get("dimensions") != 8 or len(payload.get("embedding", [])) != 8:
+    raise SystemExit(f"expected manual /vectorize embedding dimension 8, got {payload}")
+ENDPY
 rm -f "/tmp/vectorize-${$}.json"
+
+contract_mismatch_status="$(curl -s -o /tmp/contract-mismatch-${$}.json -w '%{http_code}'   -H 'content-type: application/json'   -X POST "http://127.0.0.1:${listen_port}/vectorize"   -d '{"tenant_id":"smoke-tenant","provider":"mock","model":"embed-v2","source_table":"public.documents","source_pk":"manual-bad-contract","source_text":"manual smoke embedding"}')"
+if [[ "${contract_mismatch_status}" != "400" ]]; then
+  echo "expected /vectorize to return 400 for contract model mismatch, got ${contract_mismatch_status}" >&2
+  cat "/tmp/contract-mismatch-${$}.json" >&2 || true
+  exit 1
+fi
+if ! grep -Fq 'vectorizer contract mismatch' "/tmp/contract-mismatch-${$}.json"; then
+  echo "contract mismatch response did not mention fail-closed contract" >&2
+  cat "/tmp/contract-mismatch-${$}.json" >&2 || true
+  exit 1
+fi
+rm -f "/tmp/contract-mismatch-${$}.json"
 
 queue_status="$(curl -sf "http://127.0.0.1:${listen_port}/queue/status?tenant=smoke-tenant")"
 echo "queue_status_payload=${queue_status}"
@@ -193,6 +217,65 @@ if [[ "${empty_text_status}" != "400" ]]; then
   exit 1
 fi
 rm -f "/tmp/empty-text-${$}.json"
+
+# Confirm a queue row whose provider/model does not match the CRD-derived
+# runtime contract fails without writing usage or spending tenant budget.
+usage_before_bad_contract="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT count(*) FROM ai.usage_log WHERE tenant_id = 'smoke-tenant'")"
+budget_before_bad_contract="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT remaining_tokens FROM ai.tenant_budget WHERE tenant_id = 'smoke-tenant'")"
+PGPASSWORD="" psql "${psql_args[@]}" -c "INSERT INTO ai.vectorizer_queue(tenant_id, provider, model, source_table, source_pk, source_text) VALUES ('smoke-tenant', 'mock', 'embed-v2', 'public.documents', 'bad-contract-queue', 'this row must fail before provider execution');" >/dev/null
+bad_contract_deadline=$((SECONDS + 10))
+while [[ ${SECONDS} -lt ${bad_contract_deadline} ]]; do
+  bad_contract_failed="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT count(*) FROM ai.vectorizer_queue WHERE source_pk = 'bad-contract-queue' AND status = 'failed' AND last_error LIKE '%vectorizer contract mismatch%'")"
+  if [[ "${bad_contract_failed}" == "1" ]]; then
+    break
+  fi
+  sleep 0.5
+done
+bad_contract_failed="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT count(*) FROM ai.vectorizer_queue WHERE source_pk = 'bad-contract-queue' AND status = 'failed' AND last_error LIKE '%vectorizer contract mismatch%'")"
+if [[ "${bad_contract_failed}" != "1" ]]; then
+  echo "expected queue row with mismatched model to fail closed with contract mismatch" >&2
+  PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT source_pk, status, last_error FROM ai.vectorizer_queue WHERE source_pk = 'bad-contract-queue'" >&2 || true
+  cat "${binary_log}" >&2 || true
+  exit 1
+fi
+usage_after_bad_contract="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT count(*) FROM ai.usage_log WHERE tenant_id = 'smoke-tenant'")"
+budget_after_bad_contract="$(PGPASSWORD="" psql "${psql_args[@]}" -c "SELECT remaining_tokens FROM ai.tenant_budget WHERE tenant_id = 'smoke-tenant'")"
+if [[ "${usage_after_bad_contract}" != "${usage_before_bad_contract}" || "${budget_after_bad_contract}" != "${budget_before_bad_contract}" ]]; then
+  echo "contract-mismatched queue row should not write usage or spend budget" >&2
+  echo "usage before/after: ${usage_before_bad_contract}/${usage_after_bad_contract}" >&2
+  echo "budget before/after: ${budget_before_bad_contract}/${budget_after_bad_contract}" >&2
+  exit 1
+fi
+
+# Confirm startup rejects an internally inconsistent mock dimension contract.
+bad_listen_port="$(python3 - <<'ENDPORT'
+import socket
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    sock.bind(("127.0.0.1", 0))
+    print(sock.getsockname()[1])
+ENDPORT
+)"
+bad_contract_log="$(mktemp)"
+if AI_BLAISE_LISTEN_ADDR="127.0.0.1:${bad_listen_port}" \
+  AI_BLAISE_VECTORIZER_DATABASE_URL="${postgres_url}" \
+  AI_BLAISE_VECTORIZER_PROVIDER_MODE=mock \
+  AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS=8 \
+  AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER=mock \
+  AI_BLAISE_VECTORIZER_CONTRACT_MODEL=embed-v1 \
+  AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS=9 \
+  target/debug/ai_blaise_citus_sidecar_vectorizer serve \
+    >"${bad_contract_log}" 2>&1; then
+  echo "expected mismatched mock/vectorizer dimension contract to fail startup" >&2
+  rm -f "${bad_contract_log}"
+  exit 1
+fi
+if ! grep -Fq 'AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS' "${bad_contract_log}"; then
+  echo "startup mismatch did not report mock dimension contract error" >&2
+  cat "${bad_contract_log}" >&2 || true
+  rm -f "${bad_contract_log}"
+  exit 1
+fi
+rm -f "${bad_contract_log}"
 
 # Confirm /vectorize returns 402 when the tenant has no budget row.
 no_budget_status="$(curl -s -o /tmp/no-budget-${$}.json -w '%{http_code}' \

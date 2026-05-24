@@ -11,6 +11,7 @@
 // FEATURE: A6
 
 pub mod budget;
+pub mod contract;
 pub mod provider;
 pub mod queue;
 pub mod server;
@@ -18,6 +19,7 @@ pub mod usage_log;
 pub mod worker;
 
 pub use budget::{BudgetError, BudgetStore, PgBudgetStore};
+pub use contract::{VectorizerContractError, VectorizerRuntimeContract};
 pub use provider::{
     AsyncEmbeddingProvider, CohereProvider, EmbeddingError, MockProvider, OllamaProvider,
     OpenAiProvider, ProviderRegistry, VoyageProvider,
@@ -57,6 +59,7 @@ pub fn runtime_config_from_env() -> Result<RuntimeConfig, RuntimeError> {
     let mock_dimensions = parse_env_usize("AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS", 16)?;
     let provider_mode =
         env::var("AI_BLAISE_VECTORIZER_PROVIDER_MODE").unwrap_or_else(|_| "mock".to_string());
+    let dimension_contract = runtime_contract_from_env()?;
 
     Ok(RuntimeConfig {
         database_url,
@@ -71,7 +74,39 @@ pub fn runtime_config_from_env() -> Result<RuntimeConfig, RuntimeError> {
         provider_max_attempts,
         mock_dimensions,
         provider_mode,
+        dimension_contract,
     })
+}
+
+fn runtime_contract_from_env() -> Result<Option<VectorizerRuntimeContract>, RuntimeError> {
+    let provider = env::var("AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER").ok();
+    let model = env::var("AI_BLAISE_VECTORIZER_CONTRACT_MODEL").ok();
+    let dimensions = env::var("AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS").ok();
+
+    if provider.is_none() && model.is_none() && dimensions.is_none() {
+        return Ok(None);
+    }
+
+    let provider = provider.ok_or(RuntimeError::MissingEnv(
+        "AI_BLAISE_VECTORIZER_CONTRACT_PROVIDER",
+    ))?;
+    let model = model.ok_or(RuntimeError::MissingEnv(
+        "AI_BLAISE_VECTORIZER_CONTRACT_MODEL",
+    ))?;
+    let dimensions_raw = dimensions.ok_or(RuntimeError::MissingEnv(
+        "AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS",
+    ))?;
+    let dimensions = dimensions_raw.parse::<usize>().map_err(|error| {
+        RuntimeError::InvalidEnv(
+            "AI_BLAISE_VECTORIZER_CONTRACT_DIMENSIONS",
+            format!("{error}: {dimensions_raw}"),
+        )
+    })?;
+    let contract = VectorizerRuntimeContract::new(provider, model, dimensions);
+    contract.validate().map_err(|error| {
+        RuntimeError::InvalidEnv("AI_BLAISE_VECTORIZER_CONTRACT_*", error.to_string())
+    })?;
+    Ok(Some(contract))
 }
 
 fn parse_env_u32(name: &'static str, default: u32) -> Result<u32, RuntimeError> {

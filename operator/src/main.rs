@@ -526,6 +526,7 @@ fn canonical_operator_execution_report() -> Result<OperatorExecutionReport, Box<
 
     let vectorizer = canonical_vectorizer_spec();
     vectorizer.validate()?;
+    let _vectorizer_contract = vectorizer.runtime_contract()?;
 
     let sidecar = canonical_sidecar_deployment_spec();
     sidecar.validate()?;

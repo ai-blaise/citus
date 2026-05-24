@@ -48,7 +48,8 @@ pub use crds::survival_goal::{SurvivalGoalSpec, SurvivalGoalSpecError, SurvivalG
 pub use crds::tenant::{TenantQuotas, TenantSpec, TenantSpecError};
 pub use crds::vectorizer::{
     ChunkingSpec, ChunkingStrategy, EmbeddingProvider, VectorDestinationSpec,
-    VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, VectorizerSpecError,
+    VectorizerRuntimeContract, VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec,
+    VectorizerSpecError,
 };
 pub use crds::webhook::{WebhookEvent, WebhookRetryPolicy, WebhookSpec, WebhookSpecError};
 pub use reconcile::backup::{
