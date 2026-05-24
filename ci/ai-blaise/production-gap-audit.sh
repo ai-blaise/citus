@@ -292,7 +292,7 @@ if (
     fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
 
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
-gate_deps = makefile.split("gate-close:", 1)[1].splitlines()[0] if "gate-close:" in makefile else ""
+gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 for target in (
     "citus-patch-production-audit",
     "sidecar-api-runtime-smoke",
