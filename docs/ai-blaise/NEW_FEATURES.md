@@ -4470,25 +4470,31 @@ boundary.
 ### Auth4: OAuth2 / OIDC Provider Contracts
 
 **Overlay**: `sidecar/auth`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines OIDC provider configuration with issuer URL, secret refs,
-and scopes for external identity integrations, plus explicit HTTP flow
-boundaries for login and callback routes.
+**Summary**: Implements the OIDC provider pre-exchange runtime boundary: issuer,
+authorization endpoint, client ID, secret ref, redirect URI, and scope
+validation plus login/callback routes with state, nonce, and replay handling.
 
 **Motivation**: Auth sidecars need an auditable provider contract before
 Google, GitHub, Apple, Okta, Azure AD, or custom OIDC integrations are wired.
 
 **Citus comparison**: Vanilla Citus does not ship OAuth2/OIDC auth services.
 
-Runtime boundary: the auth sidecar validates OIDC provider configuration,
-ships a durable `auth.auth_oidc_providers` table in the auth schema migration,
-and exposes `/auth/oidc/login` and `/auth/oidc/callback` routes that fail
-closed with `501` until IdP-specific exchange, nonce/state validation, JWKS
-fetching, and account-linking are implemented and live-gated.
+Production evidence: `cargo test -p ai_blaise_citus_sidecar_auth --all-targets`
+proves provider validation, allowlisted HTTPS redirect URI enforcement,
+state/nonce generation, callback validation, and callback replay rejection.
+`ci/ai-blaise/auth-sidecar-smoke.sh` starts the real auth binary with a stub
+provider config, verifies `/auth/oidc/login` emits an authorization URL for the
+allowed redirect URI, proves unknown providers and disallowed redirect URIs fail
+closed, proves nonce mismatch and replayed callback state fail closed, and
+requires the validated callback to stop at `501 idp_exchange_unavailable`.
+This is not external IdP certification: token exchange, ID-token/JWKS
+verification, account linking, provider-specific claim mapping, and secret
+resolver integration remain outside this production-ready boundary.
 
 **References**:
 
@@ -4501,7 +4507,7 @@ fetching, and account-linking are implemented and live-gated.
 ### Auth5: MFA Policy Contracts
 
 **Overlay**: `sidecar/auth`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4515,12 +4521,15 @@ issuance can enforce step-up authentication.
 
 **Citus comparison**: Vanilla Citus does not ship MFA policy management.
 
-Runtime boundary: unit tests verify RFC 6238 TOTP vectors, TOTP enrollment,
-TOTP login, and failed missing-code login. `ci/ai-blaise/auth-sidecar-smoke.sh`
-exercises the real HTTP TOTP enrollment/login flow and requires WebAuthn
-register/finish routes to return `501`. The feature remains alpha until the
-WebAuthn challenge, credential persistence, signature verification, replay
-protection, and persistent TOTP loading paths are implemented and live-gated.
+Production evidence: unit tests verify RFC 6238 TOTP vectors, TOTP enrollment,
+TOTP login, missing-code denial, and max-attempt lockout. The auth smoke starts
+the real binary with `AI_BLAISE_AUTH_MFA_MAX_ATTEMPTS=2`, proves repeated bad
+TOTP verification locks the user out, proves the locked login remains denied,
+and proves a separate enrolled user can still complete TOTP-backed login.
+WebAuthn register/finish routes remain fail-closed with `501`; WebAuthn
+challenge generation, credential persistence, signature verification, replay
+protection, and persistent TOTP loading from the auth schema remain outside this
+production-ready boundary.
 
 **References**:
 

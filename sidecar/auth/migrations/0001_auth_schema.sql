@@ -90,11 +90,19 @@ CREATE INDEX IF NOT EXISTS auth_mfa_webauthn_user_id_idx
 CREATE TABLE IF NOT EXISTS auth.auth_oidc_providers (
     name                    text PRIMARY KEY,
     issuer_url              text NOT NULL,
-    client_id_secret_ref    text NOT NULL,
+    authorization_endpoint  text NOT NULL,
+    client_id               text NOT NULL,
     client_secret_ref       text NOT NULL,
+    redirect_uris           text[] NOT NULL,
     scopes                  text[] NOT NULL,
     enabled                 boolean NOT NULL DEFAULT true,
-    created_at              timestamptz NOT NULL DEFAULT now()
+    created_at              timestamptz NOT NULL DEFAULT now(),
+    CHECK (name ~ '^[A-Za-z0-9_-]+$'),
+    CHECK (issuer_url LIKE 'https://%'),
+    CHECK (left(authorization_endpoint, length(issuer_url)) = issuer_url),
+    CHECK (client_id !~ '[[:space:]]'),
+    CHECK (cardinality(redirect_uris) > 0),
+    CHECK ('openid' = ANY(scopes))
 );
 
 -- auth_revoked_jtis: durable shape for a persistent JTI revocation list. The

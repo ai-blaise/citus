@@ -472,16 +472,19 @@ more production-ready than the artifacts justified.
   tokens, and missing tenant claims fail closed. This is not evidence for
   JWKS/RSA/ECDSA key discovery, Auth1 token issuance, pool authentication,
   Auth3 token-cache behavior, external secret resolution, or key rotation.
-- The auth sidecar now ships a real `FEATURE: Auth1` HS256 runtime. The
-  auth smoke starts the real binary with an explicit signing secret, verifies
-  live health/readiness/metrics responses, registers a user, logs in, verifies
-  and introspects the JWT, refreshes the session, logs out, proves revoked JWTs
-  fail closed, exercises a TOTP login path, requires WebAuthn and OIDC routes
-  to fail closed with `501`, and applies the auth schema migration against
-  `postgres:17` when `REQUIRE_DOCKER=1`. This is not evidence for RS256/JWKS
-  discovery, external IdP exchange, WebAuthn ceremonies, key rotation,
-  persistent runtime loading from the auth schema, or pool data-plane token
-  authentication.
+- The auth sidecar now ships real `FEATURE: Auth1`, `FEATURE: Auth4`, and
+  `FEATURE: Auth5` runtime boundaries. The auth smoke starts the real binary
+  with an explicit signing secret, verifies live health/readiness/metrics
+  responses, registers users, logs in, verifies and introspects JWTs, refreshes
+  sessions, logs out, proves revoked JWTs fail closed, exercises TOTP login,
+  enforces max-attempt TOTP lockout, proves WebAuthn routes fail closed with
+  `501`, validates the OIDC login/callback pre-exchange boundary with a stub
+  provider config, proves bad provider/redirect/nonce/replay callbacks fail
+  closed, and applies the auth schema migration against `postgres:17` when
+  `REQUIRE_DOCKER=1`. This is not evidence for RS256/JWKS discovery, external
+  IdP token exchange, ID-token verification, account linking, WebAuthn
+  ceremonies, key rotation, persistent runtime loading from the auth schema, or
+  pool data-plane token authentication.
 - The SQL extension now installs narrow `FEATURE: S6` and `FEATURE: S13`
   router helper runtimes. S6 persists placement-generation counters and
   local-placement worker names, verifies generation advancement and shard-zero

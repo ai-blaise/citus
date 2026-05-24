@@ -78,6 +78,14 @@ AI_BLAISE_AUTH_ISSUER="https://auth.example.com" \
 AI_BLAISE_AUTH_AUDIENCE="postgres" \
 AI_BLAISE_AUTH_TTL_SECONDS="300" \
 AI_BLAISE_AUTH_HS256_SECRET="${secret}" \
+AI_BLAISE_AUTH_MFA_MAX_ATTEMPTS="2" \
+AI_BLAISE_AUTH_OIDC_PROVIDER_NAME="stub" \
+AI_BLAISE_AUTH_OIDC_ISSUER="https://idp.example.com" \
+AI_BLAISE_AUTH_OIDC_AUTHORIZATION_ENDPOINT="https://idp.example.com/oauth2/v1/authorize" \
+AI_BLAISE_AUTH_OIDC_CLIENT_ID="ai-blaise-client" \
+AI_BLAISE_AUTH_OIDC_CLIENT_SECRET_REF="k8s://auth/idp-client-secret" \
+AI_BLAISE_AUTH_OIDC_REDIRECT_URIS="https://db.example.com/auth/oidc/callback" \
+AI_BLAISE_AUTH_OIDC_SCOPES="openid,email" \
 cargo run -q -p ai_blaise_citus_sidecar_auth -- serve >"${log_file}" 2>&1 &
 server_pid="$!"
 
@@ -155,15 +163,62 @@ code = (struct.unpack('>I', digest[offset:offset+4])[0] & 0x7fffffff) % 1_000_00
 print(f"{code:06d}")
 PY
 )"
+bad_totp_1="$(curl_json POST /auth/mfa/totp/verify '{"username":"bob","code":"000000"}')"
+require_status 401 "${bad_totp_1}"
+bad_totp_2="$(curl_json POST /auth/mfa/totp/verify '{"username":"bob","code":"000000"}')"
+require_status 401 "${bad_totp_2}"
+locked_totp="$(curl_json POST /auth/mfa/totp/verify '{"username":"bob","code":"000000"}')"
+require_status 401 "${locked_totp}"
+[[ "${locked_totp}" == *'mfa attempts exceeded'* ]]
+
 login_bob="$(curl_json POST /auth/login "{\"username\":\"bob\",\"password\":\"hunter2-correct-horse\",\"totp_code\":\"${totp_code}\"}")"
-require_status 200 "${login_bob}"
-[[ "${login_bob}" == *'"mfa_verified":true'* ]]
+require_status 401 "${login_bob}"
+[[ "${login_bob}" == *'mfa attempts exceeded'* ]]
+
+register_carol="$(curl_json POST /auth/users '{"username":"carol","password":"hunter2-correct-horse","role":"authenticated","tenant_id":"tenant-c"}')"
+require_status 201 "${register_carol}"
+enroll_carol="$(curl_json POST /auth/mfa/totp/enroll '{"username":"carol"}')"
+require_status 200 "${enroll_carol}"
+carol_secret_base32="$(json_field "${enroll_carol#*$'	'}" secret_base32)"
+carol_totp_code="$(python3 - "${carol_secret_base32}" <<'PY'
+import base64
+import hmac
+import hashlib
+import struct
+import sys
+import time
+secret = base64.b32decode(sys.argv[1] + '=' * ((8 - len(sys.argv[1]) % 8) % 8))
+counter = int(time.time() // 30)
+digest = hmac.new(secret, struct.pack('>Q', counter), hashlib.sha1).digest()
+offset = digest[-1] & 0x0F
+code = (struct.unpack('>I', digest[offset:offset+4])[0] & 0x7fffffff) % 1_000_000
+print(f"{code:06d}")
+PY
+)"
+login_carol="$(curl_json POST /auth/login "{\"username\":\"carol\",\"password\":\"hunter2-correct-horse\",\"totp_code\":\"${carol_totp_code}\"}")"
+require_status 200 "${login_carol}"
+[[ "${login_carol}" == *'"mfa_verified":true'* ]]
 
 webauthn="$(curl_json POST /auth/mfa/webauthn/register '{}')"
 require_status 501 "${webauthn}"
-oidc="$(curl_json GET /auth/oidc/login)"
-require_status 501 "${oidc}"
-
+missing_provider="$(curl_json GET '/auth/oidc/login?provider=missing&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback')"
+require_status 404 "${missing_provider}"
+bad_redirect="$(curl_json GET '/auth/oidc/login?provider=stub&redirect_uri=https%3A%2F%2Fevil.example.com%2Fcallback')"
+require_status 400 "${bad_redirect}"
+oidc_login="$(curl_json GET '/auth/oidc/login?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback')"
+require_status 200 "${oidc_login}"
+oidc_body="${oidc_login#*$'	'}"
+[[ "${oidc_body}" == *'"authorization_url"'* ]]
+[[ "${oidc_body}" == *'client_id=ai-blaise-client'* ]]
+oidc_state="$(json_field "${oidc_body}" state)"
+oidc_nonce="$(json_field "${oidc_body}" nonce)"
+bad_callback="$(curl_json GET "/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state=${oidc_state}&nonce=wrong&code=stub-code")"
+require_status 401 "${bad_callback}"
+oidc_callback="$(curl_json GET "/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state=${oidc_state}&nonce=${oidc_nonce}&code=stub-code")"
+require_status 501 "${oidc_callback}"
+[[ "${oidc_callback}" == *'idp_exchange_unavailable'* ]]
+oidc_replay="$(curl_json GET "/auth/oidc/callback?provider=stub&redirect_uri=https%3A%2F%2Fdb.example.com%2Fauth%2Foidc%2Fcallback&state=${oidc_state}&nonce=${oidc_nonce}&code=stub-code")"
+require_status 401 "${oidc_replay}"
 if [[ "${REQUIRE_DOCKER:-0}" == "1" ]]; then
   command -v docker >/dev/null
   pg_container="auth-sidecar-smoke-${RANDOM}-${RANDOM}"
@@ -189,4 +244,4 @@ if [[ "${REQUIRE_DOCKER:-0}" == "1" ]]; then
   docker exec "${pg_container}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -Atc "select count(*) from information_schema.tables where table_schema='auth' and table_name in ('auth_users','auth_sessions','auth_mfa_totp','auth_mfa_webauthn','auth_oidc_providers','auth_revoked_jtis');" | grep -qx '6'
 fi
 
-printf 'auth_sidecar_smoke\tjwt=true\tintrospection=true\tlogout=true\trefresh=true\ttotp=true\twebauthn_alpha=true\toidc_alpha=true\tdocker_schema=%s\n' "${REQUIRE_DOCKER:-0}"
+printf 'auth_sidecar_smoke\tjwt=true\tintrospection=true\tlogout=true\trefresh=true\ttotp=true\tmfa_policy=true\twebauthn_alpha=true\toidc_boundary=true\tdocker_schema=%s\n' "${REQUIRE_DOCKER:-0}"

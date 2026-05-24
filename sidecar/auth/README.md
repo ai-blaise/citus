@@ -1,10 +1,11 @@
 # sidecar/auth
 
-Production boundary: the only production-ready surface in this crate is the
-local HS256 auth sidecar runtime documented as `FEATURE: Auth1` in
-`docs/ai-blaise/NEW_FEATURES.md`. OIDC exchanges, WebAuthn ceremonies,
-persistent runtime loading from the auth schema, pool data-plane token auth,
-RS256/JWKS discovery, and key rotation remain alpha until separately live-gated.
+Production boundary: this crate now backs `FEATURE: Auth1` HS256 auth,
+`FEATURE: Auth4` OIDC provider pre-exchange contracts, and `FEATURE: Auth5`
+TOTP policy enforcement. External OIDC token exchange, ID-token/JWKS
+verification, account linking, WebAuthn ceremonies, persistent runtime loading
+from the auth schema, pool data-plane token auth, RS256 issuance, and key
+rotation remain outside this boundary until separately live-gated.
 
 The sidecar exposes:
 
@@ -15,11 +16,13 @@ The sidecar exposes:
 - `POST /auth/introspect` for RFC 7662-style active/inactive results.
 - `POST /auth/logout` for JTI revocation.
 - `POST /auth/mfa/totp/enroll` and `/auth/mfa/totp/verify` for TOTP.
+- `GET /auth/oidc/login` for authorization URL generation with state/nonce.
+- `GET /auth/oidc/callback` for state/nonce/redirect validation before failing
+  closed at the intentionally unimplemented IdP token exchange.
 - `/healthz`, `/readyz`, `/metrics`, and `/drain` from the shared sidecar runtime.
 
-`POST /auth/mfa/webauthn/register`, `POST /auth/mfa/webauthn/finish`,
-`GET /auth/oidc/login`, and `GET /auth/oidc/callback` are intentional
-fail-closed alpha boundaries that return `501`.
+`POST /auth/mfa/webauthn/register` and `POST /auth/mfa/webauthn/finish` are
+intentional fail-closed alpha boundaries that return `501`.
 
 Required serve-mode configuration:
 
@@ -27,6 +30,14 @@ Required serve-mode configuration:
 - `AI_BLAISE_AUTH_ISSUER`: defaults to `https://auth.example.com`.
 - `AI_BLAISE_AUTH_AUDIENCE`: defaults to `postgres`.
 - `AI_BLAISE_AUTH_TTL_SECONDS`: defaults to `3600` and must be nonzero.
+- `AI_BLAISE_AUTH_MFA_MAX_ATTEMPTS`: defaults to `5` and must be nonzero.
+- `AI_BLAISE_AUTH_OIDC_PROVIDER_NAME`: optional single OIDC provider name.
+- `AI_BLAISE_AUTH_OIDC_ISSUER`: required when an OIDC provider is configured.
+- `AI_BLAISE_AUTH_OIDC_AUTHORIZATION_ENDPOINT`: required provider authorize URL.
+- `AI_BLAISE_AUTH_OIDC_CLIENT_ID`: required provider client ID.
+- `AI_BLAISE_AUTH_OIDC_CLIENT_SECRET_REF`: required secret reference for token exchange.
+- `AI_BLAISE_AUTH_OIDC_REDIRECT_URIS`: comma-separated allowlist.
+- `AI_BLAISE_AUTH_OIDC_SCOPES`: comma-separated scopes; must include `openid`.
 - `AI_BLAISE_LISTEN_ADDR`: defaults to `0.0.0.0:8080`.
 
 The durable auth schema lives in `migrations/0001_auth_schema.sql`. The runtime
