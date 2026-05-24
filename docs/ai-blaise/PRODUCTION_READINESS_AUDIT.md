@@ -441,15 +441,20 @@ more production-ready than the artifacts justified.
   behavior until networked multi-process Raft, MVCC follower-read execution,
   PostgreSQL-core patch integration, Citus executor integration, and Kubernetes
   operator reconciliation are live-gated.
-- The auto-API and edge-functions sidecars now have a bounded
-  process/socket runtime smoke for the canonical API contracts. The smoke
+- The auto-API sidecars and edge-functions Rust boundary now have bounded
+  process/socket smokes for their canonical API contracts. The shared smoke
   builds the real PostgREST, GraphQL, and edge-functions binaries, runs their
   canonical TSV commands directly, starts each `serve` process on loopback,
   verifies health/readiness/metrics/drain behavior persists across HTTP
   requests, and verifies unknown commands plus empty listen addresses fail
-  closed. This is not evidence for table-backed PostgREST request serving,
-  `pg_graphql` query execution, external Deno/Bun user-code execution, or
-  Kubernetes deployment.
+  closed. The dedicated `sidecar-edge-functions-runtime-smoke.sh` additionally
+  proves edge-functions plan-only status, env-secret/path/JSON validation,
+  payload and timeout ceilings, unknown-function handling, and fail-closed
+  rejection of external Deno/Bun execution requests. EF1, EF2, EF4, and EF5
+  remain alpha because this is not evidence for table-backed PostgREST request
+  serving, `pg_graphql` query execution, external Deno/Bun user-code execution,
+  real PostgreSQL UDS callback execution, queue/broker dispatch, live CDC
+  tailing, or Kubernetes deployment.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

@@ -149,7 +149,8 @@ def smoke_edge_functions():
         status, data = request(port, "POST", "/functions/order_created", body)
         assert status == 200, (status, data)
         assert '"function":"order_created"' in data
-        assert '"status":"succeeded"' in data
+        assert '"status":"planned"' in data
+        assert '"execution_mode":"plan_only"' in data
         assert '"db_callback_used":true' in data
     finally:
         stop(proc)

@@ -6,8 +6,17 @@
 // FEATURE: EF5
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
+use serde_json::Value;
 use std::error::Error;
 use std::fmt;
+
+const MAX_INLINE_SOURCE_BYTES: usize = 262_144;
+const MAX_ENTRYPOINT_BYTES: usize = 256;
+const MAX_HTTP_PATH_BYTES: usize = 256;
+const MAX_SECRET_REFS: usize = 32;
+const MAX_INVOCATION_PAYLOAD_BYTES: u64 = 1_048_576;
+const MAX_INVOCATION_TIMEOUT_MS: u32 = 30_000;
+const MAX_UDS_PATH_BYTES: usize = 107;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EdgeFunctionPlan {
@@ -29,7 +38,7 @@ impl EdgeFunctionPlan {
         for trigger in &self.triggers {
             trigger.validate()?;
         }
-        validate_optional_list("env_secret_refs", &self.env_secret_refs)?;
+        validate_env_secret_refs(&self.env_secret_refs)?;
         if let Some(callback) = &self.db_callback {
             callback.validate()?;
         }
@@ -39,12 +48,22 @@ impl EdgeFunctionPlan {
     pub fn launch_plan(&self) -> Result<RuntimeLaunchPlan, EdgeFunctionError> {
         self.validate()?;
 
+        let network_policy = if self.db_callback.is_some() {
+            RuntimeNetworkPolicy::UnixOnly
+        } else {
+            RuntimeNetworkPolicy::None
+        };
         let mut args = match self.runtime {
-            EdgeFunctionRuntime::Deno => vec![
-                "run".to_string(),
-                "--allow-env".to_string(),
-                "--allow-net=unix".to_string(),
-            ],
+            EdgeFunctionRuntime::Deno => {
+                let mut args = vec!["run".to_string(), "--no-prompt".to_string()];
+                if !self.env_secret_refs.is_empty() {
+                    args.push("--allow-env".to_string());
+                }
+                if matches!(network_policy, RuntimeNetworkPolicy::UnixOnly) {
+                    args.push("--allow-net=unix".to_string());
+                }
+                args
+            }
             EdgeFunctionRuntime::Bun => vec!["run".to_string()],
         };
         args.push(self.source.entrypoint().to_string());
@@ -58,6 +77,14 @@ impl EdgeFunctionPlan {
                 .db_callback
                 .as_ref()
                 .map(|callback| callback.uds_path.clone()),
+            sandbox: RuntimeSandboxPlan {
+                execution_mode: RuntimeExecutionMode::PlanOnly,
+                external_runtime_spawned: false,
+                user_code_executed: false,
+                filesystem_write_allowed: false,
+                subprocess_allowed: false,
+                network_policy,
+            },
         })
     }
 }
@@ -96,10 +123,10 @@ pub enum FunctionSource {
 impl FunctionSource {
     fn validate(&self) -> Result<(), EdgeFunctionError> {
         match self {
-            Self::Inline { code } => validate_required("source.inline.code", code),
+            Self::Inline { code } => validate_inline_source(code),
             Self::BundleUri { uri, entrypoint } => {
                 validate_object_uri("source.bundle_uri", uri)?;
-                validate_required("source.entrypoint", entrypoint)
+                validate_entrypoint_path("source.entrypoint", entrypoint)
             }
             Self::GitRef {
                 repository,
@@ -108,7 +135,7 @@ impl FunctionSource {
             } => {
                 validate_http_url("source.repository", repository)?;
                 validate_required("source.reference", reference)?;
-                validate_required("source.path", path)
+                validate_entrypoint_path("source.path", path)
             }
         }
     }
@@ -139,15 +166,8 @@ pub enum FunctionTrigger {
 impl FunctionTrigger {
     fn validate(&self) -> Result<(), EdgeFunctionError> {
         match self {
-            Self::Http { path } => {
-                validate_required("trigger.http.path", path)?;
-                if path.starts_with('/') {
-                    Ok(())
-                } else {
-                    Err(EdgeFunctionError::InvalidHttpPath)
-                }
-            }
-            Self::Scheduled { schedule } => validate_required("trigger.schedule", schedule),
+            Self::Http { path } => validate_http_path(path),
+            Self::Scheduled { schedule } => validate_schedule(schedule),
             Self::CdcEvent { table, .. } => validate_qualified_name("trigger.table", table),
         }
     }
@@ -164,7 +184,10 @@ pub struct DbCallbackPlan {
 impl DbCallbackPlan {
     fn validate(&self) -> Result<(), EdgeFunctionError> {
         validate_required("db_callback.uds_path", &self.uds_path)?;
-        if !self.uds_path.starts_with('/') {
+        if !self.uds_path.starts_with('/')
+            || self.uds_path.contains('\0')
+            || self.uds_path.len() > MAX_UDS_PATH_BYTES
+        {
             return Err(EdgeFunctionError::InvalidUdsPath);
         }
         validate_identifier("db_callback.database", &self.database)?;
@@ -183,6 +206,28 @@ pub struct RuntimeLaunchPlan {
     pub args: Vec<String>,
     pub env_secret_refs: Vec<String>,
     pub db_callback_socket: Option<String>,
+    pub sandbox: RuntimeSandboxPlan,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RuntimeSandboxPlan {
+    pub execution_mode: RuntimeExecutionMode,
+    pub external_runtime_spawned: bool,
+    pub user_code_executed: bool,
+    pub filesystem_write_allowed: bool,
+    pub subprocess_allowed: bool,
+    pub network_policy: RuntimeNetworkPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RuntimeExecutionMode {
+    PlanOnly,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum RuntimeNetworkPolicy {
+    None,
+    UnixOnly,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -202,8 +247,20 @@ impl InvocationRequest {
         if self.payload_bytes == 0 {
             return Err(EdgeFunctionError::InvalidPayloadSize);
         }
+        if self.payload_bytes > MAX_INVOCATION_PAYLOAD_BYTES {
+            return Err(EdgeFunctionError::PayloadTooLarge {
+                bytes: self.payload_bytes,
+                max_bytes: MAX_INVOCATION_PAYLOAD_BYTES,
+            });
+        }
         if self.timeout_ms == 0 {
             return Err(EdgeFunctionError::InvalidInvocationTimeout);
+        }
+        if self.timeout_ms > MAX_INVOCATION_TIMEOUT_MS {
+            return Err(EdgeFunctionError::InvocationTimeoutTooLarge {
+                timeout_ms: self.timeout_ms,
+                max_timeout_ms: MAX_INVOCATION_TIMEOUT_MS,
+            });
         }
         Ok(())
     }
@@ -213,11 +270,15 @@ impl InvocationRequest {
 pub enum EdgeFunctionError {
     FunctionNameMismatch,
     FunctionNotFound,
+    InvalidEntrypoint(&'static str),
     InvalidHttpPath,
     InvalidIdentifier(&'static str),
     InvalidInvocationTimeout,
     InvalidObjectUri(&'static str),
     InvalidPayloadSize,
+    InvalidSchedule,
+    InvalidSecretRef,
+    InvalidSource(&'static str),
     InvalidStatementTimeout,
     InvalidUdsPath,
     InvalidUrl(&'static str),
@@ -225,10 +286,27 @@ pub enum EdgeFunctionError {
         timeout_ms: u32,
         max_timeout_ms: u32,
     },
+    InvocationTimeoutTooLarge {
+        timeout_ms: u32,
+        max_timeout_ms: u32,
+    },
     MalformedHttpRequest,
     MissingRequiredField(&'static str),
+    PayloadTooLarge {
+        bytes: u64,
+        max_bytes: u64,
+    },
     Runtime(String),
+    SourceTooLarge {
+        bytes: usize,
+        max_bytes: usize,
+    },
+    TooManySecretRefs {
+        count: usize,
+        max_count: usize,
+    },
     TriggerNotAllowed,
+    UnsupportedExecutionMode,
 }
 
 impl fmt::Display for EdgeFunctionError {
@@ -238,7 +316,13 @@ impl fmt::Display for EdgeFunctionError {
                 write!(formatter, "invocation function_name does not match plan")
             }
             Self::FunctionNotFound => write!(formatter, "no registered function matches the name"),
-            Self::InvalidHttpPath => write!(formatter, "HTTP trigger path must start with /"),
+            Self::InvalidEntrypoint(field) => {
+                write!(formatter, "{field} must be a safe relative entrypoint path")
+            }
+            Self::InvalidHttpPath => write!(
+                formatter,
+                "HTTP trigger path must start with / and stay within a single safe path"
+            ),
             Self::InvalidIdentifier(field) => write!(formatter, "{field} must be a SQL identifier"),
             Self::InvalidInvocationTimeout => {
                 write!(formatter, "timeout_ms must be greater than zero")
@@ -247,6 +331,14 @@ impl fmt::Display for EdgeFunctionError {
             Self::InvalidPayloadSize => {
                 write!(formatter, "payload_bytes must be greater than zero")
             }
+            Self::InvalidSchedule => write!(
+                formatter,
+                "schedule must be a supported five-field cron expression"
+            ),
+            Self::InvalidSecretRef => {
+                write!(formatter, "env_secret_refs must be Kubernetes secret names")
+            }
+            Self::InvalidSource(field) => write!(formatter, "{field} contains unsupported bytes"),
             Self::InvalidStatementTimeout => {
                 write!(formatter, "statement_timeout_ms must be greater than zero")
             }
@@ -261,12 +353,35 @@ impl fmt::Display for EdgeFunctionError {
                 formatter,
                 "invocation timeout {timeout_ms} exceeds runtime callback bound {max_timeout_ms}"
             ),
+            Self::InvocationTimeoutTooLarge {
+                timeout_ms,
+                max_timeout_ms,
+            } => write!(
+                formatter,
+                "invocation timeout {timeout_ms} exceeds max runtime bound {max_timeout_ms}"
+            ),
             Self::MalformedHttpRequest => {
                 write!(formatter, "malformed edge-functions sidecar HTTP request")
             }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::PayloadTooLarge { bytes, max_bytes } => write!(
+                formatter,
+                "payload_bytes {bytes} exceeds max runtime bound {max_bytes}"
+            ),
             Self::Runtime(error) => write!(formatter, "{error}"),
+            Self::SourceTooLarge { bytes, max_bytes } => write!(
+                formatter,
+                "inline source bytes {bytes} exceeds max runtime bound {max_bytes}"
+            ),
+            Self::TooManySecretRefs { count, max_count } => write!(
+                formatter,
+                "env_secret_refs count {count} exceeds max runtime bound {max_count}"
+            ),
             Self::TriggerNotAllowed => write!(formatter, "invocation trigger is not configured"),
+            Self::UnsupportedExecutionMode => write!(
+                formatter,
+                "external Deno/Bun user-code execution is not enabled by this sidecar boundary"
+            ),
         }
     }
 }
@@ -280,19 +395,32 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), EdgeFunctio
     Ok(())
 }
 
-fn validate_optional_list(field: &'static str, values: &[String]) -> Result<(), EdgeFunctionError> {
-    if values.iter().any(|value| value.trim().is_empty()) {
-        return Err(EdgeFunctionError::MissingRequiredField(field));
+fn validate_env_secret_refs(values: &[String]) -> Result<(), EdgeFunctionError> {
+    if values.len() > MAX_SECRET_REFS {
+        return Err(EdgeFunctionError::TooManySecretRefs {
+            count: values.len(),
+            max_count: MAX_SECRET_REFS,
+        });
+    }
+    for value in values {
+        validate_required("env_secret_refs", value)?;
+        if !is_valid_secret_ref(value) {
+            return Err(EdgeFunctionError::InvalidSecretRef);
+        }
     }
     Ok(())
 }
 
 fn validate_identifier(field: &'static str, value: &str) -> Result<(), EdgeFunctionError> {
     validate_required(field, value)?;
-    if value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return Err(EdgeFunctionError::MissingRequiredField(field));
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return Err(EdgeFunctionError::InvalidIdentifier(field));
+    }
+    if chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_') {
         Ok(())
     } else {
         Err(EdgeFunctionError::InvalidIdentifier(field))
@@ -311,6 +439,79 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), EdgeF
     } else {
         Err(EdgeFunctionError::InvalidIdentifier(field))
     }
+}
+
+fn validate_inline_source(code: &str) -> Result<(), EdgeFunctionError> {
+    validate_required("source.inline.code", code)?;
+    if code.contains('\0') {
+        return Err(EdgeFunctionError::InvalidSource("source.inline.code"));
+    }
+    if code.len() > MAX_INLINE_SOURCE_BYTES {
+        return Err(EdgeFunctionError::SourceTooLarge {
+            bytes: code.len(),
+            max_bytes: MAX_INLINE_SOURCE_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn validate_entrypoint_path(field: &'static str, value: &str) -> Result<(), EdgeFunctionError> {
+    validate_required(field, value)?;
+    if value.len() > MAX_ENTRYPOINT_BYTES
+        || value.starts_with('/')
+        || value.contains('\0')
+        || value
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return Err(EdgeFunctionError::InvalidEntrypoint(field));
+    }
+    Ok(())
+}
+
+fn validate_http_path(path: &str) -> Result<(), EdgeFunctionError> {
+    validate_required("trigger.http.path", path)?;
+    if path.len() > MAX_HTTP_PATH_BYTES
+        || !path.starts_with('/')
+        || path.contains(char::is_whitespace)
+        || path.split('/').any(|part| part == "..")
+    {
+        return Err(EdgeFunctionError::InvalidHttpPath);
+    }
+    Ok(())
+}
+
+fn validate_schedule(schedule: &str) -> Result<(), EdgeFunctionError> {
+    validate_required("trigger.schedule", schedule)?;
+    let parts = schedule.split_whitespace().collect::<Vec<_>>();
+    if parts.len() != 5 {
+        return Err(EdgeFunctionError::InvalidSchedule);
+    }
+    let minute = parts[0];
+    let minute_supported = minute == "*"
+        || minute
+            .strip_prefix("*/")
+            .and_then(|value| value.parse::<u64>().ok())
+            .is_some_and(|value| value > 0 && value <= 59);
+    if minute_supported && parts[1..].iter().all(|part| *part == "*") {
+        Ok(())
+    } else {
+        Err(EdgeFunctionError::InvalidSchedule)
+    }
+}
+
+fn is_valid_secret_ref(value: &str) -> bool {
+    if value.is_empty() || value.len() > 253 {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    let edge_ok = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    if !edge_ok(bytes[0]) || !edge_ok(*bytes.last().unwrap_or(&0)) {
+        return false;
+    }
+    value
+        .split('.')
+        .all(|part| !part.is_empty() && part.bytes().all(|byte| edge_ok(byte) || byte == b'-'))
 }
 
 fn validate_http_url(field: &'static str, value: &str) -> Result<(), EdgeFunctionError> {
@@ -340,7 +541,7 @@ pub struct EdgeFunctionCanonicalReport {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum InvocationStatus {
-    Succeeded,
+    Planned,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -354,6 +555,7 @@ pub struct EdgeFunctionExecution {
     pub response_bytes: u64,
     pub db_callback_used: bool,
     pub status: InvocationStatus,
+    pub execution_mode: RuntimeExecutionMode,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -443,8 +645,17 @@ impl EdgeFunctionRuntimeHost {
             payload_bytes: request.payload_bytes,
             response_bytes: deterministic_response_bytes(request.payload_bytes),
             db_callback_used,
-            status: InvocationStatus::Succeeded,
+            status: InvocationStatus::Planned,
+            execution_mode: RuntimeExecutionMode::PlanOnly,
         })
+    }
+
+    pub fn invoke_external_runtime(
+        &mut self,
+        request: &InvocationRequest,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        request.validate()?;
+        Err(EdgeFunctionError::UnsupportedExecutionMode)
     }
 }
 
@@ -652,11 +863,7 @@ impl EdgeFunctionRuntimeHost {
     }
 
     pub fn runtime_kind(&self) -> EdgeFunctionRuntime {
-        match self.launch.executable.as_str() {
-            "deno" => EdgeFunctionRuntime::Deno,
-            "bun" => EdgeFunctionRuntime::Bun,
-            _ => EdgeFunctionRuntime::Deno,
-        }
+        self.plan.runtime
     }
 
     pub fn trigger_kinds(&self) -> Vec<EdgeFunctionTriggerKind> {
@@ -879,33 +1086,24 @@ fn handle_edge_functions_sidecar_http_request(
                     "application/json",
                     format!("{{\"registered\":\"{}\"}}\n", plan.name),
                 )),
-                Err(error) => Ok(HttpProbeResponse::new(
-                    400,
-                    "application/json",
-                    format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-                )),
+                Err(error) => Ok(error_response(error)),
             },
-            Err(error) => Ok(HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )),
+            Err(error) => Ok(error_response(error)),
         };
     }
     if method == "POST" && path.starts_with("/functions/") {
         let name = path.trim_start_matches("/functions/");
-        let invocation = canonical_invocation_for_registered(&registry, name, body)?;
+        let invocation = match canonical_invocation_for_registered(registry, name, body) {
+            Ok(invocation) => invocation,
+            Err(error) => return Ok(error_response(error)),
+        };
         return match registry.invoke(&invocation) {
             Ok(execution) => Ok(HttpProbeResponse::new(
                 200,
                 "application/json",
                 render_execution(&execution),
             )),
-            Err(error) => Ok(HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )),
+            Err(error) => Ok(error_response(error)),
         };
     }
 
@@ -982,7 +1180,7 @@ fn render_registry_snapshot(snapshot: &EdgeFunctionRegistrySnapshot) -> String {
 
 fn render_execution(execution: &EdgeFunctionExecution) -> String {
     format!(
-        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"status\":\"{}\"}}\n",
+        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"status\":\"{}\",\"execution_mode\":\"{}\"}}\n",
         execution.function_name,
         match execution.runtime {
             EdgeFunctionRuntime::Deno => "deno",
@@ -1008,14 +1206,19 @@ fn render_execution(execution: &EdgeFunctionExecution) -> String {
         execution.response_bytes,
         execution.db_callback_used,
         match execution.status {
-            InvocationStatus::Succeeded => "succeeded",
+            InvocationStatus::Planned => "planned",
+        },
+        match execution.execution_mode {
+            RuntimeExecutionMode::PlanOnly => "plan_only",
         },
     )
 }
 
 fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionError> {
-    let name = body_field(body, "name").ok_or(EdgeFunctionError::MissingRequiredField("name"))?;
-    let runtime_str = body_field(body, "runtime").unwrap_or_else(|| "deno".to_string());
+    let json = parse_json_body(body)?;
+    let name =
+        json_string_field(&json, "name").ok_or(EdgeFunctionError::MissingRequiredField("name"))?;
+    let runtime_str = json_string_field(&json, "runtime").unwrap_or_else(|| "deno".to_string());
     let runtime = match runtime_str.as_str() {
         "deno" => EdgeFunctionRuntime::Deno,
         "bun" => EdgeFunctionRuntime::Bun,
@@ -1023,15 +1226,17 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
             return Err(EdgeFunctionError::InvalidIdentifier("runtime"));
         }
     };
-    let code = body_field(body, "code").ok_or(EdgeFunctionError::MissingRequiredField("code"))?;
-    let trigger_path = body_field(body, "http_path").unwrap_or_else(|| "/".to_string());
+    let code =
+        json_string_field(&json, "code").ok_or(EdgeFunctionError::MissingRequiredField("code"))?;
+    let trigger_path = json_string_field(&json, "http_path").unwrap_or_else(|| "/".to_string());
+    let env_secret_refs = json_string_array_field(&json, "env_secret_refs")?;
 
     let plan = EdgeFunctionPlan {
         name,
         runtime,
         source: FunctionSource::Inline { code },
         triggers: vec![FunctionTrigger::Http { path: trigger_path }],
-        env_secret_refs: Vec::new(),
+        env_secret_refs,
         db_callback: None,
     };
     plan.validate()?;
@@ -1055,13 +1260,15 @@ fn canonical_invocation_for_registered(
         .or_else(|| host.plan.triggers.first())
         .ok_or(EdgeFunctionError::TriggerNotAllowed)?
         .clone();
-    let tenant_id = body_field(body, "tenant_id").unwrap_or_else(|| "tenant-a".to_string());
-    let payload_bytes = body_field(body, "payload_bytes")
-        .and_then(|raw| raw.parse::<u64>().ok())
-        .unwrap_or(64);
-    let timeout_ms = body_field(body, "timeout_ms")
-        .and_then(|raw| raw.parse::<u32>().ok())
-        .unwrap_or(500);
+    let json = parse_json_body(body)?;
+    if let Some(mode) = json_string_field(&json, "execution_mode") {
+        if mode != "plan_only" {
+            return Err(EdgeFunctionError::UnsupportedExecutionMode);
+        }
+    }
+    let tenant_id = json_string_field(&json, "tenant_id").unwrap_or_else(|| "tenant-a".to_string());
+    let payload_bytes = json_u64_field(&json, "payload_bytes")?.unwrap_or(64);
+    let timeout_ms = json_u32_field(&json, "timeout_ms")?.unwrap_or(500);
     Ok(InvocationRequest {
         function_name: name.to_string(),
         tenant_id,
@@ -1071,54 +1278,66 @@ fn canonical_invocation_for_registered(
     })
 }
 
-fn body_field(body: &str, field: &str) -> Option<String> {
-    let needle = format!("\"{field}\":");
-    let start = body.find(&needle)? + needle.len();
-    let mut chars = body[start..].chars().peekable();
-    while let Some(ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-        } else {
-            break;
-        }
+fn parse_json_body(body: &str) -> Result<Value, EdgeFunctionError> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Ok(Value::Object(Default::default()));
     }
-    if chars.peek() == Some(&'"') {
-        chars.next();
-        let mut value = String::new();
-        while let Some(ch) = chars.next() {
-            if ch == '\\' {
-                if let Some(next) = chars.next() {
-                    match next {
-                        '"' => value.push('"'),
-                        '\\' => value.push('\\'),
-                        '/' => value.push('/'),
-                        'n' => value.push('\n'),
-                        'r' => value.push('\r'),
-                        't' => value.push('\t'),
-                        other => value.push(other),
-                    }
-                }
-                continue;
-            }
-            if ch == '"' {
-                return Some(value);
-            }
-            value.push(ch);
-        }
-        None
-    } else {
-        let mut value = String::new();
-        for ch in chars {
-            if ch == ',' || ch == '}' {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    return None;
-                }
-                return Some(trimmed.to_string());
-            }
-            value.push(ch);
-        }
-        None
+    serde_json::from_str(trimmed).map_err(|_| EdgeFunctionError::MalformedHttpRequest)
+}
+
+fn json_string_field(value: &Value, field: &str) -> Option<String> {
+    value.get(field).and_then(Value::as_str).map(str::to_string)
+}
+
+fn json_u64_field(value: &Value, field: &str) -> Result<Option<u64>, EdgeFunctionError> {
+    match value.get(field) {
+        None => Ok(None),
+        Some(raw) => raw
+            .as_u64()
+            .map(Some)
+            .ok_or(EdgeFunctionError::MalformedHttpRequest),
+    }
+}
+
+fn json_u32_field(value: &Value, field: &str) -> Result<Option<u32>, EdgeFunctionError> {
+    match json_u64_field(value, field)? {
+        None => Ok(None),
+        Some(raw) => u32::try_from(raw)
+            .map(Some)
+            .map_err(|_| EdgeFunctionError::MalformedHttpRequest),
+    }
+}
+
+fn json_string_array_field(value: &Value, field: &str) -> Result<Vec<String>, EdgeFunctionError> {
+    match value.get(field) {
+        None => Ok(Vec::new()),
+        Some(Value::Array(values)) => values
+            .iter()
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_string)
+                    .ok_or(EdgeFunctionError::MalformedHttpRequest)
+            })
+            .collect(),
+        Some(_) => Err(EdgeFunctionError::MalformedHttpRequest),
+    }
+}
+
+fn error_response(error: EdgeFunctionError) -> HttpProbeResponse {
+    let status_code = http_status_for_error(&error);
+    HttpProbeResponse::new(
+        status_code,
+        "application/json",
+        format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+    )
+}
+fn http_status_for_error(error: &EdgeFunctionError) -> u16 {
+    match error {
+        EdgeFunctionError::FunctionNotFound => 404,
+        EdgeFunctionError::UnsupportedExecutionMode => 501,
+        _ => 400,
     }
 }
 
@@ -1278,6 +1497,7 @@ mod tests {
             vec![
                 "deno".to_string(),
                 "run".to_string(),
+                "--no-prompt".to_string(),
                 "--allow-env".to_string(),
                 "--allow-net=unix".to_string(),
                 "inline.ts".to_string(),
@@ -1285,7 +1505,11 @@ mod tests {
         );
         assert_eq!(report.execution.response_bytes, 320);
         assert!(report.execution.db_callback_used);
-        assert_eq!(report.execution.status, InvocationStatus::Succeeded);
+        assert_eq!(report.execution.status, InvocationStatus::Planned);
+        assert_eq!(
+            report.execution.execution_mode,
+            RuntimeExecutionMode::PlanOnly
+        );
         assert_eq!(report.state.launched_functions, 1);
         assert_eq!(report.state.invocations, 1);
         assert_eq!(report.state.db_callbacks, 1);
@@ -1512,7 +1736,153 @@ mod tests {
             handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("invoke");
         assert_eq!(response.status_code, 200);
         assert!(response.body.contains("\"function\":\"order_created\""));
-        assert!(response.body.contains("\"status\":\"succeeded\""));
+        assert!(response.body.contains("\"status\":\"planned\""));
+        assert!(response.body.contains("\"execution_mode\":\"plan_only\""));
+    }
+
+    #[test]
+    fn function_plan_rejects_unsafe_runtime_inputs() {
+        let mut plan = canonical_edge_function_plan();
+        plan.source = FunctionSource::Inline {
+            code: "x".repeat(MAX_INLINE_SOURCE_BYTES + 1),
+        };
+        assert_eq!(
+            plan.validate(),
+            Err(EdgeFunctionError::SourceTooLarge {
+                bytes: MAX_INLINE_SOURCE_BYTES + 1,
+                max_bytes: MAX_INLINE_SOURCE_BYTES,
+            })
+        );
+
+        plan.source = FunctionSource::Inline {
+            code: "bad source".to_string(),
+        };
+        assert_eq!(
+            plan.validate(),
+            Err(EdgeFunctionError::InvalidSource("source.inline.code"))
+        );
+
+        let plan = EdgeFunctionPlan {
+            name: "bad_entry".to_string(),
+            runtime: EdgeFunctionRuntime::Deno,
+            source: FunctionSource::BundleUri {
+                uri: "s3://bucket/function.tgz".to_string(),
+                entrypoint: "../index.ts".to_string(),
+            },
+            triggers: vec![FunctionTrigger::Http {
+                path: "/bad".to_string(),
+            }],
+            env_secret_refs: Vec::new(),
+            db_callback: None,
+        };
+        assert_eq!(
+            plan.validate(),
+            Err(EdgeFunctionError::InvalidEntrypoint("source.entrypoint"))
+        );
+    }
+
+    #[test]
+    fn function_plan_rejects_invalid_env_secret_refs() {
+        let mut plan = canonical_edge_function_plan();
+        plan.env_secret_refs = vec!["Uppercase-secret".to_string()];
+        assert_eq!(plan.validate(), Err(EdgeFunctionError::InvalidSecretRef));
+
+        plan.env_secret_refs = (0..=MAX_SECRET_REFS)
+            .map(|index| format!("secret-{index}"))
+            .collect();
+        assert_eq!(
+            plan.validate(),
+            Err(EdgeFunctionError::TooManySecretRefs {
+                count: MAX_SECRET_REFS + 1,
+                max_count: MAX_SECRET_REFS,
+            })
+        );
+    }
+
+    #[test]
+    fn invocation_request_enforces_size_and_timeout_bounds() {
+        let mut request = canonical_invocation_request();
+        request.payload_bytes = MAX_INVOCATION_PAYLOAD_BYTES + 1;
+        assert_eq!(
+            request.validate(),
+            Err(EdgeFunctionError::PayloadTooLarge {
+                bytes: MAX_INVOCATION_PAYLOAD_BYTES + 1,
+                max_bytes: MAX_INVOCATION_PAYLOAD_BYTES,
+            })
+        );
+
+        request = canonical_invocation_request();
+        request.timeout_ms = MAX_INVOCATION_TIMEOUT_MS + 1;
+        assert_eq!(
+            request.validate(),
+            Err(EdgeFunctionError::InvocationTimeoutTooLarge {
+                timeout_ms: MAX_INVOCATION_TIMEOUT_MS + 1,
+                max_timeout_ms: MAX_INVOCATION_TIMEOUT_MS,
+            })
+        );
+    }
+
+    #[test]
+    fn external_runtime_execution_fails_closed() {
+        let mut runtime =
+            EdgeFunctionRuntimeHost::new(canonical_edge_function_plan()).expect("runtime");
+        assert_eq!(
+            runtime.invoke_external_runtime(&canonical_invocation_request()),
+            Err(EdgeFunctionError::UnsupportedExecutionMode)
+        );
+    }
+
+    #[test]
+    fn http_front_door_rejects_unsupported_live_execution() {
+        let body = r#"{"tenant_id":"tenant-a","payload_bytes":256,"timeout_ms":250,"execution_mode":"live"}"#;
+        let request = format!(
+            "POST /functions/order_created HTTP/1.1
+content-type: application/json
+content-length: {}
+
+{}",
+            body.len(),
+            body
+        );
+        let response =
+            handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("invoke");
+        assert_eq!(response.status_code, 501);
+        assert!(response
+            .body
+            .contains("external Deno/Bun user-code execution"));
+    }
+
+    #[test]
+    fn http_front_door_rejects_invalid_registration_and_invocation_bounds() {
+        let bad_register = r#"{"name":"bad","runtime":"deno","code":"ok","http_path":"admin"}"#;
+        let request = format!(
+            "POST /functions HTTP/1.1
+content-type: application/json
+content-length: {}
+
+{}",
+            bad_register.len(),
+            bad_register
+        );
+        let response =
+            handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("register");
+        assert_eq!(response.status_code, 400);
+        assert!(response.body.contains("HTTP trigger path"));
+
+        let bad_invoke = r#"{"tenant_id":"tenant-a","payload_bytes":1048577,"timeout_ms":250}"#;
+        let request = format!(
+            "POST /functions/order_created HTTP/1.1
+content-type: application/json
+content-length: {}
+
+{}",
+            bad_invoke.len(),
+            bad_invoke
+        );
+        let response =
+            handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("invoke");
+        assert_eq!(response.status_code, 400);
+        assert!(response.body.contains("payload_bytes"));
     }
 
     #[test]

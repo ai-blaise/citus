@@ -139,6 +139,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical
       - name: Run canonical edge-function registry
         run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical
+      - name: Run edge-functions runtime boundary smoke
+        run: bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh
 
   api-runtime-smoke:
     runs-on: ubuntu-latest
