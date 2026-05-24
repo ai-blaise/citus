@@ -2,9 +2,11 @@
 
 //! Per-tenant + per-query-class canary mirroring.
 //!
-//! Mirrors a fraction of production traffic to a canary backend without
-//! blocking the primary path. Mirrored traffic is fire-and-forget; the
-//! canary's response is discarded after structural shape checks.
+//! This module owns the deterministic policy parser, validator, and decision
+//! report used before any request is eligible for fire-and-forget canary
+//! mirroring. It intentionally does not claim live backend fan-out or response
+//! comparison; those stay outside the bounded pool contract until a data-plane
+//! canary smoke proves them.
 
 use crate::{MirrorTrafficPolicy, PoolRuntimeError, RouteTarget};
 use std::collections::BTreeMap;
@@ -34,6 +36,18 @@ impl QueryClass {
             Self::Other => "other",
         }
     }
+
+    pub fn parse(value: &str) -> Result<Self, MirrorPolicyError> {
+        match value.trim() {
+            "read.short.hash" => Ok(Self::ReadShortHash),
+            "read.scatter" => Ok(Self::ReadScatterGather),
+            "analytical" => Ok(Self::Analytical),
+            "write" => Ok(Self::Write),
+            "ddl" => Ok(Self::Ddl),
+            "other" => Ok(Self::Other),
+            other => Err(MirrorPolicyError::InvalidQueryClass(other.to_string())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -44,9 +58,29 @@ pub struct TenantMirrorRule {
 }
 
 impl TenantMirrorRule {
+    pub fn parse(spec: &str) -> Result<Self, MirrorPolicyError> {
+        let parts = spec.split(':').collect::<Vec<_>>();
+        if parts.len() != 3 {
+            return Err(MirrorPolicyError::InvalidRuleSpec(spec.to_string()));
+        }
+        let sample_percent = parts[2]
+            .parse::<u8>()
+            .map_err(|_| MirrorPolicyError::InvalidRuleSpec(spec.to_string()))?;
+        let rule = Self {
+            tenant_id: parts[0].trim().to_string(),
+            query_class: QueryClass::parse(parts[1])?,
+            sample_percent,
+        };
+        rule.validate()?;
+        Ok(rule)
+    }
+
     fn validate(&self) -> Result<(), MirrorPolicyError> {
         if self.tenant_id.trim().is_empty() {
             return Err(MirrorPolicyError::MissingField("tenant_id"));
+        }
+        if self.tenant_id.chars().any(char::is_whitespace) {
+            return Err(MirrorPolicyError::InvalidTenantId(self.tenant_id.clone()));
         }
         if self.sample_percent > 100 {
             return Err(MirrorPolicyError::InvalidPercent(self.sample_percent));
@@ -64,6 +98,19 @@ pub struct TenantMirrorPolicy {
 }
 
 impl TenantMirrorPolicy {
+    pub fn from_rule_specs(
+        base: MirrorTrafficPolicy,
+        specs: &[&str],
+    ) -> Result<Self, MirrorPolicyError> {
+        let rules = specs
+            .iter()
+            .map(|spec| TenantMirrorRule::parse(spec))
+            .collect::<Result<Vec<_>, _>>()?;
+        let policy = Self { base, rules };
+        policy.validate()?;
+        Ok(policy)
+    }
+
     pub fn validate(&self) -> Result<(), MirrorPolicyError> {
         self.base.validate().map_err(MirrorPolicyError::Runtime)?;
         let mut seen: BTreeMap<(String, QueryClass), ()> = BTreeMap::new();
@@ -83,17 +130,39 @@ impl TenantMirrorPolicy {
     }
 
     /// Decide whether a request keyed on `(tenant_id, class, hash)` should be
-    /// mirrored. `hash` is used as a deterministic sampler — caller supplies a
-    /// stable per-query hash so the same query consistently mirrors or skips.
+    /// mirrored. `hash` is used as a deterministic sampler so the same query
+    /// consistently mirrors or skips.
     pub fn should_mirror(
         &self,
         tenant_id: &str,
         class: &QueryClass,
         hash: u64,
     ) -> Result<MirrorDecision, MirrorPolicyError> {
+        Ok(self.decision_report(tenant_id, class, hash)?.decision)
+    }
+
+    pub fn decision_report(
+        &self,
+        tenant_id: &str,
+        class: &QueryClass,
+        hash: u64,
+    ) -> Result<MirrorDecisionReport, MirrorPolicyError> {
         self.validate()?;
+        if tenant_id.trim().is_empty() {
+            return Err(MirrorPolicyError::MissingField("tenant_id"));
+        }
+        if tenant_id.chars().any(char::is_whitespace) {
+            return Err(MirrorPolicyError::InvalidTenantId(tenant_id.to_string()));
+        }
         if !self.base.enabled {
-            return Ok(MirrorDecision::Skip);
+            return Ok(MirrorDecisionReport {
+                tenant_id: tenant_id.to_string(),
+                query_class: class.as_str(),
+                sample_percent: 0,
+                hash_bucket: (hash % 100) as u8,
+                decision: MirrorDecision::Skip,
+                target: None,
+            });
         }
         let target = self.base.target.clone().ok_or(MirrorPolicyError::Runtime(
             PoolRuntimeError::MissingRequiredField("mirror.target"),
@@ -106,16 +175,31 @@ impl TenantMirrorPolicy {
             .map(|rule| rule.sample_percent)
             .unwrap_or(self.base.sample_percent);
 
-        if sample == 0 {
-            return Ok(MirrorDecision::Skip);
-        }
         let bucket = (hash % 100) as u8;
-        if bucket < sample {
-            Ok(MirrorDecision::Mirror(target))
+        let decision = if sample > 0 && bucket < sample {
+            MirrorDecision::Mirror(target.clone())
         } else {
-            Ok(MirrorDecision::Skip)
-        }
+            MirrorDecision::Skip
+        };
+        Ok(MirrorDecisionReport {
+            tenant_id: tenant_id.to_string(),
+            query_class: class.as_str(),
+            sample_percent: sample,
+            hash_bucket: bucket,
+            target: matches!(decision, MirrorDecision::Mirror(_)).then_some(target),
+            decision,
+        })
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MirrorDecisionReport {
+    pub tenant_id: String,
+    pub query_class: &'static str,
+    pub sample_percent: u8,
+    pub hash_bucket: u8,
+    pub decision: MirrorDecision,
+    pub target: Option<RouteTarget>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -131,6 +215,9 @@ pub enum MirrorPolicyError {
         query_class: QueryClass,
     },
     InvalidPercent(u8),
+    InvalidQueryClass(String),
+    InvalidRuleSpec(String),
+    InvalidTenantId(String),
     MissingField(&'static str),
     Runtime(PoolRuntimeError),
 }
@@ -146,12 +233,16 @@ impl fmt::Display for MirrorPolicyError {
                 "duplicate mirror rule for tenant {tenant_id} class {}",
                 query_class.as_str()
             ),
-            Self::InvalidPercent(value) => {
-                write!(
-                    formatter,
-                    "sample_percent {value} must be between 0 and 100"
-                )
-            }
+            Self::InvalidPercent(value) => write!(
+                formatter,
+                "sample_percent {value} must be between 0 and 100"
+            ),
+            Self::InvalidQueryClass(value) => write!(formatter, "unknown query class {value}"),
+            Self::InvalidRuleSpec(value) => write!(
+                formatter,
+                "mirror rule {value} must use tenant:query-class:sample-percent"
+            ),
+            Self::InvalidTenantId(value) => write!(formatter, "invalid mirror tenant id {value}"),
             Self::MissingField(field) => write!(formatter, "{field} must not be empty"),
             Self::Runtime(error) => write!(formatter, "{error}"),
         }
@@ -207,7 +298,6 @@ mod tests {
                 sample_percent: 100,
             }],
         };
-        // tenant-a writes always mirror; tenant-b writes only at base 10%.
         assert!(matches!(
             policy.should_mirror("tenant-a", &QueryClass::Write, 99),
             Ok(MirrorDecision::Mirror(_))
@@ -262,12 +352,38 @@ mod tests {
     }
 
     #[test]
-    fn invalid_percent_is_rejected() {
-        let rule = TenantMirrorRule {
-            tenant_id: "tenant".to_string(),
-            query_class: QueryClass::Write,
-            sample_percent: 101,
-        };
-        assert_eq!(rule.validate(), Err(MirrorPolicyError::InvalidPercent(101)));
+    fn parses_rules_fail_closed() {
+        let policy = TenantMirrorPolicy::from_rule_specs(
+            base(),
+            &["tenant-a:analytical:100", "tenant-b:write:0"],
+        )
+        .expect("policy");
+        assert_eq!(policy.rules.len(), 2);
+        assert!(matches!(
+            TenantMirrorPolicy::from_rule_specs(base(), &["tenant-a:unknown:10"]),
+            Err(MirrorPolicyError::InvalidQueryClass(_))
+        ));
+        assert!(matches!(
+            TenantMirrorPolicy::from_rule_specs(base(), &["tenant a:write:10"]),
+            Err(MirrorPolicyError::InvalidTenantId(_))
+        ));
+        assert!(matches!(
+            TenantMirrorPolicy::from_rule_specs(base(), &["tenant-a:write:101"]),
+            Err(MirrorPolicyError::InvalidPercent(101))
+        ));
+    }
+
+    #[test]
+    fn decision_report_is_deterministic_and_non_secret() {
+        let policy = TenantMirrorPolicy::from_rule_specs(base(), &["tenant-a:analytical:100"])
+            .expect("policy");
+        let report = policy
+            .decision_report("tenant-a", &QueryClass::Analytical, 142)
+            .expect("report");
+        assert_eq!(report.hash_bucket, 42);
+        assert_eq!(report.sample_percent, 100);
+        assert_eq!(report.query_class, "analytical");
+        assert!(matches!(report.decision, MirrorDecision::Mirror(_)));
+        assert_eq!(report.target.expect("target").host, "canary");
     }
 }

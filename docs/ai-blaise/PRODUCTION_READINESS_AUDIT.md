@@ -301,10 +301,12 @@ more production-ready than the artifacts justified.
   duplicate region inventory rejection, `RegionalRowPlacementPlan` admission
   checks for declared regions, distribution key, replication factor, and
   `topology.kubernetes.io/region` spread, plus canonical output with
-  `live_k8s_exercised=false`. `MR3`, `MR5`, and `MR9` remain alpha; this is not
-  evidence for live row movement, GeoIP pool routing, cross-region client
-  traffic, DNS cutover, regional failover, PITR restore, or backup artifact
-  restore.
+  `live_k8s_exercised=false`. `MR3` and `MR9` remain alpha; this is not
+  evidence for live row movement, live cross-region client traffic, DNS cutover,
+  regional failover, PITR restore, or backup artifact restore. `MR5` now has a
+  separate bounded pool GeoIP routing contract, but that GeoIP pool routing
+  contract still does not prove managed GeoIP databases, Region-CR
+  synchronization, edge-replica traffic, or live Kubernetes routing.
 - The backup/PITR runbooks now have a restore-depth gate backed by
   `ci/ai-blaise/dr-restore-depth-check.sh`. The gate validates fail-closed
   restore configuration, read-only branch-before-restore policy, destructive
@@ -468,6 +470,13 @@ more production-ready than the artifacts justified.
   for the first result, verifies ordered rows from a `postgres:17` backend, and
   promotes only the `FEATURE: T7` simple-query data-plane pipelining boundary;
   extended-query batching and shard-aware pool routing remain alpha.
+- The pool routing/security canonical smoke now covers bounded production-ready
+  contracts for T9/T12/MR5/R10: fail-closed mirror rule parsing and deterministic
+  sampling reports, fail-closed HTAP feature-report parsing, fail-closed GeoIP
+  CIDR/replica-table parsing with fallback reports, and TLS ticket rotation
+  reports with redacted fingerprints. This is not evidence for live canary
+  mirroring, managed GeoIP databases, rustls listener/session-resumption
+  traffic, analytical sidecar query execution, or Kubernetes traffic.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim

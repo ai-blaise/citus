@@ -657,14 +657,16 @@ token_file="$(mktemp -t ai-blaise-pool-auth-token.XXXXXX)"
 python3 - "${auth_base}" >"${token_file}" <<'PY_AUTH'
 import http.client
 import json
+import os
 import sys
 
 base = sys.argv[1]
 host_port = base.removeprefix("http://")
 host, port = host_port.split(":")
+request_timeout = int(os.environ.get("AI_BLAISE_POOL_AUTH_SMOKE_HTTP_TIMEOUT_SECONDS", "90"))
 
 def request(method, path, body=None, status=200):
-    conn = http.client.HTTPConnection(host, int(port), timeout=10)
+    conn = http.client.HTTPConnection(host, int(port), timeout=request_timeout)
     headers = {"Connection": "close"}
     if body is not None:
         headers["Content-Type"] = "application/json"
