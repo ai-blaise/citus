@@ -494,6 +494,9 @@ upgrade-rollback-guardrails:
 image-check:
 	@bash ci/ai-blaise/image-check.sh
 
+bundle1-contract-check:
+	@python3 ci/ai-blaise/bundle1-contract-check.py
+
 # PG version matrix: ai-blaise/citus operand image emits a PG17 and PG18
 # variant from the same Dockerfile, gated by PG_MAJOR / BASE_IMAGE build args.
 # Operators select a major via Helm `postgresMajor`; default is PG17 for
@@ -503,6 +506,8 @@ build-image-pg17:
 	  -f images/citus-pg-overlay/Dockerfile \
 	  --build-arg PG_MAJOR=17 \
 	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  --build-arg AI_BLAISE_SOURCE_GIT_SHA=$$(git rev-parse HEAD) \
+	  --build-arg AI_BLAISE_SOURCE_TREE_STATE=$$(test -z "$$(git status --porcelain)" && echo clean || echo dirty) \
 	  -t ai-blaise-citus-overlay:pg17 \
 	  .
 
@@ -511,6 +516,8 @@ build-image-pg18:
 	  -f images/citus-pg-overlay/Dockerfile \
 	  --build-arg PG_MAJOR=18 \
 	  --build-arg BASE_IMAGE=postgres:18-bookworm \
+	  --build-arg AI_BLAISE_SOURCE_GIT_SHA=$$(git rev-parse HEAD) \
+	  --build-arg AI_BLAISE_SOURCE_TREE_STATE=$$(test -z "$$(git status --porcelain)" && echo clean || echo dirty) \
 	  -t ai-blaise-citus-overlay:pg18 \
 	  .
 
@@ -520,6 +527,8 @@ build-image-bundle1-light-pg17:
 	  --target bundle1-final-light \
 	  --build-arg PG_MAJOR=17 \
 	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  --build-arg AI_BLAISE_SOURCE_GIT_SHA=$$(git rev-parse HEAD) \
+	  --build-arg AI_BLAISE_SOURCE_TREE_STATE=$$(test -z "$$(git status --porcelain)" && echo clean || echo dirty) \
 	  -t ai-blaise-citus-overlay:bundle1-light-pg17 \
 	  .
 
@@ -529,6 +538,8 @@ build-image-bundle1-full-pg17:
 	  --target bundle1-final-full \
 	  --build-arg PG_MAJOR=17 \
 	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  --build-arg AI_BLAISE_SOURCE_GIT_SHA=$$(git rev-parse HEAD) \
+	  --build-arg AI_BLAISE_SOURCE_TREE_STATE=$$(test -z "$$(git status --porcelain)" && echo clean || echo dirty) \
 	  -t ai-blaise-citus-overlay:bundle1-full-pg17 \
 	  .
 

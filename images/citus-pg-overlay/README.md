@@ -21,6 +21,8 @@ cohabit detection; it is subset evidence, not full Bundle1 production evidence.
 
 - `extension-manifest.tsv` is the source of truth for required, optional, and
   hard-blocked extensions from the V2 plan.
+- `bundle1-source-build.lock.tsv` pins the PG17 source-build subset and
+  records which entries are light, heavy, local-shim, or deferred.
 - `extensions/ai_blaise_citus-upgrade-manifest.tsv` is the bounded
   upgrade/rollback contract for the local companion SQL extension. CI fails
   closed when a new install or transition SQL file appears without an explicit
@@ -39,4 +41,13 @@ cohabit detection; it is subset evidence, not full Bundle1 production evidence.
 - `bin/pgsodium_getkey` is installed at pgsodium's default `pgsodium_getkey`
   path and fails closed unless `PGSODIUM_KEY` is set or
   `PGSODIUM_KEY_FILE` points at a readable 64-hex-character secret.
-- `ci/ai-blaise/image-check.sh` validates the image contract in CI.
+- `ci/ai-blaise/bundle1-contract-check.py` is the structured Bundle1
+  contract check: it cross-validates the manifest, lockfile, Dockerfile labels,
+  smoke coverage, tracked evidence, and docs so Bundle1 cannot be claimed by
+  prose alone.
+- `ci/ai-blaise/image-check.sh` validates the image contract in CI and invokes
+  the structured Bundle1 contract check.
+- Source-build images carry `ai-blaise.citus.source-git-sha`,
+  `ai-blaise.citus.source-tree-state`, plus
+  `ai-blaise.citus.bundle1.evidence-scope=source-build-subset-no-complete-initdb`;
+  the label is intentionally not a full initdb production claim.

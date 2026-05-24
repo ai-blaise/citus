@@ -1,0 +1,10 @@
+extension	target	manifest_source	pg_versions	repo	tag	ref	docker_arg_prefix	docker_stage	status
+citus	light	source-tree	17,18	in-tree	v13.3.0	in-tree	CITUS	build-citus	in-tree fork source compiled in light target; image source-git-sha label records the exact ai-blaise/citus commit used
+pgsodium	light	source-build	17	https://github.com/michelp/pgsodium.git	v3.1.9	7222ebc5ed87084a68d526aef977be0f4eb319a2	PGSODIUM	build-pgsodium	feasible PG17 source-build; pgsodium_getkey remains fail-closed without a 64-hex secret
+topn	light	source-build	17	https://github.com/citusdata/postgresql-topn.git	v2.7.0	f636ff1b3586025c81fb84c20483412f3991ed84	TOPN	build-topn	feasible PG17 source-build
+pg_jsonschema	light	source-build	17	https://github.com/supabase/pg_jsonschema.git	v0.3.4	cbe74b570d38aa0c4d42914e7a118bcb3adaee7a	PG_JSONSCHEMA	build-pg-jsonschema	feasible PG17 source-build
+pg_graphql	light	source-build	17	https://github.com/supabase/pg_graphql.git	v1.6.1	66d4c551db213000506fd858676269ba8f801a44	PG_GRAPHQL	build-pg-graphql	feasible PG17 source-build
+pg_search	full	source-build	17	https://github.com/paradedb/paradedb.git	v0.20.11	cd1ba46a116c5a98bd6fe9ae370a2f260aee1394	PG_SEARCH	build-pg-search	heavy feasible PG17 source-build; excluded from routine PR smokes
+plv8	full	source-build	17	https://github.com/plv8/plv8.git	v3.2.4	cafc37f7aee850de5478773a4e56f7fadfad8e00	PLV8	build-plv8	heavy feasible PG17 source-build; excluded from routine PR smokes
+pg_warm	light	local-sql-extension	17	in-tree	0.1.0	in-tree	PG_WARM	local-sql	local pg_prewarm-backed shim copied into light target
+plrust	deferred	source-build-deferred	none	https://github.com/pgcentralfoundation/plrust.git	v1.2.8	bd76906a43c05a2afdb7839263431a066f5b42fb	PLRUST	deferred	alpha boundary: upstream exposes only pg13-pg16 pgrx features and pins pgrx 0.11.0

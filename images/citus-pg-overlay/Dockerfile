@@ -27,6 +27,8 @@
 ARG PG_MAJOR=17
 ARG BASE_IMAGE=postgres:${PG_MAJOR}-bookworm
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION=0.1.0
+ARG AI_BLAISE_SOURCE_GIT_SHA=unknown
+ARG AI_BLAISE_SOURCE_TREE_STATE=unknown
 
 ARG CITUS_TAG=v13.3.0
 ARG PGSODIUM_TAG=v3.1.9
@@ -189,6 +191,8 @@ RUN set -eux; \
 FROM ${BASE_IMAGE} AS bundle1-source-runtime
 ARG PG_MAJOR
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION
+ARG AI_BLAISE_SOURCE_GIT_SHA
+ARG AI_BLAISE_SOURCE_TREE_STATE
 ARG CITUS_TAG
 ARG PGSODIUM_TAG
 ARG PGSODIUM_REF
@@ -208,7 +212,12 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       org.opencontainers.image.title="ai-blaise/citus PostgreSQL overlay source-build" \
       org.opencontainers.image.description="PG17 source-build path for Bundle1 extensions missing from PGDG" \
       ai-blaise.citus.pg-major="${PG_MAJOR}" \
+      ai-blaise.citus.source-git-sha="${AI_BLAISE_SOURCE_GIT_SHA}" \
+      ai-blaise.citus.source-tree-state="${AI_BLAISE_SOURCE_TREE_STATE}" \
       ai-blaise.citus.extension-bundle="${AI_BLAISE_EXTENSION_BUNDLE_VERSION}" \
+      ai-blaise.citus.bundle1.contract-lock="images/citus-pg-overlay/bundle1-source-build.lock.tsv" \
+      ai-blaise.citus.bundle1.evidence-scope="source-build-subset-no-complete-initdb" \
+      ai-blaise.citus.bundle1.full-initdb-path="false" \
       ai-blaise.citus.bundle1.citus.tag="${CITUS_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.tag="${PGSODIUM_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.ref="${PGSODIUM_REF}" \
@@ -236,6 +245,7 @@ RUN set -eux; \
       /usr/local/share/ai-blaise/citus/extensions \
       "/usr/share/postgresql/${PG_MAJOR}/extension"
 COPY images/citus-pg-overlay/extension-manifest.tsv /usr/local/share/ai-blaise/citus/extension-manifest.tsv
+COPY images/citus-pg-overlay/bundle1-source-build.lock.tsv /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv
 COPY images/citus-pg-overlay/shared-preload-libraries.conf /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control
@@ -249,6 +259,7 @@ RUN set -eux; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
     test -s /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv; \
+    test -s /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm.control "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm--0.1.0.sql"; \
     sed -n 1,120p /usr/local/share/ai-blaise/citus/extension-manifest.tsv >/usr/local/share/ai-blaise/citus/required-extension-preview.tsv
@@ -269,14 +280,22 @@ COPY --from=build-plv8      /out/ /
 FROM ${BASE_IMAGE} AS bundle1-contract
 ARG PG_MAJOR
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION
+ARG AI_BLAISE_SOURCE_GIT_SHA
+ARG AI_BLAISE_SOURCE_TREE_STATE
 LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       org.opencontainers.image.title="ai-blaise/citus PostgreSQL overlay" \
       org.opencontainers.image.description="PostgreSQL operand image contract for Citus, TimescaleDB, companion, and bundled extensions" \
       ai-blaise.citus.pg-major="${PG_MAJOR}" \
+      ai-blaise.citus.source-git-sha="${AI_BLAISE_SOURCE_GIT_SHA}" \
+      ai-blaise.citus.source-tree-state="${AI_BLAISE_SOURCE_TREE_STATE}" \
       ai-blaise.citus.extension-bundle="${AI_BLAISE_EXTENSION_BUNDLE_VERSION}" \
+      ai-blaise.citus.bundle1.contract-lock="images/citus-pg-overlay/bundle1-source-build.lock.tsv" \
+      ai-blaise.citus.bundle1.evidence-scope="manifest-initdb-contract-no-binary-bundle" \
+      ai-blaise.citus.bundle1.full-initdb-path="unverified" \
       ai-blaise.citus.pg-core-patches="patches/postgres/series" \
       ai-blaise.citus.pg-core-patch-targets="logical-commit-clock per-subtrans-commit-ts"
 COPY images/citus-pg-overlay/extension-manifest.tsv /usr/local/share/ai-blaise/citus/extension-manifest.tsv
+COPY images/citus-pg-overlay/bundle1-source-build.lock.tsv /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv
 COPY images/citus-pg-overlay/shared-preload-libraries.conf /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql
@@ -287,6 +306,7 @@ RUN set -eux; \
     install -d -m 0755 /etc/postgresql/ai-blaise; \
     install -d -m 0755 "/usr/share/postgresql/${PG_MAJOR}/extension"; \
     cp /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf /etc/postgresql/ai-blaise/shared-preload-libraries.conf; \
+    test -s /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm.control "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm.control"; \

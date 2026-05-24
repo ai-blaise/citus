@@ -218,6 +218,8 @@ federation extension policy.
 
 - Design: `docs/ai-blaise/BUNDLED_EXTENSIONS.md`
 - CI: `ci/ai-blaise/image-check.sh`
+- Structured Bundle1 contract check: `ci/ai-blaise/bundle1-contract-check.py`
+- Source-build lockfile: `images/citus-pg-overlay/bundle1-source-build.lock.tsv`
 - Source-build smoke: `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
 - pg_cron cohabitation smoke: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
 - Evidence file: `images/citus-pg-overlay/bundle1-source-build-evidence.tsv`
