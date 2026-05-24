@@ -192,6 +192,17 @@ the inbound carrier. The `to_json_line()` method renders the record as
 single-line JSON suitable for stdout; it escapes embedded quotes, newlines,
 and control characters according to RFC 8259.
 
+## Contract Smoke
+
+`ci/ai-blaise/observability-contracts-check.sh` is the no-Kubernetes contract
+smoke for custom component observability. It builds the operator, pool, shared
+runtime, and every sidecar, starts each `serve` process on an ephemeral
+loopback port, and asserts real JSON `/healthz` and `/readyz` payloads plus
+Prometheus `/metrics` exposition. The same smoke starts the pool against a
+dummy TCP upstream to validate the admin readiness and metrics labels, then
+runs `sidecar-shared log-schema-canonical` to ensure every runtime sidecar has
+a structured-log schema row.
+
 ## Cross-references
 
 - Plan source of truth: `docs/ai-blaise/NEW_FEATURES.md` (`FEATURE: O14`,
@@ -199,6 +210,7 @@ and control characters according to RFC 8259.
 - Library: `ai_blaise_citus_sidecar_shared::{otel, log_schema}`.
 - Companion: `ai_blaise_citus_companion::{log_view, trace_context}`.
 - Pool tap: `ai_blaise_citus_pool::trace_tap`.
-- Smoke: `ci/ai-blaise/otel-trace-propagation-smoke.sh`.
+- Smokes: `ci/ai-blaise/otel-trace-propagation-smoke.sh` and
+  `ci/ai-blaise/observability-contracts-check.sh`.
 - Grafana dashboards: `ai-blaise/command-center` repo,
   `platform/citus/observability/dashboards/`.

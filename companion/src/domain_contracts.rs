@@ -644,8 +644,8 @@ mod tests {
         for feature_id in [
             "A1", "API4", "Auth2", "G2", "G3", "Geo2", "Geo3", "IA3", "JS2", "L9", "M1", "M11",
             "M13", "M2", "M7", "PM3", "PM4", "S13", "S14", "S6", "Search2", "Search3", "Search9",
-            "Sec1", "Sec2", "Sec5", "Sec6", "T8", "TO3", "TO4", "TO5", "TS13", "TS14", "TS15", "TS16",
-            "TS17", "TS9", "WH2",
+            "Sec1", "Sec2", "Sec5", "Sec6", "T8", "TO3", "TO4", "TO5", "TS13", "TS14", "TS15",
+            "TS16", "TS17", "TS9", "WH2",
         ] {
             assert!(
                 report.feature_ids.contains(&feature_id),

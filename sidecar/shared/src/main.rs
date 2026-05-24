@@ -2,8 +2,8 @@
 // FEATURE: SC7
 
 use ai_blaise_citus_sidecar_shared::{
-    run_probe_server, EndpointRegistry, HttpMethod, HttpProbeRequest, RetargetConfig,
-    SidecarRuntime,
+    canonical_sidecar_log_schemas, run_probe_server, EndpointRegistry, HttpMethod,
+    HttpProbeRequest, RetargetConfig, SidecarRuntime,
 };
 use std::env;
 use std::process;
@@ -15,22 +15,21 @@ fn main() {
         return;
     }
 
-    if args == ["serve"] {
-        run_server("sidecar-shared", "0.0.0.0:8080");
-        return;
+    match args.as_slice() {
+        [command] if command == "serve" => run_server("sidecar-shared", "0.0.0.0:8080"),
+        [] => emit_probe_canonical(),
+        [command] if command == "probe-canonical" => emit_probe_canonical(),
+        [command] if command == "ha-canonical" => emit_ha_canonical(),
+        [command] if command == "log-schema-canonical" => emit_log_schema_canonical(),
+        _ => {
+            eprintln!("sidecar-shared: unknown command");
+            print_usage();
+            process::exit(2);
+        }
     }
+}
 
-    if args == ["ha-canonical"] {
-        emit_ha_canonical();
-        return;
-    }
-
-    if !args.is_empty() && args != ["probe-canonical"] {
-        eprintln!("sidecar-shared: unknown command");
-        print_usage();
-        process::exit(2);
-    }
-
+fn emit_probe_canonical() {
     let mut runtime = SidecarRuntime::ready("sidecar-shared").with_in_flight_work(2);
     println!("method\tpath\tstatus\tcontent_type\tbody");
     emit_probe(&mut runtime, HttpMethod::Get, "/healthz");
@@ -38,6 +37,34 @@ fn main() {
     emit_probe(&mut runtime, HttpMethod::Get, "/metrics");
     emit_probe(&mut runtime, HttpMethod::Post, "/drain");
     emit_probe(&mut runtime, HttpMethod::Get, "/readyz");
+}
+
+fn emit_log_schema_canonical() {
+    println!("sidecar\tcommon_fields\textension_fields\trequired_fields\ttotal_fields");
+    for sidecar in canonical_sidecar_log_schemas() {
+        if let Err(error) = sidecar.schema.validate() {
+            eprintln!(
+                "sidecar-shared: log schema {} failed: {error}",
+                sidecar.sidecar
+            );
+            process::exit(1);
+        }
+
+        let required_fields = sidecar
+            .schema
+            .all_fields()
+            .filter(|field| field.required)
+            .count();
+        let total_fields = sidecar.schema.all_fields().count();
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            sidecar.sidecar,
+            sidecar.schema.common.len(),
+            sidecar.schema.extensions.len(),
+            required_fields,
+            total_fields,
+        );
+    }
 }
 
 fn emit_probe(runtime: &mut SidecarRuntime, method: HttpMethod, path: &str) {
@@ -62,8 +89,8 @@ fn method_name(method: &HttpMethod) -> &str {
 }
 
 fn print_usage() {
-    println!("usage: sidecar-shared [serve|probe-canonical|ha-canonical]");
-    println!("emits canonical shared runtime probes and sidecar HA retarget decisions");
+    println!("usage: sidecar-shared [serve|probe-canonical|ha-canonical|log-schema-canonical]");
+    println!("emits tab-separated canonical probes, sidecar HA retarget decisions, and log schema counts");
 }
 
 fn emit_ha_canonical() {
