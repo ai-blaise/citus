@@ -507,4 +507,77 @@ mod tests {
         let rendered = render_tap_log(&tap);
         assert_eq!(rendered, "trace_tap=absent application_name=psql");
     }
+
+    #[test]
+    fn tap_prefers_dedicated_traceparent_over_options_and_application_name() {
+        let app_traceparent = TRACEPARENT;
+        let options_traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01";
+        let dedicated_traceparent = "00-cccccccccccccccccccccccccccccccc-dddddddddddddddd-01";
+        let application_name =
+            format!("application=svc;traceparent={app_traceparent};tracestate=app=1");
+        let options = format!("-c trace.parent={options_traceparent} -c trace.state=options=1");
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&196608_u32.to_be_bytes());
+        for (key, value) in [
+            ("user", "postgres"),
+            ("database", "postgres"),
+            ("application_name", application_name.as_str()),
+            ("options", options.as_str()),
+            ("traceparent", dedicated_traceparent),
+            ("tracestate", "dedicated=1"),
+        ] {
+            body.extend_from_slice(key.as_bytes());
+            body.push(0);
+            body.extend_from_slice(value.as_bytes());
+            body.push(0);
+        }
+        body.push(0);
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&((body.len() + 4) as u32).to_be_bytes());
+        packet.extend_from_slice(&body);
+
+        let mut cursor = Cursor::new(packet);
+        let tap = tap_startup_message(&mut cursor).unwrap();
+        assert_eq!(
+            tap.traceparent()
+                .map(TraceParent::to_header_value)
+                .as_deref(),
+            Some(dedicated_traceparent),
+        );
+        assert_eq!(
+            tap.tracestate()
+                .map(|state| state.as_str().to_string())
+                .as_deref(),
+            Some("dedicated=1"),
+        );
+        assert_eq!(tap.application_name(), Some("svc"));
+    }
+
+    #[test]
+    fn tap_rejects_corrupt_dedicated_traceparent_but_preserves_startup() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&196608_u32.to_be_bytes());
+        for (key, value) in [
+            ("user", "postgres"),
+            ("database", "postgres"),
+            ("application_name", "svc"),
+            ("traceparent", "not-a-traceparent"),
+        ] {
+            body.extend_from_slice(key.as_bytes());
+            body.push(0);
+            body.extend_from_slice(value.as_bytes());
+            body.push(0);
+        }
+        body.push(0);
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&((body.len() + 4) as u32).to_be_bytes());
+        packet.extend_from_slice(&body);
+
+        let mut cursor = Cursor::new(packet.clone());
+        let tap = tap_startup_message(&mut cursor).unwrap();
+        assert_eq!(tap.buffered_bytes, packet);
+        assert!(tap.traceparent().is_none());
+        assert_eq!(tap.application_name(), Some("svc"));
+    }
 }

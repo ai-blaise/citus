@@ -6032,8 +6032,12 @@ traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
 log line reports the exact traceparent and that
 `ai_blaise_citus_pool_traceparent_tapped_total` increments. A follow-up
 connection without a traceparent increments
-`ai_blaise_citus_pool_traceparent_absent_total`. With `REQUIRE_KIND=1` the
-script additionally boots a 3-node kind cluster with Jaeger and asserts the
+`ai_blaise_citus_pool_traceparent_absent_total`. Focused Rust tests also prove
+HTTP header carrier injection/extraction, gRPC metadata carrier
+injection/extraction, PostgreSQL `SET LOCAL` GUC rendering/extraction, startup
+parameter priority (`traceparent` over `options` over `application_name`), and
+fail-closed handling for corrupt startup traceparents. With `REQUIRE_KIND=1`
+the smoke additionally boots a 3-node kind cluster with Jaeger and asserts the
 trace lands at Jaeger.
 This remains alpha until sidecar/companion propagation and release dashboard
 correlation are measured end to end and the feature status is promoted.
@@ -6076,14 +6080,17 @@ no per-sidecar JSON schema exists.
 Evidence boundary: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
 
 validate every canonical schema, prove no extension field shadows a common
-field, and confirm the schema catalog covers all 17 sidecars. Companion's
-`log_view` tests render the deterministic SQL bundle and assert per-sidecar
-projections cast each extension field to its declared SQL type. The
+field, confirm the schema catalog covers all 17 sidecars, and validate rendered
+JSON log records against sidecar-specific field types, traceparent syntax, and
+unknown-field rejection inside the `fields` envelope. Companion's `log_view`
+tests render the deterministic SQL bundle and assert per-sidecar projections
+cast each extension field to its declared SQL type. The
 `ci/ai-blaise/observability-contracts-check.sh` gate also runs the shared
-`log-schema-canonical` executable and fails if the runtime sidecar inventory
-and the structured-log schema catalog diverge. These deterministic tests are
-contract evidence only while O15 is alpha; production evidence requires live
-log ingestion from promoted sidecars into the documented downstream view path.
+`log-schema-canonical` and `log-schema-records-canonical` executables and fails
+if the runtime sidecar inventory, structured-log schema catalog, or typed JSON
+record fixtures diverge. These deterministic tests are contract evidence only
+while O15 is alpha; production evidence requires live log ingestion from
+promoted sidecars into the documented downstream view path.
 
 
 **References**:
@@ -6093,7 +6100,7 @@ log ingestion from promoted sidecars into the documented downstream view path.
 - In-source: `FEATURE: O15` in `sidecar/shared/src/log_schema.rs`
 - In-source: `FEATURE: O15` in `companion/src/log_view.rs`
 - Acceptance: `cargo test -p ai_blaise_citus_companion --lib log_view`
-- Executable: `FEATURE: O15` in `sidecar/shared/src/main.rs`
+- Executable: `FEATURE: O15` in `sidecar/shared/src/main.rs` (`log-schema-canonical`, `log-schema-records-canonical`)
 - CI: `ci/ai-blaise/observability-contracts-check.sh`
 
 ## Extension Catalog SQL Runtime

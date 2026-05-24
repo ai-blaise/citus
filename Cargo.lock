@@ -220,6 +220,9 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_sidecar_shared"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_storage"

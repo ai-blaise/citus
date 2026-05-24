@@ -482,6 +482,33 @@ def verify_log_schema_catalog():
             fail(f"structured-log schema counts invalid for {sidecar}: {rows[sidecar]!r}")
 
 
+def verify_log_schema_records():
+    output = subprocess.check_output(
+        [binary_path("ai_blaise_citus_sidecar_shared"), "log-schema-records-canonical"],
+        text=True,
+    )
+    lines = [line for line in output.splitlines() if line.strip()]
+    expected_header = "sidecar\tvalidated\tjson"
+    if not lines or lines[0] != expected_header:
+        fail(f"unexpected log-schema-records-canonical header:\n{output}")
+    rows = {}
+    for line in lines[1:]:
+        sidecar, validated, json_line = line.split("\t", 2)
+        rows[sidecar] = (validated, json_line)
+    expected = {service["schema"] for service in SERVICES if "schema" in service}
+    if set(rows) != expected:
+        fail(f"structured-log record coverage mismatch: got={sorted(rows)} expected={sorted(expected)}")
+    for sidecar, (validated, json_line) in rows.items():
+        if validated != "true":
+            fail(f"structured-log record did not validate for {sidecar}: {validated!r}")
+        decoded = json_line.replace("\\n", "\n").replace("\\t", "\t").replace("\\\\", "\\")
+        record = json.loads(decoded)
+        if record.get("sidecar") != sidecar:
+            fail(f"structured-log record sidecar mismatch for {sidecar}: {record!r}")
+        if "traceparent" not in record or "fields" not in record:
+            fail(f"structured-log record missing traceparent or fields for {sidecar}: {record!r}")
+
+
 def main():
     packages = sorted({service["package"] for service in SERVICES} | {"ai_blaise_citus_pool"})
     build_cmd = ["cargo", "build", "-q", "--bins"]
@@ -490,6 +517,7 @@ def main():
     subprocess.run(build_cmd, check=True)
 
     verify_log_schema_catalog()
+    verify_log_schema_records()
     for service in SERVICES:
         smoke_service(service)
     smoke_pool()

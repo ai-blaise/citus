@@ -2,8 +2,9 @@
 // FEATURE: SC7
 
 use ai_blaise_citus_sidecar_shared::{
-    canonical_sidecar_log_schemas, run_probe_server, EndpointRegistry, HttpMethod,
-    HttpProbeRequest, RetargetConfig, SidecarRuntime,
+    canonical_sidecar_log_records, canonical_sidecar_log_schemas, run_probe_server,
+    validate_sidecar_log_json, EndpointRegistry, HttpMethod, HttpProbeRequest, RetargetConfig,
+    SidecarRuntime,
 };
 use std::env;
 use std::process;
@@ -21,6 +22,9 @@ fn main() {
         [command] if command == "probe-canonical" => emit_probe_canonical(),
         [command] if command == "ha-canonical" => emit_ha_canonical(),
         [command] if command == "log-schema-canonical" => emit_log_schema_canonical(),
+        [command] if command == "log-schema-records-canonical" => {
+            emit_log_schema_records_canonical()
+        }
         _ => {
             eprintln!("sidecar-shared: unknown command");
             print_usage();
@@ -67,6 +71,21 @@ fn emit_log_schema_canonical() {
     }
 }
 
+fn emit_log_schema_records_canonical() {
+    println!("sidecar	validated	json");
+    for record in canonical_sidecar_log_records() {
+        let rendered = record.to_json_line();
+        if let Err(error) = validate_sidecar_log_json(&record.component, &rendered) {
+            eprintln!(
+                "sidecar-shared: log record {} failed: {error}",
+                record.component
+            );
+            process::exit(1);
+        }
+        println!("{}	true	{}", record.component, escape_field(&rendered));
+    }
+}
+
 fn emit_probe(runtime: &mut SidecarRuntime, method: HttpMethod, path: &str) {
     let method_name = method_name(&method).to_string();
     let response = runtime.handle_http_request(&HttpProbeRequest::new(method, path));
@@ -89,7 +108,7 @@ fn method_name(method: &HttpMethod) -> &str {
 }
 
 fn print_usage() {
-    println!("usage: sidecar-shared [serve|probe-canonical|ha-canonical|log-schema-canonical]");
+    println!("usage: sidecar-shared [serve|probe-canonical|ha-canonical|log-schema-canonical|log-schema-records-canonical]");
     println!("emits tab-separated canonical probes, sidecar HA retarget decisions, and log schema counts");
 }
 
