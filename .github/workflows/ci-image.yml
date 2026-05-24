@@ -24,6 +24,10 @@ jobs:
         env:
           TIMESCALE_COHABITATION_MAKE_JOBS: "2"
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-cohabitation-smoke.sh
+      - name: Smoke TS-version cohabitation matrix
+        env:
+          TIMESCALE_COHABITATION_MAKE_JOBS: "2"
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/ts-version-matrix-smoke.sh
       - name: Smoke observability replication views
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh
 

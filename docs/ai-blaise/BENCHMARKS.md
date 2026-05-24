@@ -101,6 +101,18 @@ run lands its measured aggregate.
 The first wave of measured runs is expected to fall short of these thresholds;
 thresholds are tuned across release cycles.
 
+## TS-version Coverage
+
+Timescale-related benchmark records must name the TimescaleDB minor line they
+were measured against and match an entry under `tests/cohab-matrix/`. The
+matrix smoke is the source of truth for which TS minor lines have live
+cohabitation coverage.
+
+| TS version | Status as of 2026-05-24 | Benchmark scope |
+| ---------- | ----------------------- | --------------- |
+| 2.27       | load-bearing            | Timescale ingest, HTAP, and cohabitation benchmark rows may cite this line after live measurement. |
+| 2.28       | skip-with-note only     | No benchmark row may cite TS 2.28 as production evidence until the pinned image is published and the matrix gate runs live. |
+
 ## Run procedure
 
 ### Quick mode (CI smoke)

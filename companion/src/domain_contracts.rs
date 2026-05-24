@@ -639,7 +639,9 @@ mod tests {
         let report = canonical_domain_contracts_report().expect("domain report");
 
         assert_eq!(report.sql_plan_count, 22);
+
         assert_eq!(report.validation_count, 11);
+
         assert_eq!(report.command_count, 49);
         for feature_id in [
             "A1", "API4", "Auth2", "G2", "G3", "Geo2", "Geo3", "IA3", "JS2", "L9", "M1", "M11",

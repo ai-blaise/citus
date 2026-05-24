@@ -395,6 +395,12 @@ more production-ready than the artifacts justified.
   stable Docker image identity, base image reference, command path, preload
   libraries, and cohabitation allowlist. The TS6 reference patch and docs now
   use that same evidence contract.
+- The TS-version matrix gate now pins TimescaleDB minor-line image tags under
+  `tests/cohab-matrix/`, requires 2.27 to run live, and records 2.28 as
+  `skip-with-note` only because the VM registry probe on 2026-05-24 found no
+  `2.28-pg17`, `2.28.0-pg17`, or `2.28.1-pg17` image. This does not promote
+  TS 2.28 to production-ready; a published 2.28 image fails the matrix until
+  any `unknown` hook rows are measured and updated.
 - The pool proxy smoke now opens a raw PostgreSQL protocol client through the
   real pool `serve` data port, sends two simple-query frames without waiting
   for the first result, verifies ordered rows from a `postgres:17` backend, and
