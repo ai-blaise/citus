@@ -25,6 +25,13 @@ Current implemented surface:
 - `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
 
 These contracts cover `FEATURE: R1`, `FEATURE: R5`, `FEATURE: R9`, and
-`FEATURE: Search8`. The runtime flow validates layer/object-store placement,
-materializes pageserver-lite layer bytes, refreshes cross-tier planner routes,
-counts cold-tier reads, and publishes Tantivy/LanceDB search index artifacts.
+`FEATURE: Search8`. The hardened alpha boundary is the deterministic local
+`file://` runtime model: it validates layer/object placement, materializes
+pageserver-lite layer bytes, refreshes cross-tier planner-route reports, counts
+simulated cold-route reads, and publishes typed Tantivy/LanceDB search index artifacts.
+Live S3/GCS/Azure writes, Kubernetes pageserver deployment, Citus route changes,
+and Tantivy/LanceDB query serving remain alpha.
+
+Focused smoke:
+
+- `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`

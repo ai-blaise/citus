@@ -1745,6 +1745,15 @@ tenant-level online migration plan.
 storage on object stores, plus runnable canonical move-plan and runtime
 emitters.
 
+Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic
+local `file://` cold-layer validation and accounting: layer URIs must stay below the shard object
+URI, paths fail closed on traversal/relative/space-bearing forms, and the runtime reports image and
+delta layer bytes materialized. Live S3/GCS/Azure writes, pageserver deployment, and Citus cold-read
+serving remain alpha.
+
 **Motivation**: Cold shard data needs a predictable object layout before
 operators can evict low-temperature shards from the hot tier.
 
@@ -1827,6 +1836,13 @@ container.
 plans between hot, warm, and cold tiers, then accounts for canonical runtime
 move execution.
 
+Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic policy
+planning and local runtime accounting: invalid threshold order fails closed, canonical hot-to-cold
+movement emits one move, and runtime counters record moved shards, materialized files, bytes written,
+and simulated cold-route read counters. Operator scheduling, live shard relocation, and production Citus cold reads remain alpha.
+
 **Motivation**: Tiering policy needs deterministic move plans before an
 operator or sidecar starts relocating shard data.
 
@@ -1881,6 +1897,13 @@ does not provide a scheduled repack CRD.
 **Summary**: Exposes cold-tier object URIs and shard table identity for
 planner paths that span hot, warm, and cold storage, with runtime planner-route
 refresh accounting.
+
+Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic route
+metadata publication only: the runtime emits shard id, table, storage tier, object URI, format, route
+refresh counts, and simulated cold-route read counters for local `file://` materializations. Companion planner
+integration and production Citus route changes remain alpha.
 
 **Motivation**: Cross-tier planning needs machine-readable cold-shard location
 and format metadata before the companion planner can combine tiers.
@@ -3368,6 +3391,13 @@ objects.
 **Summary**: Adds search-index enablement to the analytical mirror contract so
 cold-tier data can preserve search semantics, and materializes cold-tier
 Tantivy/LanceDB search artifacts in the runtime report.
+
+Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic search
+artifact publication for local cold-tier simulation: index columns must be SQL identifiers, index URIs
+must be typed Tantivy/LanceDB/index paths, and the runtime reports materialized index URIs plus search
+index bytes. Actual Tantivy/LanceDB query serving remains alpha.
 
 **Motivation**: Cold-tier movement should not discard full-text or hybrid
 search availability.

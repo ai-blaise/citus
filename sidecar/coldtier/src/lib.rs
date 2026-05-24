@@ -149,10 +149,13 @@ pub struct SearchColdTierPlan {
 impl SearchColdTierPlan {
     fn validate(&self) -> Result<(), ColdTierError> {
         validate_object_uri("search.tantivy_index_uri", &self.tantivy_index_uri)?;
+        validate_search_index_uri("search.tantivy_index_uri", &self.tantivy_index_uri)?;
         if let Some(uri) = &self.lancedb_index_uri {
             validate_object_uri("search.lancedb_index_uri", uri)?;
+            validate_search_index_uri("search.lancedb_index_uri", uri)?;
         }
-        validate_required_list("search.indexed_columns", &self.indexed_columns)
+        validate_required_list("search.indexed_columns", &self.indexed_columns)?;
+        validate_identifier_list("search.indexed_columns", &self.indexed_columns)
     }
 }
 
@@ -172,6 +175,8 @@ pub enum ColdTierError {
     LayerObjectMismatch,
     InvalidObjectUri(&'static str),
     InvalidShardId,
+    InvalidSearchIndexUri(&'static str),
+    InvalidUriPath(&'static str),
     InvalidTierThresholds,
     MissingRequiredField(&'static str),
 }
@@ -189,6 +194,10 @@ impl fmt::Display for ColdTierError {
             }
             Self::InvalidObjectUri(field) => write!(formatter, "{field} must be an object URI"),
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
+            Self::InvalidSearchIndexUri(field) => {
+                write!(formatter, "{field} must end with a search index directory")
+            }
+            Self::InvalidUriPath(field) => write!(formatter, "{field} contains an unsafe URI path"),
             Self::InvalidTierThresholds => {
                 write!(formatter, "tier thresholds must satisfy hot > warm > cold")
             }
@@ -209,6 +218,13 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), ColdTierErr
 fn validate_required_list(field: &'static str, values: &[String]) -> Result<(), ColdTierError> {
     if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
         return Err(ColdTierError::MissingRequiredField(field));
+    }
+    Ok(())
+}
+
+fn validate_identifier_list(field: &'static str, values: &[String]) -> Result<(), ColdTierError> {
+    for value in values {
+        validate_identifier(field, value)?;
     }
     Ok(())
 }
@@ -241,10 +257,35 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), ColdT
 
 fn validate_object_uri(field: &'static str, value: &str) -> Result<(), ColdTierError> {
     validate_required(field, value)?;
-    if value.starts_with("s3://") || value.starts_with("gs://") || value.starts_with("az://") {
+    let Some((scheme, path)) = value.split_once("://") else {
+        return Err(ColdTierError::InvalidObjectUri(field));
+    };
+    if !matches!(scheme, "file" | "s3" | "gs" | "az") {
+        return Err(ColdTierError::InvalidObjectUri(field));
+    }
+    if path.trim().is_empty()
+        || path.contains("..")
+        || path.contains(' ')
+        || path.contains("//")
+        || path.contains('\0')
+    {
+        return Err(ColdTierError::InvalidUriPath(field));
+    }
+    if scheme == "file" && !path.starts_with('/') {
+        return Err(ColdTierError::InvalidUriPath(field));
+    }
+    Ok(())
+}
+
+fn validate_search_index_uri(field: &'static str, value: &str) -> Result<(), ColdTierError> {
+    if value.ends_with(".tantivy")
+        || value.ends_with(".lance")
+        || value.ends_with(".lancedb")
+        || value.contains("/indexes/")
+    {
         Ok(())
     } else {
-        Err(ColdTierError::InvalidObjectUri(field))
+        Err(ColdTierError::InvalidSearchIndexUri(field))
     }
 }
 
@@ -278,6 +319,19 @@ pub struct SearchIndexMaterialization {
     pub searchable_shards: u64,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ColdTierArtifactKind {
+    Layer,
+    SearchIndex,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ColdTierArtifact {
+    pub uri: String,
+    pub kind: ColdTierArtifactKind,
+    pub bytes: u64,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ColdTierRuntimeState {
     pub moved_shards: u64,
@@ -286,6 +340,7 @@ pub struct ColdTierRuntimeState {
     pub search_indexes_materialized: u64,
     pub planner_routes_refreshed: u64,
     pub cold_tier_reads: u64,
+    pub search_index_bytes_written: u64,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -293,6 +348,7 @@ pub struct ColdTierRuntimeReport {
     pub moves: Vec<ColdTierMoveExecution>,
     pub planner_routes: Vec<ColdTierPlannerRoute>,
     pub search: Option<SearchIndexMaterialization>,
+    pub artifacts: Vec<ColdTierArtifact>,
     pub state: ColdTierRuntimeState,
 }
 
@@ -315,6 +371,7 @@ impl ColdTierRuntime {
                 search_indexes_materialized: 0,
                 planner_routes_refreshed: 0,
                 cold_tier_reads: 0,
+                search_index_bytes_written: 0,
             },
         })
     }
@@ -374,6 +431,25 @@ impl ColdTierRuntime {
                 searchable_shards: moves.len() as u64,
             });
 
+        let mut artifacts = Vec::new();
+        for move_execution in &moves {
+            let shard = self.find_shard(move_execution.shard_id);
+            artifacts.extend(shard.layers.iter().map(|layer| ColdTierArtifact {
+                uri: layer.uri.clone(),
+                kind: ColdTierArtifactKind::Layer,
+                bytes: layer.bytes,
+            }));
+        }
+        if let Some(search_materialization) = &search {
+            artifacts.extend(search_materialization.index_uris.iter().map(|uri| {
+                ColdTierArtifact {
+                    uri: uri.clone(),
+                    kind: ColdTierArtifactKind::SearchIndex,
+                    bytes: search_artifact_bytes(search_materialization),
+                }
+            }));
+        }
+
         self.state.moved_shards += moves.len() as u64;
         self.state.materialized_layer_files += moves
             .iter()
@@ -392,11 +468,17 @@ impl ColdTierRuntime {
             .iter()
             .filter(|route| route.tier == StorageTier::Cold)
             .count() as u64;
+        self.state.search_index_bytes_written += artifacts
+            .iter()
+            .filter(|artifact| artifact.kind == ColdTierArtifactKind::SearchIndex)
+            .map(|artifact| artifact.bytes)
+            .sum::<u64>();
 
         Ok(ColdTierRuntimeReport {
             moves,
             planner_routes,
             search,
+            artifacts,
             state: self.state.clone(),
         })
     }
@@ -432,6 +514,10 @@ fn search_index_uris(search_plan: &SearchColdTierPlan) -> Vec<String> {
     uris
 }
 
+fn search_artifact_bytes(search: &SearchIndexMaterialization) -> u64 {
+    64 * search.indexed_columns.len() as u64 * search.searchable_shards.max(1)
+}
+
 pub fn canonical_cold_tier_plan() -> ColdTierPlan {
     ColdTierPlan {
         policy: TierPolicy {
@@ -444,24 +530,26 @@ pub fn canonical_cold_tier_plan() -> ColdTierPlan {
             table: "public.events".to_string(),
             current_tier: StorageTier::Hot,
             temperature_score: 10,
-            object_uri: "s3://cold-tier/events/42".to_string(),
+            object_uri: "file:///tmp/ai-blaise-coldtier/events/42".to_string(),
             format: ColdTierFormat::Iceberg,
             layers: vec![
                 LayerFile {
-                    uri: "s3://cold-tier/events/42/image.parquet".to_string(),
+                    uri: "file:///tmp/ai-blaise-coldtier/events/42/image.parquet".to_string(),
                     kind: LayerKind::Image,
                     bytes: 1024,
                 },
                 LayerFile {
-                    uri: "s3://cold-tier/events/42/delta-1.parquet".to_string(),
+                    uri: "file:///tmp/ai-blaise-coldtier/events/42/delta-1.parquet".to_string(),
                     kind: LayerKind::Delta,
                     bytes: 128,
                 },
             ],
         }],
         search: Some(SearchColdTierPlan {
-            tantivy_index_uri: "s3://cold-tier/indexes/events".to_string(),
-            lancedb_index_uri: Some("s3://cold-tier/indexes/events-vector".to_string()),
+            tantivy_index_uri: "file:///tmp/ai-blaise-coldtier/indexes/events.tantivy".to_string(),
+            lancedb_index_uri: Some(
+                "file:///tmp/ai-blaise-coldtier/indexes/events.lance".to_string(),
+            ),
             indexed_columns: vec!["body".to_string(), "embedding".to_string()],
         }),
     }
@@ -491,7 +579,7 @@ mod tests {
                 table: "public.events".to_string(),
                 from: StorageTier::Hot,
                 to: StorageTier::Cold,
-                object_uri: "s3://cold-tier/events/42".to_string(),
+                object_uri: "file:///tmp/ai-blaise-coldtier/events/42".to_string(),
             }]
         );
     }
@@ -520,6 +608,15 @@ mod tests {
         assert_eq!(report.moves[0].delta_layers, 1);
         assert_eq!(report.planner_routes[0].tier, StorageTier::Cold);
         assert_eq!(report.search.as_ref().expect("search").index_uris.len(), 2);
+        assert_eq!(report.artifacts.len(), 4);
+        assert_eq!(
+            report
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.kind == ColdTierArtifactKind::SearchIndex)
+                .count(),
+            2
+        );
         assert_eq!(
             report.search.as_ref().expect("search").indexed_columns,
             ["body", "embedding"]
@@ -530,6 +627,7 @@ mod tests {
         assert_eq!(report.state.search_indexes_materialized, 2);
         assert_eq!(report.state.planner_routes_refreshed, 1);
         assert_eq!(report.state.cold_tier_reads, 1);
+        assert_eq!(report.state.search_index_bytes_written, 256);
     }
 
     #[test]
@@ -568,7 +666,7 @@ mod tests {
     fn search_plan_requires_indexed_columns() {
         let mut plan = canonical_cold_tier_plan();
         plan.search = Some(SearchColdTierPlan {
-            tantivy_index_uri: "s3://cold-tier/indexes/events".to_string(),
+            tantivy_index_uri: "file:///tmp/ai-blaise-coldtier/indexes/events.tantivy".to_string(),
             lancedb_index_uri: None,
             indexed_columns: Vec::new(),
         });
@@ -577,6 +675,42 @@ mod tests {
             plan.validate(),
             Err(ColdTierError::MissingRequiredField(
                 "search.indexed_columns"
+            ))
+        );
+    }
+
+    #[test]
+    fn cold_tier_rejects_unsafe_file_uri_paths() {
+        let mut plan = canonical_cold_tier_plan();
+        plan.shards[0].object_uri = "file://relative/events/42".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(ColdTierError::InvalidUriPath("shard.object_uri"))
+        );
+    }
+
+    #[test]
+    fn search_plan_rejects_non_identifier_columns() {
+        let mut plan = canonical_cold_tier_plan();
+        plan.search.as_mut().expect("search").indexed_columns = vec!["body;drop".to_string()];
+
+        assert_eq!(
+            plan.validate(),
+            Err(ColdTierError::InvalidIdentifier("search.indexed_columns"))
+        );
+    }
+
+    #[test]
+    fn search_plan_rejects_untyped_index_uri() {
+        let mut plan = canonical_cold_tier_plan();
+        plan.search.as_mut().expect("search").tantivy_index_uri =
+            "file:///tmp/cold/events".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(ColdTierError::InvalidSearchIndexUri(
+                "search.tantivy_index_uri"
             ))
         );
     }
