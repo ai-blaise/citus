@@ -4,13 +4,16 @@ Rust vectorizer sidecar for the ai-blaise Citus fork. It preserves the
 pgai-compatible SQL shape from the companion extension while running the worker
 runtime as a long-lived Rust service instead of relying on `plpython3u`.
 
-Production-ready surface:
+Production-ready surface (bounded to the local Rust sidecar runtime verified by unit tests and the Docker/PostgreSQL smoke):
 
 - PostgreSQL-backed queue polling from `ai.vectorizer_queue` with `FOR UPDATE
   SKIP LOCKED`, stale in-flight reclamation, worker ownership, and success or
   failure state transitions.
-- Config-validated provider registry with OpenAI, Azure OpenAI-compatible,
-  Voyage, Cohere, Ollama, vLLM-compatible, and deterministic mock providers.
+- Config-validated provider registry and provider-mode policy. The verified
+  runtime uses deterministic mock providers; live/mixed network provider modes
+  require `AI_BLAISE_VECTORIZER_ALLOW_LIVE_PROVIDERS=1`; `mixed` also requires
+  at least one configured live provider. External provider operation is not
+  claimed as verified by this crate smoke.
 - Error classification plus bounded retry/backoff for transient provider
   transport, rate-limit, and server errors.
 - Per-tenant token budgets in `ai.tenant_budget`, including reservation,
@@ -29,9 +32,10 @@ bash ci/ai-blaise/sidecar-vectorizer-smoke.sh
 ```
 
 `run-canonical` is the deterministic local report used by CI. The smoke script
-builds the real binary, starts PostgreSQL 17 in Docker, launches `serve`, waits
-for `/readyz`, enqueues 100 rows, verifies succeeded queue rows, checks
-`ai.usage_log` rows and budget decrementing, then exercises `/vectorize` and
+builds the real binary, starts PostgreSQL 17 in Docker, launches `serve` on a
+fresh ephemeral loopback port, waits for `/readyz`, enqueues 100 rows, verifies
+succeeded queue rows, checks `ai.usage_log` rows, budget decrementing, metrics,
+manual `/vectorize` success, fail-closed invalid `/vectorize` requests, and
 `/queue/status`.
 
 Environment:
@@ -43,9 +47,11 @@ Environment:
   `AI_BLAISE_VECTORIZER_VISIBILITY_TIMEOUT_SECONDS`,
   `AI_BLAISE_VECTORIZER_RETRY_INITIAL_BACKOFF_MS`, and
   `AI_BLAISE_VECTORIZER_PROVIDER_MAX_ATTEMPTS` tune queue and retry behavior.
-- Live providers are enabled with `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY` plus
-  `AZURE_OPENAI_BASE_URL`, `VOYAGE_API_KEY`, `COHERE_API_KEY`,
-  `OLLAMA_BASE_URL` or `ENABLE_OLLAMA`, and `VLLM_BASE_URL`.
+- Live providers require `AI_BLAISE_VECTORIZER_ALLOW_LIVE_PROVIDERS=1` plus
+  provider-specific config such as `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`
+  with `AZURE_OPENAI_BASE_URL`, `VOYAGE_API_KEY`, `COHERE_API_KEY`,
+  `OLLAMA_BASE_URL` or `ENABLE_OLLAMA`, and `VLLM_BASE_URL`. The repository
+  smoke does not claim successful external provider operation.
 
 Feature markers: `FEATURE: A2`, `FEATURE: A3`, `FEATURE: A4`, `FEATURE: A5`,
 and `FEATURE: A6`.

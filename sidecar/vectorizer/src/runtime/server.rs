@@ -173,6 +173,24 @@ pub struct VectorizeRequest {
     pub source_text: String,
 }
 
+impl VectorizeRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        validate_required("tenant_id", &self.tenant_id)?;
+        validate_required("provider", &self.provider)?;
+        validate_required("model", &self.model)?;
+        validate_required("source_table", &self.source_table)?;
+        validate_required("source_pk", &self.source_pk)?;
+        validate_required("source_text", &self.source_text)?;
+        if !is_safe_provider_name(&self.provider) {
+            return Err("provider must contain only ASCII letters, digits, '_', or '-'");
+        }
+        if !is_qualified_table_name(&self.source_table) {
+            return Err("source_table must be schema.table with unquoted SQL identifiers");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct VectorizeResponse {
     pub tenant_id: String,
@@ -190,6 +208,9 @@ async fn vectorize(
 ) -> Response {
     if !state.state.lock().await.accepting_new_work {
         return json_error(StatusCode::SERVICE_UNAVAILABLE, "vectorizer is draining");
+    }
+    if let Err(error) = request.validate() {
+        return json_error(StatusCode::BAD_REQUEST, error);
     }
 
     // Reserve tokens and call the provider directly so test harnesses can
@@ -280,6 +301,11 @@ async fn vectorize(
         cost_micros: billed_tokens.saturating_mul(cost_per_token),
     };
     if let Err(error) = state.runtime.usage_log().record(&entry).await {
+        let _ = state
+            .runtime
+            .budgets()
+            .refund_tokens(&request.tenant_id, billed_tokens)
+            .await;
         return json_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string());
     }
     let body = serde_json::to_string(&VectorizeResponse {
@@ -293,6 +319,42 @@ async fn vectorize(
     })
     .unwrap();
     response_json(StatusCode::OK, body)
+}
+
+fn validate_required(field: &'static str, value: &str) -> Result<(), &'static str> {
+    if value.trim().is_empty() {
+        Err(match field {
+            "tenant_id" => "tenant_id must not be empty",
+            "provider" => "provider must not be empty",
+            "model" => "model must not be empty",
+            "source_table" => "source_table must not be empty",
+            "source_pk" => "source_pk must not be empty",
+            "source_text" => "source_text must not be empty",
+            _ => "field must not be empty",
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn is_safe_provider_name(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn is_qualified_table_name(value: &str) -> bool {
+    let parts: Vec<&str> = value.split('.').collect();
+    parts.len() == 2 && parts.iter().all(|part| is_sql_identifier(part))
+}
+
+fn is_sql_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 fn budget_status(error: &BudgetError) -> (StatusCode, String) {
@@ -450,9 +512,27 @@ mod tests {
     use crate::runtime::budget::InMemoryBudgetStore;
     use crate::runtime::provider::{MockProvider, ProviderRegistry};
     use crate::runtime::queue::InMemoryQueueStore;
-    use crate::runtime::usage_log::InMemoryUsageLog;
+    use crate::runtime::usage_log::{
+        InMemoryUsageLog, UsageLogEntry, UsageLogError, UsageLogStore,
+    };
     use crate::runtime::worker::{RuntimeConfig, StaticCostTable, VectorizerRuntime};
     use std::time::Duration;
+
+    #[derive(Debug)]
+    struct FailingUsageLog;
+
+    #[async_trait::async_trait]
+    impl UsageLogStore for FailingUsageLog {
+        async fn record(&self, _entry: &UsageLogEntry) -> Result<(), UsageLogError> {
+            Err(UsageLogError::Storage(
+                "forced usage log failure".to_string(),
+            ))
+        }
+
+        async fn total_tokens_for_tenant(&self, _tenant_id: &str) -> Result<u64, UsageLogError> {
+            Ok(0)
+        }
+    }
 
     fn build_state() -> (AppState, Arc<InMemoryBudgetStore>) {
         let queue = Arc::new(InMemoryQueueStore::new());
@@ -511,6 +591,107 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn vectorize_endpoint_rejects_invalid_requests_before_budget() {
+        let (state, budgets) = build_state();
+        budgets.seed("tenant-a", 100).await;
+
+        let response = vectorize(
+            State(state.clone()),
+            Json(VectorizeRequest {
+                tenant_id: "tenant-a".into(),
+                provider: "mock".into(),
+                model: "embed-v1".into(),
+                source_table: "public.documents".into(),
+                source_pk: "manual-1".into(),
+                source_text: " ".into(),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 100);
+
+        let response = vectorize(
+            State(state.clone()),
+            Json(VectorizeRequest {
+                tenant_id: "tenant-a".into(),
+                provider: "mock;drop".into(),
+                model: "embed-v1".into(),
+                source_table: "public.documents".into(),
+                source_pk: "manual-1".into(),
+                source_text: "hello".into(),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 100);
+
+        let response = vectorize(
+            State(state),
+            Json(VectorizeRequest {
+                tenant_id: "tenant-a".into(),
+                provider: "mock".into(),
+                model: "embed-v1".into(),
+                source_table: "documents".into(),
+                source_pk: "manual-1".into(),
+                source_text: "hello".into(),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 100);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn vectorize_endpoint_refunds_budget_when_usage_log_fails() {
+        let queue = Arc::new(InMemoryQueueStore::new());
+        let budgets = Arc::new(InMemoryBudgetStore::new());
+        budgets.seed("tenant-a", 100).await;
+        let mut registry = ProviderRegistry::new();
+        registry.insert(Arc::new(MockProvider::new("mock", 4, 7)));
+        let providers = Arc::new(registry);
+        let cost = Arc::new(StaticCostTable::new(7).with("mock", 7));
+        let config = RuntimeConfig {
+            database_url: "postgres://test".into(),
+            queue_table: "ai.vectorizer_queue".into(),
+            budget_table: "ai.tenant_budget".into(),
+            usage_log_table: "ai.usage_log".into(),
+            listen_addr: "127.0.0.1:0".into(),
+            batch_size: 4,
+            poll_interval: Duration::from_millis(5),
+            visibility_timeout: Duration::from_secs(30),
+            retry_initial_backoff: Duration::from_millis(1),
+            provider_max_attempts: 3,
+            mock_dimensions: 4,
+            provider_mode: "mock".into(),
+        };
+        let runtime = Arc::new(VectorizerRuntime::new(
+            config,
+            queue,
+            budgets.clone(),
+            Arc::new(FailingUsageLog),
+            providers,
+            cost,
+            "worker-1",
+        ));
+        let state = AppState::new(runtime);
+
+        let response = vectorize(
+            State(state),
+            Json(VectorizeRequest {
+                tenant_id: "tenant-a".into(),
+                provider: "mock".into(),
+                model: "embed-v1".into(),
+                source_table: "public.documents".into(),
+                source_pk: "manual-1".into(),
+                source_text: "manual smoke embedding".into(),
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(budgets.snapshot("tenant-a").await.unwrap(), 100);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn vectorize_endpoint_returns_429_on_budget_exceeded() {
         let (state, budgets) = build_state();
         // Do not seed any budget – tenant will be Not Found, mapped to 402.
@@ -520,7 +701,7 @@ mod tests {
                 tenant_id: "tenant-z".into(),
                 provider: "mock".into(),
                 model: "model".into(),
-                source_table: "tbl".into(),
+                source_table: "public.tbl".into(),
                 source_pk: "1".into(),
                 source_text: "hello".into(),
             }),
@@ -536,7 +717,7 @@ mod tests {
                 tenant_id: "tenant-a".into(),
                 provider: "mock".into(),
                 model: "model".into(),
-                source_table: "tbl".into(),
+                source_table: "public.tbl".into(),
                 source_pk: "1".into(),
                 source_text:
                     "this string is intentionally long enough to overflow the seeded budget".into(),

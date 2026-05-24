@@ -1232,10 +1232,19 @@ drives the same deterministic worker model that the canonical report exercises.
 Production evidence: VM tests run `cargo test -p
 ai_blaise_citus_sidecar_vectorizer`, `cargo run -q -p
 ai_blaise_citus_sidecar_vectorizer -- run-canonical`, and
-`ci/ai-blaise/sidecar-vectorizer-smoke.sh`. The smoke starts PostgreSQL 17 in
-Docker, launches the real sidecar binary in `serve` mode, waits on `/readyz`,
-enqueues 100 rows, verifies every row reaches `succeeded`, checks usage rows
-and budget decrementing, and exercises `/vectorize` and `/queue/status`.
+`REQUIRE_DOCKER=1 ci/ai-blaise/sidecar-vectorizer-smoke.sh`. The smoke starts
+PostgreSQL 17 in Docker, launches the real sidecar binary in `serve` mode on a
+fresh ephemeral loopback port, waits on `/readyz`, enqueues 100 rows, verifies
+every row reaches `succeeded`, checks usage rows, budget decrementing,
+Prometheus metrics, manual `/vectorize` success, fail-closed invalid
+`/vectorize` requests, and `/queue/status`.
+
+**Current boundary**: The production-ready claim covers the local Rust
+sidecar runtime, mock-provider queue processing, HTTP health/readiness/drain,
+metrics, validation, and PostgreSQL-backed queue/budget/usage tables exercised
+by the smoke. It does not claim production-scale queue throughput, Kubernetes
+execution, tenant billing-system integration, GPU inference, or real external
+embedding-provider calls.
 
 **Motivation**: pgai's Python worker is archived and coordinator-oriented. The
 fork needs a Rust worker model that can run per Citus worker.
@@ -1259,17 +1268,27 @@ fork needs a Rust worker model that can run per Citus worker.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Provides config-validated embedding provider clients for OpenAI,
-Azure OpenAI-compatible endpoints, Voyage, Cohere, Ollama, and vLLM-compatible
-OpenAI JSON endpoints. The runtime supports `mock`, `live`, and `mixed` provider
-modes, refuses empty live registries, classifies provider errors as retryable or
-permanent, and retries transient transport/rate-limit/server failures with
-bounded exponential backoff before failing rows.
+**Summary**: Provides a config-validated embedding-provider registry and
+routing policy for deterministic mock providers plus OpenAI-compatible, Azure
+OpenAI-compatible, Voyage, Cohere, Ollama, and vLLM-compatible client shapes.
+The runtime supports `mock`, `live`, and `mixed` provider modes, but live
+network provider modes fail closed unless
+`AI_BLAISE_VECTORIZER_ALLOW_LIVE_PROVIDERS=1` is explicitly set, and `mixed`
+mode also requires at least one configured live provider. The verified
+runtime classifies provider errors as retryable or permanent and retries
+transient transport/rate-limit/server failures with bounded exponential backoff
+before failing rows.
 
 Production evidence: deterministic unit tests cover provider registry ordering,
-mock embeddings, retryable/permanent error classification, and a flaky provider
-that succeeds only after retry. The PostgreSQL-backed smoke runs the real binary
-through provider routing in `mock` mode without external network credentials.
+mock embeddings, explicit live-provider opt-in parsing, retryable/permanent
+error classification, and a flaky provider that succeeds only after retry. The
+PostgreSQL-backed smoke runs the real binary through provider routing in `mock`
+mode without external network credentials.
+
+**Current boundary**: The production-ready claim covers provider-mode policy,
+mock-provider routing, and retry/error handling in the local runtime. It does
+not claim successful OpenAI, Azure OpenAI, Voyage, Cohere, Ollama, vLLM, or any
+other external provider operation.
 
 **Motivation**: The vectorizer must validate provider routes before spending
 tenant budget or dispatching requests.
@@ -1298,9 +1317,16 @@ calling providers, refunds reservations on provider failure, and reconciles
 reserved tokens against provider-reported billed usage.
 
 Production evidence: unit and end-to-end tests cover successful reservation,
-refund, overrun rejection, missing-budget failure, and queue rows from tenants
-without budgets. The Docker smoke seeds a real tenant budget and verifies the
-budget is decremented after 100 PostgreSQL-backed vectorization jobs.
+refund, overrun rejection, missing-budget failure, queue rows from tenants
+without budgets, and manual `/vectorize` refund when usage logging fails. The
+Docker smoke seeds a real tenant budget and verifies the budget is decremented
+after 100 PostgreSQL-backed vectorization jobs while invalid manual requests
+fail before budget reservation.
+
+**Current boundary**: The production-ready claim covers local token-budget
+reservation, refund, overrun rejection, and provider-billed reconciliation. It
+does not claim integration with tenant billing, invoices, credit ledgers, or
+external provider billing APIs.
 
 **Motivation**: Vectorization must be multi-tenant-safe before provider calls
 are wired in.
@@ -1331,7 +1357,13 @@ cost table.
 
 Production evidence: unit tests cover usage entry validation and aggregation;
 end-to-end tests assert one usage row per succeeded queue row; the Docker smoke
-checks at least 100 `ai.usage_log` rows after real sidecar processing.
+checks at least 100 `ai.usage_log` rows after real sidecar processing; manual
+`/vectorize` tests verify budget is refunded if usage logging fails.
+
+**Current boundary**: The production-ready claim covers the local PostgreSQL
+usage-log table contract and sidecar writes from the verified mock-provider
+runtime. It does not claim TimescaleDB hypertable creation, chargeback pipeline
+integration, or external provider invoice reconciliation.
 
 **Motivation**: Cost dashboards and token budgets require a durable accounting
 shape before provider calls are enabled for tenant workloads.
@@ -1363,9 +1395,15 @@ embedding storage on succeeded rows. The runtime validates dynamic queue,
 budget, and usage table names as `schema.table` identifiers before building SQL.
 
 Production evidence: in-memory tests cover queue lock/complete/failure
-semantics and batch length validation; the PostgreSQL smoke proves the real
-`ai.vectorizer_queue` table is locked, processed, and marked succeeded by the
-actual sidecar binary.
+semantics, zero-duration runtime knob rejection, and batch length validation;
+the PostgreSQL smoke proves the real `ai.vectorizer_queue` table is locked,
+processed, and marked succeeded by the actual sidecar binary.
+
+**Current boundary**: The production-ready claim covers a single-node
+PostgreSQL-backed shard-local queue worker boundary with `FOR UPDATE SKIP
+LOCKED`, visibility timeout, and worker ownership semantics. It does not claim
+production-scale distributed queue throughput, cross-worker fairness under
+load, or broad semantic-search correctness.
 
 **Motivation**: Distributed vectorization must preserve shard locality and
 avoid pushing every embedding job through the coordinator.

@@ -223,9 +223,11 @@ fn build_providers(config: &RuntimeConfig) -> Result<ProviderRegistry, Box<dyn E
             ));
         }
         "live" => {
+            require_live_provider_network_opt_in()?;
             register_live_providers(&mut registry)?;
         }
         "mixed" => {
+            require_live_provider_network_opt_in()?;
             registry.insert(Arc::new(
                 ai_blaise_citus_sidecar_vectorizer::runtime::MockProvider::new(
                     "mock",
@@ -233,7 +235,13 @@ fn build_providers(config: &RuntimeConfig) -> Result<ProviderRegistry, Box<dyn E
                     1,
                 ),
             ));
+            let before_live = registry.names().len();
             register_live_providers(&mut registry)?;
+            if registry.names().len() == before_live {
+                return Err(
+                    "provider mode mixed requires at least one configured live provider".into(),
+                );
+            }
         }
         other => {
             return Err(format!("unknown provider mode: {other}").into());
@@ -246,6 +254,19 @@ fn build_providers(config: &RuntimeConfig) -> Result<ProviderRegistry, Box<dyn E
         );
     }
     Ok(registry)
+}
+
+fn require_live_provider_network_opt_in() -> Result<(), Box<dyn Error>> {
+    let value = env::var("AI_BLAISE_VECTORIZER_ALLOW_LIVE_PROVIDERS").unwrap_or_default();
+    if is_truthy_env(&value) {
+        Ok(())
+    } else {
+        Err("live vectorizer providers require AI_BLAISE_VECTORIZER_ALLOW_LIVE_PROVIDERS=1".into())
+    }
+}
+
+fn is_truthy_env(value: &str) -> bool {
+    matches!(value, "1" | "true" | "TRUE" | "yes" | "YES")
 }
 
 fn register_live_providers(registry: &mut ProviderRegistry) -> Result<(), Box<dyn Error>> {
@@ -321,6 +342,21 @@ fn default_cost_table() -> StaticCostTable {
         .with("ollama", 0)
         .with("vllm", 1)
         .with("mock", 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_truthy_env;
+
+    #[test]
+    fn live_provider_opt_in_accepts_only_explicit_truthy_values() {
+        assert!(is_truthy_env("1"));
+        assert!(is_truthy_env("true"));
+        assert!(is_truthy_env("YES"));
+        assert!(!is_truthy_env(""));
+        assert!(!is_truthy_env("0"));
+        assert!(!is_truthy_env("enabled"));
+    }
 }
 
 fn provider_name(provider: &EmbeddingProvider) -> &'static str {
