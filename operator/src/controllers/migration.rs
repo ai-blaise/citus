@@ -50,6 +50,8 @@ pub struct MigrationCrSpec {
     #[serde(default)]
     pub row_diff_verified: bool,
     #[serde(default)]
+    pub data_invariants_verified: bool,
+    #[serde(default)]
     pub table: Option<String>,
     #[serde(default = "default_current_state")]
     pub current_state: String,
@@ -155,6 +157,7 @@ impl MigrationCrSpec {
             operations,
             lease_seconds: self.lease_seconds,
             workers: self.expected_workers.clone(),
+            data_invariants_verified: self.data_invariants_verified,
         })
     }
 }
@@ -319,6 +322,7 @@ mod tests {
             write_triggers_installed: false,
             backfill_complete: false,
             row_diff_verified: false,
+            data_invariants_verified: true,
             table: Some("public.users".to_string()),
             current_state: "delete_only".to_string(),
             lease_seconds: 60,
@@ -382,6 +386,7 @@ mod tests {
             write_triggers_installed: false,
             backfill_complete: false,
             row_diff_verified: false,
+            data_invariants_verified: true,
             table: Some("public.users".to_string()),
             current_state: "delete_only".to_string(),
             lease_seconds: 60,
