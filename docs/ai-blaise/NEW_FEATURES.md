@@ -1404,7 +1404,7 @@ fan embedding jobs across Citus workers safely.
 
 ### S2: Topology-Aware Placement
 
-**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`
+**Overlay**: `operator/src/crds/shard_group.rs`, `operator/src/reconcile/shard_group.rs`, `operator/src/reconcile/citus_cluster.rs`, `operator/src/controllers/boundary.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
@@ -1417,21 +1417,29 @@ optional `update_distributed_table_colocation`, and a `pg_dist_shard`
 post-condition guard) plus Kubernetes-style topology-spread constraints. The
 `CitusClusterReconcilePlan` plan-builder renders the CloudNativePG cluster
 manifest, pool Deployment intent, and one Deployment intent per declared
-sidecar so the operator-owned reconcile contract is executable end-to-end.
+sidecar so the operator-owned reconcile contract is executable end-to-end. The
+controller boundary model renders typed Conditions and retry classification for
+`CitusCluster`, `Hypertable`, `Migration`, and `Tenant` so dry-run planning is
+explicit and alpha mutation paths cannot be mistaken for implemented apply
+behavior.
 
 Production evidence: Local and VM proof runs `cargo test -p
-ai_blaise_citus_operator` (61 unit tests including reconcile-plan coverage for
-coordinator-worker, coordinator-less, custom-sidecar, and colocation-free
-shard-group cases) and `cargo run -p ai_blaise_citus_operator --
+ai_blaise_citus_operator` (unit tests including reconcile-plan and controller
+boundary coverage) and `cargo run -p ai_blaise_citus_operator --
 run-reconcile-plans`, which emits the canonical reconcile-plan TSV row
-`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. The matching SQL apply
-plan and CloudNativePG cluster manifest are produced from the canonical
-`CitusClusterSpec` and `ShardGroupSpec` without external Kubernetes
-dependencies. Live in-cluster reconciliation (a Kubernetes controller loop
-that watches the CRDs, applies the manifests, and updates `.status`) remains
-gated behind the alpha `operator.controllerRbac.enabled` profile because the
-operator runtime currently exposes only health/readiness/metrics and
-plan-builder helpers.
+`ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. `cargo run -p
+ai_blaise_citus_operator -- run-controller-boundary` emits the canonical
+dry-run boundary TSV and `ci/ai-blaise/operator-boundary-smoke.sh` proves
+`AI_BLAISE_OPERATOR_EXECUTION_MODE=apply` fails closed while Kubernetes apply,
+direct SQL execution, and `.status` mutation are still `AlphaNotImplemented`.
+The matching SQL apply plan and CloudNativePG cluster manifest are produced
+from the canonical `CitusClusterSpec` and `ShardGroupSpec` without external
+Kubernetes dependencies. Live in-cluster reconciliation (a Kubernetes
+controller loop that watches the CRDs, applies the manifests, and updates
+`.status`) remains gated behind the alpha `operator.controllerRbac.enabled`
+profile because the operator runtime currently exposes only
+health/readiness/metrics, plan-builder helpers, and non-mutating boundary
+reports.
 
 **Motivation**: Placement decisions need an operator-owned policy before the
 fork can prove zone-aware replication and survival-goal behavior.
@@ -1444,10 +1452,13 @@ Kubernetes-native CRD for topology spread constraints.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: S2` in `operator/src/crds/shard_group.rs`,
   `operator/src/reconcile/shard_group.rs`,
-  `operator/src/reconcile/citus_cluster.rs`
+  `operator/src/reconcile/citus_cluster.rs`,
+  `operator/src/controllers/boundary.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-controller-boundary`
+- CI: `bash ci/ai-blaise/operator-boundary-smoke.sh`
 - CI: `cargo test -p ai_blaise_citus_operator`
 
 ### S4: Coordinator-Less Topology Mode

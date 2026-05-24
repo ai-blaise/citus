@@ -640,6 +640,13 @@ pg_cron scheduling, pg_repack execution, two-version schema-job workers,
 active-active replication conflict handling, Kubernetes child-resource apply,
 and `.status` writes remain alpha.
 
+Operator execution-boundary evidence for `S2` is scoped to deterministic
+`ControllerBoundaryPlan` conditions for CitusCluster, Hypertable, Migration,
+and Tenant under `ci/ai-blaise/operator-boundary-smoke.sh`. It proves dry-run
+plan rendering and apply-mode fail-closed behavior; Kubernetes apply, direct
+SQL execution, `.status` mutation, status-subresource writes, idempotent
+mutating runners, and live in-cluster controller mutations remain alpha.
+
 
 Companion runtime depth A evidence is scoped to deterministic Rust companion
 reports for migration planning, durable queue semantics, and
