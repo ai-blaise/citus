@@ -1,0 +1,17 @@
+name: observability-contracts
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ai-blaise/dev
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Smoke custom component observability contracts
+        run: bash ci/ai-blaise/observability-contracts-check.sh

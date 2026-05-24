@@ -5078,7 +5078,11 @@ Production evidence: PR #11 head `f5f57f144` and merge commit `9110da454`
 passed local and VM verification of the kind production smoke that
 port-forwarded into the live operator and every deployed sidecar and verified
 `/healthz`, `/readyz`, and `/metrics` from the actual pods. Production values
-still keep alpha feature sidecars disabled by default; this status applies
+still keep alpha feature sidecars disabled by default. The additional
+`ci/ai-blaise/observability-contracts-check.sh` gate starts the operator,
+shared runtime, and every sidecar `serve` binary on VM/CI loopback and asserts
+their real JSON `/healthz` and `/readyz` payloads plus Prometheus `/metrics`
+exposition. This status applies
 only to the shared probe/metrics runtime.
 
 **References**:
@@ -5086,6 +5090,7 @@ only to the shared probe/metrics runtime.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: O4` in `sidecar/shared/src/lib.rs`
 - In-source: `FEATURE: O4` in `sidecar/shared/src/runtime.rs`
+- CI: `ci/ai-blaise/observability-contracts-check.sh`
 - Executable: `FEATURE: O4` in `sidecar/shared/src/main.rs`
 
 ### O5: Sidecar Deployment Contract
@@ -5291,7 +5296,10 @@ Production evidence: `ai_blaise_citus_sidecar_shared::log_schema` unit tests
 validate every canonical schema, prove no extension field shadows a common
 field, and confirm the schema catalog covers all 17 sidecars. Companion's
 `log_view` tests render the deterministic SQL bundle and assert per-sidecar
-projections cast each extension field to its declared SQL type.
+projections cast each extension field to its declared SQL type. The
+`ci/ai-blaise/observability-contracts-check.sh` gate also runs the shared
+`log-schema-canonical` executable and fails if the runtime sidecar inventory
+and the structured-log schema catalog diverge.
 
 **References**:
 
@@ -5300,6 +5308,8 @@ projections cast each extension field to its declared SQL type.
 - In-source: `FEATURE: O15` in `sidecar/shared/src/log_schema.rs`
 - In-source: `FEATURE: O15` in `companion/src/log_view.rs`
 - Acceptance: `cargo test -p ai_blaise_citus_companion --lib log_view`
+- Executable: `FEATURE: O15` in `sidecar/shared/src/main.rs`
+- CI: `ci/ai-blaise/observability-contracts-check.sh`
 
 ## Extension Catalog SQL Runtime
 

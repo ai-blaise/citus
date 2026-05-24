@@ -16,6 +16,7 @@ timescale_bridge_smoke="ci/ai-blaise/timescale-bridge-smoke.sh"
 timescale_cohabitation_smoke="ci/ai-blaise/timescale-cohabitation-smoke.sh"
 observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh"
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
+observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 
 for file in \
   "${dockerignore}" \
@@ -32,7 +33,8 @@ for file in \
   "${timescale_bridge_smoke}" \
   "${timescale_cohabitation_smoke}" \
   "${observability_replication_smoke}" \
-  "${app_digest_smoke}"; do
+  "${app_digest_smoke}" \
+  "${observability_contracts_check}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
@@ -57,6 +59,10 @@ if [[ ! -x "${observability_replication_smoke}" ]]; then
 fi
 if [[ ! -x "${app_digest_smoke}" ]]; then
   echo "missing executable app image digest manifest smoke: ${app_digest_smoke}" >&2
+  exit 1
+fi
+if [[ ! -x "${observability_contracts_check}" ]]; then
+  echo "missing executable observability contracts smoke: ${observability_contracts_check}" >&2
   exit 1
 fi
 
@@ -160,6 +166,11 @@ grep -Fq "ai-blaise-image-digests.tsv" "${build_app_images}"
 grep -Fq "pushed image" "${build_app_images}"
 grep -Fq "did not report an immutable repo digest" "${build_app_images}"
 grep -Fq "repository\\timage\\ttag\\tdigest\\tpackage\\tbinary\\tpushed" "${build_app_images}"
+grep -Fq "observability-contracts-check.sh" .github/workflows/ci-observability-contracts.yml
+grep -Fq "log-schema-canonical" sidecar/shared/src/main.rs
+grep -Fq "serve_surfaces=" "${observability_contracts_check}"
+grep -Fq "sidecar_log_schemas=" "${observability_contracts_check}"
+grep -Fq "pool_admin_metrics=true" "${observability_contracts_check}"
 grep -Fq 'DEFAULT_ARGS=${default_args}' "${build_app_images}"
 grep -Fq "citusctl|ai_blaise_citusctl|ai_blaise_citusctl|plan inspect cluster" "${build_app_images}"
 grep -Fq "build-app-images.sh must fail a pushed image without an immutable digest" "${app_digest_smoke}"
@@ -231,6 +242,12 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'GET /healthz' sidecar/mcp/src/lib.rs
     grep -Fq 'request("GET", "/readyz")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
     grep -Fq 'request("GET", "/metrics")' ci/ai-blaise/mcp-sidecar-http-smoke.sh
+  elif [[ "${main_file}" == "sidecar/cdc/src/main.rs" ]]; then
+    grep -Fq 'runtime::serve' "${main_file}"
+    grep -Fq '.route("/healthz", get(healthz))' sidecar/cdc/src/runtime.rs
+    grep -Fq '.route("/readyz", get(readyz))' sidecar/cdc/src/runtime.rs
+    grep -Fq '.route("/metrics", get(metrics))' sidecar/cdc/src/runtime.rs
+    grep -Fq 'SidecarRuntime::ready(component)' sidecar/cdc/src/runtime.rs
   else
     grep -Fq 'run_probe_server' "${main_file}"
   fi
