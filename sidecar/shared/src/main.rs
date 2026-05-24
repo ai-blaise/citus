@@ -1,7 +1,9 @@
 // FEATURE: O4
+// FEATURE: SC7
 
 use ai_blaise_citus_sidecar_shared::{
-    run_probe_server, HttpMethod, HttpProbeRequest, SidecarRuntime,
+    run_probe_server, EndpointRegistry, HttpMethod, HttpProbeRequest, RetargetConfig,
+    SidecarRuntime,
 };
 use std::env;
 use std::process;
@@ -15,6 +17,11 @@ fn main() {
 
     if args == ["serve"] {
         run_server("sidecar-shared", "0.0.0.0:8080");
+        return;
+    }
+
+    if args == ["ha-canonical"] {
+        emit_ha_canonical();
         return;
     }
 
@@ -55,8 +62,52 @@ fn method_name(method: &HttpMethod) -> &str {
 }
 
 fn print_usage() {
-    println!("usage: sidecar-shared [serve|probe-canonical]");
-    println!("emits tab-separated canonical health, readiness, drain, and metrics probes");
+    println!("usage: sidecar-shared [serve|probe-canonical|ha-canonical]");
+    println!("emits canonical shared runtime probes and sidecar HA retarget decisions");
+}
+
+fn emit_ha_canonical() {
+    let config = RetargetConfig::parse(
+        "id=primary,target=http://10.0.0.10:8080,priority=1,weight=10,failover_after=1;\
+         id=standby,target=http://10.0.1.10:8080,priority=2,weight=10,failover_after=1",
+    )
+    .expect("canonical retarget config");
+    let mut registry = EndpointRegistry::new(config);
+
+    println!("phase\tgeneration\tselected\treason");
+    emit_decision("initial", &registry);
+    registry
+        .record_failure("primary", "connection refused")
+        .expect("record primary failure");
+    emit_decision("primary_failed", &registry);
+    registry
+        .begin_drain("standby", 1)
+        .expect("begin standby drain");
+    emit_decision("standby_draining", &registry);
+    let reloaded = registry.reload(
+        RetargetConfig::parse(
+            "id=primary,target=http://10.0.0.10:8080,priority=1,weight=10,failover_after=1;\
+             id=standby,target=http://10.0.1.10:8080,priority=2,weight=10,failover_after=1;\
+             id=canary,target=http://10.0.2.10:8080,priority=3,weight=1,failover_after=1",
+        )
+        .expect("canonical reload config"),
+    );
+    println!(
+        "reload\t{}\t{}\t{}",
+        reloaded.previous_generation, reloaded.generation, reloaded.endpoint_count
+    );
+    emit_decision("after_reload", &registry);
+}
+
+fn emit_decision(phase: &str, registry: &EndpointRegistry) {
+    let decision = registry.select();
+    println!(
+        "{}\t{}\t{}\t{}",
+        phase,
+        decision.generation,
+        decision.selected_id().unwrap_or("none"),
+        decision.reason,
+    );
 }
 
 fn run_server(component: &str, default_addr: &str) {

@@ -8743,6 +8743,50 @@ microbenchmarks; the upstream test surface is correctness-only.
 - Executable: `bash benchmarks/microbenches/rum/bench.sh`
 - CI: `ci/ai-blaise/bundled-ext-microbenches-smoke.sh`
 
+## Sidecar HA
+
+### SC7: Sidecar Retarget Endpoint Selection
+
+**Overlay**: `sidecar/shared`
+**Status**: production-ready
+**Since**: unreleased
+**Upstream Citus equivalent**: none
+**Bundled extension dep**: none
+
+**Summary**: Adds shared HA retarget primitives for sidecars: endpoint config
+parsing, health-aware endpoint selection, deterministic failover ordering,
+drain-aware exclusion, and generation-tracked config reloads.
+
+Production evidence: VM verification runs
+`cargo test -p ai_blaise_citus_sidecar_shared`, which covers duplicate and
+empty config rejection, deterministic selection, failure retargeting,
+fail-closed all-down behavior, drain exclusion, and reload status preservation.
+The canonical executable
+`cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical` emits the
+initial primary selection, primary-failed standby selection, drain-induced
+no-endpoint decision, and reload generation increment; the sidecar workflow
+runs the same canonical report so the contract cannot drift silently.
+
+**Motivation**: Sidecars need one shared retarget decision contract before
+individual runtimes or operator-owned EndpointSlice wiring can safely switch
+traffic away from unhealthy pods.
+
+**Citus comparison**: Vanilla Citus delegates sidecar traffic selection to
+external deployment tooling and does not provide an in-tree sidecar retarget
+contract.
+
+**Production boundary**: This is a library and canonical-runner primitive. It
+does not claim Kubernetes Service retargeting, EndpointSlice watches, HPA/PDB
+rendering, NetworkPolicy enforcement, or cross-region failover execution;
+those orchestration surfaces remain alpha until live Kubernetes evidence is
+recorded.
+
+**References**:
+
+- In-source: `FEATURE: SC7` in `sidecar/shared/src/ha.rs`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_shared -- ha-canonical`
+- CI: `.github/workflows/ci-sidecar.yml`
+
 ## V2 Completion Register Addendum
 
 No rows remain. The former V2 addendum rows were promoted to alpha feature

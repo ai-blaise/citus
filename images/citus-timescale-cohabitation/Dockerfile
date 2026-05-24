@@ -24,6 +24,7 @@ RUN set -eux; \
       clang19 \
       curl-dev \
       flex \
+      git \
       icu-dev \
       krb5-dev \
       libxml2-dev \

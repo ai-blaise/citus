@@ -35,6 +35,8 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_shared --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_shared
+      - name: Run HA retarget canonical report
+        run: cargo run -q -p ai_blaise_citus_sidecar_shared -- ha-canonical
 
   vectorizer:
     runs-on: ubuntu-latest
