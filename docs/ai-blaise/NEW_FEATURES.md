@@ -7921,10 +7921,11 @@ object storage wiring, retention policy, and authorization remain alpha.
 router-planner placement-intersection nested loop with a hashed endpoint lookup
 for non-tiny placement lists while preserving legacy result semantics.
 
-**Current boundary**: Patch applicability and the portable router-planner smoke
-prove the algorithmic boundary and guard against semantic regressions. Full
-Citus build evidence and live multi-worker planner CPU measurements remain
-alpha and must be recorded before production performance claims.
+**Current boundary**: Patch applicability, the portable router-planner smoke,
+and the companion advanced-planner runtime smoke prove the deterministic
+algorithm/contract boundary and guard against semantic regressions. Full Citus
+build evidence and live multi-worker planner CPU measurements remain alpha and
+must be recorded before production performance claims.
 
 **Citus comparison**: Vanilla Citus still uses the linear placement-list
 intersection on this planner path.
@@ -7936,7 +7937,9 @@ intersection on this planner path.
 - Patch: `patches/0004-hashtable-on-planner-hotpath.patch`
 - Benchmark smoke: `benchmarks/router-planner/bench.py`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
 - CI: `ci/ai-blaise/router-patch-smoke.sh`
+- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
 
 ### T6: PG18 io_uring Default
 
@@ -8009,9 +8012,10 @@ is production-ready under `T15`.
 
 **Summary**: Defines the maximum batch-row contract for bulk protocol fetches.
 
-**Current boundary**: The advanced-planner runner validates the configured
-budget; protocol implementation, backpressure, and cross-worker fetch tests
-remain alpha.
+**Current boundary**: The advanced-planner runner and runtime smoke validate
+the configured budget, fail-closed invalid batch rows, and explicitly record
+that protocol implementation, backpressure, and cross-worker fetch tests remain
+alpha.
 
 **Citus comparison**: Vanilla Citus has no ai-blaise bulk-fetch contract.
 
@@ -8019,6 +8023,8 @@ remain alpha.
 
 - In-source: `FEATURE: T10` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
 
 ### T11: DistSQL Physical Pushdown
 
@@ -8031,8 +8037,9 @@ remain alpha.
 **Summary**: Records the worker-task budget for a DistSQL physical pushdown
 contract.
 
-**Current boundary**: The planner contract is executable; physical plan
-rewrites and worker execution remain alpha.
+**Current boundary**: The planner contract and runtime smoke are executable,
+cover worker-task budget validation, and reject live-execution overclaims;
+physical plan rewrites and worker execution remain alpha.
 
 **Citus comparison**: Vanilla Citus does not expose this DistSQL contract.
 
@@ -8040,6 +8047,8 @@ rewrites and worker execution remain alpha.
 
 - In-source: `FEATURE: T11` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
 
 ### T13: Distributed Cursors
 
@@ -8051,8 +8060,9 @@ rewrites and worker execution remain alpha.
 
 **Summary**: Defines the open-shard budget for distributed cursor state.
 
-**Current boundary**: Contract validation is deterministic; cursor lifecycle,
-worker cleanup, and error recovery remain alpha.
+**Current boundary**: Contract validation and the runtime-boundary smoke are
+deterministic; cursor lifecycle, worker cleanup, and error recovery remain
+alpha.
 
 **Citus comparison**: Vanilla Citus does not coordinate multi-shard cursor
 state this way.
@@ -8061,6 +8071,8 @@ state this way.
 
 - In-source: `FEATURE: T13` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
 
 ### T14: Distributed Savepoints
 
@@ -8072,8 +8084,9 @@ state this way.
 
 **Summary**: Defines the open-shard budget for distributed savepoint state.
 
-**Current boundary**: The contract runner validates state shape; savepoint
-propagation, rollback, and worker cleanup remain alpha.
+**Current boundary**: The contract runner and runtime-boundary smoke validate
+state shape and fail-closed live-execution claims; savepoint propagation,
+rollback, and worker cleanup remain alpha.
 
 **Citus comparison**: Vanilla Citus does not coordinate savepoints through
 this contract.
@@ -8082,6 +8095,8 @@ this contract.
 
 - In-source: `FEATURE: T14` in `companion/src/advanced_planner.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
 
 ### TS10: Hierarchical CAGGs Distributed
 

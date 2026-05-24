@@ -21,6 +21,8 @@ jobs:
         run: cargo test -p ai_blaise_citus_companion
       - name: Run canonical advanced planner contract report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
+      - name: Run companion advanced planner smoke
+        run: bash ci/ai-blaise/companion-advanced-planner-smoke.sh
       - name: Run canonical extension catalog report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical
       - name: Run canonical cohabit detection report
