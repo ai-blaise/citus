@@ -336,6 +336,29 @@ for required in (
     if required not in pool_smoke:
         fail(f"pool proxy smoke lost Auth3 data-plane assertion: {required}")
 
+for required in (
+    "Send both query frames before reading either result",
+    "pack_simple_query",
+    "pipeline_one",
+    "pipeline_two",
+    "raw PostgreSQL pipelined simple-query",
+    "passed through pool proxy",
+):
+    if required not in pool_smoke:
+        fail(f"pool proxy smoke lost T7 raw-wire pipelining assertion: {required}")
+
+if "### T7: Pipelined Client Protocol In Pool" in docs:
+    t7_section = docs.split("### T7: Pipelined Client Protocol In Pool", 1)[1].split("### T10:", 1)[0]
+    for required in (
+        "**Status**: production-ready",
+        "Production evidence:",
+        "raw PostgreSQL client",
+        "Extended-query `Parse`/`Bind`/`Execute` buffering",
+        "remain alpha",
+    ):
+        if required not in t7_section:
+            fail(f"T7 production boundary lost required docs phrase: {required}")
+
 phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
 gate_deps = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 for target in (

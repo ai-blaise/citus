@@ -58,7 +58,9 @@ Current implemented surface:
 
 - `SettingsBucketPoolMap` and opaque settings fingerprints
 - `PlacementSubscriber`, `ShardMap`, `PlanCache`, and `PreparedStatementCache`
-- `ExtendedPipelineBuffer` for extended-query protocol batching
+- `ExtendedPipelineBuffer` for extended-query protocol batching; the
+  production-ready `FEATURE: T7` boundary is limited to raw simple-query frame
+  pipelining through the live `serve` data plane
 - `TenantMirrorPolicy` and HTAP `QueryFeatures` classifier
 - `AuthVerificationCache`, live auth-sidecar introspection, startup-token
   stripping, and verified-claim revocation handling
@@ -74,13 +76,15 @@ These types are the first local model for `FEATURE: T2` placement-generation
 partial plan-cache invalidation and `FEATURE: T3` single-shard route
 selection.
 `PoolRuntimeContract` adds validation for `FEATURE: T1`, `FEATURE: T3`,
-`FEATURE: T9`, `FEATURE: T12`, `FEATURE: T15`, `FEATURE: R10`,
+`FEATURE: T7`, `FEATURE: T9`, `FEATURE: T12`, `FEATURE: T15`, `FEATURE: R10`,
 `FEATURE: Sec12`, `FEATURE: Auth3`, and `FEATURE: MR5`.
 `cargo run -p ai_blaise_citus_pool -- run-canonical` emits the deterministic
 execution summary for the pool runtime and shard-map contracts used by CI.
 `ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL
-through the pool listener, proves CIDR-allowed and CIDR-denied data-port
-traffic, exercises active-connection overload, tenant-quota fail-closed denial,
+through the pool listener, sends two raw PostgreSQL simple-query frames before
+reading either result to prove the `FEATURE: T7` data-plane pipelining
+boundary, proves CIDR-allowed and CIDR-denied data-port traffic, exercises
+active-connection overload, tenant-quota fail-closed denial,
 Auth3 startup-token admission against the real auth sidecar, revoked-token
 fail-closed denial, upstream-unreachable fail-closed routing, and asserts
 readiness plus Prometheus counters.
