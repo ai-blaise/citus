@@ -45,7 +45,7 @@ fn main() {
         .map(|search| search.indexed_columns.join(","))
         .unwrap_or_default();
 
-    println!("shard_id\ttable\tfrom\tto\tformat\tobject_uri\tlayers\tsearch_columns");
+    println!("shard_id	table	from	to	format	object_uri	layers	search_columns");
     for move_plan in &moves {
         let shard = plan
             .shards
@@ -53,7 +53,7 @@ fn main() {
             .find(|shard| shard.shard_id == move_plan.shard_id)
             .expect("canonical shard");
         println!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}	{}	{}	{}	{}	{}	{}	{}",
             move_plan.shard_id,
             move_plan.table,
             tier_name(&move_plan.from),
@@ -81,13 +81,19 @@ fn run_runtime_canonical() {
         .as_ref()
         .map(|search| search.indexed_columns.join(","))
         .unwrap_or_default();
+    let artifact_uris = report
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.uri.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
 
     println!(
-        "shard_id\ttable\tfrom\tto\tformat\tobject_uri\tlayers\tbytes_moved\timage_layers\tdelta_layers\tsearch_indexes\tsearch_columns\tsearch_indexes_materialized\tplanner_routes_refreshed\tcold_tier_reads\tmoved_shards\tmaterialized_layer_files\tobject_bytes_written"
+        "shard_id	table	from	to	format	object_uri	layers	bytes_moved	image_layers	delta_layers	search_indexes	search_columns	search_indexes_materialized	planner_routes_refreshed	cold_tier_reads	moved_shards	materialized_layer_files	object_bytes_written	search_index_bytes_written	artifacts"
     );
     for move_execution in &report.moves {
         println!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
             move_execution.shard_id,
             move_execution.table,
             tier_name(&move_execution.from),
@@ -106,6 +112,8 @@ fn run_runtime_canonical() {
             report.state.moved_shards,
             report.state.materialized_layer_files,
             report.state.object_bytes_written,
+            report.state.search_index_bytes_written,
+            artifact_uris,
         );
     }
 }
