@@ -37,17 +37,17 @@ use ai_blaise_citus_operator::controllers::boundary::{
     ExecutionMode,
 };
 use ai_blaise_citus_operator::{
-    canonical_operator_security_report, plan_branch_lifecycle, BackupEncryption, BackupProvider,
-    BackupReconcilePlan, BackupSpec, BackupTarget, BranchLifecycleAction, BranchLifecyclePhase,
-    BranchLifecycleStatus, BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec,
-    ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec, CitusTopology,
-    CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
-    ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
-    FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent, FunctionReconcilePlan,
-    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger,
-    HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction,
-    MigrationReconcilePlan, MigrationSpec, MigrationType, PlacementPolicy, PoolSpec,
-    RegionReconcilePlan, RegionSpec, RegionalRowPlacementPlan, RegionalRowPlacementSpec,
+    canonical_operator_security_report, canonical_security_supply_chain_report,
+    plan_branch_lifecycle, BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec,
+    BackupTarget, BranchLifecycleAction, BranchLifecyclePhase, BranchLifecycleStatus, BranchSpec,
+    BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
+    CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan,
+    ConflictPolicySpec, ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider,
+    FederationConnection, FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent,
+    FunctionReconcilePlan, FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind,
+    FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationCommand,
+    MigrationConflictAction, MigrationReconcilePlan, MigrationSpec, MigrationType, PlacementPolicy,
+    PoolSpec, RegionReconcilePlan, RegionSpec, RegionalRowPlacementPlan, RegionalRowPlacementSpec,
     RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackReconcilePlan,
     ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec, SearchIndexReconcilePlan,
     SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec, SidecarDeploymentSpec,
@@ -95,6 +95,9 @@ fn main() {
             run_endpointslice_retarget_canonical()
         }
         [command] if command == "run-security-canonical" => run_security_canonical(),
+        [command] if command == "run-security-supply-chain-canonical" => {
+            run_security_supply_chain_canonical()
+        }
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -131,7 +134,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical]");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -237,6 +240,30 @@ fn run_security_canonical() {
         report.run_as_non_root,
         report.read_only_rootfs,
         report.drop_all_capabilities,
+    );
+}
+
+fn run_security_supply_chain_canonical() {
+    let report = canonical_security_supply_chain_report().unwrap_or_else(|error| {
+        eprintln!("operator: security supply-chain canonical execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "workloads	external_secret_manifests	runtime_secret_refs	tls_manifests	tls_secret_refs	supply_chain_artifacts	sbom_documents	cosign_attestations	digest_pinned_images	fail_closed_checks"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.workloads,
+        report.external_secret_manifests,
+        report.runtime_secret_refs,
+        report.tls_manifests,
+        report.tls_secret_refs,
+        report.supply_chain_artifacts,
+        report.sbom_documents,
+        report.cosign_attestations,
+        report.digest_pinned_images,
+        report.fail_closed_checks,
     );
 }
 

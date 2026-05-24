@@ -97,9 +97,11 @@ pub use reconcile::search_index::{
     SearchIndexReconcilePlan, PG_SEARCH_ACCESS_METHOD, SEARCH_METADATA_TABLES_SQL,
 };
 pub use reconcile::security::{
-    canonical_operator_security_plans, canonical_operator_security_report, AuthBoundaryPlan,
-    ContainerSecurityContextPlan, ExternalSecretBindingPlan, PodSecurityContextPlan, RbacRulePlan,
-    SecretReferencePlan, WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
+    canonical_operator_security_plans, canonical_operator_security_report,
+    canonical_security_supply_chain_report, AuthBoundaryPlan, ContainerSecurityContextPlan,
+    ExternalSecretBindingPlan, ExternalSecretManifestPlan, PodSecurityContextPlan, RbacRulePlan,
+    SecretReferencePlan, SecuritySupplyChainReport, SupplyChainAttestationPlan,
+    TlsSecretManifestPlan, WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
 };
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
