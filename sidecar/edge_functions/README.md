@@ -25,6 +25,8 @@ Implemented surface:
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`.
+- `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`.
+- `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the binary and verifies probe/drain fail-closed behavior.
 - `bash ci/ai-blaise/api-trio-runtime-smoke.sh` boots the service and verifies
   readiness, registry listing, and canonical invocation over real TCP.
 

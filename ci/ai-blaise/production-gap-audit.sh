@@ -32,7 +32,13 @@ IMAGES_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
 PERF_THRESHOLDS = ROOT / "benchmarks/performance-evidence-thresholds.json"
 PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
-MAKEFILE_AI_BLAISE = ROOT / "Makefile.ai-blaise"
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
+SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
+PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
+CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
+RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
 
 SOURCE_ROOTS = [
     "companion",
@@ -201,6 +207,9 @@ for path in (
     BENCHMARKS_DOC,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
+    MAKEFILE,
+    SIDECAR_WORKFLOW,
+    SIDECAR_API_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -229,7 +238,7 @@ for phrase in (
     if phrase not in perf_check:
         fail(f"performance evidence checker lost fail-closed phrase: {phrase}")
 
-makefile = read(MAKEFILE_AI_BLAISE)
+makefile = read(MAKEFILE)
 for target in (
     "performance-evidence-check:",
     "performance-evidence-release-check:",
@@ -246,6 +255,72 @@ for phrase in (
 ):
     if compact(phrase) not in compact(benchmarks_doc):
         fail(f"BENCHMARKS.md missing performance evidence release wording: {phrase}")
+
+sidecar_smoke = read(SIDECAR_API_SMOKE)
+for required in (
+    "run-bun-runtime-canonical",
+    "POST",
+    "/drain",
+    "invalid listen address",
+    "definitely-not-a-command",
+    "ai_blaise_sidecar_accepting_new_work",
+):
+    if required not in sidecar_smoke:
+        fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+if "sidecar-api-runtime-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")
+if (
+    "gate-close:" not in makefile
+    or "sidecar-api-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run sidecar-api-runtime-smoke")
+
+sidecar_workflow = read(SIDECAR_WORKFLOW)
+if (
+    "api-runtime-smoke:" not in sidecar_workflow
+    or "sidecar-api-runtime-smoke.sh" not in sidecar_workflow
+):
+    fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
+
+phony_lines = "\n".join(line for line in makefile.splitlines() if line.startswith(".PHONY:"))
+gate_deps = makefile.split("gate-close:", 1)[1].splitlines()[0] if "gate-close:" in makefile else ""
+for target in (
+    "citus-patch-production-audit",
+    "sidecar-api-runtime-smoke",
+    "runbook-command-check",
+):
+    if target not in phony_lines:
+        fail(f"Makefile.ai-blaise .PHONY missing integration gate: {target}")
+    if target not in gate_deps:
+        fail(f"gate-close must run integration gate: {target}")
+
+patch_audit = read(CITUS_PATCH_AUDIT)
+for phrase in (
+    "production-gates.json",
+    "roster-only",
+    "not production-ready",
+    "required_mode",
+    "measured",
+):
+    if phrase not in patch_audit:
+        fail(f"citus-patch-production-audit.sh lost fail-closed phrase: {phrase}")
+patches_workflow = read(PATCHES_WORKFLOW)
+if "make -f Makefile.ai-blaise citus-patch-production-audit" not in patches_workflow:
+    fail("ci-patches workflow must run citus-patch-production-audit")
+
+runbook_check = read(RUNBOOK_CHECK)
+for phrase in (
+    "shell_syntax_errors",
+    "script_ref_errors",
+    "sidecar_binary_errors",
+    "make_target_errors",
+):
+    if phrase not in runbook_check:
+        fail(f"runbook-command-check.sh lost validator: {phrase}")
+production_workflow = read(PRODUCTION_WORKFLOW)
+if "runbook-command-check.sh" not in production_workflow:
+    fail("ci-production-readiness workflow must run runbook-command-check.sh")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:

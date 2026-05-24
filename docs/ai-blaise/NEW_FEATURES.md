@@ -3776,6 +3776,7 @@ runtime.
 - In-source: `FEATURE: EF1` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
@@ -3799,6 +3800,7 @@ the sidecar needs runtime selection without changing the CRD shape.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF2` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
@@ -3846,6 +3848,7 @@ callback path.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF4` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 
@@ -3871,6 +3874,7 @@ from schedules or CDC events.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: EF5` in `sidecar/edge_functions/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/api-trio-runtime-smoke.sh`
 

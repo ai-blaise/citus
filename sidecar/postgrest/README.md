@@ -21,6 +21,7 @@ Implemented surface:
   canonical `/api/<table>` route descriptors.
 - `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical`.
+- `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the binary and verifies probe/drain fail-closed behavior.
 - `bash ci/ai-blaise/api-trio-runtime-smoke.sh` boots the service and verifies
   readiness, metrics, OpenAPI, and route behavior over real TCP.
 

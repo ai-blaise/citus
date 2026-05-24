@@ -479,6 +479,22 @@ pub fn canonical_edge_function_plan() -> EdgeFunctionPlan {
     }
 }
 
+pub fn canonical_bun_edge_function_plan() -> EdgeFunctionPlan {
+    EdgeFunctionPlan {
+        name: "invoice_sync".to_string(),
+        runtime: EdgeFunctionRuntime::Bun,
+        source: FunctionSource::BundleUri {
+            uri: "s3://functions/invoice-sync.tgz".to_string(),
+            entrypoint: "index.ts".to_string(),
+        },
+        triggers: vec![FunctionTrigger::Scheduled {
+            schedule: "*/5 * * * *".to_string(),
+        }],
+        env_secret_refs: Vec::new(),
+        db_callback: None,
+    }
+}
+
 pub fn canonical_invocation_request() -> InvocationRequest {
     InvocationRequest {
         function_name: "order_created".to_string(),
@@ -489,6 +505,18 @@ pub fn canonical_invocation_request() -> InvocationRequest {
         },
         payload_bytes: 512,
         timeout_ms: 1_000,
+    }
+}
+
+pub fn canonical_bun_invocation_request() -> InvocationRequest {
+    InvocationRequest {
+        function_name: "invoice_sync".to_string(),
+        tenant_id: "tenant-a".to_string(),
+        trigger: FunctionTrigger::Scheduled {
+            schedule: "*/5 * * * *".to_string(),
+        },
+        payload_bytes: 256,
+        timeout_ms: 500,
     }
 }
 
@@ -509,6 +537,18 @@ pub fn canonical_edge_function_runtime_report(
 ) -> Result<EdgeFunctionRuntimeReport, EdgeFunctionError> {
     let mut runtime = EdgeFunctionRuntimeHost::new(canonical_edge_function_plan())?;
     let execution = runtime.invoke(&canonical_invocation_request())?;
+
+    Ok(EdgeFunctionRuntimeReport {
+        launch: runtime.launch().clone(),
+        execution,
+        state: runtime.state().clone(),
+    })
+}
+
+pub fn canonical_bun_edge_function_runtime_report(
+) -> Result<EdgeFunctionRuntimeReport, EdgeFunctionError> {
+    let mut runtime = EdgeFunctionRuntimeHost::new(canonical_bun_edge_function_plan())?;
+    let execution = runtime.invoke(&canonical_bun_invocation_request())?;
 
     Ok(EdgeFunctionRuntimeReport {
         launch: runtime.launch().clone(),

@@ -22,6 +22,7 @@ Implemented surface:
   and the `/graphql/ws` subscription transport boundary.
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`.
+- `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the binary and verifies probe/drain fail-closed behavior.
 - `bash ci/ai-blaise/api-trio-runtime-smoke.sh` boots the service and verifies
   readiness, query handling, and subscription-boundary registration over real
   TCP.
