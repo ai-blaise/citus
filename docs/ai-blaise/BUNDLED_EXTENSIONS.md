@@ -6,7 +6,10 @@ production-ready as a whole: the fast default image remains a manifest/init
 contract, while the explicit PG17 source-build targets now provide live build
 and `CREATE EXTENSION` evidence for the feasible PGDG-missing extensions.
 `FEATURE: Bundle1` remains alpha until the full required bundle, including the
-plrust PG17 upstream gap and complete initdb path, is verified end to end.
+plrust PG17 upstream gap and complete initdb path, is verified end to end. The
+pg_cron cohabitation smoke is subset evidence only for the required `pg_cron`
+package loading beside this Citus fork; it is not evidence for the full Bundle1
+image contract.
 
 
 ## PG17 Source-Build Path
@@ -50,6 +53,21 @@ installs `pgsodium_getkey` at pgsodium's default extension path; production
 deployments must set `PGSODIUM_KEY` or mount a 64-hex-character secret and set
 `PGSODIUM_KEY_FILE`. The smoke test provides an explicit deterministic test key
 only for the disposable test container.
+
+## pg_cron Cohabitation Subset
+
+`ci/ai-blaise/pg-cron-cohabitation-smoke.sh` builds
+`images/citus-pg-cron-cohabitation/Dockerfile`, installs the PGDG
+`postgresql-17-cron` package plus this Citus fork and `ai_blaise_citus`, and
+boots PostgreSQL with `shared_preload_libraries=pg_cron,citus` and
+`citus.cohabit_extensions=pg_cron`. It creates real `citus`, `pg_cron`, and
+`ai_blaise_citus` extensions, schedules a catalog-visible pg_cron job, records
+`artifacts/pg-cron-cohabitation-evidence.tsv`, and proves the SQL-visible
+cohabit detector fails closed when the `pg_cron` allowlist entry is omitted.
+
+This smoke does not promote Bundle1 as a whole: it does not run the complete
+`00-ai-blaise-extensions.sql` initdb path, does not cover plrust, and does not
+prove the unexposed TS19 in-shmem clock-reservation flag.
 
 ## Required Bundle
 

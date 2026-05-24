@@ -229,6 +229,9 @@ for phrase in (
     "v2 acceptance model must not be cited as production evidence",
     "WF2 fixture-backed WAL replay debugger plan",
     "not evidence for real WAL segment inspection",
+    "pg_cron cohabitation smoke is subset evidence only",
+    "does not prove the unexposed TS19 in-shmem clock-reservation flag",
+    "TS20 C API being called by a live C extension",
 ):
     if compact(phrase) not in audit_compact:
         fail(

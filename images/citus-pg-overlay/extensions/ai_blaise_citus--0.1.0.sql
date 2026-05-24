@@ -1849,6 +1849,149 @@ BEGIN
 END;
 $$;
 
+
+CREATE FUNCTION companion_internal.cohabit_extension_detection_report(
+    p_loaded_libraries text[],
+    p_cohabit_extensions text[],
+    p_installed_extensions text[]
+)
+RETURNS TABLE(
+    extension_name text,
+    role text,
+    requires_preload boolean,
+    requires_cohabit_guc boolean,
+    configured boolean,
+    preloaded boolean,
+    installed boolean,
+    ready boolean,
+    reason text
+)
+LANGUAGE sql
+STABLE
+AS $$
+WITH specs(extension_name, role, requires_preload, requires_cohabit_guc) AS (
+    VALUES
+        ('timescaledb'::text, 'trusted-hook'::text, true, true),
+        ('pg_cron'::text, 'clock-worker'::text, true, true),
+        ('pg_partman'::text, 'partition-manager'::text, false, false)
+),
+loaded AS (
+    SELECT DISTINCT lower(btrim(library_name)) AS extension_name
+    FROM unnest(coalesce(p_loaded_libraries, ARRAY[]::text[])) AS loaded(library_name)
+    WHERE btrim(coalesce(library_name, '')) <> ''
+),
+configured AS (
+    SELECT DISTINCT lower(btrim(extension_name)) AS extension_name
+    FROM unnest(coalesce(p_cohabit_extensions, ARRAY[]::text[])) AS configured(extension_name)
+    WHERE btrim(coalesce(extension_name, '')) <> ''
+),
+installed AS (
+    SELECT DISTINCT lower(btrim(extension_name)) AS extension_name
+    FROM unnest(coalesce(p_installed_extensions, ARRAY[]::text[])) AS installed(extension_name)
+    WHERE btrim(coalesce(extension_name, '')) <> ''
+),
+observations AS (
+    SELECT
+        specs.extension_name,
+        specs.role,
+        specs.requires_preload,
+        specs.requires_cohabit_guc,
+        configured.extension_name IS NOT NULL AS configured,
+        loaded.extension_name IS NOT NULL AS preloaded,
+        installed.extension_name IS NOT NULL AS installed,
+        (
+            installed.extension_name IS NOT NULL
+            AND (NOT specs.requires_preload OR loaded.extension_name IS NOT NULL)
+            AND (NOT specs.requires_cohabit_guc OR configured.extension_name IS NOT NULL)
+        ) AS ready,
+        NULLIF(array_to_string(ARRAY[
+            CASE WHEN specs.requires_cohabit_guc AND configured.extension_name IS NULL
+                THEN 'missing-citus-cohabit-extensions' END,
+            CASE WHEN specs.requires_preload AND loaded.extension_name IS NULL
+                THEN 'missing-shared-preload-libraries' END,
+            CASE WHEN installed.extension_name IS NULL
+                THEN 'extension-not-installed' END
+        ]::text[], ','), '') AS reason
+    FROM specs
+    LEFT JOIN configured USING (extension_name)
+    LEFT JOIN loaded USING (extension_name)
+    LEFT JOIN installed USING (extension_name)
+),
+unsupported AS (
+    SELECT
+        configured.extension_name,
+        'unsupported'::text AS role,
+        false AS requires_preload,
+        false AS requires_cohabit_guc,
+        true AS configured,
+        false AS preloaded,
+        false AS installed,
+        false AS ready,
+        'unsupported-configured-extension'::text AS reason
+    FROM configured
+    LEFT JOIN specs USING (extension_name)
+    WHERE specs.extension_name IS NULL
+)
+SELECT * FROM observations
+UNION ALL
+SELECT * FROM unsupported
+ORDER BY extension_name;
+$$;
+
+CREATE FUNCTION companion_internal.cohabit_extension_detection_report()
+RETURNS TABLE(
+    extension_name text,
+    role text,
+    requires_preload boolean,
+    requires_cohabit_guc boolean,
+    configured boolean,
+    preloaded boolean,
+    installed boolean,
+    ready boolean,
+    reason text
+)
+LANGUAGE sql
+STABLE
+AS $$
+SELECT *
+FROM companion_internal.cohabit_extension_detection_report(
+    string_to_array(coalesce(current_setting('shared_preload_libraries', true), ''), ','),
+    string_to_array(coalesce(current_setting('citus.cohabit_extensions', true), ''), ','),
+    ARRAY(SELECT extname::text FROM pg_extension)
+);
+$$;
+
+CREATE FUNCTION companion_internal.assert_cohabit_extension_ready(
+    p_extension_name text
+)
+RETURNS void
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    observation record;
+BEGIN
+    IF p_extension_name IS NULL OR btrim(p_extension_name) = '' THEN
+        RAISE EXCEPTION 'cohabit extension name must not be empty';
+    END IF;
+
+    SELECT *
+    INTO observation
+    FROM companion_internal.cohabit_extension_detection_report()
+    WHERE lower(extension_name) = lower(btrim(p_extension_name));
+
+    IF NOT FOUND OR observation.role = 'unsupported' THEN
+        RAISE EXCEPTION 'unsupported cohabiting extension'
+            USING DETAIL = format('%s is not a supported cohabit-extension role', p_extension_name);
+    END IF;
+
+    IF NOT observation.ready THEN
+        RAISE EXCEPTION 'cohabiting extension is not ready'
+            USING DETAIL = format('%s: %s', observation.extension_name, observation.reason);
+    END IF;
+END;
+$$;
+
 CREATE FUNCTION companion_internal.get_violations(
     p_schemas text[],
     p_rules text[]
