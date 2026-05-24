@@ -408,7 +408,8 @@ more production-ready than the artifacts justified.
 - The pool proxy smoke now opens a raw PostgreSQL protocol client through the
   real pool `serve` data port, sends two simple-query frames without waiting
   for the first result, verifies ordered rows from a `postgres:17` backend, and
-  keeps the broader shard-aware and `FEATURE: T7` pipeline contract alpha.
+  promotes only the `FEATURE: T7` simple-query data-plane pipelining boundary;
+  extended-query batching and shard-aware pool routing remain alpha.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
@@ -564,10 +565,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   measured production evidence supports a status promotion.
 - Every custom boundary doc must keep the shared production boundary for
   deterministic contracts, benchmark targets, and local runtime models.
-- Pool pipelining production evidence must include a raw PostgreSQL
-  wire-protocol smoke that sends multiple simple-query frames through the real
-  pool data port before reading the first result; psql request/response pacing
-  alone is not sufficient evidence for `FEATURE: T15`.
+- Pool pipelining production evidence for `FEATURE: T7` or `FEATURE: T15` must
+  include a raw PostgreSQL wire-protocol smoke that sends multiple simple-query
+  frames through the real pool data port before reading the first result; psql
+  request/response pacing alone is not sufficient evidence.
 - Auth2 production evidence is limited to installable SQL session-claim
   helpers. It must not be cited as evidence for Auth1 JWT issuance or Auth3
   token-cache behavior; Sec2 JWT verification has a separate SQL-runtime

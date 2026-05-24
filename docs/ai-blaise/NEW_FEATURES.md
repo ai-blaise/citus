@@ -7974,17 +7974,26 @@ emit a multi-PG-major operand image from a single overlay contract.
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`,
 and `companion/src/ops_contracts.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Keeps the broader transaction-batching and shard-aware pipeline
-contract visible alongside the measured `T15` simple-query proxy evidence.
+**Summary**: Proves the pool `serve` data plane preserves pipelined
+PostgreSQL simple-query frames as a byte-transparent TCP proxy while keeping
+extended-query batching and shard-aware routing out of the production-ready
+boundary.
 
-**Current boundary**: The pool canonical runner and operations runner validate
-the contract shape; only the byte-transparent simple-query data-plane baseline
-is production-ready under `T15`.
+Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool
+against a `postgres:17` container, opens a raw PostgreSQL client through the
+pool data port, sends two simple-query frames without waiting for the first
+result, verifies ordered `pipeline_one` and `pipeline_two` rows from the real
+backend, and keeps the live SQL plus pool admin metrics checks. The same
+Docker-backed smoke also proves active-connection overload rejection, tenant
+quota fail-closed denial, and upstream-unreachable fail-closed routing on the
+real data port. Extended-query `Parse`/`Bind`/`Execute` buffering,
+transaction-aware batching, and shard-aware routing remain alpha contract
+surfaces until they have equivalent raw-wire data-plane evidence.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise pool pipeline.
 
