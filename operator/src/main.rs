@@ -36,16 +36,20 @@ use ai_blaise_citus_operator::controllers::boundary::{
     ExecutionMode,
 };
 use ai_blaise_citus_operator::{
-    canonical_operator_security_report,    BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec, BackupTarget, BranchSpec,
-    BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
-    CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
+    canonical_operator_security_report, BackupEncryption, BackupProvider, BackupReconcilePlan,
+    BackupSpec, BackupTarget, BranchSpec, BranchStorageSpec, BranchType, ChunkingSpec,
+    ChunkingStrategy, CitusClusterReconcilePlan, CitusClusterSpec, CitusTopology,
+    CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
     ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
     FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent, FunctionReconcilePlan,
-    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction, MigrationReconcilePlan,
-    MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec,
-    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind,
-    SearchColumnSpec, SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
-    SidecarDeploymentSpec, SidecarDeploymentType, SidecarEndpointCandidate, SidecarEndpointRetargetPlan, SidecarReconcilePlan, SidecarSpec, SidecarType,
+    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger,
+    HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction,
+    MigrationReconcilePlan, MigrationSpec, MigrationType, PlacementPolicy, PoolSpec,
+    RegionReconcilePlan, RegionSpec, RepackStrategy, ResourceRequirements, RetentionPolicy,
+    ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec,
+    SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan,
+    ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType, SidecarEndpointCandidate,
+    SidecarEndpointRetargetPlan, SidecarReconcilePlan, SidecarSpec, SidecarType,
     SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
     TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
@@ -656,7 +660,8 @@ fn canonical_controller_boundary_plans_for_mode(
     ])
 }
 
-fn canonical_reconcile_plans_batch_c_report() -> Result<ReconcilePlansBatchCReport, Box<dyn Error>> {
+fn canonical_reconcile_plans_batch_c_report() -> Result<ReconcilePlansBatchCReport, Box<dyn Error>>
+{
     let scheduled_repack = canonical_scheduled_repack_spec();
     let repack_plan = ScheduledRepackReconcilePlan::from_spec("weekly-orders", &scheduled_repack)?;
     let repack_apply_plan = repack_plan.apply_plan();
@@ -666,7 +671,8 @@ fn canonical_reconcile_plans_batch_c_report() -> Result<ReconcilePlansBatchCRepo
     let migration_apply_plan = migration_plan.apply_plan();
 
     let conflict_policy = canonical_conflict_policy_spec();
-    let conflict_policy_plan = ConflictPolicyReconcilePlan::from_spec("accounts-lww", &conflict_policy)?;
+    let conflict_policy_plan =
+        ConflictPolicyReconcilePlan::from_spec("accounts-lww", &conflict_policy)?;
     let conflict_policy_apply_plan = conflict_policy_plan.apply_plan();
 
     let sidecar = canonical_sidecar_deployment_spec();
@@ -1083,7 +1089,6 @@ mod tests {
             }
         );
     }
-
 
     #[test]
     fn canonical_reconcilers_batch_b_report_covers_requested_batch() {

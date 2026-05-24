@@ -90,6 +90,12 @@ pub use reconcile::scheduled_repack::{
 pub use reconcile::search_index::{
     SearchIndexApplyPlan, SearchIndexApplyStep, SearchIndexReconcileError,
     SearchIndexReconcilePlan, PG_SEARCH_ACCESS_METHOD, SEARCH_METADATA_TABLES_SQL,
+};
+pub use reconcile::security::{
+    canonical_operator_security_plans, canonical_operator_security_report, AuthBoundaryPlan,
+    ContainerSecurityContextPlan, PodSecurityContextPlan, RbacRulePlan, SecretReferencePlan,
+    WorkloadSecurityError, WorkloadSecurityPlan, WorkloadSecurityReport,
+};
 pub use reconcile::shard_group::{
     ShardGroupApplyPlan, ShardGroupApplyStep, ShardGroupReconcileError, ShardGroupReconcilePlan,
     TopologySpreadConstraintPlan, CITUS_CREATE_DISTRIBUTED_TABLE, CITUS_REPLICATION_FACTOR_GUC,
@@ -115,5 +121,4 @@ pub use reconcile::tenant::{
 pub use reconcile::webhook::{
     WebhookApplyPlan, WebhookApplyStep, WebhookReconcileError, WebhookReconcilePlan,
     WEBHOOK_METADATA_TABLES_SQL, WEBHOOK_QUEUE,
-};
 };

@@ -110,7 +110,6 @@ fn error_policy(_tenant: Arc<Tenant>, error: &ControllerError, ctx: Arc<Context>
     retry_class.action(ctx.default_requeue)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

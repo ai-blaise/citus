@@ -7,8 +7,8 @@
 //! `controllers::serve_all(client)` spawns every controller on the supplied
 //! tokio runtime and returns once any controller exits.
 
-pub mod boundary;
 pub mod backup;
+pub mod boundary;
 pub mod citus_cluster;
 pub mod conflict_policy;
 pub mod federation;
@@ -16,8 +16,8 @@ pub mod function;
 pub mod hypertable;
 pub mod migration;
 pub mod region;
-pub mod search_index;
 pub mod scheduled_repack;
+pub mod search_index;
 pub mod sidecar;
 pub mod survival_goal;
 pub mod tenant;

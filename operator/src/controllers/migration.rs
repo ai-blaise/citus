@@ -305,7 +305,6 @@ fn error_policy(_migration: Arc<Migration>, error: &ControllerError, ctx: Arc<Co
     retry_class.action(ctx.default_requeue)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +315,10 @@ mod tests {
             migration_type: "Pgroll".to_string(),
             yaml: "operations:\n  - add_column".to_string(),
             on_conflict: "ManualReview".to_string(),
+            shadow_table_built: false,
+            write_triggers_installed: false,
+            backfill_complete: false,
+            row_diff_verified: false,
             table: Some("public.users".to_string()),
             current_state: "delete_only".to_string(),
             lease_seconds: 60,
@@ -375,6 +378,10 @@ mod tests {
             migration_type: "Pgroll".to_string(),
             yaml: "operations:\n  - add_column".to_string(),
             on_conflict: "ManualReview".to_string(),
+            shadow_table_built: false,
+            write_triggers_installed: false,
+            backfill_complete: false,
+            row_diff_verified: false,
             table: Some("public.users".to_string()),
             current_state: "delete_only".to_string(),
             lease_seconds: 60,
