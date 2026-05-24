@@ -562,14 +562,14 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 275 source `FEATURE:` markers and 275
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 152 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 156 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
 plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, Reconcilers
-Batch A operator plan builders, and sidecar runtime entries, plus the backup,
-CDC, realtime, auth sidecar, and vectorizer runtime entries merged in this
-release train dry-run.
+Batch A and Batch B operator plan builders, and sidecar runtime entries, plus
+the backup, CDC, realtime, auth sidecar, and vectorizer runtime entries merged
+in this release train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -600,6 +600,14 @@ ai_blaise_citus_operator` and `ci/ai-blaise/operator-reconcilers-batch-a-smoke.s
 Live SQL execution, CloudNativePG mutation, object-store backup execution,
 Kubernetes child-resource apply, and `.status` writes remain alpha.
 
+Reconcilers Batch B evidence is scoped to kube-rs CR validation, controller
+mirrors, and deterministic operator plan builders for federation, search-index,
+webhook, and function contracts under `cargo test -p ai_blaise_citus_operator`
+and `cargo run -p ai_blaise_citus_operator -- run-reconcilers-batch-b`. SQL
+mutation execution, CRD `.status` writes, outbound HTTP delivery, edge-function
+execution, external warehouse connectivity, and distributed search query fanout
+remain alpha until separately implemented and live-gated.
+
 The vectorizer runtime evidence is scoped to the PostgreSQL-backed sidecar
 worker loop, provider routing, tenant budget checks, queue claiming, usage-log
 recording, and local deterministic provider execution proven by
@@ -625,11 +633,10 @@ reconciliation, operator lifecycle management, long-running query load on
 restored branches, or a full Kubernetes restore against a real WAL-G archive.
 Those remain explicit future acceptance gates, not hidden assumptions.
 
-The other 123 feature headings remain `Status: alpha`. There are no remaining
+The other 119 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
-
 Every feature heading now has an explicit Executable, CI, Acceptance, SQL
 runtime, or SQL extension reference line. Those references are alpha contract
 evidence unless the entry is also marked `Status: production-ready`; they keep

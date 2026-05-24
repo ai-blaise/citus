@@ -35,16 +35,17 @@ use ai_blaise_citus_operator::{
     BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
     CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec,
     ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
-    FederationSpec, FederationType, FunctionEvent, FunctionRuntime, FunctionSource, FunctionSpec,
-    FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationConflictAction,
-    MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec,
-    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackSpec, SearchColumnKind,
-    SearchColumnSpec, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
-    SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType,
+    FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent, FunctionReconcilePlan,
+    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger,
+    HypertableReconcilePlan, HypertableSpec, MigrationConflictAction, MigrationSpec, MigrationType,
+    PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec, RepackStrategy,
+    ResourceRequirements, RetentionPolicy, ScheduledRepackSpec, SearchColumnKind, SearchColumnSpec,
+    SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan,
+    ShardGroupSpec, SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType,
     SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
     TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
-    WebhookRetryPolicy, WebhookSpec,
+    WebhookReconcilePlan, WebhookRetryPolicy, WebhookSpec,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -71,6 +72,7 @@ fn main() {
         [command] if command == "run-canonical" => run_canonical(),
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
         [command] if command == "run-reconcilers-batch-a" => run_reconcilers_batch_a(),
+        [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -107,7 +109,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b]");
 }
 
 fn run_reconcile_plans() {
@@ -153,6 +155,29 @@ fn run_reconcilers_batch_a() {
         report.backup_status_endpoints,
         report.survival_topology_key,
         report.backup_archive_scheme,
+    );
+}
+
+fn run_reconcilers_batch_b() {
+    let report = canonical_reconcilers_batch_b_report().unwrap_or_else(|error| {
+        eprintln!("operator: reconcilers batch-b execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "federation_apply_steps\tfederation_iceberg\tsearch_apply_steps\tsearch_hybrid\twebhook_apply_steps\twebhook_events\tfunction_apply_steps\tfunction_sidecar_steps\tfunction_kubernetes_steps"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.federation_apply_steps,
+        report.federation_iceberg,
+        report.search_apply_steps,
+        report.search_hybrid,
+        report.webhook_apply_steps,
+        report.webhook_events,
+        report.function_apply_steps,
+        report.function_sidecar_steps,
+        report.function_kubernetes_steps,
     );
 }
 
@@ -285,6 +310,19 @@ fn canonical_operator_execution_report() -> Result<OperatorExecutionReport, Box<
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilersBatchBReport {
+    federation_apply_steps: usize,
+    federation_iceberg: bool,
+    search_apply_steps: usize,
+    search_hybrid: bool,
+    webhook_apply_steps: usize,
+    webhook_events: usize,
+    function_apply_steps: usize,
+    function_sidecar_steps: usize,
+    function_kubernetes_steps: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ReconcilePlansReport {
     cluster_name: String,
     cnpg_instances: u32,
@@ -308,6 +346,36 @@ struct ReconcilersBatchAReport {
     backup_status_endpoints: usize,
     survival_topology_key: String,
     backup_archive_scheme: String,
+}
+
+fn canonical_reconcilers_batch_b_report() -> Result<ReconcilersBatchBReport, Box<dyn Error>> {
+    let federation_spec = canonical_federation_spec();
+    let federation_plan = FederationReconcilePlan::try_from(&federation_spec)?;
+    let federation_apply_plan = federation_plan.apply_plan();
+
+    let search_index_spec = canonical_search_index_spec();
+    let search_plan = SearchIndexReconcilePlan::from_spec("documents-search", &search_index_spec)?;
+    let search_apply_plan = search_plan.apply_plan();
+
+    let webhook_spec = canonical_webhook_spec();
+    let webhook_plan = WebhookReconcilePlan::from_spec("orders-hook", &webhook_spec)?;
+    let webhook_apply_plan = webhook_plan.apply_plan();
+
+    let function_spec = canonical_function_spec();
+    let function_plan = FunctionReconcilePlan::try_from(&function_spec)?;
+    let function_apply_plan = function_plan.apply_plan();
+
+    Ok(ReconcilersBatchBReport {
+        federation_apply_steps: federation_apply_plan.steps.len(),
+        federation_iceberg: federation_plan.backend.is_iceberg(),
+        search_apply_steps: search_apply_plan.steps.len(),
+        search_hybrid: search_plan.is_hybrid(),
+        webhook_apply_steps: webhook_apply_plan.steps.len(),
+        webhook_events: webhook_plan.events.len(),
+        function_apply_steps: function_apply_plan.steps.len(),
+        function_sidecar_steps: function_apply_plan.step_count_of(FunctionStepKind::Sidecar),
+        function_kubernetes_steps: function_apply_plan.step_count_of(FunctionStepKind::Kubernetes),
+    })
 }
 
 fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Error>> {
@@ -702,6 +770,26 @@ mod tests {
                 backup_status_endpoints: 2,
                 survival_topology_key: "topology.kubernetes.io/region".to_string(),
                 backup_archive_scheme: "s3".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_reconcilers_batch_b_report_covers_requested_batch() {
+        let report = canonical_reconcilers_batch_b_report().expect("batch-b reconcile report");
+
+        assert_eq!(
+            report,
+            ReconcilersBatchBReport {
+                federation_apply_steps: 4,
+                federation_iceberg: true,
+                search_apply_steps: 5,
+                search_hybrid: true,
+                webhook_apply_steps: 6,
+                webhook_events: 2,
+                function_apply_steps: 6,
+                function_sidecar_steps: 1,
+                function_kubernetes_steps: 2,
             }
         );
     }

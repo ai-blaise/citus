@@ -37,3 +37,23 @@ still pulling the `kube::CustomResource` derive surface.
 Regression coverage: unit tests in `controllers::citus_cluster::tests` cover
 CR-spec round-tripping, and `crds::migration::state_machine::tests` cover
 every phase guard + the evidence-regression error.
+
+## 2026-05-23 — Reconcilers batch B
+
+Added production-ready operator plan-builders and kube-rs controller mirrors for
+`Federation`, `SearchIndex`, `Webhook`, and `Function`. The plan-builders live
+under `src/reconcile/` and render deterministic apply steps for FDW/Iceberg
+federation intent, distributed pg_search metadata, companion webhook trigger
+registration, and edge-function sidecar/Kubernetes trigger registration.
+
+`src/controllers/` now includes matching controller modules that parse the
+Kubernetes CR shape into the authoritative CRD specs, validate them, and build
+the same reconcile plans used by the canonical runner. `controllers::serve_all`
+spawns these four controllers alongside the existing CitusCluster, Migration,
+Tenant, and Hypertable controllers.
+
+`operator run-reconcilers-batch-b` emits a canonical TSV proof row for the batch:
+`4 true 5 true 6 2 6 1 2` for federation steps/iceberg, search steps/hybrid,
+webhook steps/events, and function steps by target kind. SQL mutation execution
+and CRD `.status` writes remain outside this batch unless a feature entry claims
+them explicitly.

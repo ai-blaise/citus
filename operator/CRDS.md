@@ -27,9 +27,12 @@ canonical catalog and emits the CI-gated `run-canonical` TSV summary.
 - `SurvivalGoal` (`FEATURE: S11`, `FEATURE: MR2`, canonical Rust spec
   implemented and included in the operator runner)
 - `Backup` (`FEATURE: B2`, `FEATURE: B6`, canonical Rust spec implemented)
-- `Federation` (`FEATURE: F1`, canonical Rust spec implemented)
-- `SearchIndex` (`FEATURE: Search2`, `FEATURE: Search7`, canonical Rust spec
-  implemented and included in the operator runner)
-- `Webhook` (`FEATURE: WH1`, canonical Rust spec implemented)
-- `Function` (`FEATURE: EF3`, canonical Rust spec implemented)
+- `Federation` (`FEATURE: F1`, canonical Rust spec, plan-builder, and
+  kube-rs controller implemented)
+- `SearchIndex` (`FEATURE: Search2`, `FEATURE: Search7`, canonical Rust spec,
+  plan-builder, and kube-rs controller implemented)
+- `Webhook` (`FEATURE: WH1`, canonical Rust spec, plan-builder, and kube-rs
+  controller implemented)
+- `Function` (`FEATURE: EF3`, canonical Rust spec, plan-builder, and kube-rs
+  controller implemented)
 - `ScheduledRepack` (`FEATURE: R7`, canonical Rust spec implemented)
