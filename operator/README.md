@@ -8,12 +8,13 @@
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
 Rust operator contract model for Citus topology, CRDs, sidecars, and ai-blaise
-feature orchestration. The `serve` path starts the shared probe runtime and the
-kube-rs controllers that currently have production-grade plan builders:
-`CitusCluster`, `Migration`, `Tenant`, `Region`, `SurvivalGoal`, `Backup`, and
-`Hypertable`. The controllers validate CR shape and build deterministic apply
-plans; live child-resource mutation, SQL execution, and `.status` writes remain
-alpha until they have cluster evidence.
+feature orchestration. The `serve` path starts the shared probe runtime and
+kube-rs watches for `CitusCluster`, `Migration`, `Tenant`, `Region`,
+`SurvivalGoal`, `Backup`, `Hypertable`, `Federation`, `SearchIndex`,
+`Webhook`, and `Function`. The controllers validate CR shape and build
+deterministic apply plans; live child-resource mutation, SQL execution,
+outbound delivery, edge-function execution, and `.status` writes remain alpha
+unless a feature entry says otherwise.
 
 The first implemented specs are `CitusCluster` for `FEATURE: S4` topology
 selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
@@ -46,8 +47,18 @@ tablespace/affinity/leader-pin plan, survival-goal topology/replication policy
 plan, and backup sidecar/config/KMS/status plan. The companion smoke is
 `ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh`.
 
+Batch B reconciler plan-builders live in `operator/src/reconcile/federation.rs`,
+`operator/src/reconcile/search_index.rs`, `operator/src/reconcile/webhook.rs`,
+and `operator/src/reconcile/function.rs`. They render deterministic apply steps
+for FDW/Iceberg federation intent, pg_search/hybrid-search metadata, companion
+webhook trigger registration, and edge-function sidecar/Kubernetes trigger
+registration. Their kube-rs controllers mirror live CRs into the same
+authoritative specs and plan-builders during `serve`.
+
 `cargo run -p ai_blaise_citus_operator -- run-canonical` validates the
 canonical V2 operator surface and emits the stable deterministic TSV summary
 for repository closure checks. `cargo run -p ai_blaise_citus_operator --
 run-reconcilers-batch-a` emits the deterministic Reconcilers Batch A evidence
-row without changing the closure-contract TSV.
+row without changing the closure-contract TSV. `cargo run -p
+ai_blaise_citus_operator -- run-reconcilers-batch-b` emits the canonical
+Federation/SearchIndex/Webhook/Function reconciler TSV row.
