@@ -2761,10 +2761,13 @@ does not provide this controlled cohabitation preflight.
 **Summary**: Defines the CLI plan/apply execution contract, including
 rendered diffs, preflight checks, apply execution, and audit-record steps.
 
-**Current boundary**: The dev lifecycle apply path now has a deterministic
-local state-file runtime with dry-run plan rendering, stable plan-id validation,
-idempotent up/down state transitions, and state-file-only cleanup guardrails.
-It does not execute manifests against Kubernetes or mutate a Citus data plane.
+**Current boundary**: M8 is not production-ready as a whole. The bounded D1
+local dev lifecycle subpath is production-ready only for the real
+`citusctl plan/apply dev ... --state-dir ... --format json|tsv` binary path:
+dry-run plan rendering, fail-closed stable plan-id validation, deterministic
+JSON/TSV output, idempotent up/down state transitions, local audit append, and
+state-file-only cleanup guardrails. It does not execute manifests against
+Kubernetes, run Docker/kind, or mutate a Citus data plane.
 
 **Motivation**: Operator actions need a Terraform-style preview before
 mutating clusters, tenants, branches, migrations, backups, or extension state.
@@ -5362,7 +5365,7 @@ without granting mutation or Kubernetes authority.
 ### D1: citusctl dev up/down
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -5370,11 +5373,24 @@ without granting mutation or Kubernetes authority.
 **Summary**: Adds the typed `dev up` and `dev down` command contract for local
 cluster lifecycle operations.
 
-**Current boundary**: The real CLI now exercises a local state-file lifecycle
-for `dev up`/`dev down`: dry-run planning does not write state, apply requires
-a stable plan ID, repeated up/down operations are idempotent, and down removes
-only the tracked state file. Starting Docker, kind, Kubernetes, Postgres/Citus,
-or extension services remains alpha.
+**Current boundary**: The production-ready D1 scope is the real CLI local
+state-file lifecycle for `dev up`/`dev down` with an explicit `--state-dir`:
+dry-run planning writes no state, apply requires a stable plan ID, JSON and TSV
+outputs are deterministic, repeated up/down operations are idempotent, every
+apply appends a local audit row, and down removes only the tracked state file.
+Starting Docker, kind, Kubernetes, Postgres/Citus, or extension services
+remains alpha.
+
+Production evidence: `ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh` runs the
+real `ai_blaise_citusctl` binary locally, on the VM, and in the GitHub Actions
+`tools` workflow. The smoke requires missing `--state-dir` and unstable plan
+IDs to fail closed, verifies exact `--format json` plan output, verifies
+`--format tsv` apply output for changed and idempotent up/down transitions,
+checks that only `dev-lifecycle.state` is removed on down, and requires the
+local `dev-lifecycle.audit.tsv` log to retain one row per apply. This evidence
+is not evidence for Docker/kind startup, Kubernetes deployment, Postgres/Citus
+data-plane health, extension-service orchestration, or production cluster
+lifecycle management.
 
 **Motivation**: Contributors need a single CLI entrypoint for local end-to-end
 clusters before the kind runner and image builder are wired.

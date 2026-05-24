@@ -41,6 +41,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citusctl -- run-canonical
       - name: Run citusctl plan-id smoke
         run: bash ci/ai-blaise/citusctl-smoke.sh
+      - name: Run citusctl dev lifecycle smoke
+        run: bash ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh
 
   lsp:
     runs-on: ubuntu-latest

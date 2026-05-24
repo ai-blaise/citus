@@ -26,9 +26,14 @@ These contracts cover `FEATURE: D1`, `FEATURE: D2`, `FEATURE: M8`,
 includes `dev up`, plan-gated `apply`, `inspect cluster`, UTC `time-travel`,
 and WAL replay validation. `run-dev-lifecycle-canonical` exercises the bounded
 local dev lifecycle runtime: dry-run plan rendering, plan-id-gated apply,
-idempotent up/down state handling, and state-file-only cleanup guardrails.
+idempotent up/down state handling, local audit append, and state-file-only
+cleanup guardrails.
 
-`FEATURE: D2` is production-ready only for the real CLI plan-id guard:
-`ci/ai-blaise/citusctl-smoke.sh` requires `citusctl apply` without a plan ID
-to fail before any apply-mode command can proceed. The broader command
-surfaces listed above remain alpha unless their feature entries say otherwise.
+`FEATURE: D1` is production-ready only for the real CLI local-runtime path
+`citusctl plan/apply dev ... --state-dir ... --format json|tsv`. That path
+proves deterministic JSON/TSV output, fail-closed plan IDs, local audit rows,
+and state-file-only cleanup. `FEATURE: D2` is production-ready only for the
+real CLI plan-id guard: `ci/ai-blaise/citusctl-smoke.sh` requires
+`citusctl apply` without a plan ID or with an unstable plan ID to fail before
+any apply-mode command can proceed. The broader command surfaces listed above
+remain alpha unless their feature entries say otherwise.
