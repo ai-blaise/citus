@@ -320,12 +320,15 @@ sub print_cdc_log_tail {
         return;
     }
 
-    my @lines = <$fh>;
+    my @tail;
+    while (my $line = <$fh>) {
+        push @tail, $line;
+        shift @tail if @tail > 120;
+    }
     close($fh);
 
-    my $start = @lines > 120 ? @lines - 120 : 0;
-    print "# CDC diagnostic: last " . (@lines - $start) . " log lines for $label from $logfile\n";
-    for my $line (@lines[$start .. $#lines]) {
+    print "# CDC diagnostic: last " . scalar(@tail) . " log lines for $label from $logfile\n";
+    for my $line (@tail) {
         chomp($line);
         print "# $line\n";
     }
