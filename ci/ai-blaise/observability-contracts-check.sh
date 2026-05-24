@@ -56,6 +56,12 @@ SERVICES = [
         "component": "backup",
         "listen_env": "AI_BLAISE_LISTEN_ADDR",
         "schema": "backup",
+        "metrics_fragments": [
+            "# TYPE ai_blaise_backup_completed_base_backups counter",
+            "ai_blaise_backup_completed_base_backups 0",
+            "# TYPE ai_blaise_backup_archived_wal_segments counter",
+            "# TYPE ai_blaise_backup_queryable_branches gauge",
+        ],
     },
     {
         "label": "cdc",
@@ -193,6 +199,58 @@ def start_process(label, args, env):
     return proc, log_file
 
 
+def run_checked(args, **kwargs):
+    return subprocess.run(args, check=True, text=True, **kwargs)
+
+
+def start_vectorizer_postgres():
+    image = os.environ.get("OBSERVABILITY_CONTRACTS_POSTGRES_IMAGE", "postgres:17")
+    container = f"ai-blaise-observability-vectorizer-{os.getpid()}-{free_port()}"
+    run_checked(
+        [
+            "docker",
+            "run",
+            "--name",
+            container,
+            "-e",
+            "POSTGRES_HOST_AUTH_METHOD=trust",
+            "-p",
+            "127.0.0.1::5432",
+            "-d",
+            image,
+        ],
+        stdout=subprocess.DEVNULL,
+    )
+    deadline = time.monotonic() + TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        probe = subprocess.run(
+            ["docker", "exec", container, "psql", "-U", "postgres", "-Atqc", "SELECT 1"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if probe.returncode == 0:
+            port_output = subprocess.check_output(
+                ["docker", "port", container, "5432/tcp"], text=True
+            ).strip()
+            if not port_output:
+                fail("vectorizer postgres did not expose a host port")
+            host_port = port_output.split(":")[-1]
+            return container, f"postgres://postgres@127.0.0.1:{host_port}/postgres"
+        time.sleep(1)
+    logs = subprocess.run(
+        ["docker", "logs", container], text=True, capture_output=True
+    ).stderr
+    fail(f"vectorizer postgres did not become ready within {TIMEOUT_SECONDS}s:\n{logs}")
+
+
+def stop_docker_container(container):
+    subprocess.run(
+        ["docker", "rm", "-f", container],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
 def stop_process(proc, log_file):
     if proc.poll() is None:
         proc.terminate()
@@ -249,13 +307,21 @@ def assert_json_probe(label, body, component, ready):
         fail(f"{label} probe must accept new work while ready: {payload!r}")
 
 
-def assert_sidecar_metrics(label, component, metrics):
-    required_fragments = [
+def expected_metrics_fragments(service):
+    if "metrics_fragments" in service:
+        return service["metrics_fragments"]
+    component = service["component"]
+    return [
         "# TYPE ai_blaise_sidecar_ready gauge",
         f'ai_blaise_sidecar_ready{{component="{component}"}} 1',
         f'ai_blaise_sidecar_accepting_new_work{{component="{component}"}} 1',
         f'ai_blaise_sidecar_in_flight_work{{component="{component}"}} 0',
     ]
+
+
+def assert_service_metrics(service, metrics):
+    label = service["label"]
+    required_fragments = expected_metrics_fragments(service)
     for fragment in required_fragments:
         if fragment not in metrics:
             fail(f"{label} metrics missing {fragment!r}:\n{metrics}")
@@ -266,12 +332,31 @@ def smoke_service(service):
     env = os.environ.copy()
     env[service["listen_env"]] = f"127.0.0.1:{port}"
     env.update(service.get("env", {}))
-    proc, log_file = start_process(
-        service["label"],
-        [binary_path(service["package"]), "serve"],
-        env,
-    )
+    cleanup_callbacks = []
+    proc = None
+    log_file = None
     try:
+        if service["label"] == "vectorizer":
+            if subprocess.run(
+                ["docker", "version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ).returncode != 0:
+                fail("docker is required for the vectorizer observability contract")
+            container, postgres_url = start_vectorizer_postgres()
+            cleanup_callbacks.append(lambda: stop_docker_container(container))
+            env.update(
+                {
+                    "AI_BLAISE_VECTORIZER_DATABASE_URL": postgres_url,
+                    "AI_BLAISE_VECTORIZER_PROVIDER_MODE": "mock",
+                    "AI_BLAISE_VECTORIZER_BATCH_SIZE": "4",
+                    "AI_BLAISE_VECTORIZER_POLL_INTERVAL_MS": "200",
+                    "AI_BLAISE_VECTORIZER_MOCK_DIMENSIONS": "4",
+                }
+            )
+        proc, log_file = start_process(
+            service["label"],
+            [binary_path(service["package"]), "serve"],
+            env,
+        )
         _, _, ready_body = wait_for_probe(
             service["label"],
             proc,
@@ -290,9 +375,12 @@ def smoke_service(service):
         status, _, metrics = http_get(port, "/metrics")
         if status != 200:
             fail(f"{service['label']} /metrics returned {status}: {metrics!r}")
-        assert_sidecar_metrics(service["label"], service["component"], metrics)
+        assert_service_metrics(service, metrics)
     finally:
-        stop_process(proc, log_file)
+        if proc is not None and log_file is not None:
+            stop_process(proc, log_file)
+        for cleanup in reversed(cleanup_callbacks):
+            cleanup()
 
 
 def run_tcp_acceptor(stop_event):

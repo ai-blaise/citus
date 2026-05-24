@@ -195,6 +195,7 @@ for path in (
 
 
 makefile = read(MAKEFILE)
+dr_runbook = read(DR_RUNBOOK)
 deploy_check = read(DEPLOY_CHECK)
 kind_smoke = read(KIND_PRODUCTION_SMOKE)
 live_k8s = read(LIVE_K8S_E2E)
