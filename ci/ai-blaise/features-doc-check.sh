@@ -5,14 +5,26 @@ base="${BASE_SHA:-}"
 head="${HEAD_SHA:-HEAD}"
 
 if [[ -z "${base}" ]]; then
-  if git config --get remote.origin.url >/dev/null 2>&1; then
-    git fetch -q origin main:refs/remotes/origin/main >/dev/null 2>&1 || true
-  fi
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    if git config --get remote.origin.url >/dev/null 2>&1; then
+      git fetch -q origin "${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}" >/dev/null 2>&1 || true
+    fi
 
-  if git rev-parse --verify origin/main >/dev/null 2>&1; then
-    base="origin/main"
+    if git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null 2>&1; then
+      base="origin/${GITHUB_BASE_REF}"
+    else
+      base="${GITHUB_BASE_REF}"
+    fi
   else
-    base="$(git rev-list --max-parents=0 HEAD | tail -1)"
+    if git config --get remote.origin.url >/dev/null 2>&1; then
+      git fetch -q origin main:refs/remotes/origin/main >/dev/null 2>&1 || true
+    fi
+
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      base="origin/main"
+    else
+      base="$(git rev-list --max-parents=0 HEAD | tail -1)"
+    fi
   fi
 fi
 
