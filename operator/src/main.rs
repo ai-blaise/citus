@@ -29,18 +29,19 @@
 // FEATURE: TS7
 // FEATURE: WH1
 
+use ai_blaise_citus_companion::{SchemaJobOperation, SchemaJobState};
 use ai_blaise_citus_operator::controllers;
 use ai_blaise_citus_operator::{
     BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec, BackupTarget, BranchSpec,
     BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
-    CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicySpec,
+    CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
     ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
     FederationReconcilePlan, FederationSpec, FederationType, FunctionEvent, FunctionReconcilePlan,
-    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationConflictAction,
+    FunctionRuntime, FunctionSource, FunctionSpec, FunctionStepKind, FunctionTrigger, HypertableReconcilePlan, HypertableSpec, MigrationCommand, MigrationConflictAction, MigrationReconcilePlan,
     MigrationSpec, MigrationType, PlacementPolicy, PoolSpec, RegionReconcilePlan, RegionSpec,
-    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackSpec, SearchColumnKind,
+    RepackStrategy, ResourceRequirements, RetentionPolicy, ScheduledRepackReconcilePlan, ScheduledRepackSpec, SearchColumnKind,
     SearchColumnSpec, SearchIndexReconcilePlan, SearchIndexSpec, SearchScorer, ShardGroupReconcilePlan, ShardGroupSpec,
-    SidecarDeploymentSpec, SidecarDeploymentType, SidecarSpec, SidecarType,
+    SidecarDeploymentSpec, SidecarDeploymentType, SidecarReconcilePlan, SidecarSpec, SidecarType,
     SurvivalGoalReconcilePlan, SurvivalGoalSpec, SurvivalGoalType, TenantQuotas,
     TenantReconcilePlan, TenantSpec, UnsatisfiablePlacementAction, VectorDestinationSpec,
     VectorizerScheduleMode, VectorizerSchedulingSpec, VectorizerSpec, WebhookEvent,
@@ -72,6 +73,7 @@ fn main() {
         [command] if command == "run-reconcile-plans" => run_reconcile_plans(),
         [command] if command == "run-reconcilers-batch-a" => run_reconcilers_batch_a(),
         [command] if command == "run-reconcilers-batch-b" => run_reconcilers_batch_b(),
+        [command] if command == "run-reconcile-plans-batch-c" => run_reconcile_plans_batch_c(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -108,7 +110,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c]");
 }
 
 fn run_reconcile_plans() {
@@ -177,6 +179,29 @@ fn run_reconcilers_batch_b() {
         report.function_apply_steps,
         report.function_sidecar_steps,
         report.function_kubernetes_steps,
+    );
+}
+
+fn run_reconcile_plans_batch_c() {
+    let report = canonical_reconcile_plans_batch_c_report().unwrap_or_else(|error| {
+        eprintln!("operator: Batch C reconcile plans execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.repack_job,
+        report.repack_strategy,
+        report.repack_apply_steps,
+        report.migration_name,
+        report.migration_apply_steps,
+        report.migration_target_state,
+        report.conflict_policy_class,
+        report.conflict_policy_resolution,
+        report.conflict_policy_apply_steps,
+        report.sidecar_deployment,
+        report.sidecar_replicas,
+        report.sidecar_deletion_steps,
     );
 }
 
@@ -335,6 +360,22 @@ struct ReconcilePlansReport {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+struct ReconcilePlansBatchCReport {
+    repack_job: String,
+    repack_strategy: String,
+    repack_apply_steps: usize,
+    migration_name: String,
+    migration_apply_steps: usize,
+    migration_target_state: String,
+    conflict_policy_class: String,
+    conflict_policy_resolution: String,
+    conflict_policy_apply_steps: usize,
+    sidecar_deployment: String,
+    sidecar_replicas: u32,
+    sidecar_deletion_steps: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct ReconcilersBatchAReport {
     tenant_apply_steps: usize,
     tenant_sql_steps: usize,
@@ -395,6 +436,39 @@ fn canonical_reconcile_plans_report() -> Result<ReconcilePlansReport, Box<dyn Er
         shard_topology_constraints: shard_plan.topology_constraint_count(),
         shard_replication_factor: shard_plan.replication_factor,
         shard_hard_constraint: shard_plan.has_hard_constraint(),
+    })
+}
+
+fn canonical_reconcile_plans_batch_c_report() -> Result<ReconcilePlansBatchCReport, Box<dyn Error>> {
+    let scheduled_repack = canonical_scheduled_repack_spec();
+    let repack_plan = ScheduledRepackReconcilePlan::from_spec("weekly-orders", &scheduled_repack)?;
+    let repack_apply_plan = repack_plan.apply_plan();
+
+    let migration_command = canonical_migration_command();
+    let migration_plan = MigrationReconcilePlan::try_from(&migration_command)?;
+    let migration_apply_plan = migration_plan.apply_plan();
+
+    let conflict_policy = canonical_conflict_policy_spec();
+    let conflict_policy_plan = ConflictPolicyReconcilePlan::from_spec("accounts-lww", &conflict_policy)?;
+    let conflict_policy_apply_plan = conflict_policy_plan.apply_plan();
+
+    let sidecar = canonical_sidecar_deployment_spec();
+    let sidecar_plan = SidecarReconcilePlan::from_spec("primary", &sidecar)?;
+    let sidecar_deletion_plan = sidecar_plan.deletion_plan();
+
+    Ok(ReconcilePlansBatchCReport {
+        repack_job: repack_plan.job_name.clone(),
+        repack_strategy: repack_plan.strategy_str().to_string(),
+        repack_apply_steps: repack_apply_plan.steps.len(),
+        migration_name: migration_plan.schema_job.name.clone(),
+        migration_apply_steps: migration_apply_plan.steps.len(),
+        migration_target_state: migration_plan.target_state_str().to_string(),
+        conflict_policy_class: conflict_policy_plan.class_str().to_string(),
+        conflict_policy_resolution: conflict_policy_plan.resolution_str().to_string(),
+        conflict_policy_apply_steps: conflict_policy_apply_plan.steps.len(),
+        sidecar_deployment: sidecar_plan.deployment_name.clone(),
+        sidecar_replicas: sidecar_plan.replicas,
+        sidecar_deletion_steps: sidecar_deletion_plan.steps.len(),
     })
 }
 
@@ -640,6 +714,26 @@ fn canonical_migration_spec() -> MigrationSpec {
     }
 }
 
+fn canonical_migration_command() -> MigrationCommand {
+    MigrationCommand {
+        spec: canonical_migration_spec(),
+        job_name: "users-add-display-name".to_string(),
+        table: "public.users".to_string(),
+        current_state: SchemaJobState::DeleteOnly,
+        operations: vec![
+            SchemaJobOperation::AddColumn {
+                column: "display_name".to_string(),
+                sql_type: "text".to_string(),
+            },
+            SchemaJobOperation::Backfill {
+                statement: "UPDATE public.users SET display_name = email".to_string(),
+            },
+        ],
+        lease_seconds: 60,
+        workers: vec!["worker-a".to_string(), "worker-b".to_string()],
+    }
+}
+
 fn canonical_conflict_policy_spec() -> ConflictPolicySpec {
     ConflictPolicySpec {
         table: "public.reference_accounts".to_string(),
@@ -810,6 +904,30 @@ mod tests {
                 shard_topology_constraints: 1,
                 shard_replication_factor: 3,
                 shard_hard_constraint: true,
+            }
+        );
+    }
+
+    #[test]
+    fn canonical_reconcile_plans_batch_c_report_covers_batch_c() {
+        let report = canonical_reconcile_plans_batch_c_report()
+            .expect("canonical reconcile plans batch-c report");
+
+        assert_eq!(
+            report,
+            ReconcilePlansBatchCReport {
+                repack_job: "ai-blaise-citus-repack-weekly-orders".to_string(),
+                repack_strategy: "pg_repack".to_string(),
+                repack_apply_steps: 5,
+                migration_name: "users-add-display-name".to_string(),
+                migration_apply_steps: 6,
+                migration_target_state: "write_only".to_string(),
+                conflict_policy_class: "update_origin_differs".to_string(),
+                conflict_policy_resolution: "apply_remote_if_newer".to_string(),
+                conflict_policy_apply_steps: 3,
+                sidecar_deployment: "ai-blaise-citus-sidecar-primary-realtime".to_string(),
+                sidecar_replicas: 2,
+                sidecar_deletion_steps: 4,
             }
         );
     }
