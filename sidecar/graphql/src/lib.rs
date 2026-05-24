@@ -605,6 +605,14 @@ fn query_hash(query: &str) -> String {
 pub fn handle_graphql_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
+    let mut runtime = SidecarRuntime::ready("graphql");
+    handle_graphql_sidecar_http_bytes_with_runtime(request, &mut runtime)
+}
+
+pub fn handle_graphql_sidecar_http_bytes_with_runtime(
+    request: &[u8],
+    runtime: &mut SidecarRuntime,
+) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let request =
         std::str::from_utf8(request).map_err(|_| GraphqlSidecarError::MalformedHttpRequest)?;
     let (method, path, body) = parse_http_request(request)?;
@@ -631,7 +639,6 @@ pub fn handle_graphql_sidecar_http_bytes(
         return handle_graphql_post(&plan, body);
     }
 
-    let mut runtime = SidecarRuntime::ready("graphql");
     Ok(runtime.handle_http_bytes(request.as_bytes())?)
 }
 
@@ -725,20 +732,22 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise graphql sidecar listening on {listen_addr}");
+    let mut runtime = SidecarRuntime::ready("graphql");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_graphql_sidecar_http_bytes(&request).unwrap_or_else(|error| {
-            HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!(
-                    "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                    escape_json(&error.to_string())
-                ),
-            )
-        });
+        let response = handle_graphql_sidecar_http_bytes_with_runtime(&request, &mut runtime)
+            .unwrap_or_else(|error| {
+                HttpProbeResponse::new(
+                    400,
+                    "application/json",
+                    format!(
+                        "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
+                        escape_json(&error.to_string())
+                    ),
+                )
+            });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())

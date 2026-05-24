@@ -849,6 +849,14 @@ fn schedule_due(schedule: &str, epoch_seconds: u64) -> bool {
 pub fn handle_edge_functions_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
+    let mut runtime = SidecarRuntime::ready("edge-functions");
+    handle_edge_functions_sidecar_http_bytes_with_runtime(request, &mut runtime)
+}
+
+pub fn handle_edge_functions_sidecar_http_bytes_with_runtime(
+    request: &[u8],
+    runtime: &mut SidecarRuntime,
+) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let request =
         std::str::from_utf8(request).map_err(|_| EdgeFunctionError::MalformedHttpRequest)?;
     let (method, path, body) = parse_http_request(request)?;
@@ -900,7 +908,6 @@ pub fn handle_edge_functions_sidecar_http_bytes(
         };
     }
 
-    let mut runtime = SidecarRuntime::ready("edge-functions");
     Ok(runtime.handle_http_bytes(request.as_bytes())?)
 }
 
@@ -1124,17 +1131,20 @@ pub fn serve_edge_functions_sidecar_http_forever(
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise edge-functions sidecar listening on {listen_addr}");
+    let mut runtime = SidecarRuntime::ready("edge-functions");
 
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_edge_functions_sidecar_http_bytes(&request).unwrap_or_else(|error| {
-            HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )
-        });
+        let response =
+            handle_edge_functions_sidecar_http_bytes_with_runtime(&request, &mut runtime)
+                .unwrap_or_else(|error| {
+                    HttpProbeResponse::new(
+                        400,
+                        "application/json",
+                        format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+                    )
+                });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())
