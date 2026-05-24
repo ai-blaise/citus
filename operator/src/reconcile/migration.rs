@@ -14,6 +14,7 @@ use std::fmt;
 
 use crate::crds::migration::{
     MigrationConflictAction, MigrationSpec, MigrationSpecError, MigrationType,
+    MIGRATION_2VI_PRECHECK_SQL,
 };
 
 pub const SCHEMA_JOB_START_FUNCTION: &str = "companion_internal.schema_job_start";
@@ -118,6 +119,11 @@ impl MigrationReconcilePlan {
 
     pub fn apply_plan(&self) -> MigrationApplyPlan {
         let mut steps = vec![
+            MigrationApplyStep::new(
+                "verify_two_version_invariant_preflight",
+                verify_two_version_invariant_preflight_sql(),
+                true,
+            ),
             MigrationApplyStep::new(
                 "ensure_ai_blaise_citus_extension",
                 "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;",
@@ -306,6 +312,10 @@ fn advance_sql(job_name: &str, state: SchemaJobState) -> String {
     )
 }
 
+fn verify_two_version_invariant_preflight_sql() -> String {
+    format!("SELECT {MIGRATION_2VI_PRECHECK_SQL};")
+}
+
 fn sql_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
@@ -364,7 +374,7 @@ mod tests {
         MigrationCommand {
             spec: MigrationSpec {
                 migration_type: MigrationType::Pgroll,
-                yaml: "operations:\n  - add_column:\n      table: users".to_string(),
+                yaml: valid_yaml(),
                 on_conflict: conflict,
             },
             job_name: "users-display-name".to_string(),
@@ -383,6 +393,11 @@ mod tests {
             workers: vec!["worker-a".to_string(), "worker-b".to_string()],
             data_invariants_verified: true,
         }
+    }
+
+    fn valid_yaml() -> String {
+        "twoVersionInvariantPrecheck: companion_internal.verify_two_version_invariant()\nrollback:\n  operation: companion_internal.schema_job_rollback_to\n  targetPhase: write_only\noperations:\n  - addColumn:\n      table: public.users\n      column: display_name\n      sqlType: text\n  - backfill:\n      statement: UPDATE public.users SET display_name = email"
+            .to_string()
     }
 
     #[test]
@@ -433,13 +448,17 @@ mod tests {
         ))
         .unwrap();
         let apply = plan.apply_plan();
-        assert_eq!(apply.steps.len(), 7);
+        assert_eq!(apply.steps.len(), 8);
         assert!(apply.sql_script().contains(SCHEMA_JOB_START_FUNCTION));
         assert!(apply
             .sql_script()
             .contains(SCHEMA_JOB_ADD_OPERATION_FUNCTION));
         assert!(apply.sql_script().contains(SCHEMA_JOB_ADVANCE_FUNCTION));
         assert!(apply.sql_script().contains("verify_two_version_invariant"));
+        assert_eq!(
+            apply.steps[0].name,
+            "verify_two_version_invariant_preflight"
+        );
         assert!(apply.sql_script().contains("migration_assert_invariants"));
         assert!(plan.status_sql().contains(SCHEMA_JOB_STATUS_VIEW));
         assert!(plan

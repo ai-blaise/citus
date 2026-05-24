@@ -105,20 +105,12 @@ pub struct MigrationStatus {
 }
 
 impl MigrationCrSpec {
-    pub fn to_authoritative(&self) -> MigrationSpec {
-        MigrationSpec {
-            migration_type: match normalize_token(&self.migration_type).as_str() {
-                "ghost" => MigrationType::GhOst,
-                _ => MigrationType::Pgroll,
-            },
+    pub fn to_authoritative(&self) -> Result<MigrationSpec, String> {
+        Ok(MigrationSpec {
+            migration_type: parse_migration_type(&self.migration_type)?,
             yaml: self.yaml.clone(),
-            on_conflict: match normalize_token(&self.on_conflict).as_str() {
-                "fail" => MigrationConflictAction::Fail,
-                "skip" => MigrationConflictAction::Skip,
-                "replace" => MigrationConflictAction::Replace,
-                _ => MigrationConflictAction::ManualReview,
-            },
-        }
+            on_conflict: parse_conflict_action(&self.on_conflict)?,
+        })
     }
 
     pub fn evidence(&self) -> PhaseEvidence {
@@ -150,7 +142,7 @@ impl MigrationCrSpec {
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(MigrationCommand {
-            spec: self.to_authoritative(),
+            spec: self.to_authoritative()?,
             job_name: resource_name.to_string(),
             table,
             current_state,
@@ -217,6 +209,24 @@ fn normalize_token(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
+fn parse_migration_type(value: &str) -> Result<MigrationType, String> {
+    match normalize_token(value).as_str() {
+        "pgroll" => Ok(MigrationType::Pgroll),
+        "ghost" => Ok(MigrationType::GhOst),
+        other => Err(format!("unsupported migrationType: {other}")),
+    }
+}
+
+fn parse_conflict_action(value: &str) -> Result<MigrationConflictAction, String> {
+    match normalize_token(value).as_str() {
+        "fail" => Ok(MigrationConflictAction::Fail),
+        "skip" => Ok(MigrationConflictAction::Skip),
+        "replace" => Ok(MigrationConflictAction::Replace),
+        "manualreview" => Ok(MigrationConflictAction::ManualReview),
+        other => Err(format!("unsupported onConflict: {other}")),
+    }
+}
+
 pub async fn run(ctx: Arc<Context>) -> Result<(), ControllerError> {
     let api: Api<Migration> = Api::default_namespaced(ctx.client.clone());
     info!("Migration controller starting");
@@ -247,7 +257,10 @@ async fn reconcile(
         .map_err(ControllerError::InvalidSpec)?;
     let plan = MigrationReconcilePlan::try_from(&command)
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
-    let authoritative = migration.spec.to_authoritative();
+    let authoritative = migration
+        .spec
+        .to_authoritative()
+        .map_err(ControllerError::InvalidSpec)?;
     authoritative
         .validate()
         .map_err(|error| ControllerError::InvalidSpec(error.to_string()))?;
@@ -316,7 +329,7 @@ mod tests {
     fn cr_spec_round_trips_into_reconcile_plan() {
         let cr = MigrationCrSpec {
             migration_type: "Pgroll".to_string(),
-            yaml: "operations:\n  - add_column".to_string(),
+            yaml: valid_yaml(),
             on_conflict: "ManualReview".to_string(),
             shadow_table_built: false,
             write_triggers_installed: false,
@@ -342,7 +355,7 @@ mod tests {
         let plan = MigrationReconcilePlan::try_from(&command).expect("plan");
         let apply = plan.apply_plan();
         assert_eq!(plan.target_state, SchemaJobState::WriteOnly);
-        assert_eq!(apply.steps.len(), 6);
+        assert_eq!(apply.steps.len(), 7);
         assert!(apply.sql_script().contains("migration_assert_invariants"));
     }
 
@@ -379,10 +392,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn unknown_migration_type_is_rejected() {
+        let mut cr = baseline_cr();
+        cr.migration_type = "onlineMagic".to_string();
+        assert_eq!(
+            cr.command_for_resource("job", &None),
+            Err("unsupported migrationType: onlinemagic".to_string())
+        );
+    }
+
+    #[test]
+    fn unknown_conflict_action_is_rejected() {
+        let mut cr = baseline_cr();
+        cr.on_conflict = "autoMerge".to_string();
+        assert_eq!(
+            cr.command_for_resource("job", &None),
+            Err("unsupported onConflict: automerge".to_string())
+        );
+    }
+
     fn baseline_cr() -> MigrationCrSpec {
         MigrationCrSpec {
             migration_type: "Pgroll".to_string(),
-            yaml: "operations:\n  - add_column".to_string(),
+            yaml: valid_yaml(),
             on_conflict: "ManualReview".to_string(),
             shadow_table_built: false,
             write_triggers_installed: false,
@@ -402,5 +435,10 @@ mod tests {
                 new_column: None,
             }],
         }
+    }
+
+    fn valid_yaml() -> String {
+        "twoVersionInvariantPrecheck: companion_internal.verify_two_version_invariant()\nrollback:\n  operation: companion_internal.schema_job_rollback_to\n  targetPhase: write_only\noperations:\n  - addColumn:\n      table: public.users\n      column: display_name\n      sqlType: text"
+            .to_string()
     }
 }
