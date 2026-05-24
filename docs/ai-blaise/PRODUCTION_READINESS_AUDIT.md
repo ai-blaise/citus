@@ -599,6 +599,12 @@ Rule 10 completion for this branch requires local and VM verification of:
   include a raw PostgreSQL wire-protocol smoke that sends multiple simple-query
   frames through the real pool data port before reading the first result; psql
   request/response pacing alone is not sufficient evidence.
+- T1 settings-bucket production evidence is limited to live proxy startup
+  parsing, tracked-GUC fingerprint accounting, borrow/release metrics, and a
+  raw PostgreSQL smoke proving simultaneous `citus.enable_repartition_joins`
+  clients observe distinct backend state. It must not be cited as proof of
+  reusable transaction pooling, backend reset correctness, shard-aware routing,
+  or broad transaction pooling semantics.
 - Auth2 production evidence is limited to installable SQL session-claim
   helpers. It must not be cited as evidence for Auth1 JWT issuance or Auth3
   token-cache behavior; Sec2 JWT verification has a separate SQL-runtime

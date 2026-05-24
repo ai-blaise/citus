@@ -502,6 +502,29 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md must mention DR restore-depth correction: {phrase}")
 
+pool_smoke = read(POOL_PROXY_SMOKE)
+for phrase in (
+    "AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS",
+    "citus.enable_repartition_joins",
+    "current_setting('citus.enable_repartition_joins', true)",
+    "pg_backend_pid()",
+    "ai_blaise_citus_pool_settings_bucket_unique_fingerprints",
+    "ai_blaise_citus_pool_settings_bucket_backend_borrows_total",
+    "ai_blaise_citus_pool_settings_bucket_assigned_connections",
+    "ai_blaise_citus_pool_settings_bucket_release_errors_total",
+):
+    if phrase not in pool_smoke:
+        fail(f"pool-proxy-smoke.sh must preserve T1 live settings-bucket evidence: {phrase}")
+
+for phrase in (
+    "T1 settings-bucket production evidence is limited",
+    "live proxy startup",
+    "borrow/release metrics",
+    "must not be cited as proof of reusable transaction pooling",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve T1 boundary: {phrase}")
+
 matrix_truth = compact(read(COHAB_MATRIX_README) + "\n" + read(COHABITATION_DOC) + "\n" + audit)
 for phrase in (
     "skip-with-note",
