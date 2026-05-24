@@ -786,7 +786,7 @@ pub fn decode_wal2json_frame(
 
         let mut columns = Vec::with_capacity(column_names.len());
         let mut tenant_id = None;
-        for (name, value) in column_names.into_iter().zip(column_values.into_iter()) {
+        for (name, value) in column_names.into_iter().zip(column_values) {
             let value = json_scalar_to_string(value)?;
             if name == "tenant_id" {
                 tenant_id = value.clone();
