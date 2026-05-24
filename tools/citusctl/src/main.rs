@@ -1,4 +1,6 @@
-use ai_blaise_citusctl::{canonical_citusctl_report, parse_request};
+use ai_blaise_citusctl::{
+    canonical_citusctl_report, parse_request, wal_replay_debug_plan_from_args,
+};
 use std::env;
 use std::process;
 
@@ -19,6 +21,17 @@ fn main() {
             report.execute_count(),
             report.total_steps(),
         );
+        return;
+    }
+
+    if args.iter().any(|arg| arg == "--json" || arg == "--fixture") {
+        match wal_replay_debug_plan_from_args(&args) {
+            Ok(plan) => println!("{}", plan.to_json()),
+            Err(error) => {
+                eprintln!("citusctl: {error}");
+                process::exit(2);
+            }
+        }
         return;
     }
 

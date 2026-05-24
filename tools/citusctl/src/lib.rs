@@ -576,6 +576,238 @@ pub fn canonical_citusctl_report() -> Result<CitusCtlCanonicalReport, CitusCtlEr
     })
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct WalReplayDebugPlan {
+    pub source_uri: String,
+    pub target_time: String,
+    pub timeline: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub segments: u32,
+}
+
+impl WalReplayDebugPlan {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"actions\":[\"validate_source\",\"inspect_fixture\",\"bound_target_time\",\"render_replay_plan\"],\"end_time\":\"{}\",\"segments\":{},\"source_uri\":\"{}\",\"start_time\":\"{}\",\"target_time\":\"{}\",\"timeline\":\"{}\"}}",
+            json_escape(&self.end_time),
+            self.segments,
+            json_escape(&self.source_uri),
+            json_escape(&self.start_time),
+            json_escape(&self.target_time),
+            json_escape(&self.timeline)
+        )
+    }
+}
+
+pub fn wal_replay_debug_plan_from_args(
+    args: &[String],
+) -> Result<WalReplayDebugPlan, CitusCtlError> {
+    let options = WalReplayDebugOptions::parse(args)?;
+    if !options.json {
+        return Err(CitusCtlError::MissingRequiredField("json"));
+    }
+    let fixture_path = options
+        .fixture_path
+        .as_deref()
+        .ok_or(CitusCtlError::MissingRequiredField("fixture_path"))?;
+    let request = parse_request(&options.command_args)?;
+    if !matches!(request.intent, ExecutionIntent::Plan) {
+        return Err(CitusCtlError::UnknownIntent(
+            "wal-replay-debug-apply".to_string(),
+        ));
+    }
+
+    let CitusCtlCommand::WalReplay {
+        source_uri,
+        target_time,
+    } = request.command
+    else {
+        return Err(CitusCtlError::UnknownCommand(
+            "wal-replay-debug-json".to_string(),
+        ));
+    };
+
+    validate_wal_replay_source(&source_uri)?;
+    validate_timestamp(&target_time)?;
+
+    let fixture_text =
+        std::fs::read_to_string(fixture_path).map_err(|_| CitusCtlError::UnknownValue {
+            field: "fixture_path",
+            value: fixture_path.to_string(),
+        })?;
+    let fixture = WalReplayFixture::parse(&fixture_text)?;
+    fixture.validate_for(&source_uri, &target_time)?;
+
+    Ok(WalReplayDebugPlan {
+        source_uri,
+        target_time,
+        timeline: fixture.timeline,
+        start_time: fixture.start_time,
+        end_time: fixture.end_time,
+        segments: fixture.segments,
+    })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct WalReplayDebugOptions {
+    command_args: Vec<String>,
+    fixture_path: Option<String>,
+    json: bool,
+}
+
+impl WalReplayDebugOptions {
+    fn parse(args: &[String]) -> Result<Self, CitusCtlError> {
+        let mut command_args = Vec::new();
+        let mut fixture_path = None;
+        let mut json = false;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--json" => {
+                    json = true;
+                    index += 1;
+                }
+                "--fixture" => {
+                    let Some(path) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("fixture_path"));
+                    };
+                    fixture_path = Some(path.clone());
+                    index += 2;
+                }
+                value if value.starts_with("--") => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "wal_replay_option",
+                        value: value.to_string(),
+                    });
+                }
+                value => {
+                    command_args.push(value.to_string());
+                    index += 1;
+                }
+            }
+        }
+
+        Ok(Self {
+            command_args,
+            fixture_path,
+            json,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct WalReplayFixture {
+    source_uri: String,
+    timeline: String,
+    start_time: String,
+    end_time: String,
+    segments: u32,
+}
+
+impl WalReplayFixture {
+    fn parse(text: &str) -> Result<Self, CitusCtlError> {
+        let mut source_uri = None;
+        let mut timeline = None;
+        let mut start_time = None;
+        let mut end_time = None;
+        let mut segments = None;
+
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once('=') else {
+                return Err(CitusCtlError::UnknownValue {
+                    field: "wal_replay_fixture",
+                    value: line.to_string(),
+                });
+            };
+            let value = value.trim().to_string();
+            match key.trim() {
+                "source_uri" if source_uri.is_none() => source_uri = Some(value),
+                "timeline" if timeline.is_none() => timeline = Some(value),
+                "start_time" if start_time.is_none() => start_time = Some(value),
+                "end_time" if end_time.is_none() => end_time = Some(value),
+                "segments" if segments.is_none() => {
+                    segments = Some(value.parse::<u32>().ok().filter(|count| *count > 0).ok_or(
+                        CitusCtlError::UnknownValue {
+                            field: "segments",
+                            value,
+                        },
+                    )?)
+                }
+                _ => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "wal_replay_fixture",
+                        value: key.trim().to_string(),
+                    })
+                }
+            }
+        }
+
+        let fixture = Self {
+            source_uri: source_uri.ok_or(CitusCtlError::MissingRequiredField("source_uri"))?,
+            timeline: timeline.ok_or(CitusCtlError::MissingRequiredField("timeline"))?,
+            start_time: start_time.ok_or(CitusCtlError::MissingRequiredField("start_time"))?,
+            end_time: end_time.ok_or(CitusCtlError::MissingRequiredField("end_time"))?,
+            segments: segments.ok_or(CitusCtlError::MissingRequiredField("segments"))?,
+        };
+        validate_wal_replay_source(&fixture.source_uri)?;
+        validate_required("timeline", &fixture.timeline)?;
+        validate_timestamp(&fixture.start_time)?;
+        validate_timestamp(&fixture.end_time)?;
+        if fixture.start_time > fixture.end_time {
+            return Err(CitusCtlError::UnknownValue {
+                field: "wal_replay_fixture",
+                value: "start_time after end_time".to_string(),
+            });
+        }
+        Ok(fixture)
+    }
+
+    fn validate_for(&self, source_uri: &str, target_time: &str) -> Result<(), CitusCtlError> {
+        if self.source_uri != source_uri {
+            return Err(CitusCtlError::UnknownValue {
+                field: "source_uri",
+                value: "must match fixture source_uri".to_string(),
+            });
+        }
+        if target_time < self.start_time.as_str() || target_time > self.end_time.as_str() {
+            return Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: "outside fixture range".to_string(),
+            });
+        }
+        Ok(())
+    }
+}
+
+fn validate_wal_replay_source(value: &str) -> Result<(), CitusCtlError> {
+    validate_required("source_uri", value)?;
+    if value.starts_with("s3://") || value.starts_with("gs://") || value.starts_with("file://") {
+        Ok(())
+    } else {
+        Err(CitusCtlError::UnknownValue {
+            field: "source_uri",
+            value: value.to_string(),
+        })
+    }
+}
+
+fn json_escape(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|character| match character {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            _ => vec![character],
+        })
+        .collect()
+}
+
 fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
 }
@@ -676,6 +908,53 @@ mod tests {
         .expect("parse wal replay");
 
         assert_eq!(request.plan(), Err(CitusCtlError::InvalidTimestamp));
+    }
+
+    #[test]
+    fn wal_replay_debug_plan_reads_fixture_and_emits_json() {
+        let fixture_path = std::env::temp_dir().join(format!(
+            "ai-blaise-citusctl-wal-fixture-{}.txt",
+            std::process::id()
+        ));
+        std::fs::write(
+            &fixture_path,
+            "source_uri=s3://citus-wal/prod\ntimeline=0000000100000000000000A1\nstart_time=2026-05-21T09:00:00Z\nend_time=2026-05-21T11:00:00Z\nsegments=3\n",
+        )
+        .expect("write fixture");
+
+        let plan = wal_replay_debug_plan_from_args(&args(&[
+            "plan",
+            "wal-replay",
+            "s3://citus-wal/prod",
+            "2026-05-21T10:00:00Z",
+            "--fixture",
+            fixture_path.to_str().expect("fixture path"),
+            "--json",
+        ]))
+        .expect("debug plan");
+        std::fs::remove_file(&fixture_path).expect("remove fixture");
+
+        assert_eq!(plan.segments, 3);
+        assert_eq!(
+            plan.to_json(),
+            "{\"actions\":[\"validate_source\",\"inspect_fixture\",\"bound_target_time\",\"render_replay_plan\"],\"end_time\":\"2026-05-21T11:00:00Z\",\"segments\":3,\"source_uri\":\"s3://citus-wal/prod\",\"start_time\":\"2026-05-21T09:00:00Z\",\"target_time\":\"2026-05-21T10:00:00Z\",\"timeline\":\"0000000100000000000000A1\"}"
+        );
+    }
+
+    #[test]
+    fn wal_replay_debug_plan_fails_closed_outside_fixture_range() {
+        let fixture = WalReplayFixture::parse(
+            "source_uri=file:///tmp/wal\ntimeline=0000000100000000000000A1\nstart_time=2026-05-21T09:00:00Z\nend_time=2026-05-21T11:00:00Z\nsegments=3\n",
+        )
+        .expect("fixture");
+
+        assert_eq!(
+            fixture.validate_for("file:///tmp/wal", "2026-05-21T12:00:00Z"),
+            Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: "outside fixture range".to_string(),
+            })
+        );
     }
 
     #[test]

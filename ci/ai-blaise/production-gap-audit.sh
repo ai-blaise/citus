@@ -203,6 +203,8 @@ for phrase in (
     "modeled release gates",
     "canonical model data rather than results from live performance",
     "v2 acceptance model must not be cited as production evidence",
+    "WF2 fixture-backed WAL replay debugger plan",
+    "not evidence for real WAL segment inspection",
 ):
     if compact(phrase) not in audit_compact:
         fail(
