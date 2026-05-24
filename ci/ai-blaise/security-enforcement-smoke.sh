@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected=$'6	5	5	20	2	5	6	6	6'
+expected=$'6	5	5	20	5	2	5	6	6	6'
 output="$(cargo run -q -p ai_blaise_citus_operator -- run-security-canonical)"
 
 if ! printf '%s\n' "${output}" | grep -Fqx "${expected}"; then

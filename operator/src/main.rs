@@ -215,14 +215,15 @@ fn run_security_canonical() {
     });
 
     println!(
-        "workloads\ttls_required\tauth_boundaries\tsecret_refs\trbac_rules\tkube_api_denied\trun_as_non_root\tread_only_rootfs\tdrop_all_capabilities"
+        "workloads\ttls_required\tauth_boundaries\tsecret_refs\texternal_secret_bindings\trbac_rules\tkube_api_denied\trun_as_non_root\tread_only_rootfs\tdrop_all_capabilities"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.workloads,
         report.tls_required,
         report.auth_boundaries,
         report.secret_refs,
+        report.external_secret_bindings,
         report.rbac_rules,
         report.kube_api_denied,
         report.run_as_non_root,

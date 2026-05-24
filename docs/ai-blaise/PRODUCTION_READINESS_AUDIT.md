@@ -239,8 +239,11 @@ more production-ready than the artifacts justified.
   proven by Docker plus kind smokes that verify allowed and denied SQL traffic.
 - Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
   wildcard grant, and it no longer grants Secret access while secret binding
-  remains alpha. The deploy check and production gap audit reject wildcard CRD
-  resources or Secret permissions in the operator role.
+  remains alpha. The operator security runner now fails closed when pool or
+  sidecar runtime Secret refs are not backed by ExternalSecret binding metadata,
+  and still requires TLS 1.3, client certificates, restricted security contexts,
+  and no Secret RBAC grants. The deploy check and production gap audit reject
+  wildcard CRD resources or Secret permissions in the operator role.
 - Production/default Helm profiles now render only the operator ServiceAccount;
   controller-grade operator ClusterRole and ClusterRoleBinding resources are
   gated behind the explicit alpha `operator.controllerRbac.enabled` flag and

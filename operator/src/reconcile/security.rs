@@ -19,6 +19,7 @@ pub struct WorkloadSecurityPlan {
     pub container_security: ContainerSecurityContextPlan,
     pub rbac: RbacPolicyPlan,
     pub secrets: SecretAccessPlan,
+    pub external_secrets: Vec<ExternalSecretBindingPlan>,
     pub tls: TlsPolicyPlan,
     pub auth: Option<AuthBoundaryPlan>,
 }
@@ -32,6 +33,7 @@ impl WorkloadSecurityPlan {
             container_security: ContainerSecurityContextPlan::restricted(),
             rbac: RbacPolicyPlan::operator_controller(),
             secrets: SecretAccessPlan::default(),
+            external_secrets: Vec::new(),
             tls: TlsPolicyPlan::disabled(),
             auth: None,
         }
@@ -50,6 +52,12 @@ impl WorkloadSecurityPlan {
                 key: "password".to_string(),
                 mount: SecretMountMode::Env,
             }]),
+            external_secrets: vec![ExternalSecretBindingPlan::runtime_secret(
+                format!("{workload_name}-postgres-auth"),
+                "password",
+                "postgres/pool/password",
+                "password",
+            )],
             tls: TlsPolicyPlan::required(format!("{workload_name}-tls"), true),
             auth: Some(AuthBoundaryPlan::postgres_pool()),
         }
@@ -70,6 +78,12 @@ impl WorkloadSecurityPlan {
                 key: "config".to_string(),
                 mount: SecretMountMode::ReadOnlyVolume,
             }]),
+            external_secrets: vec![ExternalSecretBindingPlan::runtime_secret(
+                format!("{workload_name}-runtime"),
+                "config",
+                format!("sidecars/{sidecar_suffix}/runtime-config"),
+                "config",
+            )],
             tls: TlsPolicyPlan::required(format!("{workload_name}-tls"), true),
             auth: Some(AuthBoundaryPlan::sidecar_http()),
         }
@@ -81,7 +95,10 @@ impl WorkloadSecurityPlan {
         self.pod_security.validate()?;
         self.container_security.validate()?;
         self.rbac.validate()?;
-        self.secrets.validate()?;
+        for external_secret in &self.external_secrets {
+            external_secret.validate()?;
+        }
+        self.secrets.validate(&self.external_secrets)?;
         self.tls.validate()?;
         if let Some(auth) = &self.auth {
             auth.validate()?;
@@ -294,17 +311,28 @@ impl SecretAccessPlan {
         }
     }
 
-    fn validate(&self) -> Result<(), WorkloadSecurityError> {
+    fn validate(
+        &self,
+        external_secrets: &[ExternalSecretBindingPlan],
+    ) -> Result<(), WorkloadSecurityError> {
         if !self.inline_values.is_empty() {
             return Err(WorkloadSecurityError::InlineSecretValue);
         }
 
         let mut seen = BTreeSet::new();
+        let external_targets = external_secrets
+            .iter()
+            .map(|binding| format!("{}:{}", binding.target_secret_name, binding.target_key))
+            .collect::<BTreeSet<_>>();
+
         for reference in &self.references {
             reference.validate()?;
             let key = format!("{}:{}", reference.name, reference.key);
-            if !seen.insert(key) {
+            if !seen.insert(key.clone()) {
                 return Err(WorkloadSecurityError::DuplicateSecretReference);
+            }
+            if !external_targets.contains(&key) {
+                return Err(WorkloadSecurityError::MissingExternalSecretBinding);
             }
         }
         Ok(())
@@ -329,6 +357,49 @@ impl SecretReferencePlan {
 pub enum SecretMountMode {
     Env,
     ReadOnlyVolume,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ExternalSecretBindingPlan {
+    pub secret_store_ref: String,
+    pub target_secret_name: String,
+    pub target_key: String,
+    pub remote_key: String,
+    pub remote_property: String,
+    pub refresh_interval_minutes: u32,
+}
+
+impl ExternalSecretBindingPlan {
+    fn runtime_secret(
+        target_secret_name: String,
+        target_key: &str,
+        remote_key: impl Into<String>,
+        remote_property: &str,
+    ) -> Self {
+        Self {
+            secret_store_ref: "ai-blaise-cluster-secrets".to_string(),
+            target_secret_name,
+            target_key: target_key.to_string(),
+            remote_key: remote_key.into(),
+            remote_property: remote_property.to_string(),
+            refresh_interval_minutes: 5,
+        }
+    }
+
+    fn validate(&self) -> Result<(), WorkloadSecurityError> {
+        validate_kubernetes_name("external_secret.secret_store_ref", &self.secret_store_ref)?;
+        validate_kubernetes_name(
+            "external_secret.target_secret_name",
+            &self.target_secret_name,
+        )?;
+        validate_secret_key("external_secret.target_key", &self.target_key)?;
+        validate_remote_secret_key("external_secret.remote_key", &self.remote_key)?;
+        validate_secret_key("external_secret.remote_property", &self.remote_property)?;
+        if self.refresh_interval_minutes == 0 {
+            return Err(WorkloadSecurityError::InvalidExternalSecretRefreshInterval);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -477,6 +548,7 @@ pub struct WorkloadSecurityReport {
     pub tls_required: usize,
     pub auth_boundaries: usize,
     pub secret_refs: usize,
+    pub external_secret_bindings: usize,
     pub rbac_rules: usize,
     pub kube_api_denied: usize,
     pub run_as_non_root: usize,
@@ -495,6 +567,7 @@ impl WorkloadSecurityReport {
             tls_required: 0,
             auth_boundaries: 0,
             secret_refs: 0,
+            external_secret_bindings: 0,
             rbac_rules: 0,
             kube_api_denied: 0,
             run_as_non_root: 0,
@@ -511,6 +584,7 @@ impl WorkloadSecurityReport {
                 report.auth_boundaries += 1;
             }
             report.secret_refs += plan.secret_reference_count();
+            report.external_secret_bindings += plan.external_secrets.len();
             report.rbac_rules += plan.rbac.rules.len();
             if plan.denies_kubernetes_api() {
                 report.kube_api_denied += 1;
@@ -554,8 +628,11 @@ pub enum WorkloadSecurityError {
     DuplicateSecretReference,
     InlineSecretValue,
     InsecureAuthIssuer,
+    InvalidExternalSecretRefreshInterval,
     InvalidKubernetesName(&'static str),
+    InvalidRemoteSecretKey(&'static str),
     InvalidSecretKey(&'static str),
+    MissingExternalSecretBinding,
     MissingRequiredField(&'static str),
     MissingRbacRule,
     MissingTlsSecret(&'static str),
@@ -581,6 +658,12 @@ impl fmt::Display for WorkloadSecurityError {
                 write!(formatter, "TLS must require client certificates")
             }
             Self::DuplicateSecretReference => write!(formatter, "secret references must be unique"),
+            Self::InvalidExternalSecretRefreshInterval => {
+                write!(
+                    formatter,
+                    "ExternalSecret refresh interval must be positive"
+                )
+            }
             Self::InlineSecretValue => write!(
                 formatter,
                 "secret values must be references, not inline values"
@@ -589,9 +672,16 @@ impl fmt::Display for WorkloadSecurityError {
             Self::InvalidKubernetesName(field) => {
                 write!(formatter, "{field} must be a valid Kubernetes name")
             }
+            Self::InvalidRemoteSecretKey(field) => {
+                write!(formatter, "{field} must be a valid remote secret key")
+            }
             Self::InvalidSecretKey(field) => {
                 write!(formatter, "{field} must be a valid Secret key")
             }
+            Self::MissingExternalSecretBinding => write!(
+                formatter,
+                "runtime Secret references must be backed by ExternalSecret bindings"
+            ),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::MissingRbacRule => write!(
                 formatter,
@@ -693,6 +783,22 @@ fn validate_secret_key(field: &'static str, value: &str) -> Result<(), WorkloadS
     Ok(())
 }
 
+fn validate_remote_secret_key(
+    field: &'static str,
+    value: &str,
+) -> Result<(), WorkloadSecurityError> {
+    let value = value.trim();
+    validate_required(field, value)?;
+    if value.starts_with('/')
+        || value.ends_with('/')
+        || value.contains("//")
+        || value.bytes().any(|byte| byte.is_ascii_whitespace())
+    {
+        return Err(WorkloadSecurityError::InvalidRemoteSecretKey(field));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -708,6 +814,7 @@ mod tests {
                 tls_required: 5,
                 auth_boundaries: 5,
                 secret_refs: 20,
+                external_secret_bindings: 5,
                 rbac_rules: 2,
                 kube_api_denied: 5,
                 run_as_non_root: 6,
@@ -724,6 +831,7 @@ mod tests {
         assert_eq!(plan.validate(), Ok(()));
         assert!(plan.requires_tls());
         assert_eq!(plan.secret_reference_count(), 4);
+        assert_eq!(plan.external_secrets.len(), 1);
     }
 
     #[test]
@@ -808,6 +916,30 @@ mod tests {
         assert_eq!(
             plan.validate(),
             Err(WorkloadSecurityError::InlineSecretValue)
+        );
+    }
+
+    #[test]
+    fn runtime_secret_refs_must_have_external_secret_bindings() {
+        let mut plan = WorkloadSecurityPlan::sidecar("ai-blaise-citus", "mcp");
+        plan.external_secrets.clear();
+
+        assert_eq!(
+            plan.validate(),
+            Err(WorkloadSecurityError::MissingExternalSecretBinding)
+        );
+    }
+
+    #[test]
+    fn external_secret_bindings_reject_unusable_remote_metadata() {
+        let mut plan = WorkloadSecurityPlan::sidecar("ai-blaise-citus", "mcp");
+        plan.external_secrets[0].remote_key = " sidecars//mcp ".to_string();
+
+        assert_eq!(
+            plan.validate(),
+            Err(WorkloadSecurityError::InvalidRemoteSecretKey(
+                "external_secret.remote_key"
+            ))
         );
     }
 }
