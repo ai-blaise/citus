@@ -1848,14 +1848,20 @@ movement.
 **Bundled extension dep**: `pg_repack`
 
 **Summary**: Defines the scheduled repack policy surface for online shard-table
-maintenance, with strategy selection for `pg_repack` and the PostgreSQL 19
-`REPACK CONCURRENTLY` path modeled by the repack sidecar.
+maintenance. The implemented alpha boundary validates deterministic repack plans
+and emits a dry-run strategy-selection report that fails closed unless the
+chosen `pg_repack` or PostgreSQL 19 `REPACK CONCURRENTLY` capability is declared.
 
 **Motivation**: Repack cadence and target tables need to be auditable and
 reconciled rather than run as one-off maintenance commands.
 
 **Citus comparison**: Vanilla Citus can use external maintenance tooling but
 does not provide a scheduled repack CRD.
+
+**Current boundary**: `sidecar/repack` reports `dry_run=true`, `executed=false`,
+and `evidence_boundary=dry-run-plan-only`; this is audit/test hardening, not
+production evidence for live `pg_repack`, live PostgreSQL 19
+`REPACK CONCURRENTLY`, or Kubernetes-scheduled repack execution.
 
 **References**:
 
@@ -1866,6 +1872,7 @@ does not provide a scheduled repack CRD.
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
+- CI: `ci/ai-blaise/sidecar-repack-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`

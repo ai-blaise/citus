@@ -249,6 +249,10 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_repack --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_repack
+      - name: Run canonical repack report
+        run: cargo run -q -p ai_blaise_citus_sidecar_repack -- run-canonical
+      - name: Run repack dry-run smoke
+        run: bash ci/ai-blaise/sidecar-repack-smoke.sh
 
   schema-job:
     runs-on: ubuntu-latest

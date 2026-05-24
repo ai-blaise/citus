@@ -15,6 +15,11 @@ Current implemented surface:
 - `RepackJobPlan`
 - `ShardRepackTarget`
 - `RepackCommandPlan`
+- fail-closed `RepackRuntimeEnvironment` strategy selection
+- dry-run `RepackExecutionReport` with `executed=false`
 - `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
+- `bash ci/ai-blaise/sidecar-repack-smoke.sh`
 
-These contracts cover `FEATURE: R7`.
+These contracts cover `FEATURE: R7` as alpha audit/test hardening only. They do
+not prove live `pg_repack`, PostgreSQL 19 `REPACK CONCURRENTLY`, or scheduled
+Kubernetes execution.

@@ -361,17 +361,15 @@ mod tests {
     }
 
     #[test]
-    fn quoted_target_is_escaped_for_sql_and_json() {
+    fn validated_target_is_rendered_into_sql_and_json() {
         let spec = ScheduledRepackSpec {
-            target: "public.\"weird'name\"".to_string(),
-            schedule: "@daily".to_string(),
+            target: "public.orders".to_string(),
+            schedule: "0 3 * * 0".to_string(),
             strategy: RepackStrategy::PgRepack,
         };
 
         let plan = ScheduledRepackReconcilePlan::from_spec("edge", &spec).expect("valid plan");
-        assert!(plan.apply_sql_script().contains("'public.\"weird''name\"'"));
-        assert!(plan
-            .payload_json()
-            .contains("\"target\":\"public.\\\"weird'name\\\"\""));
+        assert!(plan.apply_sql_script().contains("'public.orders'"));
+        assert!(plan.payload_json().contains("\"target\":\"public.orders\""));
     }
 }

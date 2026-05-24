@@ -546,6 +546,24 @@ if deploy_k8s_tree:
         + ", ".join(str(p) for p in deploy_k8s_tree)
     )
 
+repack_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "sidecar/repack/README.md"))
+r7_entries = [entry for entry in entries if entry["id"] == "R7"]
+if len(r7_entries) != 1 or r7_entries[0]["status"] != "alpha":
+    fail("R7 must remain alpha until live repack execution evidence exists")
+for phrase in (
+    "dry-run-plan-only",
+    "executed=false",
+    "production evidence for live `pg_repack`",
+    "PostgreSQL 19 `REPACK CONCURRENTLY`",
+):
+    if compact(phrase) not in repack_truth:
+        fail(f"R7 repack dry-run boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-repack-smoke", "ci/ai-blaise/sidecar-repack-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the repack dry-run smoke: {phrase}")
+if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
+
 print(
     "production_gap_audit\t"
     f"source_feature_ids={len(source_ids)}\t"
