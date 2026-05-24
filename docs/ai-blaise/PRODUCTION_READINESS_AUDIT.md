@@ -392,6 +392,12 @@ more production-ready than the artifacts justified.
   READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, O5, and
   O12 wording uses versioned, operator, release, or measured-evidence language
   instead of stable/live/production phrasing for alpha contracts.
+- Worker Tools Runtime evidence from 2026-05-24 tightens the already-promoted
+  D3/D5/D6/D12/M9/O13 snapshot-backed boundary: the shared tools runtime now
+  rejects duplicate snapshot identities and vectorizer/realtime tenant
+  references to unknown tenants under cargo tests and `tools-ui-runtime-smoke`.
+  Live database sessions, browser embedding, continuous terminal event loops,
+  and mutating execution remain alpha.
 - The production gap audit now explicitly checks that the
   `timescale-cohabitation-smoke` Makefile target runs with `REQUIRE_DOCKER=1`,
   matching the live cohabitation script and GitHub image workflow guardrails.

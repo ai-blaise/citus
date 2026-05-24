@@ -2545,8 +2545,10 @@ run the real `ai_blaise_citus_schema_designer` binary against a validated tools
 snapshot TSV. The smoke requires `render-svg --snapshot <snapshot.tsv>` to emit
 deterministic SVG containing the `D6 M9` feature marker, table overlays, and a
 real shard-placement label, and it verifies malformed snapshot references fail
-closed. Direct DrawDB front-end embedding, browser collaboration, and live
-operator/companion watch streams remain alpha.
+closed. The shared tools runtime also fails closed on duplicate snapshot
+identities and vectorizer/realtime tenant references to unknown tenants. Direct
+DrawDB front-end embedding, browser collaboration, and live operator/companion
+watch streams remain alpha.
 
 **Motivation**: Distributed schema design needs visual output that shows shard
 and extension-specific state rather than only ordinary table relationships.
@@ -5085,8 +5087,11 @@ run the real `ai_blaise_citus_tui` binary against a validated tools snapshot
 TSV. The smoke requires `render-frame --snapshot <snapshot.tsv> --panel shards`
 to render concrete shard placement data, requires safe mode to reject a tenant
 move without override, and requires the same action to succeed only with
-`--unsafe-allow-mutation --confirm CONFIRM`. The broader interactive ratatui
-event loop, direct database sessions, and live mutation execution remain alpha.
+`--unsafe-allow-mutation --confirm CONFIRM`. The shared tools runtime also fails
+closed on duplicate snapshot identities and vectorizer/realtime tenant
+references to unknown tenants before the TUI renders or previews actions. The
+broader interactive ratatui event loop, direct database sessions, and live
+mutation execution remain alpha.
 
 **Motivation**: Operators need an interactive terminal workflow that can inspect
 cluster topology, shards, hypertables, search indexes, vectorizer backlog,
@@ -5154,9 +5159,11 @@ run the real `ai_blaise_citus_admin` binary against a validated tools snapshot
 TSV. The smoke requires `render --snapshot <snapshot.tsv> --route
 /cluster/shards` to emit concrete HTML containing shard and worker data,
 requires rebalance without `CONFIRM` to fail closed, and requires confirmed
-rebalance to emit an accepted dry-run receipt. Full WhoDB front-end embedding,
-browser sessions, live database writes, and Kubernetes-side admin deployment
-remain alpha.
+rebalance to emit an accepted dry-run receipt. The shared tools runtime also
+fails closed on duplicate snapshot identities and vectorizer/realtime tenant
+references to unknown tenants before admin routes or dry-run receipts are
+rendered. Full WhoDB front-end embedding, browser sessions, live database
+writes, and Kubernetes-side admin deployment remain alpha.
 
 **Motivation**: Administrators need a browser UI for topology, shard,
 Timescale, vectorizer, branch, tenant, backup, and realtime debugging
@@ -5186,8 +5193,10 @@ Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 run the real `ai_blaise_citus_schema_designer` binary against a validated tools
 snapshot TSV. The smoke requires deterministic SVG output with the `D6 M9`
 feature marker and real shard placement data, and requires invalid snapshot
-references to fail closed. Full DrawDB front-end integration, collaborative
-editing, and live operator/companion refresh remain alpha.
+references to fail closed. The shared tools runtime also rejects duplicate
+snapshot identities and vectorizer/realtime tenant references to unknown
+tenants. Full DrawDB front-end integration, collaborative editing, and live
+operator/companion refresh remain alpha.
 
 **Motivation**: Schema designers need a versioned model for distribution,
 hypertable, search, webhook, and shard-placement layers before the UI reads
@@ -5217,6 +5226,8 @@ Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 run the real `ai_blaise_citus_watch` binary against a validated tools snapshot
 TSV. The smoke requires `render-frame --snapshot <snapshot.tsv>` to emit pool,
 vectorizer backlog, shard, tenant, and companion/Prometheus query-plan data.
+The smoke also proves duplicate snapshot identities and vectorizer tenant
+references to unknown tenants fail closed through the same `citus-watch` runner.
 Live Prometheus scraping, direct companion SQL sessions, and continuous terminal
 refresh remain alpha.
 
@@ -5976,7 +5987,9 @@ backlog, search indexes, tenants, and branches.
 Production evidence: The VM proof and `ci/ai-blaise/tools-ui-runtime-smoke.sh`
 run the real `ai_blaise_citus_watch` binary against a validated tools snapshot
 TSV. The smoke requires the rendered frame to include pool readiness,
-vectorizer backlog signals, and the companion shard-placement query plan.
+vectorizer backlog signals, and the companion shard-placement query plan. The
+smoke also proves duplicate snapshot identities and vectorizer tenant references
+to unknown tenants fail closed through the same `citus-watch` runner.
 Long-running terminal event handling, live Prometheus polling, and direct
 companion database reads remain alpha.
 

@@ -59,9 +59,6 @@ impl ToolSnapshot {
             return Err(ToolRuntimeError::MissingRequiredSection("shard"));
         }
 
-        let worker_names = self.worker_names();
-        let table_names = self.table_names();
-
         for worker in &self.workers {
             worker.validate()?;
         }
@@ -70,6 +67,14 @@ impl ToolSnapshot {
         }
         for shard in &self.shards {
             shard.validate()?;
+        }
+
+        self.validate_unique_keys()?;
+
+        let worker_names = self.worker_names();
+        let table_names = self.table_names();
+
+        for shard in &self.shards {
             if !table_names.contains(shard.table.as_str()) {
                 return Err(ToolRuntimeError::UnknownReference {
                     row_kind: "shard",
@@ -97,6 +102,13 @@ impl ToolSnapshot {
         }
         for vectorizer in &self.vectorizers {
             vectorizer.validate()?;
+            if !self.has_tenant(&vectorizer.tenant_id) {
+                return Err(ToolRuntimeError::UnknownReference {
+                    row_kind: "vectorizer",
+                    field: "tenant_id",
+                    value: vectorizer.tenant_id.clone(),
+                });
+            }
         }
         for index in &self.search_indexes {
             index.validate()?;
@@ -116,6 +128,13 @@ impl ToolSnapshot {
         }
         for stream in &self.realtime_streams {
             stream.validate()?;
+            if !self.has_tenant(&stream.tenant_id) {
+                return Err(ToolRuntimeError::UnknownReference {
+                    row_kind: "realtime",
+                    field: "tenant_id",
+                    value: stream.tenant_id.clone(),
+                });
+            }
             if !table_names.contains(stream.table.as_str()) {
                 return Err(ToolRuntimeError::UnknownReference {
                     row_kind: "realtime",
@@ -128,6 +147,39 @@ impl ToolSnapshot {
             pool.validate()?;
         }
         Ok(())
+    }
+
+    fn validate_unique_keys(&self) -> Result<(), ToolRuntimeError> {
+        validate_unique(
+            "worker",
+            "name",
+            self.workers.iter().map(|worker| worker.name.as_str()),
+        )?;
+        validate_unique(
+            "table",
+            "name",
+            self.tables.iter().map(|table| table.name.as_str()),
+        )?;
+        validate_unique(
+            "shard",
+            "shard_id",
+            self.shards.iter().map(|shard| shard.shard_id.to_string()),
+        )?;
+        validate_unique(
+            "tenant",
+            "tenant_id",
+            self.tenants.iter().map(|tenant| tenant.tenant_id.as_str()),
+        )?;
+        validate_unique(
+            "search_index",
+            "name",
+            self.search_indexes.iter().map(|index| index.name.as_str()),
+        )?;
+        validate_unique(
+            "branch",
+            "name",
+            self.branches.iter().map(|branch| branch.name.as_str()),
+        )
     }
 
     pub fn worker_names(&self) -> BTreeSet<&str> {
@@ -364,6 +416,11 @@ impl PoolSnapshot {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ToolRuntimeError {
+    DuplicateValue {
+        row_kind: &'static str,
+        field: &'static str,
+        value: String,
+    },
     InvalidNumber {
         field: &'static str,
         value: String,
@@ -390,6 +447,13 @@ pub enum ToolRuntimeError {
 impl fmt::Display for ToolRuntimeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DuplicateValue {
+                row_kind,
+                field,
+                value,
+            } => {
+                write!(formatter, "{row_kind}.{field} duplicates value {value}")
+            }
             Self::InvalidNumber { field, value } => {
                 write!(formatter, "{field} has invalid numeric value {value}")
             }
@@ -687,6 +751,29 @@ fn validate_required(field: &'static str, value: &str) -> Result<(), ToolRuntime
     Ok(())
 }
 
+fn validate_unique<I, V>(
+    row_kind: &'static str,
+    field: &'static str,
+    values: I,
+) -> Result<(), ToolRuntimeError>
+where
+    I: IntoIterator<Item = V>,
+    V: Into<String>,
+{
+    let mut seen = BTreeSet::new();
+    for value in values {
+        let value = value.into();
+        if !seen.insert(value.clone()) {
+            return Err(ToolRuntimeError::DuplicateValue {
+                row_kind,
+                field,
+                value,
+            });
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -700,5 +787,56 @@ mod tests {
         assert_eq!(snapshot.shard_count("public.events"), 2);
         assert!(snapshot.has_tenant("tenant-a"));
         assert!(snapshot.pool.as_ref().unwrap().is_ready());
+    }
+
+    #[test]
+    fn snapshot_rejects_duplicate_identity_rows() {
+        let input = CANONICAL_SNAPSHOT_TSV.replace(
+            "worker	worker-2	10.0.0.12	replica	ready",
+            "worker	worker-1	10.0.0.12	replica	ready",
+        );
+
+        assert_eq!(
+            parse_snapshot_tsv(&input),
+            Err(ToolRuntimeError::DuplicateValue {
+                row_kind: "worker",
+                field: "name",
+                value: "worker-1".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn snapshot_rejects_vectorizer_unknown_tenant() {
+        let input = CANONICAL_SNAPSHOT_TSV.replace(
+            "vectorizer	documents-body	tenant-a	128	250000	ok",
+            "vectorizer	documents-body	tenant-z	128	250000	ok",
+        );
+
+        assert_eq!(
+            parse_snapshot_tsv(&input),
+            Err(ToolRuntimeError::UnknownReference {
+                row_kind: "vectorizer",
+                field: "tenant_id",
+                value: "tenant-z".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn snapshot_rejects_realtime_unknown_tenant() {
+        let input = CANONICAL_SNAPSHOT_TSV.replace(
+            "realtime	tenant-a	public.events	3	0/16B6C50",
+            "realtime	tenant-z	public.events	3	0/16B6C50",
+        );
+
+        assert_eq!(
+            parse_snapshot_tsv(&input),
+            Err(ToolRuntimeError::UnknownReference {
+                row_kind: "realtime",
+                field: "tenant_id",
+                value: "tenant-z".to_string(),
+            })
+        );
     }
 }
