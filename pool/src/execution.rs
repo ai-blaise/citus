@@ -1,14 +1,14 @@
 use crate::{
     encode_cancel_request, parse_cancel_request, AdminCommand, AdminState, AuthVerificationCache,
     CdcEvent, CdcOperation, ClosestReplicaTable, ExtendedFrame, ExtendedPipelineBuffer,
-    FastPathRouterPolicy, GeoRoutingPolicy, GeoRoutingRule, HtapDecision, HtapRoutingPolicy,
-    MirrorDecision, MirrorTrafficPolicy, Placement, PlacementDelta, PlacementSubscriber, PlanCache,
+    FastPathRouterPolicy, GeoRoutingPolicy, GeoRoutingRule, HtapRoutingPolicy, MirrorDecision,
+    MirrorTrafficPolicy, Placement, PlacementDelta, PlacementSubscriber, PlanCache,
     PoolRuntimeContract, PoolRuntimeError, PreparedStatement, PreparedStatementCache,
     ProtocolPipelinePolicy, QueryClass, QueryFeatures, RealBackend, RealtimeHookConfig,
-    RealtimeHookQueue, RegionReplica, RouteDecision, RouteTarget, SessionSetting,
-    SettingsBucketPolicy, SettingsBucketPoolMap, ShardMapError, TenantAdmissionPolicy,
-    TenantMirrorPolicy, TenantMirrorRule, TenantQuotaTable, TicketKey, TicketKeyRing,
-    TlsSessionTicketPolicy, TokenIntrospectionCachePolicy, VirtualPidTable, PGWIRE_CANCEL_MAGIC,
+    RealtimeHookQueue, RouteDecision, RouteTarget, SessionSetting, SettingsBucketPolicy,
+    SettingsBucketPoolMap, ShardMapError, TenantAdmissionPolicy, TenantMirrorPolicy,
+    TenantQuotaTable, TicketKey, TlsSessionTicketPolicy, TokenIntrospectionCachePolicy,
+    VirtualPidTable, PGWIRE_CANCEL_MAGIC,
 };
 use std::error::Error;
 use std::fmt;
@@ -24,20 +24,27 @@ pub struct PoolExecutionReport {
     pub settings_bucket_assigned: u32,
     pub fast_path_routes: usize,
     pub mirror_sample_percent: u8,
+    pub mirror_rule_count: usize,
+    pub mirror_decision_bucket: u8,
     pub mirrored_canary_routes: usize,
     pub htap_max_staleness_ms: u64,
     pub htap_analytical_routes: usize,
+    pub htap_fail_closed_rejections: usize,
     pub pipeline_max_in_flight: u32,
     pub transaction_pipelining: bool,
     pub pipeline_flushed_batches: u64,
     pub tls_rotation_seconds: u32,
     pub tls_rotation_due: bool,
     pub tls_previous_key_valid: bool,
+    pub tls_previous_key_present: bool,
+    pub tls_key_fingerprint_len: usize,
     pub tenant_burst: u32,
     pub tenant_quota_admitted: usize,
     pub tenant_quota_rejected: usize,
     pub geo_rules: usize,
     pub geo_replica_regions: usize,
+    pub geo_fallback_routes: usize,
+    pub geo_invalid_cidr_rejections: usize,
     pub token_cache_entries: u32,
     pub token_cache_hits: usize,
     pub revoked_token_rejections: usize,
@@ -143,35 +150,31 @@ impl PoolExecutionReport {
             ));
         }
 
-        let mirror_policy = TenantMirrorPolicy {
-            base: contract.mirror.clone(),
-            rules: vec![TenantMirrorRule {
-                tenant_id: "tenant-a".to_string(),
-                query_class: QueryClass::Analytical,
-                sample_percent: 100,
-            }],
-        };
-        let mirrored_canary_routes = match mirror_policy
-            .should_mirror("tenant-a", &QueryClass::Analytical, 42)
-            .map_err(PoolExecutionError::component)?
-        {
+        let mirror_policy = TenantMirrorPolicy::from_rule_specs(
+            contract.mirror.clone(),
+            &["tenant-a:analytical:100"],
+        )
+        .map_err(PoolExecutionError::component)?;
+        let mirror_report = mirror_policy
+            .decision_report("tenant-a", &QueryClass::Analytical, 142)
+            .map_err(PoolExecutionError::component)?;
+        let mirrored_canary_routes = match mirror_report.decision {
             MirrorDecision::Mirror(_) => 1,
             MirrorDecision::Skip => 0,
         };
+        let mirror_rule_count = mirror_policy.rules.len();
+        let mirror_decision_bucket = mirror_report.hash_bucket;
 
-        let htap_decision = crate::classify_htap_query(
-            &contract.htap,
-            &QueryFeatures {
-                is_read_only: true,
-                has_group_by: true,
-                has_aggregate: true,
-                references_analytical_table: true,
-                limit: None,
-            },
+        let htap_features = QueryFeatures::from_contract_flags(
+            "read_only=true,group_by=true,aggregate=true,analytical_table=true,limit=none",
         )
         .map_err(PoolExecutionError::component)?;
-        let htap_analytical_routes =
-            usize::from(matches!(htap_decision, HtapDecision::Analytical { .. }));
+        let htap_report = crate::htap::route_report(&contract.htap, &htap_features)
+            .map_err(PoolExecutionError::component)?;
+        let htap_analytical_routes = usize::from(htap_report.decision.is_analytical());
+        let htap_fail_closed_rejections = usize::from(
+            QueryFeatures::from_contract_flags("read_only=true,unknown=false").is_err(),
+        );
 
         let mut prepared_cache = PreparedStatementCache::default();
         prepared_cache
@@ -219,40 +222,52 @@ impl PoolExecutionReport {
                 .admitted(),
         );
 
-        let mut geo_table = ClosestReplicaTable::default();
-        geo_table
-            .insert(RegionReplica {
-                region: "us-east-1".to_string(),
-                latency_rank: 10,
-                target: RouteTarget {
-                    host: "worker-a".to_string(),
-                    port: 5432,
-                },
-            })
-            .map_err(PoolExecutionError::component)?;
-        let _geo_route = crate::route_for_client(
+        let geo_table = ClosestReplicaTable::from_specs(&[
+            "us-east-1,10,worker-a,5432",
+            "eu-west-1,5,worker-eu,5432",
+        ])
+        .map_err(PoolExecutionError::component)?;
+        let _geo_route = crate::geoip::route_report_for_client(
             &contract.geo_router,
             &geo_table,
             "10.0.0.9".parse().expect("canonical ip"),
             None,
         )
         .map_err(PoolExecutionError::component)?;
-
-        let current_key = TicketKey::from_hex(
-            SAMPLE_TICKET_HEX,
-            now - Duration::from_secs(contract.tls.rotation_seconds as u64 + 1),
+        let geo_fallback_report = crate::geoip::route_report_for_client(
+            &contract.geo_router,
+            &geo_table,
+            "198.51.100.9".parse().expect("canonical ip"),
+            Some("ap-south-1"),
         )
         .map_err(PoolExecutionError::component)?;
-        let mut ticket_ring = TicketKeyRing::new(
-            current_key,
-            Duration::from_secs(contract.tls.rotation_seconds as u64),
+        let geo_fallback_routes = usize::from(geo_fallback_report.fallback_used);
+        let geo_invalid_cidr_rejections = usize::from(
+            GeoRoutingPolicy {
+                default_region: "us-east-1".to_string(),
+                rules: vec![GeoRoutingRule {
+                    cidr: "10.0.0.0/99".to_string(),
+                    region: "us-east-1".to_string(),
+                }],
+            }
+            .validate()
+            .is_err(),
+        );
+
+        let mut ticket_ring = crate::tls::ring_from_policy_at(
+            &contract.tls,
+            SAMPLE_TICKET_HEX,
+            now - Duration::from_secs(contract.tls.rotation_seconds as u64 + 1),
         )
         .map_err(PoolExecutionError::component)?;
         let tls_rotation_due = ticket_ring.rotation_due(now);
         let next_key =
             TicketKey::from_hex(SAMPLE_TICKET_HEX, now).map_err(PoolExecutionError::component)?;
         ticket_ring.rotate(next_key);
-        let tls_previous_key_valid = ticket_ring.validates(now);
+        let tls_report = ticket_ring.rotation_report(now);
+        let tls_previous_key_valid = tls_report.previous_key_accepted;
+        let tls_previous_key_present = tls_report.previous_key_present;
+        let tls_key_fingerprint_len = tls_report.current_key_fingerprint.len();
 
         let virtual_pid_table = VirtualPidTable::new();
         let backend = RealBackend {
@@ -318,20 +333,27 @@ impl PoolExecutionReport {
             settings_bucket_assigned: settings_entry.assigned,
             fast_path_routes,
             mirror_sample_percent: contract.mirror.sample_percent,
+            mirror_rule_count,
+            mirror_decision_bucket,
             mirrored_canary_routes,
             htap_max_staleness_ms: contract.htap.max_staleness_ms,
             htap_analytical_routes,
+            htap_fail_closed_rejections,
             pipeline_max_in_flight: contract.pipeline.max_in_flight,
             transaction_pipelining: contract.pipeline.transaction_pipelining,
             pipeline_flushed_batches: pipeline.flushed_batches(),
             tls_rotation_seconds: contract.tls.rotation_seconds,
             tls_rotation_due,
             tls_previous_key_valid,
+            tls_previous_key_present,
+            tls_key_fingerprint_len,
             tenant_burst: contract.tenant_quota.burst,
             tenant_quota_admitted,
             tenant_quota_rejected,
             geo_rules: contract.geo_router.rules.len(),
             geo_replica_regions: geo_table.region_count(),
+            geo_fallback_routes,
+            geo_invalid_cidr_rejections,
             token_cache_entries: contract.token_cache.max_entries,
             token_cache_hits,
             revoked_token_rejections,
@@ -351,7 +373,7 @@ impl PoolExecutionReport {
     }
 
     pub fn tsv_header() -> &'static str {
-        "tracked_gucs\tsettings_bucket_max_connections\tsettings_bucket_count\tsettings_bucket_assigned\tfast_path_routes\tmirror_sample_percent\tmirrored_canary_routes\thtap_max_staleness_ms\thtap_analytical_routes\tpipeline_max_in_flight\ttransaction_pipelining\tpipeline_flushed_batches\ttls_rotation_seconds\ttls_rotation_due\ttls_previous_key_valid\ttenant_burst\ttenant_quota_admitted\ttenant_quota_rejected\tgeo_rules\tgeo_replica_regions\ttoken_cache_entries\ttoken_cache_hits\trevoked_token_rejections\tplan_cache_entries_before_invalidation\tinvalidated_plans\tsingle_shard_generation\tplacement_changed_shards\tprepared_cache_entries\tprepared_invalidated\tvirtual_pid_entries\tvirtual_cancel_rewrites\trealtime_events_enqueued\trealtime_events_drained\tadmin_generation\tadmin_kills"
+        "tracked_gucs\tsettings_bucket_max_connections\tsettings_bucket_count\tsettings_bucket_assigned\tfast_path_routes\tmirror_sample_percent\tmirror_rule_count\tmirror_decision_bucket\tmirrored_canary_routes\thtap_max_staleness_ms\thtap_analytical_routes\thtap_fail_closed_rejections\tpipeline_max_in_flight\ttransaction_pipelining\tpipeline_flushed_batches\ttls_rotation_seconds\ttls_rotation_due\ttls_previous_key_valid\ttls_previous_key_present\ttls_key_fingerprint_len\ttenant_burst\ttenant_quota_admitted\ttenant_quota_rejected\tgeo_rules\tgeo_replica_regions\tgeo_fallback_routes\tgeo_invalid_cidr_rejections\ttoken_cache_entries\ttoken_cache_hits\trevoked_token_rejections\tplan_cache_entries_before_invalidation\tinvalidated_plans\tsingle_shard_generation\tplacement_changed_shards\tprepared_cache_entries\tprepared_invalidated\tvirtual_pid_entries\tvirtual_cancel_rewrites\trealtime_events_enqueued\trealtime_events_drained\tadmin_generation\tadmin_kills"
     }
 
     pub fn tsv_row(&self) -> String {
@@ -362,20 +384,27 @@ impl PoolExecutionReport {
             self.settings_bucket_assigned.to_string(),
             self.fast_path_routes.to_string(),
             self.mirror_sample_percent.to_string(),
+            self.mirror_rule_count.to_string(),
+            self.mirror_decision_bucket.to_string(),
             self.mirrored_canary_routes.to_string(),
             self.htap_max_staleness_ms.to_string(),
             self.htap_analytical_routes.to_string(),
+            self.htap_fail_closed_rejections.to_string(),
             self.pipeline_max_in_flight.to_string(),
             self.transaction_pipelining.to_string(),
             self.pipeline_flushed_batches.to_string(),
             self.tls_rotation_seconds.to_string(),
             self.tls_rotation_due.to_string(),
             self.tls_previous_key_valid.to_string(),
+            self.tls_previous_key_present.to_string(),
+            self.tls_key_fingerprint_len.to_string(),
             self.tenant_burst.to_string(),
             self.tenant_quota_admitted.to_string(),
             self.tenant_quota_rejected.to_string(),
             self.geo_rules.to_string(),
             self.geo_replica_regions.to_string(),
+            self.geo_fallback_routes.to_string(),
+            self.geo_invalid_cidr_rejections.to_string(),
             self.token_cache_entries.to_string(),
             self.token_cache_hits.to_string(),
             self.revoked_token_rejections.to_string(),
@@ -508,20 +537,27 @@ mod tests {
                 settings_bucket_assigned: 1,
                 fast_path_routes: 1,
                 mirror_sample_percent: 5,
+                mirror_rule_count: 1,
+                mirror_decision_bucket: 42,
                 mirrored_canary_routes: 1,
                 htap_max_staleness_ms: 2_000,
                 htap_analytical_routes: 1,
+                htap_fail_closed_rejections: 1,
                 pipeline_max_in_flight: 32,
                 transaction_pipelining: true,
                 pipeline_flushed_batches: 1,
                 tls_rotation_seconds: 3_600,
                 tls_rotation_due: true,
                 tls_previous_key_valid: true,
+                tls_previous_key_present: true,
+                tls_key_fingerprint_len: 16,
                 tenant_burst: 1_000,
                 tenant_quota_admitted: 1,
                 tenant_quota_rejected: 1,
                 geo_rules: 1,
-                geo_replica_regions: 1,
+                geo_replica_regions: 2,
+                geo_fallback_routes: 1,
+                geo_invalid_cidr_rejections: 1,
                 token_cache_entries: 10_000,
                 token_cache_hits: 1,
                 revoked_token_rejections: 1,
@@ -539,7 +575,7 @@ mod tests {
                 admin_kills: 1,
             }
         );
-        assert_eq!(PoolExecutionReport::tsv_header().split('\t').count(), 35);
-        assert_eq!(report.tsv_row().split('\t').count(), 35);
+        assert_eq!(PoolExecutionReport::tsv_header().split('\t').count(), 42);
+        assert_eq!(report.tsv_row().split('\t').count(), 42);
     }
 }

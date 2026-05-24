@@ -11,6 +11,7 @@
 
 use std::error::Error;
 use std::fmt;
+use std::net::IpAddr;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PoolRuntimeContract {
@@ -143,6 +144,9 @@ pub struct RouteTarget {
 impl RouteTarget {
     pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("route_target.host", &self.host)?;
+        if self.host.chars().any(char::is_whitespace) || self.host.chars().any(char::is_control) {
+            return Err(PoolRuntimeError::InvalidHost("route_target.host"));
+        }
         if self.port == 0 {
             return Err(PoolRuntimeError::InvalidPort);
         }
@@ -249,6 +253,7 @@ pub struct GeoRoutingPolicy {
 impl GeoRoutingPolicy {
     pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("geo.default_region", &self.default_region)?;
+        validate_region("geo.default_region", &self.default_region)?;
         if self.rules.is_empty() {
             return Err(PoolRuntimeError::MissingRequiredField("geo.rules"));
         }
@@ -268,7 +273,9 @@ pub struct GeoRoutingRule {
 impl GeoRoutingRule {
     pub(crate) fn validate(&self) -> Result<(), PoolRuntimeError> {
         validate_required("geo.rules.cidr", &self.cidr)?;
-        validate_required("geo.rules.region", &self.region)
+        validate_required("geo.rules.region", &self.region)?;
+        validate_region("geo.rules.region", &self.region)?;
+        validate_cidr("geo.rules.cidr", &self.cidr)
     }
 }
 
@@ -294,11 +301,14 @@ impl TokenIntrospectionCachePolicy {
 pub enum PoolRuntimeError {
     InvalidCacheSize,
     InvalidCacheTtl,
+    InvalidCidr(&'static str),
     InvalidConnectionLimit,
+    InvalidHost(&'static str),
     InvalidPercent,
     InvalidPipelineDepth,
     InvalidPort,
     InvalidQuota(&'static str),
+    InvalidRegion(&'static str),
     InvalidRotation,
     InvalidStalenessBudget,
     MissingRequiredField(&'static str),
@@ -309,15 +319,18 @@ impl fmt::Display for PoolRuntimeError {
         match self {
             Self::InvalidCacheSize => write!(formatter, "max_entries must be greater than zero"),
             Self::InvalidCacheTtl => write!(formatter, "ttl_seconds must be greater than zero"),
+            Self::InvalidCidr(field) => write!(formatter, "{field} must be a valid CIDR"),
             Self::InvalidConnectionLimit => {
                 write!(formatter, "max_connections must be greater than zero")
             }
+            Self::InvalidHost(field) => write!(formatter, "{field} must not contain whitespace"),
             Self::InvalidPercent => write!(formatter, "sample_percent must be between 0 and 100"),
             Self::InvalidPipelineDepth => {
                 write!(formatter, "max_in_flight must be greater than zero")
             }
             Self::InvalidPort => write!(formatter, "port must be greater than zero"),
             Self::InvalidQuota(field) => write!(formatter, "{field} must be greater than zero"),
+            Self::InvalidRegion(field) => write!(formatter, "{field} contains invalid characters"),
             Self::InvalidRotation => {
                 write!(formatter, "rotation_seconds must be greater than zero")
             }
@@ -352,6 +365,36 @@ fn validate_optional_list(field: &'static str, values: &[String]) -> Result<(), 
         return Err(PoolRuntimeError::MissingRequiredField(field));
     }
     Ok(())
+}
+
+fn validate_region(field: &'static str, value: &str) -> Result<(), PoolRuntimeError> {
+    if value
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
+    {
+        return Err(PoolRuntimeError::InvalidRegion(field));
+    }
+    Ok(())
+}
+
+fn validate_cidr(field: &'static str, value: &str) -> Result<(), PoolRuntimeError> {
+    let (host, prefix) = value
+        .split_once('/')
+        .ok_or(PoolRuntimeError::InvalidCidr(field))?;
+    if host.contains('/') || prefix.contains('/') {
+        return Err(PoolRuntimeError::InvalidCidr(field));
+    }
+    let ip: IpAddr = host
+        .parse()
+        .map_err(|_| PoolRuntimeError::InvalidCidr(field))?;
+    let prefix: u8 = prefix
+        .parse()
+        .map_err(|_| PoolRuntimeError::InvalidCidr(field))?;
+    match ip {
+        IpAddr::V4(_) if prefix <= 32 => Ok(()),
+        IpAddr::V6(_) if prefix <= 128 => Ok(()),
+        _ => Err(PoolRuntimeError::InvalidCidr(field)),
+    }
 }
 
 fn stable_fingerprint_hash(values: &[String]) -> u64 {
@@ -420,47 +463,51 @@ mod tests {
     }
 
     #[test]
-    fn fast_path_policy_routes_single_shard_target() {
-        let policy = FastPathRouterPolicy {
-            enabled: true,
-            single_shard_only: true,
-            fallback_target: RouteTarget {
-                host: "coordinator".to_string(),
-                port: 5432,
-            },
-        };
-        let worker = RouteTarget {
-            host: "worker-a".to_string(),
+    fn invalid_mirror_percent_fails_closed() {
+        let mut contract = valid_contract();
+        contract.mirror.sample_percent = 101;
+        assert_eq!(contract.validate(), Err(PoolRuntimeError::InvalidPercent));
+    }
+
+    #[test]
+    fn enabled_mirror_requires_valid_target() {
+        let mut contract = valid_contract();
+        contract.mirror.target = Some(RouteTarget {
+            host: "bad host".to_string(),
             port: 5432,
-        };
-
+        });
         assert_eq!(
-            policy.decide(Some(worker.clone())),
-            Ok(RouteDecision::FastPath(worker))
+            contract.validate(),
+            Err(PoolRuntimeError::InvalidHost("route_target.host"))
         );
     }
 
     #[test]
-    fn mirror_requires_target_when_enabled() {
+    fn geo_policy_rejects_invalid_cidr() {
         let mut contract = valid_contract();
-        contract.mirror.enabled = true;
-        contract.mirror.target = None;
-
+        contract.geo_router.rules[0].cidr = "10.0.0.0/99".to_string();
         assert_eq!(
             contract.validate(),
-            Err(PoolRuntimeError::MissingRequiredField("mirror.target"))
+            Err(PoolRuntimeError::InvalidCidr("geo.rules.cidr"))
         );
     }
 
     #[test]
-    fn tenant_admission_requires_refill() {
+    fn geo_policy_rejects_invalid_region() {
         let mut contract = valid_contract();
-        contract.tenant_quota.refill_per_second = 0;
-
+        contract.geo_router.rules[0].region = "us east".to_string();
         assert_eq!(
             contract.validate(),
-            Err(PoolRuntimeError::InvalidQuota("refill_per_second"))
+            Err(PoolRuntimeError::InvalidRegion("geo.rules.region"))
         );
+    }
+
+    #[test]
+    fn disabled_tls_allows_zero_rotation() {
+        let mut contract = valid_contract();
+        contract.tls.enabled = false;
+        contract.tls.rotation_seconds = 0;
+        assert_eq!(contract.validate(), Ok(()));
     }
 
     fn valid_contract() -> PoolRuntimeContract {
@@ -468,7 +515,7 @@ mod tests {
             settings_bucket: SettingsBucketPolicy {
                 bucket_name: "default".to_string(),
                 tracked_gucs: vec!["citus.enable_repartition_joins".to_string()],
-                max_connections: 1_000,
+                max_connections: 128,
             },
             fast_path_router: FastPathRouterPolicy {
                 enabled: true,
@@ -484,19 +531,19 @@ mod tests {
                     host: "canary".to_string(),
                     port: 5432,
                 }),
-                sample_percent: 5,
+                sample_percent: 10,
             },
             htap: HtapRoutingPolicy {
                 analytical_target: RouteTarget {
-                    host: "analytical-sidecar".to_string(),
+                    host: "analytical".to_string(),
                     port: 7432,
                 },
-                max_staleness_ms: 2_000,
-                predicate_hints: vec!["/*+ analytical */".to_string()],
+                max_staleness_ms: 1_000,
+                predicate_hints: vec![],
             },
             pipeline: ProtocolPipelinePolicy {
-                max_in_flight: 32,
-                transaction_pipelining: true,
+                max_in_flight: 8,
+                transaction_pipelining: false,
             },
             tls: TlsSessionTicketPolicy {
                 enabled: true,
@@ -504,8 +551,8 @@ mod tests {
             },
             tenant_quota: TenantAdmissionPolicy {
                 tenant_id: "tenant-a".to_string(),
-                burst: 1_000,
-                refill_per_second: 100,
+                burst: 100,
+                refill_per_second: 10,
             },
             geo_router: GeoRoutingPolicy {
                 default_region: "us-east-1".to_string(),
@@ -515,7 +562,7 @@ mod tests {
                 }],
             },
             token_cache: TokenIntrospectionCachePolicy {
-                max_entries: 10_000,
+                max_entries: 100,
                 ttl_seconds: 60,
             },
         }

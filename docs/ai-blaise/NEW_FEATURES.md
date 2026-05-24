@@ -425,13 +425,27 @@ does not ship a Toolkit-specific two-step aggregate bridge.
 ### T9: Mirroring For Canary Traffic
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/mirror.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds deterministic per-tenant and per-query-class canary
 mirroring with target and sample-percentage policy.
+
+**Current production-ready boundary**: `TenantMirrorPolicy` now has a
+fail-closed `tenant:query-class:sample-percent` parser, duplicate-rule
+detection, query-class validation, tenant-id validation, deterministic hash
+bucket reporting, and non-secret route evidence in the pool canonical report.
+This proves the bounded routing/security contract only; live production traffic
+fan-out, canary backend execution, response comparison, and rollout control
+remain alpha until proven by a data-plane canary smoke.
+
+Production evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
+`cargo run -p ai_blaise_citus_pool -- run-canonical`, and
+`ci/ai-blaise/pool-routing-security-smoke.sh` assert the fail-closed parser and
+route report columns (`mirror_rule_count`, `mirror_decision_bucket`, and
+`mirrored_canary_routes`).
 
 **Motivation**: Planner, pool, and sidecar changes need low-risk A/B traffic
 before they become default paths.
@@ -444,11 +458,12 @@ before they become default paths.
 - In-source: `FEATURE: T9` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T9` in `pool/src/mirror.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-routing-security-smoke.sh`
 
 ### T12: Pool HTAP Routing
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/htap.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -456,6 +471,19 @@ before they become default paths.
 **Summary**: Defines HTAP routing policy and a conservative query-feature
 classifier from the pool to the analytical sidecar with staleness budget and
 predicate hints.
+
+**Current production-ready boundary**: `QueryFeatures::from_contract_flags`
+parses the compact pool feature report fail-closed, rejecting unknown keys,
+duplicates, malformed booleans, and malformed limits. `route_report` exposes
+bounded target, staleness, hint-count, and reason evidence for the conservative
+classifier. This does not claim live SQL parsing in the pool hot path,
+analytical sidecar execution, freshness enforcement, or query-result routing.
+
+Production evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
+`cargo run -p ai_blaise_citus_pool -- run-canonical`, and
+`ci/ai-blaise/pool-routing-security-smoke.sh` assert analytical-route evidence
+and fail-closed parser rejection through `htap_analytical_routes` and
+`htap_fail_closed_rejections`.
 
 **Motivation**: Hot/warm/cold query routing needs a single contract before the
 pool starts classifying real SQL.
@@ -468,6 +496,7 @@ pool starts classifying real SQL.
 - In-source: `FEATURE: T12` in `pool/src/runtime.rs`
 - In-source: `FEATURE: T12` in `pool/src/htap.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-routing-security-smoke.sh`
 
 ### T15: Transaction Pipelining In Pool
 
@@ -1897,13 +1926,26 @@ cold shard layers.
 ### R10: TLS Session Ticket Reuse In Pool
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/tls.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the pool TLS session-ticket reuse and rotation contract
 with a current/previous key ring boundary.
+
+**Current production-ready boundary**: `TicketKey::from_hex` validates 32-byte
+hex material fail-closed, `TicketKeyRing` tracks current/previous acceptance and
+rotation due state, and `TicketRotationReport` exposes only a redacted
+fingerprint length plus boolean evidence. This does not claim rustls listener
+integration, mounted Kubernetes Secret loading, external TLS infrastructure,
+client session resumption traffic, or certificate rotation.
+
+Production evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
+`cargo run -p ai_blaise_citus_pool -- run-canonical`, and
+`ci/ai-blaise/pool-routing-security-smoke.sh` assert rotation due,
+previous-key validity, previous-key presence, and non-secret fingerprint-length
+columns.
 
 **Motivation**: Connection churn should not pay full TLS handshakes when
 rotation and reuse can be controlled explicitly.
@@ -1917,6 +1959,7 @@ contract.
 - In-source: `FEATURE: R10` in `pool/src/runtime.rs`
 - In-source: `FEATURE: R10` in `pool/src/tls.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-routing-security-smoke.sh`
 
 ## Change Data And Branching
 
@@ -2797,13 +2840,25 @@ manage them as region objects.
 ### MR5: Pool GeoIP Routing
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/geoip.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the pool region-routing contract from CIDR/GeoIP region
 resolution to nearest preferred replicas.
+
+**Current production-ready boundary**: `GeoRoutingPolicy` now validates CIDR
+syntax and region names fail-closed, `ClosestReplicaTable::from_specs` validates
+replica rows, and `route_report_for_client` records requested region, selected
+region, and default-region fallback evidence. This does not claim managed
+MaxMind DB loading, Region-CR synchronization, hot-swap reloads, live read
+routing, or edge-replica traffic.
+
+Production evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
+`cargo run -p ai_blaise_citus_pool -- run-canonical`, and
+`ci/ai-blaise/pool-routing-security-smoke.sh` assert replica-region count,
+default fallback, and invalid-CIDR rejection columns.
 
 **Motivation**: Multi-region reads need a pool-side routing contract before
 GeoIP and edge-replica behavior can be enforced.
@@ -2816,6 +2871,7 @@ GeoIP and edge-replica behavior can be enforced.
 - In-source: `FEATURE: MR5` in `pool/src/runtime.rs`
 - In-source: `FEATURE: MR5` in `pool/src/geoip.rs`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
+- CI: `ci/ai-blaise/pool-routing-security-smoke.sh`
 
 ### MR8: Leader Pinning Per Region
 

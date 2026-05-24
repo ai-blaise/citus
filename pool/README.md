@@ -59,11 +59,11 @@ Current implemented surface:
 - `SettingsBucketPoolMap` and opaque settings fingerprints
 - `PlacementSubscriber`, `ShardMap`, `PlanCache`, and `PreparedStatementCache`
 - `ExtendedPipelineBuffer` for extended-query protocol batching
-- `TenantMirrorPolicy` and HTAP `QueryFeatures` classifier
+- `TenantMirrorPolicy` fail-closed parser/report and HTAP `QueryFeatures` parser/classifier
 - `AuthVerificationCache`, live auth-sidecar introspection, startup-token
   stripping, and verified-claim revocation handling
-- `ClosestReplicaTable` GeoIP routing boundary
-- `TicketKeyRing` TLS ticket rotation boundary
+- `ClosestReplicaTable` GeoIP routing parser/report boundary
+- `TicketKeyRing` TLS ticket rotation report boundary with redacted fingerprints
 - `TenantQuotaTable` token-bucket admission
 - `VirtualPidTable` cancel-request rewrite support
 - `RealtimeHookQueue` CDC-to-realtime framing
@@ -78,6 +78,10 @@ selection.
 `FEATURE: Sec12`, `FEATURE: Auth3`, and `FEATURE: MR5`.
 `cargo run -p ai_blaise_citus_pool -- run-canonical` emits the deterministic
 execution summary for the pool runtime and shard-map contracts used by CI.
+`ci/ai-blaise/pool-routing-security-smoke.sh` runs that real binary path and
+asserts the T9/T12/MR5/R10 routing/security evidence columns without claiming
+live canary mirroring, managed GeoIP, rustls integration, or analytical query
+execution.
 `ci/ai-blaise/pool-proxy-smoke.sh` starts PostgreSQL, runs `serve`, sends SQL
 through the pool listener, proves CIDR-allowed and CIDR-denied data-port
 traffic, exercises active-connection overload, tenant-quota fail-closed denial,

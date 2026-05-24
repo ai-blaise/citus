@@ -2,13 +2,10 @@
 
 //! GeoIP routing.
 //!
-//! On incoming connection the pool resolves the client IP to a country/region
-//! via maxminddb and consults a `closest_replica` lookup table (populated by
-//! the Region CR) to pick the nearest read replica.
-//!
-//! This module owns the lookup-table model + decision logic. The maxminddb
-//! database load is performed by the proxy hot path so the database file
-//! handle can be hot-swapped on SIGHUP.
+//! This module owns fail-closed CIDR/replica-table parsing and deterministic
+//! route reports for the pool-side GeoIP boundary. Managed GeoIP database
+//! loading, Region-CR synchronization, hot swapping, and live read routing are
+//! outside this bounded contract until proven by separate data-plane evidence.
 
 use crate::{GeoRoutingPolicy, GeoRoutingRule, PoolRuntimeError, RouteTarget};
 use std::collections::BTreeMap;
@@ -29,8 +26,12 @@ impl RegionReplica {
         if self.region.trim().is_empty() {
             return Err(GeoIpError::MissingField("region"));
         }
+        validate_region(&self.region)?;
         if self.target.host.trim().is_empty() {
             return Err(GeoIpError::MissingField("target.host"));
+        }
+        if self.target.host.chars().any(char::is_whitespace) {
+            return Err(GeoIpError::InvalidHost(self.target.host.clone()));
         }
         if self.target.port == 0 {
             return Err(GeoIpError::InvalidPort);
@@ -47,6 +48,14 @@ pub struct ClosestReplicaTable {
 }
 
 impl ClosestReplicaTable {
+    pub fn from_specs(specs: &[&str]) -> Result<Self, GeoIpError> {
+        let mut table = Self::default();
+        for spec in specs {
+            table.insert(parse_replica_spec(spec)?)?;
+        }
+        Ok(table)
+    }
+
     pub fn insert(&mut self, replica: RegionReplica) -> Result<(), GeoIpError> {
         replica.validate()?;
         let entries = self.replicas.entry(replica.region.clone()).or_default();
@@ -67,28 +76,56 @@ impl ClosestReplicaTable {
 }
 
 /// Decide the route for `client_ip` given the policy + lookup table.
-///
-/// Implements a tiny CIDR contains check for the policy's static rules; the
-/// MaxMind lookup is fed in via `resolved_region` so this module remains pure.
 pub fn route_for_client(
     policy: &GeoRoutingPolicy,
     table: &ClosestReplicaTable,
     client_ip: IpAddr,
     resolved_region: Option<&str>,
 ) -> Result<RegionReplica, GeoIpError> {
-    policy.validate().map_err(GeoIpError::Runtime)?;
+    route_report_for_client(policy, table, client_ip, resolved_region).map(|report| report.replica)
+}
 
-    let region = resolved_region
+pub fn route_report_for_client(
+    policy: &GeoRoutingPolicy,
+    table: &ClosestReplicaTable,
+    client_ip: IpAddr,
+    resolved_region: Option<&str>,
+) -> Result<GeoRouteReport, GeoIpError> {
+    policy.validate().map_err(GeoIpError::Runtime)?;
+    if let Some(region) = resolved_region {
+        if region.trim().is_empty() {
+            return Err(GeoIpError::MissingField("resolved_region"));
+        }
+        validate_region(region)?;
+    }
+
+    let requested_region = resolved_region
         .map(str::to_string)
         .unwrap_or_else(|| resolve_region_via_rules(policy, client_ip));
-
-    match table.closest_for_region(&region) {
-        Some(replica) => Ok(replica.clone()),
+    let (replica, fallback_used) = match table.closest_for_region(&requested_region) {
+        Some(replica) => (replica.clone(), false),
         None => match table.closest_for_region(&policy.default_region) {
-            Some(replica) => Ok(replica.clone()),
-            None => Err(GeoIpError::NoReplicaForRegion(region)),
+            Some(replica) => (replica.clone(), true),
+            None => return Err(GeoIpError::NoReplicaForRegion(requested_region)),
         },
-    }
+    };
+
+    Ok(GeoRouteReport {
+        client_ip,
+        requested_region,
+        selected_region: replica.region.clone(),
+        fallback_used,
+        replica,
+    })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct GeoRouteReport {
+    pub client_ip: IpAddr,
+    pub requested_region: String,
+    pub selected_region: String,
+    pub fallback_used: bool,
+    pub replica: RegionReplica,
 }
 
 fn resolve_region_via_rules(policy: &GeoRoutingPolicy, client_ip: IpAddr) -> String {
@@ -106,13 +143,41 @@ fn resolve_region_via_rules(policy: &GeoRoutingPolicy, client_ip: IpAddr) -> Str
     policy.default_region.clone()
 }
 
+fn parse_replica_spec(spec: &str) -> Result<RegionReplica, GeoIpError> {
+    let parts = spec.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return Err(GeoIpError::InvalidReplicaSpec(spec.to_string()));
+    }
+    let latency_rank = parts[1]
+        .parse::<u32>()
+        .map_err(|_| GeoIpError::InvalidReplicaSpec(spec.to_string()))?;
+    let port = parts[3]
+        .parse::<u16>()
+        .map_err(|_| GeoIpError::InvalidReplicaSpec(spec.to_string()))?;
+    let replica = RegionReplica {
+        region: parts[0].to_string(),
+        latency_rank,
+        target: RouteTarget {
+            host: parts[2].to_string(),
+            port,
+        },
+    };
+    replica.validate()?;
+    Ok(replica)
+}
+
 fn parse_cidr(value: &str) -> Option<(IpAddr, u8)> {
-    let mut parts = value.split('/');
-    let host = parts.next()?;
-    let prefix = parts.next()?;
+    let (host, prefix) = value.split_once('/')?;
+    if host.contains('/') || prefix.contains('/') {
+        return None;
+    }
     let ip: IpAddr = host.parse().ok()?;
     let prefix: u8 = prefix.parse().ok()?;
-    Some((ip, prefix))
+    match ip {
+        IpAddr::V4(_) if prefix <= 32 => Some((ip, prefix)),
+        IpAddr::V6(_) if prefix <= 128 => Some((ip, prefix)),
+        _ => None,
+    }
 }
 
 fn cidr_contains(network: IpAddr, candidate: IpAddr, prefix: u8) -> bool {
@@ -147,6 +212,16 @@ fn v6_contains(network: Ipv6Addr, candidate: Ipv6Addr, prefix: u8) -> bool {
     (u128::from(network) & mask) == (u128::from(candidate) & mask)
 }
 
+fn validate_region(region: &str) -> Result<(), GeoIpError> {
+    if region
+        .chars()
+        .any(|ch| !(ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')))
+    {
+        return Err(GeoIpError::InvalidRegion(region.to_string()));
+    }
+    Ok(())
+}
+
 /// Helper to build a single-rule policy in tests.
 pub fn policy_with_default(
     default_region: impl Into<String>,
@@ -160,7 +235,10 @@ pub fn policy_with_default(
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum GeoIpError {
+    InvalidHost(String),
     InvalidPort,
+    InvalidRegion(String),
+    InvalidReplicaSpec(String),
     MissingField(&'static str),
     NoReplicaForRegion(String),
     Runtime(PoolRuntimeError),
@@ -169,7 +247,13 @@ pub enum GeoIpError {
 impl fmt::Display for GeoIpError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidHost(host) => write!(formatter, "invalid replica host {host}"),
             Self::InvalidPort => write!(formatter, "target.port must be greater than zero"),
+            Self::InvalidRegion(region) => write!(formatter, "invalid region {region}"),
+            Self::InvalidReplicaSpec(spec) => write!(
+                formatter,
+                "replica spec {spec} must use region,latency_rank,host,port"
+            ),
             Self::MissingField(field) => write!(formatter, "{field} must not be empty"),
             Self::NoReplicaForRegion(region) => {
                 write!(formatter, "no replica for region {region}")
@@ -269,9 +353,32 @@ mod tests {
                 region: "us-east-1".to_string(),
             }],
         );
-        let replica =
-            route_for_client(&policy, &table, "8.8.8.8".parse().unwrap(), None).expect("route");
-        assert_eq!(replica.target.host, "us-replica");
+        let report = route_report_for_client(&policy, &table, "8.8.8.8".parse().unwrap(), None)
+            .expect("route");
+        assert_eq!(report.replica.target.host, "us-replica");
+        assert!(!report.fallback_used);
+    }
+
+    #[test]
+    fn resolved_unknown_region_falls_back_to_default() {
+        let table =
+            ClosestReplicaTable::from_specs(&["us-east-1,1,us-replica,5432"]).expect("table");
+        let policy = policy_with_default(
+            "us-east-1",
+            vec![GeoRoutingRule {
+                cidr: "10.0.0.0/8".to_string(),
+                region: "us-east-1".to_string(),
+            }],
+        );
+        let report = route_report_for_client(
+            &policy,
+            &table,
+            "198.51.100.9".parse().unwrap(),
+            Some("ap-south-1"),
+        )
+        .expect("route");
+        assert!(report.fallback_used);
+        assert_eq!(report.selected_region, "us-east-1");
     }
 
     #[test]
@@ -287,5 +394,23 @@ mod tests {
         let err = route_for_client(&policy, &table, "10.0.0.1".parse().unwrap(), None)
             .expect_err("route");
         assert!(matches!(err, GeoIpError::NoReplicaForRegion(_)));
+    }
+
+    #[test]
+    fn replica_specs_fail_closed() {
+        let table = ClosestReplicaTable::from_specs(&[
+            "us-east-1,10,us-replica,5432",
+            "eu-west-1,5,eu-replica,5432",
+        ])
+        .expect("table");
+        assert_eq!(table.region_count(), 2);
+        assert!(matches!(
+            ClosestReplicaTable::from_specs(&["us-east-1,bad,host,5432"]),
+            Err(GeoIpError::InvalidReplicaSpec(_))
+        ));
+        assert!(matches!(
+            ClosestReplicaTable::from_specs(&["us east,1,host,5432"]),
+            Err(GeoIpError::InvalidRegion(_))
+        ));
     }
 }

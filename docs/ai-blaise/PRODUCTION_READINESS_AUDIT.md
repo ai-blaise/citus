@@ -409,6 +409,14 @@ more production-ready than the artifacts justified.
   real pool `serve` data port, sends two simple-query frames without waiting
   for the first result, verifies ordered rows from a `postgres:17` backend, and
   keeps the broader shard-aware and `FEATURE: T7` pipeline contract alpha.
+
+- The pool routing/security canonical smoke now covers bounded production-ready
+  contracts for T9/T12/MR5/R10: fail-closed mirror rule parsing and deterministic
+  sampling reports, fail-closed HTAP feature-report parsing, fail-closed GeoIP
+  CIDR/replica-table parsing with fallback reports, and TLS ticket rotation
+  reports with redacted fingerprints. This is not evidence for live canary
+  mirroring, managed GeoIP databases, rustls listener/session-resumption
+  traffic, analytical sidecar query execution, or Kubernetes traffic.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
