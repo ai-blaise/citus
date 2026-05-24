@@ -8,7 +8,7 @@ use crate::{
     LocalPlacementCheck, MigrationDataInvariant, MigrationOperation, MigrationPlan, PlanFreezePlan,
     PlanPromotionPolicy, PlanRegressionPolicy, PlanRegressionSample, RerankerPlan,
     SearchColumnPlan, SearchIndexDistributedPlan, SessionClaims, ShardForValuePlan,
-    ShardRoutingStrategy, TenantArchivePlan, TenantMovePlan, TenantRlsPolicyPlan,
+    ShardRoutingStrategy, TenantArchivePlan, TenantMovePlan, TenantQuotaPlan, TenantRlsPolicyPlan,
     ToolkitAggregateKind, ToolkitDistributedPlan, ValidationTiming, VectorDestinationPlan,
     VectorProvider, VectorizerDefinition, VectorizerSchedule, WebhookEvent, WebhookHeader,
     WebhookRegistrationPlan,
