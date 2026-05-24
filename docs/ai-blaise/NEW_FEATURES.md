@@ -158,7 +158,7 @@ fan-out for those features, covering active connections, filtered subscribers,
 frame sizing, delivered message counts, and presence snapshot accounting.
 `sidecar/repack/src/lib.rs` validates online repack command planning and
 per-shard targets for `FEATURE: R7`.
-`sidecar/repack/src/main.rs` emits the canonical online repack command runner
+`sidecar/repack/src/main.rs` emits canonical and live online repack runners
 for `FEATURE: R7`.
 `sidecar/schema_job/src/lib.rs` validates online-DDL worker leases, backfill,
 safety, gh-ost shadow-table contracts, and fail-closed manifest/apply SQL
@@ -2070,15 +2070,16 @@ movement.
 ### R7: REPACK CONCURRENTLY Adoption
 
 **Overlay**: `operator/src/crds/scheduled_repack.rs`, `sidecar/shared/src/contracts.rs`, `sidecar/repack`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: `pg_repack`
 
 **Summary**: Defines the scheduled repack policy surface for online shard-table
-maintenance. The implemented alpha boundary validates deterministic repack plans
-and emits a dry-run strategy-selection report that fails closed unless the
-chosen `pg_repack` or PostgreSQL 19 `REPACK CONCURRENTLY` capability is declared.
+maintenance. The implemented production path validates deterministic repack
+plans, fails closed unless the selected capability is available, and executes
+the real `pg_repack` binary through the repack sidecar when a database URL is
+provided.
 
 **Motivation**: Repack cadence and target tables need to be auditable and
 reconciled rather than run as one-off maintenance commands.
@@ -2086,10 +2087,28 @@ reconciled rather than run as one-off maintenance commands.
 **Citus comparison**: Vanilla Citus can use external maintenance tooling but
 does not provide a scheduled repack CRD.
 
-**Current boundary**: `sidecar/repack` reports `dry_run=true`, `executed=false`,
-and `evidence_boundary=dry-run-plan-only`; this is audit/test hardening, not
-production evidence for live `pg_repack`, live PostgreSQL 19
-`REPACK CONCURRENTLY`, or Kubernetes-scheduled repack execution.
+**Current boundary**: `run-canonical` remains a deterministic dry-run contract
+with `evidence_boundary=dry-run-plan-only`, while `run-live-pg-repack` invokes
+the real `pg_repack` binary and reports
+`dry_run=false`, `executed=true`, and
+`evidence_boundary=live-pg-repack-execution`. `REQUIRE_DOCKER=1`
+`ci/ai-blaise/sidecar-repack-smoke.sh` verifies that path against PostgreSQL 17
+with the packaged `postgresql-17-repack` extension. This is production-ready for
+a sidecar-owned live `pg_repack` invocation against a single local PostgreSQL
+target and existing operator plan rendering. It is not production evidence for
+PostgreSQL 19 `REPACK CONCURRENTLY`, Kubernetes-scheduled repack execution, or
+Citus shard fanout across workers.
+
+Production evidence: `cargo test -p ai_blaise_citus_sidecar_repack --all-targets`
+covers fail-closed request validation and DSN redaction;
+`bash ci/ai-blaise/sidecar-repack-smoke.sh` preserves the deterministic
+`evidence_boundary=dry-run-plan-only` contract; and
+`REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-repack-smoke.sh` builds the sidecar
+into a PostgreSQL 17 container with `postgresql-17-repack`, installs
+`pg_repack`, executes the real `pg_repack` command through
+`run-live-pg-repack`, and asserts `dry_run=false`, `executed=true`,
+`evidence_boundary=live-pg-repack-execution`, row count, and extension presence
+after execution.
 
 **References**:
 
@@ -2099,8 +2118,11 @@ production evidence for live `pg_repack`, live PostgreSQL 19
 - In-source: `FEATURE: R7` in `operator/src/controllers/scheduled_repack.rs`
 - In-source: `FEATURE: R7` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: R7` in `sidecar/repack/src/lib.rs`
+- In-source: `FEATURE: R7` in `sidecar/repack/src/main.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_repack -- run-canonical`
+- Executable: `AI_BLAISE_REPACK_DATABASE_URL=postgres cargo run -p ai_blaise_citus_sidecar_repack -- run-live-pg-repack`
 - CI: `ci/ai-blaise/sidecar-repack-smoke.sh`
+- VM evidence: `REQUIRE_DOCKER=1 ci/ai-blaise/sidecar-repack-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c`
 - CI: `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`

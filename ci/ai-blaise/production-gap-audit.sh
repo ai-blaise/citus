@@ -1276,21 +1276,29 @@ if deploy_k8s_tree:
 
 repack_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "sidecar/repack/README.md"))
 r7_entries = [entry for entry in entries if entry["id"] == "R7"]
-if len(r7_entries) != 1 or r7_entries[0]["status"] != "alpha":
-    fail("R7 must remain alpha until live repack execution evidence exists")
+if len(r7_entries) != 1 or r7_entries[0]["status"] != "production-ready":
+    fail("R7 must be production-ready only with live pg_repack execution evidence")
 for phrase in (
     "dry-run-plan-only",
-    "executed=false",
-    "production evidence for live `pg_repack`",
+    "run-live-pg-repack",
+    "dry_run=false",
+    "executed=true",
+    "live-pg-repack-execution",
+    "REQUIRE_DOCKER=1",
+    "single local PostgreSQL target",
     "PostgreSQL 19 `REPACK CONCURRENTLY`",
+    "Kubernetes-scheduled repack execution",
+    "Citus shard fanout across workers",
 ):
     if compact(phrase) not in repack_truth:
-        fail(f"R7 repack dry-run boundary missing truth phrase: {phrase}")
+        fail(f"R7 repack production boundary missing truth phrase: {phrase}")
 for phrase in ("sidecar-repack-smoke", "ci/ai-blaise/sidecar-repack-smoke.sh"):
     if phrase not in makefile:
-        fail(f"Makefile.ai-blaise must wire the repack dry-run smoke: {phrase}")
+        fail(f"Makefile.ai-blaise must wire the repack smoke: {phrase}")
 if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
+if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
+    fail("R7 sidecar must expose the live pg_repack execution command")
 analytical_ids = {"L1", "L2", "L3", "L4", "L5", "L6", "L8", "L12", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_ids if entry_status.get(feature_id) != "alpha")

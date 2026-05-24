@@ -7,6 +7,10 @@ use ai_blaise_citus_sidecar_shared::{
 };
 use std::error::Error;
 use std::fmt;
+use std::process::Command;
+
+pub const DRY_RUN_EVIDENCE_BOUNDARY: &str = "dry-run-plan-only";
+pub const LIVE_PG_REPACK_EVIDENCE_BOUNDARY: &str = "live-pg-repack-execution";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct RepackJobPlan {
@@ -76,7 +80,7 @@ impl RepackJobPlan {
             command,
             dry_run: true,
             executed: false,
-            evidence_boundary: "dry-run-plan-only".to_string(),
+            evidence_boundary: DRY_RUN_EVIDENCE_BOUNDARY.to_string(),
         })
     }
 
@@ -133,6 +137,111 @@ pub struct RepackCommandPlan {
     pub shard_count: u32,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RepackLiveExecutionRequest {
+    pub job: RepackJobPlan,
+    pub environment: RepackRuntimeEnvironment,
+    pub database_url: String,
+    pub executable: String,
+    pub wait_timeout_secs: u32,
+}
+
+impl RepackLiveExecutionRequest {
+    pub fn validate(&self) -> Result<(), RepackSidecarError> {
+        self.job.validate()?;
+        self.environment.validate()?;
+        validate_required("repack.database_url", &self.database_url)?;
+        validate_required("repack.executable", &self.executable)?;
+        if self.wait_timeout_secs == 0 {
+            return Err(RepackSidecarError::InvalidWaitTimeout);
+        }
+        let selected_strategy = self.job.select_strategy(&self.environment)?;
+        if selected_strategy != RepackExecutionStrategy::PgRepack {
+            return Err(RepackSidecarError::UnsupportedStrategy(
+                "live sidecar execution currently supports pg_repack only",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn redacted_args(&self) -> Vec<String> {
+        redact_command_args(&live_pg_repack_args(
+            &self.job,
+            &self.database_url,
+            self.wait_timeout_secs,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RepackLiveExecutionReport {
+    pub target: String,
+    pub strategy: RepackExecutionStrategy,
+    pub dry_run: bool,
+    pub executed: bool,
+    pub exit_code: i32,
+    pub evidence_boundary: String,
+    pub executable: String,
+    pub redacted_args: Vec<String>,
+    pub stdout: String,
+    pub stderr: String,
+}
+
+pub fn execute_live_pg_repack(
+    request: &RepackLiveExecutionRequest,
+) -> Result<RepackLiveExecutionReport, RepackSidecarError> {
+    request.validate()?;
+    let args = live_pg_repack_args(
+        &request.job,
+        &request.database_url,
+        request.wait_timeout_secs,
+    );
+    let output = Command::new(&request.executable)
+        .args(&args)
+        .output()
+        .map_err(|error| RepackSidecarError::CommandSpawnFailed(error.to_string()))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !output.status.success() {
+        return Err(RepackSidecarError::CommandExited {
+            code: output.status.code(),
+            stderr,
+        });
+    }
+
+    Ok(RepackLiveExecutionReport {
+        target: request.job.contract.target.clone(),
+        strategy: RepackExecutionStrategy::PgRepack,
+        dry_run: false,
+        executed: true,
+        exit_code: output.status.code().unwrap_or(0),
+        evidence_boundary: LIVE_PG_REPACK_EVIDENCE_BOUNDARY.to_string(),
+        executable: request.executable.clone(),
+        redacted_args: redact_command_args(&args),
+        stdout,
+        stderr,
+    })
+}
+
+fn live_pg_repack_args(
+    job: &RepackJobPlan,
+    database_url: &str,
+    wait_timeout_secs: u32,
+) -> Vec<String> {
+    vec![
+        "--dbname".to_string(),
+        database_url.to_string(),
+        "--table".to_string(),
+        job.contract.target.clone(),
+        "--jobs".to_string(),
+        job.contract.max_concurrency.to_string(),
+        "--wait-timeout".to_string(),
+        wait_timeout_secs.to_string(),
+        "--no-superuser-check".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct RepackRuntimeEnvironment {
     pub pg_major: u16,
@@ -165,7 +274,10 @@ pub enum RepackSidecarError {
     InvalidIdentifier(&'static str),
     InvalidLockTimeout,
     InvalidPostgresMajor,
+    InvalidWaitTimeout,
     InvalidShardId,
+    CommandExited { code: Option<i32>, stderr: String },
+    CommandSpawnFailed(String),
     MissingCapability(&'static str),
     MissingRequiredField(&'static str),
     SharedContract(String),
@@ -182,7 +294,16 @@ impl fmt::Display for RepackSidecarError {
             Self::InvalidPostgresMajor => {
                 write!(formatter, "pg_major must be greater than zero")
             }
+            Self::InvalidWaitTimeout => {
+                write!(formatter, "wait_timeout_secs must be greater than zero")
+            }
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
+            Self::CommandExited { code, stderr } => write!(
+                formatter,
+                "pg_repack exited with status {:?}: {}",
+                code, stderr
+            ),
+            Self::CommandSpawnFailed(error) => write!(formatter, "pg_repack spawn failed: {error}"),
             Self::MissingCapability(capability) => write!(
                 formatter,
                 "required repack capability is unavailable: {capability}"
@@ -235,6 +356,39 @@ fn validate_qualified_name(field: &'static str, value: &str) -> Result<(), Repac
     } else {
         Err(RepackSidecarError::InvalidIdentifier(field))
     }
+}
+
+fn redact_command_args(args: &[String]) -> Vec<String> {
+    let mut redacted = Vec::with_capacity(args.len());
+    let mut redact_next = false;
+    for arg in args {
+        if redact_next {
+            redacted.push(redact_database_url(arg));
+            redact_next = false;
+        } else if arg == "--dbname" {
+            redacted.push(arg.clone());
+            redact_next = true;
+        } else if let Some(value) = arg.strip_prefix("--dbname=") {
+            redacted.push(format!("--dbname={}", redact_database_url(value)));
+        } else {
+            redacted.push(arg.clone());
+        }
+    }
+    redacted
+}
+
+fn redact_database_url(value: &str) -> String {
+    if let Some(scheme_end) = value.find("://") {
+        let auth_start = scheme_end + 3;
+        if let Some(at_offset) = value[auth_start..].find('@') {
+            let auth_end = auth_start + at_offset;
+            if let Some(password_start) = value[auth_start..auth_end].rfind(':') {
+                let user = &value[auth_start..auth_start + password_start];
+                return format!("{}{}:***{}", &value[..auth_start], user, &value[auth_end..]);
+            }
+        }
+    }
+    value.to_string()
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -384,6 +538,58 @@ mod tests {
         assert!(!report.executed);
         assert_eq!(report.evidence_boundary, "dry-run-plan-only");
         assert_eq!(report.command.executable, "pg_repack");
+    }
+
+    #[test]
+    fn live_pg_repack_request_requires_database_url() {
+        let request = RepackLiveExecutionRequest {
+            job: valid_job(),
+            environment: canonical_repack_environment(),
+            database_url: String::new(),
+            executable: "pg_repack".to_string(),
+            wait_timeout_secs: 5,
+        };
+
+        assert_eq!(
+            request.validate(),
+            Err(RepackSidecarError::MissingRequiredField(
+                "repack.database_url"
+            ))
+        );
+    }
+
+    #[test]
+    fn live_pg_repack_request_renders_redacted_args() {
+        let request = RepackLiveExecutionRequest {
+            job: valid_job(),
+            environment: canonical_repack_environment(),
+            database_url: "postgresql://alice:secret@db.example/postgres".to_string(),
+            executable: "pg_repack".to_string(),
+            wait_timeout_secs: 5,
+        };
+
+        assert_eq!(
+            live_pg_repack_args(
+                &request.job,
+                &request.database_url,
+                request.wait_timeout_secs
+            ),
+            vec![
+                "--dbname".to_string(),
+                "postgresql://alice:secret@db.example/postgres".to_string(),
+                "--table".to_string(),
+                "public.orders".to_string(),
+                "--jobs".to_string(),
+                "2".to_string(),
+                "--wait-timeout".to_string(),
+                "5".to_string(),
+                "--no-superuser-check".to_string(),
+            ]
+        );
+        assert_eq!(
+            request.redacted_args()[1],
+            "postgresql://alice:***@db.example/postgres"
+        );
     }
 
     #[test]

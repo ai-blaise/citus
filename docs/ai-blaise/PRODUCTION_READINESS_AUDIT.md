@@ -815,11 +815,15 @@ Rule 10 completion for this branch requires local and VM verification of:
   not be cited as evidence for planner hint enforcement, background
   auto-promotion workers, distributed workload baselining, external durable
   storage, or pg_hint_plan/sr_plan runtime integration.
-- R7 repack hardening now adds fail-closed strategy selection and a deterministic
-  dry-run execution report for `sidecar/repack`. The canonical smoke records
-  `dry_run=true`, `executed=false`, and `evidence_boundary=dry-run-plan-only`, so
-  it must not be cited as production evidence for live `pg_repack`, live
-  PostgreSQL 19 `REPACK CONCURRENTLY`, or Kubernetes-scheduled repack execution.
+- R7 repack hardening now adds fail-closed strategy selection, a deterministic
+  dry-run execution report for `sidecar/repack`, and a sidecar-owned live
+  `pg_repack` command. The Docker VM smoke records `dry_run=false`,
+  `executed=true`, and `evidence_boundary=live-pg-repack-execution` after
+  executing `pg_repack` against a real PostgreSQL 17 table. This is production
+  evidence for a single local PostgreSQL target plus operator plan rendering. It
+  must not be cited as production evidence for PostgreSQL 19 `REPACK
+  CONCURRENTLY`, Kubernetes-scheduled repack execution, or Citus shard fanout
+  across workers.
 - Analytical/lakehouse hardening now adds fail-closed runtime-policy checks and
   a deterministic canonical smoke for L1/L2/L3/L4/L5/L6/L8/L12/L13. The smoke
   also starts the analytical loopback probe server and verifies health,
