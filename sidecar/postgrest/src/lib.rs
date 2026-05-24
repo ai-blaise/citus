@@ -629,6 +629,14 @@ pub fn canonical_postgrest_runtime_report() -> Result<PostgrestRuntimeReport, Po
 pub fn handle_postgrest_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, PostgrestSidecarError> {
+    let mut runtime = SidecarRuntime::ready("postgrest");
+    handle_postgrest_sidecar_http_request(request, &mut runtime)
+}
+
+fn handle_postgrest_sidecar_http_request(
+    request: &[u8],
+    runtime: &mut SidecarRuntime,
+) -> Result<HttpProbeResponse, PostgrestSidecarError> {
     let request =
         std::str::from_utf8(request).map_err(|_| PostgrestSidecarError::MalformedHttpRequest)?;
     let (method, path, _body) = parse_http_request(request)?;
@@ -666,7 +674,6 @@ pub fn handle_postgrest_sidecar_http_bytes(
         };
     }
 
-    let mut runtime = SidecarRuntime::ready("postgrest");
     Ok(runtime.handle_http_bytes(request.as_bytes())?)
 }
 
@@ -700,6 +707,7 @@ pub fn serve_postgrest_sidecar_http_forever(
     use std::net::TcpListener;
 
     canonical_postgrest_execution_plan()?;
+    let mut runtime = SidecarRuntime::ready("postgrest");
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise postgrest sidecar listening on {listen_addr}");
@@ -707,13 +715,14 @@ pub fn serve_postgrest_sidecar_http_forever(
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response = handle_postgrest_sidecar_http_bytes(&request).unwrap_or_else(|error| {
-            HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )
-        });
+        let response = handle_postgrest_sidecar_http_request(&request, &mut runtime)
+            .unwrap_or_else(|error| {
+                HttpProbeResponse::new(
+                    400,
+                    "application/json",
+                    format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+                )
+            });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
 
