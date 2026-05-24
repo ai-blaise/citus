@@ -4,12 +4,12 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
-# After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this
-# audit verifies only the source-of-truth pieces that remain in this repo:
-# the feature inventory in NEW_FEATURES.md vs PRODUCTION_READINESS_AUDIT.md,
-# the doc overclaim guardrail, and the deploy/k8s/-may-not-be-reintroduced
-# negative gate. Chart contract / digest / argo / sidecar HA assertions
-# moved with the chart to ai-blaise/command-center.
+# After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this audit
+# verifies only the source-of-truth pieces that remain in this repo: the machine
+# derived feature inventory in NEW_FEATURES.md, the audit doc overclaim
+# guardrail, and the deploy/k8s/-may-not-be-reintroduced negative gate. Chart
+# contract / digest / argo / sidecar HA assertions moved with the chart to
+# ai-blaise/command-center.
 
 python3 <<'PY'
 import pathlib
@@ -37,6 +37,7 @@ SOURCE_ROOTS = [
     "e2e",
     "tools",
     "patches",
+    "deploy",
     "images",
     "scripts",
 ]
@@ -77,11 +78,20 @@ def source_text() -> str:
 
 def feature_entries(docs: str):
     heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
-    return [m.group(1) for m in heading_re.finditer(docs)]
-
-
-def number_forms(n: int):
-    return (str(n),)
+    status_re = re.compile(r"^\*\*Status\*\*:\s*([A-Za-z-]+)\s*$", re.M)
+    headings = list(heading_re.finditer(docs))
+    entries = []
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(docs)
+        body = docs[heading.start():end]
+        status_match = status_re.search(body)
+        entries.append(
+            {
+                "id": heading.group(1),
+                "status": status_match.group(1).lower() if status_match else "",
+            }
+        )
+    return entries
 
 
 docs = read(DOCS)
@@ -90,7 +100,8 @@ source = source_text()
 
 source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", source))
 entries = feature_entries(docs)
-doc_ids = set(entries)
+entry_ids = [entry["id"] for entry in entries]
+doc_ids = set(entry_ids)
 
 if not source_ids:
     fail("no FEATURE: markers found in source")
@@ -109,40 +120,56 @@ if missing_from_source:
         + ", ".join(sorted(missing_from_source))
     )
 
-statuses = [
-    m.group(1).lower()
-    for m in re.finditer(r"\*\*Status\*\*:\s*([a-zA-Z-]+)", docs)
-]
-production_entries = [s for s in statuses if s == "production-ready"]
-alpha_entries = [s for s in statuses if s == "alpha"]
+duplicates = sorted({feature_id for feature_id in entry_ids if entry_ids.count(feature_id) > 1})
+if duplicates:
+    fail("duplicate feature headings in NEW_FEATURES.md: " + ", ".join(duplicates))
+
+missing_status = sorted(entry["id"] for entry in entries if not entry["status"])
+if missing_status:
+    fail("feature headings missing Status fields: " + ", ".join(missing_status))
+
+supported_statuses = {"alpha", "production-ready"}
+unexpected_statuses = sorted(
+    {entry["status"] for entry in entries if entry["status"] not in supported_statuses}
+)
+if unexpected_statuses:
+    fail("unsupported feature Status values: " + ", ".join(unexpected_statuses))
+
+production_entries = [entry for entry in entries if entry["status"] == "production-ready"]
+alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
 source_only_ids = source_ids - doc_ids
 
 audit_compact = compact(audit)
 
-expected_inventory = compact(
-    f"contains {len(source_ids)} source `feature:` markers and {len(entries)} "
-    "feature headings"
-)
-if expected_inventory not in audit_compact:
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current computed feature inventory"
-    )
+for pattern in (
+    r"current feature inventory contains\s+\d+\s+source\s+`feature:`\s+markers",
+    r"\d+\s+narrow headings are\s+`status:\s*production-ready`",
+    r"other\s+\d+\s+feature headings remain\s+`status:\s*alpha`",
+):
+    if re.search(pattern, audit_compact):
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must not hard-code machine-derived "
+            "feature inventory counts"
+        )
 
-expected_production_counts = [
-    compact(f"{form} narrow headings are `status: production-ready`")
-    for form in number_forms(len(production_entries))
-]
-if not any(phrase in audit_compact for phrase in expected_production_counts):
-    fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current production-ready heading count"
-    )
+for phrase in (
+    "feature inventory is machine-derived",
+    "do not restate source/heading/status counts in prose",
+    "production_gap_audit",
+    "source_feature_ids",
+    "feature_headings",
+    "production_ready",
+    "alpha_headings",
+):
+    if compact(phrase) not in audit_compact:
+        fail(
+            "PRODUCTION_READINESS_AUDIT.md must document the machine-derived "
+            f"inventory contract: {phrase}"
+        )
 
-expected_alpha_count = compact(
-    f"other {len(alpha_entries)} feature headings remain `status: alpha`"
-)
-if expected_alpha_count not in audit_compact:
+if len(production_entries) + len(alpha_entries) != len(entries):
     fail(
-        "PRODUCTION_READINESS_AUDIT.md must report the current alpha heading count"
+        "computed feature status counts do not cover every NEW_FEATURES.md heading"
     )
 
 for phrase in (
@@ -191,9 +218,11 @@ if deploy_k8s_tree:
 print(
     "production_gap_audit\t"
     f"source_feature_ids={len(source_ids)}\t"
+    f"doc_feature_headings={len(doc_ids)}\t"
     f"feature_headings={len(entries)}\t"
     f"production_ready={len(production_entries)}\t"
     f"alpha_headings={len(alpha_entries)}\t"
+    "inventory_contract=machine_derived\t"
     f"source_only_alpha={len(source_only_ids)}\t"
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"
