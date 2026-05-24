@@ -7,3 +7,6 @@ repository.workspace = true
 
 [lib]
 crate-type = ["rlib"]
+
+[dependencies]
+ai_blaise_citus_tool_runtime = { path = "../citus-tool-runtime" }

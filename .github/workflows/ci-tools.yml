@@ -56,6 +56,26 @@ jobs:
       - name: Run file-backed LSP smoke
         run: bash ci/ai-blaise/citus-lsp-smoke.sh
 
+  ui-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check tests
+        run: >-
+          cargo check --all-targets
+          -p ai_blaise_citus_tool_runtime
+          -p ai_blaise_citus_admin
+          -p ai_blaise_citus_schema_designer
+          -p ai_blaise_citus_tui
+          -p ai_blaise_citus_watch
+      - name: Test
+        run: cargo test -p ai_blaise_citus_tool_runtime -p ai_blaise_citus_admin -p ai_blaise_citus_schema_designer -p ai_blaise_citus_tui -p ai_blaise_citus_watch
+      - name: Run tools UI runtime smoke
+        run: bash ci/ai-blaise/tools-ui-runtime-smoke.sh
+
   watch:
     runs-on: ubuntu-latest
     steps:

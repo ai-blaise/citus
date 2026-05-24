@@ -307,10 +307,10 @@ has_http_probe_contract() {
 
   src_dir="${main_file%/main.rs}"
   if [[ -d "${src_dir}" ]] \
-    && grep -R -Eq '(TcpListener|axum::|Router::new|serve_[A-Za-z0-9_]*_http|serve_http)' "${src_dir}" \
-    && grep -R -Eq '(/healthz|healthz)' "${src_dir}" \
-    && grep -R -Eq '(/readyz|readyz)' "${src_dir}" \
-    && grep -R -Eq '(/metrics|metrics)' "${src_dir}"; then
+    && grep -R -Eq '(TcpListener|axum::|Router::new|serve_[A-Za-z0-9_]*_http|serve_http|handle_[[:alnum:]_]*http|runtime::serve|axum::serve)' "${src_dir}" \
+    && grep -R -Eq '(/healthz|GET /healthz|healthz)' "${src_dir}" \
+    && grep -R -Eq '(/readyz|GET /readyz|readyz)' "${src_dir}" \
+    && grep -R -Eq '(/metrics|GET /metrics|metrics)' "${src_dir}"; then
     return 0
   fi
 

@@ -3,8 +3,10 @@
 // FEATURE: M9
 // FEATURE: D6
 
+use ai_blaise_citus_tool_runtime::{escape_html, ToolRuntimeError, ToolSnapshot};
 use std::error::Error;
 use std::fmt;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SchemaDesignerModel {
@@ -77,6 +79,64 @@ impl SchemaDesignerModel {
             });
         }
         Ok(layers)
+    }
+
+    pub fn render_svg(&self) -> Result<String, SchemaDesignerError> {
+        let layers = self.overlay_layers()?;
+        let table_height = 92_i32;
+        let table_gap = 34_i32;
+        let width = 960_i32;
+        let height = 120_i32 + (self.tables.len() as i32 * (table_height + table_gap)).max(180);
+        let mut out = String::new();
+        let _ = writeln!(
+            out,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" data-feature=\"D6 M9\" width=\"{width}\" height=\"{height}\" viewBox=\"0 0 {width} {height}\">"
+        );
+        out.push_str("<style>text{font-family:monospace;font-size:13px}.table{fill:#f8fafc;stroke:#334155}.overlay{fill:#ecfeff;stroke:#0891b2}.placement{fill:#fef3c7;stroke:#d97706}</style>\n");
+        let _ = writeln!(
+            out,
+            "<text x=\"24\" y=\"32\">citus-schema-designer snapshot render</text>"
+        );
+
+        for (index, table) in self.tables.iter().enumerate() {
+            let y = 60 + index as i32 * (table_height + table_gap);
+            let _ = writeln!(
+                out,
+                "<g data-table=\"{}\"><rect class=\"table\" x=\"24\" y=\"{y}\" width=\"360\" height=\"{table_height}\" rx=\"6\"/><text x=\"42\" y=\"{}\">{}</text>",
+                escape_html(&table.name),
+                y + 24,
+                escape_html(&table.name)
+            );
+            for (column_index, column) in table.columns.iter().enumerate() {
+                let _ = writeln!(
+                    out,
+                    "<text x=\"42\" y=\"{}\">{} {}</text>",
+                    y + 48 + column_index as i32 * 18,
+                    escape_html(&column.name),
+                    escape_html(&column.sql_type)
+                );
+            }
+            out.push_str("</g>\n");
+        }
+
+        for (index, layer) in layers.iter().enumerate() {
+            let y = 60 + index as i32 * 34;
+            let class_name = match layer.kind {
+                DesignerOverlayKind::ShardPlacement => "placement",
+                _ => "overlay",
+            };
+            let _ = writeln!(
+                out,
+                "<g data-overlay=\"{:?}\"><rect class=\"{class_name}\" x=\"430\" y=\"{y}\" width=\"490\" height=\"24\" rx=\"4\"/><text x=\"442\" y=\"{}\">{}: {}</text></g>",
+                layer.kind,
+                y + 17,
+                escape_html(&layer.table),
+                escape_html(&layer.label)
+            );
+        }
+
+        out.push_str("</svg>\n");
+        Ok(out)
     }
 }
 
@@ -237,6 +297,7 @@ pub enum SchemaDesignerError {
     InvalidShardCount,
     InvalidShardId,
     MissingRequiredField(&'static str),
+    RuntimeSnapshot(String),
 }
 
 impl fmt::Display for SchemaDesignerError {
@@ -254,17 +315,92 @@ impl fmt::Display for SchemaDesignerError {
             Self::InvalidShardCount => write!(formatter, "shard_count must be greater than zero"),
             Self::InvalidShardId => write!(formatter, "shard_id must be greater than zero"),
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::RuntimeSnapshot(detail) => {
+                write!(formatter, "runtime snapshot invalid: {detail}")
+            }
         }
     }
 }
 
 impl Error for SchemaDesignerError {}
 
+impl From<ToolRuntimeError> for SchemaDesignerError {
+    fn from(error: ToolRuntimeError) -> Self {
+        Self::RuntimeSnapshot(error.to_string())
+    }
+}
+
 fn validate_required(field: &'static str, value: &str) -> Result<(), SchemaDesignerError> {
     if value.trim().is_empty() {
         return Err(SchemaDesignerError::MissingRequiredField(field));
     }
     Ok(())
+}
+
+pub fn schema_designer_model_from_snapshot(
+    snapshot: &ToolSnapshot,
+) -> Result<SchemaDesignerModel, SchemaDesignerError> {
+    snapshot.validate()?;
+    let tables = snapshot
+        .tables
+        .iter()
+        .map(|table| {
+            let mut columns = vec![DesignerColumn {
+                name: table.distribution_column.clone(),
+                sql_type: "text".to_string(),
+                nullable: false,
+            }];
+            let hypertable = match (&table.hypertable_time_column, &table.chunk_interval) {
+                (Some(time_column), Some(chunk_interval)) => {
+                    if !columns.iter().any(|column| column.name == *time_column) {
+                        columns.push(DesignerColumn {
+                            name: time_column.clone(),
+                            sql_type: "timestamptz".to_string(),
+                            nullable: false,
+                        });
+                    }
+                    Some(HypertableOverlay {
+                        time_column: time_column.clone(),
+                        chunk_interval: chunk_interval.clone(),
+                    })
+                }
+                _ => None,
+            };
+            DesignerTable {
+                name: table.name.clone(),
+                columns,
+                distribution: Some(DistributionOverlay {
+                    distribution_column: table.distribution_column.clone(),
+                    colocation_group: table.colocation_group.clone(),
+                    shard_count: table.shard_count,
+                }),
+                hypertable,
+                search_indexes: table.search_indexes,
+                webhook_count: table.webhook_count,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let shard_map = snapshot
+        .shards
+        .iter()
+        .map(|shard| ShardPlacementVisual {
+            table: shard.table.clone(),
+            shard_id: shard.shard_id,
+            worker: shard.worker.clone(),
+            state: match shard.state.as_str() {
+                "draining" => PlacementState::Draining,
+                "rebalancing" => PlacementState::Rebalancing,
+                _ => PlacementState::Active,
+            },
+        })
+        .collect();
+
+    Ok(SchemaDesignerModel {
+        tables,
+        relationships: Vec::new(),
+        shard_map,
+    })
 }
 
 pub fn canonical_schema_designer_model() -> SchemaDesignerModel {
@@ -308,6 +444,7 @@ pub fn canonical_schema_designer_model() -> SchemaDesignerModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ai_blaise_citus_tool_runtime::canonical_snapshot;
 
     #[test]
     fn schema_designer_outputs_live_overlay_layers() {
@@ -360,5 +497,17 @@ mod tests {
             placement.validate(),
             Err(SchemaDesignerError::InvalidShardId)
         );
+    }
+
+    #[test]
+    fn schema_designer_renders_snapshot_svg() {
+        let model = schema_designer_model_from_snapshot(&canonical_snapshot()).unwrap();
+
+        let svg = model.render_svg().unwrap();
+
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("data-feature=\"D6 M9\""));
+        assert!(svg.contains("public.events"));
+        assert!(svg.contains("shard 102008 on worker-1"));
     }
 }

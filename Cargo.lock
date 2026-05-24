@@ -33,6 +33,9 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_admin"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_tool_runtime",
+]
 
 [[package]]
 name = "ai_blaise_citus_companion"
@@ -95,6 +98,9 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_schema_designer"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_tool_runtime",
+]
 
 [[package]]
 name = "ai_blaise_citus_sidecar_analytical"
@@ -241,12 +247,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ai_blaise_citus_tool_runtime"
+version = "0.1.0"
+
+[[package]]
 name = "ai_blaise_citus_tui"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_tool_runtime",
+]
 
 [[package]]
 name = "ai_blaise_citus_watch"
 version = "0.1.0"
+dependencies = [
+ "ai_blaise_citus_tool_runtime",
+]
 
 [[package]]
 name = "ai_blaise_citusctl"

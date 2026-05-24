@@ -563,14 +563,15 @@ SQL through the pool. The broader repository is still not production-ready as a
 whole.
 
 The current feature inventory contains 276 source `FEATURE:` markers and 276
-feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 157 narrow headings are
+feature headings in `docs/ai-blaise/NEW_FEATURES.md`. 163 narrow headings are
 `Status: production-ready` because they have live VM/GitHub evidence, a real
 runtime or SQL surface, and a documented production boundary. The promoted set
 includes the previously promoted deploy, observability, SQL, operator
 plan-builder, MCP4, Raft/HLC/transaction-status sidecar evidence, Reconcilers
 Batch A and Batch B operator plan builders, and sidecar runtime entries, plus
-the backup, CDC, realtime, auth sidecar, vectorizer runtime, and SC7 sidecar HA
-retarget entries merged in this release train dry-run.
+the backup, CDC, realtime, auth sidecar, vectorizer runtime, SC7 sidecar HA
+retarget, and snapshot-backed tools UI runtime entries merged in this release
+train dry-run.
 
 The promoted backup entries are intentionally scoped: `B1` covers the real
 backup sidecar WAL-G command runner, HTTP runtime, scheduled backup loop,
@@ -642,6 +643,13 @@ recording, and local deterministic provider execution proven by
 provider credentials, production embedding providers, operator reconciliation,
 multitenant SLO enforcement, and long-running production load remain alpha.
 
+The snapshot-backed tools UI runtime evidence is scoped to validated cluster
+snapshot parsing and deterministic local renderers for admin HTML,
+schema-designer SVG, TUI frames, and watch frames under
+`ci/ai-blaise/tools-ui-runtime-smoke.sh`. Direct live database sessions,
+long-running terminal event loops, browser embedding, collaborative editing,
+and production Kubernetes tool deployments remain alpha.
+
 The API trio runtime smoke boots the PostgREST, GraphQL, and edge-functions
 sidecars and verifies their local HTTP/runtime boundaries, but those entries
 remain alpha where the feature register still requires live Postgres,
@@ -660,7 +668,7 @@ reconciliation, operator lifecycle management, long-running query load on
 restored branches, or a full Kubernetes restore against a real WAL-G archive.
 Those remain explicit future acceptance gates, not hidden assumptions.
 
-The other 119 feature headings remain `Status: alpha`. There are no remaining
+The other 113 feature headings remain `Status: alpha`. There are no remaining
 source-only feature markers: the former V2 addendum rows were promoted to alpha
 feature headings with deterministic executable evidence. This is acceptable for
 catalog integrity, but it is not a production claim for the full feature plan.
