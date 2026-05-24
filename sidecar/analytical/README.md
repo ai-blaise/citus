@@ -26,6 +26,7 @@ Current implemented surface:
 - `canonical_analytical_runtime_report()`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_analytical -- serve`
 - `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 These contracts cover `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
@@ -38,6 +39,7 @@ accounting, and logical-replication mirror materialization counters.
 Current runtime reports `external_io_attempted=false`,
 `query_engine_executed=false`, and
 `evidence_boundary=deterministic-runtime-report-only`. This is alpha
-hardening for validation and accounting, not production evidence for live
-DataFusion, DuckDB, MotherDuck, Iceberg commits, object-store IO, or Citus
-planner integration.
+hardening for validation and accounting. The smoke starts the loopback probe
+server and verifies health, readiness, metrics, and drain behavior. This is not
+production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg commits,
+object-store IO, Kubernetes traffic, or Citus planner integration.

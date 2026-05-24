@@ -99,6 +99,8 @@ for those features, covering mirror materialization counters, lakehouse reads,
 DataFusion pushdown shape, Iceberg snapshot commit reporting, federated
 catalog publication, DuckDB extension loading, and MotherDuck session
 accounting.
+The analytical smoke also starts the sidecar probe server on a loopback TCP
+port and verifies health, readiness, metrics, and drain behavior.
 `sidecar/cdc/src/lib.rs` validates logical replication stream, DDL capture,
 anonymization, reliable delivery, NATS, and Pub/Sub contracts for
 `FEATURE: C1`, `FEATURE: C2`, `FEATURE: C3`, `FEATURE: C14`, `FEATURE: C15`,
@@ -3680,9 +3682,10 @@ sidecar.
 **Current boundary**: The L1/L2/L3/L4/L5/L6/L8/L12/L13 analytical runtime is
 an alpha deterministic report path. It records `external_io_attempted=false`,
 `query_engine_executed=false`, and
-`evidence_boundary=deterministic-runtime-report-only`; this must not be cited as
-production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg commits,
-object-store IO, or Citus planner integration.
+`evidence_boundary=deterministic-runtime-report-only`. The smoke starts a
+loopback probe server and verifies process health/readiness/metrics/drain only;
+this must not be cited as production evidence for live DataFusion, DuckDB,
+MotherDuck, Iceberg commits, object-store IO, or Citus planner integration.
 
 ### L2: Rust Analytical Server
 
