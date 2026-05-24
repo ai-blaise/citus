@@ -7,6 +7,7 @@ pub mod hypertable;
 pub mod migration;
 pub mod region;
 pub mod scheduled_repack;
+pub mod security;
 pub mod search_index;
 pub mod shard_group;
 pub mod sidecar;

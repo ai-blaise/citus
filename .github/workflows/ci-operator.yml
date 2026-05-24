@@ -27,3 +27,5 @@ jobs:
         run: bash ci/ai-blaise/operator-boundary-smoke.sh
       - name: Run EndpointSlice retarget smoke
         run: bash ci/ai-blaise/endpointslice-retarget-smoke.sh
+      - name: Run operator security enforcement smoke
+        run: bash ci/ai-blaise/security-enforcement-smoke.sh

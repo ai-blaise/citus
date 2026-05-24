@@ -36,7 +36,7 @@ use ai_blaise_citus_operator::controllers::boundary::{
     ExecutionMode,
 };
 use ai_blaise_citus_operator::{
-    BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec, BackupTarget, BranchSpec,
+    canonical_operator_security_report,    BackupEncryption, BackupProvider, BackupReconcilePlan, BackupSpec, BackupTarget, BranchSpec,
     BranchStorageSpec, BranchType, ChunkingSpec, ChunkingStrategy, CitusClusterReconcilePlan,
     CitusClusterSpec, CitusTopology, CompressionPolicy, ConflictClass, ConflictPolicyReconcilePlan, ConflictPolicySpec,
     ConflictResolution, ContinuousAggregateSpec, EmbeddingProvider, FederationConnection,
@@ -82,6 +82,7 @@ fn main() {
         [command] if command == "run-endpointslice-retarget-canonical" => {
             run_endpointslice_retarget_canonical()
         }
+        [command] if command == "run-security-canonical" => run_security_canonical(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -118,7 +119,7 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-endpointslice-retarget-canonical]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-controller-boundary|run-endpointslice-retarget-canonical|run-security-canonical]");
 }
 
 fn run_endpointslice_retarget_canonical() {
@@ -201,6 +202,29 @@ fn canonical_endpoint_candidates() -> Vec<SidecarEndpointCandidate> {
             ready: true,
         },
     ]
+}
+
+fn run_security_canonical() {
+    let report = canonical_operator_security_report().unwrap_or_else(|error| {
+        eprintln!("operator: security canonical execution failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "workloads\ttls_required\tauth_boundaries\tsecret_refs\trbac_rules\tkube_api_denied\trun_as_non_root\tread_only_rootfs\tdrop_all_capabilities"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.workloads,
+        report.tls_required,
+        report.auth_boundaries,
+        report.secret_refs,
+        report.rbac_rules,
+        report.kube_api_denied,
+        report.run_as_non_root,
+        report.read_only_rootfs,
+        report.drop_all_capabilities,
+    );
 }
 
 fn run_reconcile_plans() {

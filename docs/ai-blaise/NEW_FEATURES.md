@@ -7741,7 +7741,7 @@ intent.
 
 ### Sec7: External Secrets Integration
 
-**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -7750,19 +7750,23 @@ intent.
 **Summary**: Records the External Secrets reference-only security control for
 overlay credentials.
 
-**Current boundary**: The operations runner verifies the intended control; live
-External Secrets controller reconciliation and rotation evidence remain alpha.
+**Current boundary**: The operations runner verifies the intended control,
+and the operator security runner rejects inline secret values while requiring
+named Secret references for pool and sidecar workloads. Live External Secrets
+controller reconciliation and rotation evidence remain alpha.
 
 **Citus comparison**: Vanilla Citus does not prescribe External Secrets refs.
 
 **References**:
 
 - In-source: `FEATURE: Sec7` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: Sec7` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec8: TLS Everywhere
 
-**Overlay**: `companion/src/ops_contracts.rs` and Helm values
+**Overlay**: `companion/src/ops_contracts.rs`, `operator/src/reconcile/security.rs`, and deployment values
 **Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
@@ -7771,8 +7775,12 @@ External Secrets controller reconciliation and rotation evidence remain alpha.
 **Summary**: Tracks TLS expectations for clients, Postgres backends, and
 sidecar-to-sidecar traffic.
 
-**Current boundary**: The security contract is executable; certificate
-issuance, mTLS enforcement, and live rotation tests remain alpha.
+**Current boundary**: The security contract is executable; the operator
+security runner requires TLS 1.3, client certificates, certificate Secret
+references, fail-closed auth boundaries, no Secret RBAC grants, and restricted
+pod/container security contexts for pool and sidecar workloads. Certificate
+issuance, actual Kubernetes mounts, mTLS traffic enforcement, and live rotation
+tests remain alpha.
 
 **Citus comparison**: Vanilla Citus does not enforce this full overlay TLS
 contract.
@@ -7780,7 +7788,9 @@ contract.
 **References**:
 
 - In-source: `FEATURE: Sec8` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: Sec8` in `operator/src/reconcile/security.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `bash ci/ai-blaise/security-enforcement-smoke.sh`
 
 ### Sec9: SBOM And Cosign Attestation
 
