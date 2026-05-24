@@ -1,30 +1,30 @@
 # FEATURE: Bundle1 Search1 G1 JS1 PM1 IA1 WF1 F2
 # name|tier|license|source|feature_ids|pg_versions|policy
 timescaledb|required|Apache-2.0+TSL|binary-package|TS1,TS2,TS3,TS4,TS5,TS10,TS11,TS12|17,18|Mandatory cohabitation target; TSL source is never patched or vendored.
-citus|required|AGPL-3.0|source-tree|TS6|17,18|Base fork source in this repository.
+citus|required|AGPL-3.0|source-tree|TS6|17,18|Base fork source in this repository; Bundle1 PG17 source-build target compiles the in-tree fork while tracking upstream tag v13.3.0.
 ai_blaise_citus|required|AGPL-3.0|local-sql-extension|TS1,TS2,TS3,TS4,TS5,M7|17,18|Companion SQL fallback extension installed by the overlay image.
 pgvector|required|PostgreSQL|binary-package|A7|17,18|Vector similarity extension.
 pg_cron|required|PostgreSQL|binary-package|EF5|17,18|Cron-style scheduling for policy jobs.
 pg_partman|required|PostgreSQL|binary-package|R5|17,18|Partition maintenance for non-hypertable data.
 pgaudit|required|PostgreSQL|binary-package|Sec3|17,18|SQL audit baseline.
 pgauditlogtofile|required|PostgreSQL|binary-package|Sec3|17,18|File-backed audit log sink.
-pgsodium|required|PostgreSQL|binary-package|Sec4,Sec15|17|Libsodium crypto and encryption helpers. PG18 build pending upstream verification.
+pgsodium|required|PostgreSQL|source-build|Sec4,Sec15|17|Libsodium crypto and encryption helpers; Bundle1 PG17 source-build target pins michelp/pgsodium v3.1.9 at 7222ebc5ed87084a68d526aef977be0f4eb319a2. PG18 build pending upstream verification.
 hll|required|Apache-2.0|binary-package|T8,L9|17|Merge-friendly approximate aggregates. PG18 build pending upstream verification.
-topn|required|Apache-2.0|binary-package|T8,L9|17|Merge-friendly top-N aggregate. PG18 build pending upstream verification.
+topn|required|AGPL-3.0|source-build|T8,L9|17|Merge-friendly top-N aggregate; Bundle1 PG17 source-build target pins citusdata/postgresql-topn v2.7.0 at f636ff1b3586025c81fb84c20483412f3991ed84. PG18 build pending upstream verification.
 tdigest|required|Apache-2.0|binary-package|TS15,T8,L9|17|Merge-friendly percentile aggregate. PG18 build pending upstream verification.
 pgnodemx|required|Apache-2.0|binary-package|O8|17|OS and cgroup metrics through SQL. PG18 build pending upstream verification.
 postgis|required|GPL-2.0|binary-package|Geo1,Geo2,Geo3|17,18|Geospatial functions for distributed geo features.
-pg_search|required|AGPL-3.0|binary-package|Search1,Search2,Search3|17|BM25 and hybrid search substrate. PG18 build pending upstream verification.
-pg_graphql|required|Apache-2.0|binary-package|API3,API4|17|GraphQL schema endpoint substrate. PG18 build pending upstream verification.
-pg_jsonschema|required|Apache-2.0|binary-package|JS1,JS2,M13|17|JSON Schema validation substrate. PG18 build pending upstream verification.
+pg_search|required|AGPL-3.0|source-build|Search1,Search2,Search3|17|BM25 and hybrid search substrate; Bundle1 heavy PG17 source-build target pins paradedb/paradedb v0.20.11 at cd1ba46a116c5a98bd6fe9ae370a2f260aee1394. PG18 build pending upstream verification.
+pg_graphql|required|Apache-2.0|source-build|API3,API4|17|GraphQL schema endpoint substrate; Bundle1 PG17 source-build target pins supabase/pg_graphql v1.6.1 at 66d4c551db213000506fd858676269ba8f801a44. PG18 build pending upstream verification.
+pg_jsonschema|required|Apache-2.0|source-build|JS1,JS2,M13|17|JSON Schema validation substrate; Bundle1 PG17 source-build target pins supabase/pg_jsonschema v0.3.4 at cbe74b570d38aa0c4d42914e7a118bcb3adaee7a. PG18 build pending upstream verification.
 age|required|Apache-2.0|binary-package|G1,G2,G3|17|Apache AGE graph query substrate. PG18 build pending upstream verification.
-plrust|required|PostgreSQL|binary-package|EF6|17|Rust UDF substrate. PG18 build pending upstream verification.
-plv8|required|PostgreSQL|binary-package|EF6|17|In-database JavaScript UDF substrate. PG18 build pending upstream verification.
+plrust|required|PostgreSQL|source-build-deferred|EF6|none|Rust UDF substrate remains alpha: upstream plrust v1.2.8 at bd76906a43c05a2afdb7839263431a066f5b42fb exposes only pg13-pg16 pgrx features and pins pgrx 0.11.0, so PG17 source-build is blocked without a non-minimal fork patch.
+plv8|required|PostgreSQL|source-build|EF6|17|In-database JavaScript UDF substrate; Bundle1 heavy PG17 source-build target pins plv8/plv8 v3.2.4 at cafc37f7aee850de5478773a4e56f7fadfad8e00. PG18 build pending upstream verification.
 pg_uuidv7|required|PostgreSQL|binary-package|M12|17,18|Monotonic UUID helper.
 pg_repack|required|BSD-style|binary-package|R7|17,18|Online repack until PG19 REPACK CONCURRENTLY.
 pg_failover_slots|required|PostgreSQL|binary-package|C12|17|Logical replication slot failover. PG18 build pending upstream verification.
 pg_subscription_pg_failover|optional|PostgreSQL|binary-package|C13|17|Logical subscription failover state. PG18 build pending upstream verification.
-pg_warm|required|PostgreSQL|binary-package|R11|17|Replica cold-start cache warming. PG18 build pending upstream verification.
+pg_warm|required|PostgreSQL|local-sql-extension|R11|17|Replica cold-start cache warming; local pg_prewarm-backed shim in images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql because no safe upstream pg_warm source exists. PG18 smoke pending after Bundle1 PG18 source-build support.
 pgcrypto|required|PostgreSQL|core-extension|Sec14|17,18|Core crypto primitives.
 pg_trgm|required|PostgreSQL|core-extension|Search5|17,18|Trigram search support.
 citext|required|PostgreSQL|core-extension|Search6|17,18|Case-insensitive text type.

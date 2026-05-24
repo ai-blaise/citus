@@ -344,17 +344,37 @@ image-check:
 # stability while PG18 is still alpha (see docs/ai-blaise/NEW_FEATURES.md T6).
 build-image-pg17:
 	@docker build \
+	  -f images/citus-pg-overlay/Dockerfile \
 	  --build-arg PG_MAJOR=17 \
 	  --build-arg BASE_IMAGE=postgres:17-bookworm \
 	  -t ai-blaise-citus-overlay:pg17 \
-	  images/citus-pg-overlay
+	  .
 
 build-image-pg18:
 	@docker build \
+	  -f images/citus-pg-overlay/Dockerfile \
 	  --build-arg PG_MAJOR=18 \
 	  --build-arg BASE_IMAGE=postgres:18-bookworm \
 	  -t ai-blaise-citus-overlay:pg18 \
-	  images/citus-pg-overlay
+	  .
+
+build-image-bundle1-light-pg17:
+	@docker build \
+	  -f images/citus-pg-overlay/Dockerfile \
+	  --target bundle1-final-light \
+	  --build-arg PG_MAJOR=17 \
+	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  -t ai-blaise-citus-overlay:bundle1-light-pg17 \
+	  .
+
+build-image-bundle1-full-pg17:
+	@docker build \
+	  -f images/citus-pg-overlay/Dockerfile \
+	  --target bundle1-final-full \
+	  --build-arg PG_MAJOR=17 \
+	  --build-arg BASE_IMAGE=postgres:17-bookworm \
+	  -t ai-blaise-citus-overlay:bundle1-full-pg17 \
+	  .
 
 build-image-matrix: build-image-pg17 build-image-pg18
 

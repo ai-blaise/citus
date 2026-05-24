@@ -40,10 +40,11 @@ jobs:
       - name: Build overlay image for PG${{ matrix.pg_major }}
         run: |
           docker build \
+            -f images/citus-pg-overlay/Dockerfile \
             --build-arg PG_MAJOR=${{ matrix.pg_major }} \
             --build-arg BASE_IMAGE=postgres:${{ matrix.pg_major }}-bookworm \
             -t ai-blaise-citus-overlay:pg${{ matrix.pg_major }} \
-            images/citus-pg-overlay
+            .
       - name: Verify pg-major label
         run: |
           observed="$(docker inspect -f '{{ index .Config.Labels "ai-blaise.citus.pg-major" }}' ai-blaise-citus-overlay:pg${{ matrix.pg_major }})"
