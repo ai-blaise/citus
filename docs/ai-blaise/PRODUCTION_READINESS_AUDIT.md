@@ -679,6 +679,13 @@ Rule 10 completion for this branch requires local and VM verification of:
   clients observe distinct backend state. It must not be cited as proof of
   reusable transaction pooling, backend reset correctness, shard-aware routing,
   or broad transaction pooling semantics.
+- MCP1/MCP2/MCP3 sidecar production evidence is limited to real stdio and HTTP
+  JSON-RPC request/response behavior, `/healthz`, `/readyz`, `/metrics`, and
+  `/drain`, exact tool registry listing, malformed-input resilience, and
+  fail-closed database dependency errors. It must not be cited as evidence for
+  a full external MCP service, token authentication, durable sessions,
+  streaming remote transport, sidecar-owned live database execution, Kubernetes
+  execution, or mutating tools; MCP4 database execution remains `tools/citus-mcp`.
 - Auth2 production evidence is limited to installable SQL session-claim
   helpers. It must not be cited as evidence for Auth1 JWT issuance or Auth3
   token-cache behavior; Sec2 JWT verification has a separate SQL-runtime

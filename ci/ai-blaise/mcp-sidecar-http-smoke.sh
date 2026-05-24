@@ -46,6 +46,19 @@ def request(method, path, body=None):
     return response.status, data
 
 
+def raw_http(payload):
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+        sock.sendall(payload)
+        sock.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    return b"".join(chunks).decode("utf-8", errors="replace")
+
+
 try:
     for _ in range(60):
         try:
@@ -78,6 +91,45 @@ try:
     initialize = json.loads(data)
     assert initialize["result"]["serverInfo"]["name"] == "ai-blaise-citus-mcp-sidecar"
     assert initialize["result"]["capabilities"]["tools"]["listChanged"] is False
+
+    status, data = request("POST", "/mcp", "{")
+    assert status == 200
+    parse_error = json.loads(data)
+    assert parse_error["error"]["code"] == -32700
+    assert "parse error" in parse_error["error"]["message"]
+
+    unknown_payload = json.dumps(
+        {"jsonrpc": "2.0", "id": 7, "method": "resources/list"},
+        separators=(",", ":"),
+    )
+    status, data = request("POST", "/mcp", unknown_payload)
+    assert status == 200
+    unknown_method = json.loads(data)
+    assert unknown_method["error"]["code"] == -32601
+    assert "unknown method: resources/list" in unknown_method["error"]["message"]
+
+    tools_payload = json.dumps(
+        {"jsonrpc": "2.0", "id": 8, "method": "tools/list"},
+        separators=(",", ":"),
+    )
+    status, data = request("POST", "/mcp", tools_payload)
+    assert status == 200
+    tools = json.loads(data)
+    expected_tool_names = {
+        "list_shards",
+        "list_hypertables",
+        "run_explain",
+        "rebalance_dry_run",
+        "suggest_index",
+        "query_with_timeout",
+        "current_lag",
+        "current_replication_status",
+        "tenant_archive",
+    }
+    tool_names = {tool["name"] for tool in tools["result"]["tools"]}
+    assert tool_names == expected_tool_names, sorted(tool_names)
+    for tool in tools["result"]["tools"]:
+        assert tool["inputSchema"]["type"] == "object"
 
     validated_payload = json.dumps(
         {
@@ -146,6 +198,22 @@ try:
     cross_schema = json.loads(data)
     assert cross_schema["result"]["isError"] is True
     assert "schema tenant_b is outside allowed_schemas" in cross_schema["result"]["content"][0]["text"]
+
+    malformed = raw_http(b"not-http")
+    assert malformed.startswith("HTTP/1.1 400 Bad Request"), malformed
+    assert "malformed MCP sidecar HTTP request" in malformed
+
+    status, data = request("POST", "/drain")
+    assert status == 202
+    assert '"accepting_new_work":false' in data
+
+    status, data = request("GET", "/readyz")
+    assert status == 503
+    assert '"state":"draining"' in data
+
+    status, data = request("GET", "/metrics")
+    assert status == 200
+    assert 'ai_blaise_sidecar_ready{component="mcp-sidecar"} 0' in data
 finally:
     proc.terminate()
     try:
