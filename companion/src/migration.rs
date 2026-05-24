@@ -593,7 +593,8 @@ pub fn canonical_migration_runtime_report() -> Result<MigrationRuntimeReport, Mi
         ],
         data_invariants: vec![MigrationDataInvariant {
             check_name: "orders-total-checksum".to_string(),
-            check_sql: "SELECT true AS passed, count(*) AS rows_checked FROM public.orders".to_string(),
+            check_sql: "SELECT true AS passed, count(*) AS rows_checked FROM public.orders"
+                .to_string(),
         }],
         lock_timeout_ms: 500,
         backfill_batch_size: 1_000,
@@ -926,5 +927,4 @@ mod tests {
             Err(MigrationError::InvalidInvariantSql)
         );
     }
-
 }
