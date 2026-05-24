@@ -219,16 +219,14 @@ impl CdcLiveRuntime {
                     Err(reason) => SinkDeliveryOutcome::DeadLettered { reason },
                 }
             }
-            CdcSinkPlan::Nats {
-                subject,
-                server_url,
-                ..
-            } => match crate::dispatch_nats_pub(server_url, subject, &frame.bytes) {
-                Ok(summary) => SinkDeliveryOutcome::Delivered {
-                    response_summary: summary,
-                },
-                Err(reason) => SinkDeliveryOutcome::DeadLettered { reason },
-            },
+            CdcSinkPlan::Nats { server_url, .. } => {
+                match crate::sinks::dispatch_nats_frame(server_url, &frame.bytes) {
+                    Ok(summary) => SinkDeliveryOutcome::Delivered {
+                        response_summary: summary,
+                    },
+                    Err(reason) => SinkDeliveryOutcome::DeadLettered { reason },
+                }
+            }
             // Kafka / Kinesis / Pub/Sub require client SDKs that are not
             // bundled into the no-deps build profile. The dispatcher reports
             // them as `Encoded` (the wire frame is real and ready for an
@@ -307,8 +305,30 @@ mod tests {
         let report = runtime
             .ingest_wal2json(&canonical_wal2json_frame())
             .expect("ingest");
-        assert!(report.dlq_total >= 1);
-        assert!(runtime.dlq().len() >= 1);
+        assert_eq!(report.dlq_total, 3);
+        assert_eq!(runtime.dlq().len(), 3);
+
+        let event = &report.events[0];
+        let mut sinks = event
+            .dlq_entries
+            .iter()
+            .map(|entry| entry.sink.as_str())
+            .collect::<Vec<_>>();
+        sinks.sort_unstable();
+        assert_eq!(sinks, vec!["http2", "nats", "webhook"]);
+
+        for entry in &event.dlq_entries {
+            assert_eq!(entry.queue, "cdc.dead_letters");
+            assert_eq!(entry.attempts, 5);
+            assert_eq!(entry.event_lsn, "16/B374D900");
+            assert_eq!(entry.tenant_id, "tenant-a");
+            assert!(entry.frame_bytes > 0);
+            assert!(
+                entry.reason.contains("connect") || entry.reason.contains("resolve"),
+                "unexpected DLQ reason: {}",
+                entry.reason
+            );
+        }
     }
 
     #[test]

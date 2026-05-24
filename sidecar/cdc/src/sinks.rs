@@ -334,8 +334,33 @@ pub fn dispatch_nats_pub(
         .set_read_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
         .map_err(|e| e.to_string())?;
     let frame = encode_nats_pub_with_subject(subject, payload);
+    dispatch_nats_frame_to_stream(&mut stream, &frame)
+}
+
+/// Write an already-encoded NATS PUB frame to a plain TCP socket.
+pub fn dispatch_nats_frame(server_url: &str, frame: &[u8]) -> Result<String, String> {
+    let host_port = server_url
+        .strip_prefix("nats://")
+        .ok_or_else(|| format!("invalid NATS URL: {server_url}"))?;
+    let socket_addr = host_port
+        .to_socket_addrs()
+        .map_err(|e| format!("resolve {host_port}: {e}"))?
+        .next()
+        .ok_or_else(|| format!("no address resolved for {host_port}"))?;
+    let mut stream = TcpStream::connect_timeout(
+        &socket_addr,
+        Duration::from_secs(HTTP1_CONNECT_TIMEOUT_SECS),
+    )
+    .map_err(|e| format!("connect {host_port}: {e}"))?;
     stream
-        .write_all(&frame)
+        .set_read_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
+        .map_err(|e| e.to_string())?;
+    dispatch_nats_frame_to_stream(&mut stream, frame)
+}
+
+fn dispatch_nats_frame_to_stream(stream: &mut TcpStream, frame: &[u8]) -> Result<String, String> {
+    stream
+        .write_all(frame)
         .map_err(|e| format!("write NATS PUB: {e}"))?;
     let mut response = [0_u8; 256];
     let bytes = stream.read(&mut response).unwrap_or(0);
@@ -751,7 +776,9 @@ mod tests {
         };
         let frame = encode_sink_frame(&plan, &payload, &event).expect("pubsub frame");
         let body: serde_json::Value = serde_json::from_slice(&frame.bytes).expect("valid json");
+        assert_eq!(frame.target, "orders");
         assert_eq!(body["messages"][0]["attributes"]["project_id"], "analytics");
+        assert_eq!(body["messages"][0]["attributes"]["topic"], "orders");
         assert!(body["messages"][0]["data"].is_string());
     }
 
@@ -769,6 +796,40 @@ mod tests {
         let text = String::from_utf8(frame.bytes).expect("ascii nats frame");
         assert!(text.starts_with("PUB tenant.orders "));
         assert!(text.ends_with("\r\n"));
+    }
+
+    #[test]
+    fn nats_frame_rejects_protocol_injection_subjects() {
+        let event = canonical_cdc_event();
+        let payload = CdcEventPayload::encode(&event, &[]);
+        let plan = CdcSinkPlan::Nats {
+            name: "nats".to_string(),
+            subject: "tenant.orders\r\nPING".to_string(),
+            server_url: "nats://nats:4222".to_string(),
+            retry_policy: crate::canonical_retry_policy(),
+        };
+
+        assert_eq!(
+            encode_sink_frame(&plan, &payload, &event),
+            Err(CdcSidecarError::InvalidSinkConfig("sink.nats.subject"))
+        );
+    }
+
+    #[test]
+    fn pubsub_frame_rejects_invalid_project_ids() {
+        let event = canonical_cdc_event();
+        let payload = CdcEventPayload::encode(&event, &[]);
+        let plan = CdcSinkPlan::PubSub {
+            name: "pubsub".to_string(),
+            project_id: "prod".to_string(),
+            topic: "orders".to_string(),
+            retry_policy: crate::canonical_retry_policy(),
+        };
+
+        assert_eq!(
+            encode_sink_frame(&plan, &payload, &event),
+            Err(CdcSidecarError::InvalidSinkConfig("sink.pubsub.project_id"))
+        );
     }
 
     #[test]
