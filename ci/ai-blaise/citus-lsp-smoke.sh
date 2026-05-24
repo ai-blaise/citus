@@ -110,4 +110,124 @@ if cargo run -q -p ai_blaise_citus_lsp -- analyze --sql "${sql}" > /dev/null 2> 
 fi
 grep -q 'analyze requires --metadata <path>' "${missing_err}"
 
+
+METADATA_PATH="${metadata}" SQL_PATH="${sql}" python3 <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+metadata = os.environ["METADATA_PATH"]
+sql_text = open(os.environ["SQL_PATH"], encoding="utf-8").read()
+uri = "file:///workspace/migration.sql"
+
+proc = subprocess.Popen(
+    ["cargo", "run", "-q", "-p", "ai_blaise_citus_lsp", "--", "serve-stdio", "--metadata", metadata],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+)
+
+
+def send(payload):
+    raw = payload if isinstance(payload, bytes) else json.dumps(payload, separators=(",", ":")).encode()
+    assert proc.stdin is not None
+    proc.stdin.write(b"Content-Length: " + str(len(raw)).encode() + b"\r\n\r\n" + raw)
+    proc.stdin.flush()
+
+
+def recv():
+    assert proc.stdout is not None
+    headers = {}
+    while True:
+        line = proc.stdout.readline()
+        if not line:
+            stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+            raise AssertionError(f"citus-lsp serve-stdio closed stdout early: {stderr}")
+        if line in (b"\r\n", b"\n"):
+            break
+        name, value = line.decode().split(":", 1)
+        headers[name.lower()] = value.strip()
+    length = int(headers["content-length"])
+    return json.loads(proc.stdout.read(length))
+
+try:
+    send(b'{"jsonrpc":"2.0","id":900,"method":')
+    malformed = recv()
+    assert malformed["error"]["code"] == -32700
+
+    send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"capabilities": {}}})
+    initialize = recv()
+    assert initialize["result"]["serverInfo"]["name"] == "ai-blaise-citus-lsp"
+    assert initialize["result"]["capabilities"]["diagnosticProvider"]["workspaceDiagnostics"] is False
+
+    send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
+    send(
+        {
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {
+                "textDocument": {
+                    "uri": uri,
+                    "languageId": "sql",
+                    "version": 1,
+                    "text": sql_text,
+                }
+            },
+        }
+    )
+    published = recv()
+    assert published["method"] == "textDocument/publishDiagnostics"
+    diagnostics = published["params"]["diagnostics"]
+    codes = {diagnostic["code"] for diagnostic in diagnostics}
+    assert len(diagnostics) == 7, diagnostics
+    for expected in {
+        "missing_distribution_column",
+        "non_colocated_join",
+        "distribution_column_alter",
+        "hypertable_invariant",
+        "missing_tenant_filter",
+        "missing_search_analyzer",
+    }:
+        assert expected in codes, codes
+    assert any(
+        diagnostic.get("data", {}).get("quickFix", "").startswith("add_distribution_column")
+        for diagnostic in diagnostics
+    )
+
+    send({"jsonrpc": "2.0", "id": 2, "method": "textDocument/diagnostic", "params": {"textDocument": {"uri": uri}}})
+    pulled = recv()
+    assert pulled["result"]["kind"] == "full"
+    assert len(pulled["result"]["items"]) == 7
+
+    send({"jsonrpc": "2.0", "id": 3, "method": "workspace/symbol", "params": {}})
+    unknown = recv()
+    assert unknown["error"]["code"] == -32601
+
+    send({"jsonrpc": "2.0", "id": 4, "method": "textDocument/diagnostic", "params": {"textDocument": {"uri": "file:///missing.sql"}}})
+    missing = recv()
+    assert missing["error"]["code"] == -32602
+    assert "document is not open" in missing["error"]["message"]
+
+    send({"jsonrpc": "2.0", "id": 5, "method": "shutdown", "params": None})
+    shutdown = recv()
+    assert shutdown["result"] is None
+    send({"jsonrpc": "2.0", "method": "exit"})
+finally:
+    if proc.stdin is not None:
+        proc.stdin.close()
+    try:
+        proc.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
+        proc.wait(timeout=20)
+
+if proc.returncode != 0:
+    stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
+    print(stderr, file=sys.stderr)
+    raise SystemExit(proc.returncode)
+
+print("citus-lsp LSP stdio smoke passed")
+PY
+
 echo "citus-lsp file-backed smoke passed"

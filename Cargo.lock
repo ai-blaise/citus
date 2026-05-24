@@ -57,6 +57,9 @@ dependencies = [
 [[package]]
 name = "ai_blaise_citus_lsp"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "ai_blaise_citus_mcp"

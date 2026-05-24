@@ -21,16 +21,19 @@ proc = subprocess.Popen(
 
 
 def request(payload):
+    return raw_request(json.dumps(payload, separators=(",", ":")))
+
+
+def raw_request(raw):
     assert proc.stdin is not None
     assert proc.stdout is not None
-    proc.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+    proc.stdin.write(raw + "\n")
     proc.stdin.flush()
     line = proc.stdout.readline()
     if not line:
         stderr = proc.stderr.read() if proc.stderr is not None else ""
         raise AssertionError(f"citus-mcp serve-stdio closed stdout early: {stderr}")
     return json.loads(line)
-
 
 try:
     initialize = request(
@@ -46,6 +49,20 @@ try:
     )
     assert initialize["result"]["serverInfo"]["name"] == "ai-blaise-citus-mcp"
     assert initialize["result"]["capabilities"]["tools"]["listChanged"] is False
+
+    malformed = raw_request("{not-json")
+    assert malformed["error"]["code"] == -32700
+
+    unknown = request({"jsonrpc": "2.0", "id": 20, "method": "unknown/method"})
+    assert unknown["error"]["code"] == -32601
+
+    invalid_params = request({
+        "jsonrpc": "2.0",
+        "id": 21,
+        "method": "tools/call",
+        "params": "not-an-object",
+    })
+    assert invalid_params["error"]["code"] == -32602
 
     tools = request({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
     tool_names = {tool["name"] for tool in tools["result"]["tools"]}

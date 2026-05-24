@@ -495,15 +495,18 @@ more production-ready than the artifacts justified.
   This is not evidence for mutating Kubernetes apply execution, manifest
   reconciliation, migrations, backups, PITR, WAL replay, Docker/kind startup,
   or a live Citus data plane.
-- The `citus-lsp` CLI now has a direct executable smoke for the narrow
+- The `citus-lsp` CLI now has direct executable smokes for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
   <migration.sql>` against a real SQL file and metadata TSV, verifies
   diagnostics and quick-fix actions, verifies distributed hypertable bridge
-  suppression, and verifies bad or missing metadata fails closed. This is not
-  evidence for JSON-RPC language-server protocol integration, editor
-  transport, workspace indexing, automatic file rewrites, or full PostgreSQL
-  grammar coverage.
+  suppression, and verifies bad or missing metadata fails closed. It also
+  drives file-backed LSP-style `Content-Length` JSON-RPC stdio frames through
+  `citus-lsp serve-stdio --metadata <metadata.tsv>` for initialize, opened-file
+  publish diagnostics, pull diagnostics, malformed JSON, unknown methods, and
+  unopened-document failure. This is not evidence for editor transport,
+  workspace indexing, automatic file rewrites, live metadata refresh, or full
+  PostgreSQL grammar coverage.
 - The Raft/HLC/transaction-status triad now has executable sidecar runtime
   evidence: `sidecar-raft-smoke.sh` proves deterministic election,
   AppendEntries replication, quorum commit, durable log replay, and snapshot
@@ -702,9 +705,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   full mutating apply execution, manifest reconciliation, migrations, backups,
   PITR, WAL replay, or dev cluster lifecycle.
 - D4/M5/TS8 production evidence is limited to the file-backed `citus-lsp`
-  diagnostic and quick-fix action CLI over supported SQL migration statements.
-  It must not be cited as evidence for JSON-RPC editor integration, workspace
-  indexing, automatic rewrites, or full PostgreSQL grammar coverage.
+  diagnostic and quick-fix action CLI plus the file-backed JSON-RPC stdio
+  diagnostic service over supported SQL migration statements. It must not be
+  cited as evidence for editor integration, workspace indexing, automatic
+  rewrites, live metadata refresh, or full PostgreSQL grammar coverage.
 - PM3/PM4 production evidence now includes the deterministic
   `companion/src/plan_runtime.rs` execution path for idempotency replay,
   bounded retry, durable audit-event emission, promotion-policy evaluation,

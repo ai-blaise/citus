@@ -813,9 +813,12 @@ Production evidence: Local, VM, and GitHub Actions proof run
 `ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
 file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
 verifies the distributed-hypertable invariant diagnostic, then verifies that
-`apply_distribute_hypertable(...)` suppresses that warning. Broader JSON-RPC
-language-server protocol integration, editor transport, workspace indexing,
-automatic file rewrites, and full PostgreSQL grammar coverage remain alpha.
+`apply_distribute_hypertable(...)` suppresses that warning. The same smoke
+drives file-backed LSP-style `Content-Length` JSON-RPC stdio frames through
+`citus-lsp serve-stdio --metadata <metadata.tsv>` for opened-file diagnostics
+and fail-closed malformed input behavior. Broader editor integration,
+workspace indexing, automatic file rewrites, live metadata refresh, and full
+PostgreSQL grammar coverage remain alpha.
 
 **Motivation**: The required Timescale integration is subtle enough that users
 need IDE feedback before invalid SQL reaches a migration or operator reconcile.
@@ -5369,8 +5372,10 @@ administration shell.
 
 **Summary**: Adds the initial Citus-aware LSP analyzer contract for
 non-colocated joins, unsafe distribution-column alters, missing tenant filters,
-missing search analyzers, and the file-backed
-`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI.
+missing search analyzers, the file-backed
+`citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>` CLI, and a
+file-backed `citus-lsp serve-stdio --metadata <metadata.tsv>` JSON-RPC stdio
+transport for diagnostics on opened SQL documents.
 
 Production evidence: Local, VM, and GitHub Actions proof run
 `ci/ai-blaise/citus-lsp-smoke.sh`, which feeds a metadata TSV plus a real SQL
@@ -5378,9 +5383,14 @@ file into `citus-lsp analyze --metadata <metadata.tsv> --sql <migration.sql>`,
 verifies missing distribution column, non-colocated join,
 distribution-column alter, hypertable invariant, missing tenant filter, and
 missing search analyzer diagnostics, and verifies fail-closed behavior for bad
-metadata or missing metadata. Broader JSON-RPC language-server protocol
-integration, editor transport, workspace indexing, automatic file rewrites,
-and full PostgreSQL grammar coverage remain alpha.
+metadata or missing metadata. The same smoke drives real LSP-style
+`Content-Length` stdio frames through `citus-lsp serve-stdio --metadata`,
+covering initialize, textDocument/didOpen publishDiagnostics,
+textDocument/diagnostic pull diagnostics, malformed JSON, unknown method, and
+unopened-document failure. Production evidence is limited to this file-backed
+stdio diagnostic service; editor integration, workspace indexing, automatic
+file rewrites, live metadata refresh, and full PostgreSQL grammar coverage
+remain alpha.
 
 **Motivation**: Developers need edit-time errors for distributed SQL rules
 rather than discovering them during deploy-time reconciliation.
@@ -7684,7 +7694,7 @@ gates.
 **Summary**: Defines the validation-only MCP workflow contract for exposing
 Citus-oriented developer operation requests to agent tooling.
 
-Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They exercise the full validation-oriented developer workflow through real MCP stdio, sidecar stdio, sidecar HTTP, and PostgreSQL-backed read-only execution paths, including initialize, tool discovery, safe tenant query, shard listing, cross-schema denial, destructive-denial, and missing-scope rejection. Authenticated multi-user deployment and mutating Kubernetes/database operations remain outside this production-ready workflow.
+Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-stdio-smoke.sh`, `ci/ai-blaise/mcp-sidecar-http-smoke.sh`, and `REQUIRE_DOCKER=1 ci/ai-blaise/mcp-db-smoke.sh`. They exercise the scoped MCP workflow through real MCP stdio validation, sidecar stdio, sidecar HTTP, and PostgreSQL-backed read-only execution paths, including initialize, malformed JSON, invalid params, tool discovery, safe tenant query, shard listing, cross-schema denial, destructive-denial, and missing-scope rejection. Production evidence is limited to validation plus read-only database execution; authenticated multi-user deployment and mutating Kubernetes/database operations remain outside this production-ready workflow.
 
 **Citus comparison**: Vanilla Citus does not expose MCP workflows for agents.
 
