@@ -23,6 +23,7 @@ Production deployments must run through the continuous gates before release.
 15. License.
 16. Production-readiness audit.
 17. Production gap audit.
+18. Runbook command checks.
 
 The first 15 gates are not a blanket production certification for every custom
 feature. They verify the V2 acceptance model and the current deployment path.
@@ -33,7 +34,12 @@ release scope:
 ```bash
 ci/ai-blaise/production-readiness-check.sh production-release
 ci/ai-blaise/production-gap-audit.sh
+ci/ai-blaise/runbook-command-check.sh
 ```
+
+The runbook-command check statically parses the operational runbook command
+blocks, runs `bash -n` after placeholder normalization, and verifies referenced
+repo scripts, Cargo packages, Makefile targets, and sidecar binaries still exist.
 
 The production-gap-audit gate is intentionally conservative: it asserts that
 V2 acceptance is a modeled prerequisite, that production-release mode remains

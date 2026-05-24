@@ -16,6 +16,23 @@ image.
 - Helm values for the canary namespace.
 - Rollback branch, backup checkpoint, and PITR timestamp.
 
+## Dry-run Command Checks
+
+Before rendering or applying the canary namespace, run the static and modeled
+gates that catch stale commands, patch drift, image contract drift, and release
+model overclaims:
+
+```bash
+bash ci/ai-blaise/runbook-command-check.sh
+bash ci/ai-blaise/upstream-merge-dry.sh
+bash ci/ai-blaise/image-check.sh
+bash ci/ai-blaise/v2-acceptance-check.sh
+```
+
+These dry-runs are prerequisites for the canary. They are not production
+evidence for the live upgrade until the canary namespace is rendered, applied,
+smoked, and recorded for the exact release candidate.
+
 ## Canary Flow
 
 1. Fetch upstream Citus and re-run the patch series gate; integrated TS6
