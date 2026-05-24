@@ -170,6 +170,11 @@ production_entries = [entry for entry in entries if entry["status"] == "producti
 alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
 source_only_ids = source_ids - doc_ids
 
+status_by_id = {entry["id"]: entry["status"] for entry in entries}
+for feature_id in ("C6", "C7", "C8"):
+    if status_by_id.get(feature_id) != "alpha":
+        fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
+
 audit_compact = compact(audit)
 
 for pattern in (
@@ -215,6 +220,17 @@ for phrase in (
         fail(
             f"PRODUCTION_READINESS_AUDIT.md must preserve guardrail phrase: {phrase}"
         )
+
+branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh"))
+for phrase in (
+    "ci/ai-blaise/operator-branch-lifecycle-smoke.sh",
+    "conservative admission guards",
+    "live Kubernetes CSI `VolumeSnapshot` creation",
+    "traffic cut-over",
+    "remains alpha contract evidence",
+):
+    if compact(phrase) not in branch_lifecycle_truth:
+        fail(f"Branch lifecycle docs must preserve alpha evidence boundary: {phrase}")
 
 for path in (
     DOCS,

@@ -730,6 +730,16 @@ traffic are not promoted by this evidence. External managed broker operations
 client operation) remain alpha unless covered by their own feature entry.
 
 Worker CDC-Sinks production evidence from 2026-05-24 adds `C14` and `C15` to the narrow production-ready set. The evidenced boundary is strict local NATS subject/server URL and Pub/Sub project/topic validation, deterministic NATS `PUB` and Pub/Sub `messages.publish` frame encoding, serve-runtime/canonical stdout exposure, and DLQ retry accounting for live NATS dispatch failures under `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` and `ci/ai-blaise/sidecar-cdc-smoke.sh`. Managed NATS auth/TLS/JetStream and live GCP Pub/Sub auth/IAM/topic operations remain alpha.
+Branch lifecycle evidence for `C6`, `C7`, and `C8` is intentionally alpha. The
+VM smoke `ci/ai-blaise/operator-branch-lifecycle-smoke.sh` and focused operator
+unit tests verify only deterministic local contracts: branch source/target
+validation, conservative storage and snapshot class admission guards,
+storage-quantity validation, snapshot-class invariants, apply/suspend/promote
+state transition planning, and fail-closed guards for readiness, active sessions,
+pending migrations, write quiescence, replication catch-up, and suspend intent.
+This is not production evidence for live CSI `VolumeSnapshot` creation, PVC
+cloning, Kubernetes cluster materialization, StatefulSet scaling, traffic
+cut-over, DNS/Service retargeting, or production branch promotion.
 
 
 
