@@ -84,6 +84,14 @@ fn validate_regions_declared(
     spec: &SurvivalGoalSpec,
     regions: &[RegionSpec],
 ) -> Result<(), SurvivalGoalReconcileError> {
+    let mut seen = BTreeSet::new();
+    for region in regions {
+        if !seen.insert(&region.name) {
+            return Err(SurvivalGoalReconcileError::DuplicateRegionInventory(
+                region.name.clone(),
+            ));
+        }
+    }
     for required_region in &spec.regions {
         if !regions.iter().any(|region| &region.name == required_region) {
             return Err(SurvivalGoalReconcileError::UndeclaredRegion(
@@ -303,6 +311,7 @@ pub enum SurvivalGoalReconcileError {
     InvalidShardGroup(String),
     InvalidRegion(String),
     DuplicateRegion(String),
+    DuplicateRegionInventory(String),
     UndeclaredRegion(String),
     NoShardGroups,
     MissingTopologySpread {
@@ -331,6 +340,10 @@ impl fmt::Display for SurvivalGoalReconcileError {
             Self::DuplicateRegion(region) => write!(
                 formatter,
                 "survival goal references region {region} more than once"
+            ),
+            Self::DuplicateRegionInventory(region) => write!(
+                formatter,
+                "Region inventory contains region {region} more than once"
             ),
             Self::UndeclaredRegion(region) => write!(
                 formatter,
@@ -522,6 +535,25 @@ mod tests {
         assert!(matches!(
             result,
             Err(SurvivalGoalReconcileError::PlacementSkewTooLoose { .. })
+        ));
+    }
+
+    #[test]
+    fn survival_goal_rejects_duplicate_region_inventory() {
+        let spec = SurvivalGoalSpec {
+            goal: SurvivalGoalType::RegionFailure,
+            regions: vec!["us-east-1".to_string(), "us-west-2".to_string()],
+            min_replicas: 2,
+        };
+        let regions = vec![
+            region("us-east-1", "us-east-1a"),
+            region("us-east-1", "us-east-1b"),
+        ];
+
+        let result = SurvivalGoalReconcilePlan::new(&spec, &[], &regions);
+        assert!(matches!(
+            result,
+            Err(SurvivalGoalReconcileError::DuplicateRegionInventory(name)) if name == "us-east-1"
         ));
     }
 

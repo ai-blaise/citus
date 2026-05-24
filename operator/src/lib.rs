@@ -81,6 +81,7 @@ pub use reconcile::migration::{
 };
 pub use reconcile::region::{
     RegionApplyStep, RegionApplyStepKind, RegionReconcileError, RegionReconcilePlan,
+    RegionalRowPlacementPlan, RegionalRowPlacementSpec, RegionalRowPlacementStep,
 };
 pub use reconcile::scheduled_repack::{
     ScheduledRepackApplyPlan, ScheduledRepackApplyStep, ScheduledRepackReconcileError,

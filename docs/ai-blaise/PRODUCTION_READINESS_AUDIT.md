@@ -285,6 +285,16 @@ more production-ready than the artifacts justified.
   artifact restore, sidecar readiness, and conflict-policy evidence is measured
   against real runtime infrastructure. The production gap audit machine-checks
   that guardrail.
+- Multi-region placement/survival hardening on 2026-05-24 adds VM evidence via
+  `ci/ai-blaise/operator-multiregion-contracts-smoke.sh` for deterministic
+  operator contracts only: strict region label/zone/tablespace validation,
+  duplicate region inventory rejection, `RegionalRowPlacementPlan` admission
+  checks for declared regions, distribution key, replication factor, and
+  `topology.kubernetes.io/region` spread, plus canonical output with
+  `live_k8s_exercised=false`. `MR3`, `MR5`, and `MR9` remain alpha; this is not
+  evidence for live row movement, GeoIP pool routing, cross-region client
+  traffic, DNS cutover, regional failover, PITR restore, or backup artifact
+  restore.
 - The backup/PITR runbooks now have a restore-depth gate backed by
   `ci/ai-blaise/dr-restore-depth-check.sh`. The gate validates fail-closed
   restore configuration, read-only branch-before-restore policy, destructive

@@ -164,6 +164,11 @@ production_entries = [entry for entry in entries if entry["status"] == "producti
 alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
 source_only_ids = source_ids - doc_ids
 
+status_by_id = {entry["id"]: entry["status"] for entry in entries}
+for feature_id in ("MR3", "MR5", "MR9"):
+    if status_by_id.get(feature_id) != "alpha":
+        fail(f"{feature_id} must remain alpha until live multi-region runtime evidence exists")
+
 audit_compact = compact(audit)
 
 for pattern in (
@@ -207,6 +212,18 @@ for phrase in (
         fail(
             f"PRODUCTION_READINESS_AUDIT.md must preserve guardrail phrase: {phrase}"
         )
+
+multiregion_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-multiregion-contracts-smoke.sh"))
+for phrase in (
+    "ci/ai-blaise/operator-multiregion-contracts-smoke.sh",
+    "RegionalRowPlacementPlan",
+    "live_k8s_exercised=false",
+    "GeoIP pool routing",
+    "regional failover",
+    "remain alpha",
+):
+    if compact(phrase) not in multiregion_truth:
+        fail(f"Multi-region docs must preserve alpha evidence boundary: {phrase}")
 
 for path in (
     DOCS,
