@@ -9,12 +9,15 @@
 
 pub mod backup;
 pub mod citus_cluster;
+pub mod conflict_policy;
 pub mod federation;
 pub mod function;
 pub mod hypertable;
 pub mod migration;
 pub mod region;
+pub mod scheduled_repack;
 pub mod search_index;
+pub mod sidecar;
 pub mod survival_goal;
 pub mod tenant;
 pub mod webhook;
@@ -58,13 +61,16 @@ pub enum ControllerError {
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client);
     info!(
-        "operator serving CitusCluster, Migration, Tenant, Region, SurvivalGoal, Backup, Hypertable, Federation, SearchIndex, Webhook, Function controllers"
+        "operator serving CitusCluster, Migration, Tenant, Region, SurvivalGoal, Backup, Hypertable, Federation, SearchIndex, Webhook, Function, ScheduledRepack, ConflictPolicy, Sidecar controllers"
     );
 
     let backup = tokio::spawn(backup::run(ctx.clone()));
     let cluster = tokio::spawn(citus_cluster::run(ctx.clone()));
+    let conflict_policy = tokio::spawn(conflict_policy::run(ctx.clone()));
     let migration = tokio::spawn(migration::run(ctx.clone()));
     let region = tokio::spawn(region::run(ctx.clone()));
+    let scheduled_repack = tokio::spawn(scheduled_repack::run(ctx.clone()));
+    let sidecar = tokio::spawn(sidecar::run(ctx.clone()));
     let survival_goal = tokio::spawn(survival_goal::run(ctx.clone()));
     let tenant = tokio::spawn(tenant::run(ctx.clone()));
     let hypertable = tokio::spawn(hypertable::run(ctx.clone()));
@@ -76,8 +82,11 @@ pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     tokio::select! {
         result = backup => log_exit("backup", result),
         result = cluster => log_exit("citus_cluster", result),
+        result = conflict_policy => log_exit("conflict_policy", result),
         result = migration => log_exit("migration", result),
         result = region => log_exit("region", result),
+        result = scheduled_repack => log_exit("scheduled_repack", result),
+        result = sidecar => log_exit("sidecar", result),
         result = survival_goal => log_exit("survival_goal", result),
         result = tenant => log_exit("tenant", result),
         result = hypertable => log_exit("hypertable", result),

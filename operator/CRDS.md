@@ -16,10 +16,11 @@ canonical catalog and emits the CI-gated `run-canonical` TSV summary.
 - `Branch` (`FEATURE: R2`, `FEATURE: C6`, `FEATURE: C7`, `FEATURE: C8`,
   canonical Rust spec implemented)
 - `Vectorizer` (`FEATURE: A8`, canonical Rust spec implemented)
-- `Sidecar` (`FEATURE: O5`, canonical Rust spec implemented)
-- `Migration` (`FEATURE: C9`, `FEATURE: M3`, canonical Rust spec implemented)
+- `Sidecar` (`FEATURE: O5`, spec, reconcile plan, and controller implemented)
+- `Migration` (`FEATURE: C9`, `FEATURE: M3`, schema job reconcile plan and
+  controller implemented)
 - `ConflictPolicy` (`FEATURE: C4`, `FEATURE: C5`, canonical Rust spec
-  implemented and included in the operator runner)
+  implemented with reconcile plan and controller)
 - `Tenant` (`FEATURE: S10`, `FEATURE: TO1`, `FEATURE: TO2`, `FEATURE: TO5`,
   canonical Rust spec implemented)
 - `Region` (`FEATURE: MR1`, `FEATURE: MR4`, `FEATURE: MR8`, canonical Rust
@@ -35,4 +36,5 @@ canonical catalog and emits the CI-gated `run-canonical` TSV summary.
   controller implemented)
 - `Function` (`FEATURE: EF3`, canonical Rust spec, plan-builder, and kube-rs
   controller implemented)
-- `ScheduledRepack` (`FEATURE: R7`, canonical Rust spec implemented)
+- `ScheduledRepack` (`FEATURE: R7`, spec, pg_cron/pg_repack reconcile plan,
+  and controller implemented)

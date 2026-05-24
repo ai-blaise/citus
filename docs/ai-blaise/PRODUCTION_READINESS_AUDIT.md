@@ -609,6 +609,15 @@ mutation execution, CRD `.status` writes, outbound HTTP delivery, edge-function
 execution, external warehouse connectivity, and distributed search query fanout
 remain alpha until separately implemented and live-gated.
 
+Reconcilers Batch C evidence is scoped to kube-rs CR validation and
+deterministic operator plan builders for scheduled repack, migration/schema-job
+handoff, conflict policy, and sidecar deployment/deletion contracts under
+`cargo test -p ai_blaise_citus_operator` and
+`ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh`. Live SQL execution,
+pg_cron scheduling, pg_repack execution, two-version schema-job workers,
+active-active replication conflict handling, Kubernetes child-resource apply,
+and `.status` writes remain alpha.
+
 
 Companion runtime depth A evidence is scoped to deterministic Rust companion
 reports for migration planning, durable queue semantics, and

@@ -4,12 +4,6 @@
 
 //! MigrationReconciler: drives `Migration` CRs through the F1-style
 //! schema-job state machine and the two-version invariant (2VI).
-//!
-//! The reconciler does not own the controller's tokio loop. Instead, it
-//! plans the next sidecar invocation: which schema-job to drive, which
-//! phase to target, and which gate to use. The companion crate hosts the
-//! controller logic; the sidecar/schema_job daemon hosts the runtime. This
-//! module is the operator's view of "what do we want to happen next".
 
 use ai_blaise_citus_companion::{
     verify_two_version_invariant_sql, SchemaJobOperation, SchemaJobPlan, SchemaJobState,
@@ -22,9 +16,11 @@ use crate::crds::migration::{
     MigrationConflictAction, MigrationSpec, MigrationSpecError, MigrationType,
 };
 
-/// The next thing the operator wants the schema-job sidecar to do for a
-/// Migration CR. The operator emits one of these per Migration during each
-/// reconcile sweep.
+pub const SCHEMA_JOB_START_FUNCTION: &str = "companion_internal.schema_job_start";
+pub const SCHEMA_JOB_ADD_OPERATION_FUNCTION: &str = "companion_internal.schema_job_add_operation";
+pub const SCHEMA_JOB_ADVANCE_FUNCTION: &str = "companion_internal.schema_job_advance";
+pub const SCHEMA_JOB_STATUS_VIEW: &str = "companion_schema_jobs";
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MigrationReconcilePlan {
     pub migration_type: MigrationType,
@@ -81,15 +77,131 @@ impl TryFrom<&MigrationCommand> for MigrationReconcilePlan {
 }
 
 impl MigrationReconcilePlan {
-    /// SQL that the operator includes in the sidecar invocation envelope so
-    /// the sidecar always verifies the 2VI before acting.
+    pub fn migration_type_str(&self) -> &'static str {
+        match self.migration_type {
+            MigrationType::Pgroll => "pgroll",
+            MigrationType::GhOst => "gh-ost",
+        }
+    }
+
+    pub fn conflict_action_str(&self) -> &'static str {
+        match self.conflict_action {
+            MigrationConflictAction::Fail => "fail",
+            MigrationConflictAction::Skip => "skip",
+            MigrationConflictAction::Replace => "replace",
+            MigrationConflictAction::ManualReview => "manual_review",
+        }
+    }
+
+    pub fn target_state_str(&self) -> &'static str {
+        self.target_state.as_canonical()
+    }
+
     pub fn invariant_preflight_sql(&self) -> &str {
         &self.invariant_check_sql
     }
+
+    pub fn apply_plan(&self) -> MigrationApplyPlan {
+        let mut steps = vec![
+            MigrationApplyStep::new(
+                "ensure_ai_blaise_citus_extension",
+                "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;",
+                true,
+            ),
+            MigrationApplyStep::new(
+                "start_schema_job",
+                start_schema_job_sql(&self.schema_job),
+                true,
+            ),
+        ];
+
+        steps.extend(
+            self.schema_job
+                .operations
+                .iter()
+                .enumerate()
+                .map(|(index, operation)| {
+                    MigrationApplyStep::new(
+                        format!("record_schema_job_operation_{:02}", index + 1),
+                        add_operation_sql(&self.schema_job.name, operation),
+                        false,
+                    )
+                }),
+        );
+
+        steps.push(MigrationApplyStep::new(
+            format!("advance_to_{}", self.target_state.as_canonical()),
+            advance_sql(&self.schema_job.name, self.target_state),
+            true,
+        ));
+        steps.push(MigrationApplyStep::new(
+            "verify_two_version_invariant",
+            self.invariant_check_sql.clone(),
+            true,
+        ));
+
+        MigrationApplyPlan { steps }
+    }
+
+    pub fn apply_sql_script(&self) -> String {
+        self.apply_plan().sql_script()
+    }
+
+    pub fn status_sql(&self) -> String {
+        format!(
+            "SELECT job_name, table_name, state, lease_expires_at FROM {view} WHERE job_name = {job};",
+            view = SCHEMA_JOB_STATUS_VIEW,
+            job = sql_literal(&self.schema_job.name),
+        )
+    }
+
+    pub fn teardown_sql(&self, action: MigrationTeardownAction) -> String {
+        let state = match action {
+            MigrationTeardownAction::Pause => SchemaJobState::Paused,
+            MigrationTeardownAction::Cancel => SchemaJobState::Canceled,
+        };
+        advance_sql(&self.schema_job.name, state)
+    }
 }
 
-/// Input the operator constructs from a Migration CR plus live cluster
-/// state. The operator's outer reconcile loop owns the actual K8s client.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MigrationTeardownAction {
+    Pause,
+    Cancel,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MigrationApplyStep {
+    pub name: String,
+    pub sql: String,
+    pub idempotent: bool,
+}
+
+impl MigrationApplyStep {
+    fn new(name: impl Into<String>, sql: impl Into<String>, idempotent: bool) -> Self {
+        Self {
+            name: name.into(),
+            sql: sql.into(),
+            idempotent,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct MigrationApplyPlan {
+    pub steps: Vec<MigrationApplyStep>,
+}
+
+impl MigrationApplyPlan {
+    pub fn sql_script(&self) -> String {
+        self.steps
+            .iter()
+            .map(|step| step.sql.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MigrationCommand {
     pub spec: MigrationSpec,
@@ -118,6 +230,63 @@ fn gate_from_conflict(action: MigrationConflictAction) -> TransitionGate {
             TransitionGate::WaitForever
         }
     }
+}
+
+fn start_schema_job_sql(plan: &SchemaJobPlan) -> String {
+    format!(
+        "SELECT {function}({job}, {table}, {lease_seconds});",
+        function = SCHEMA_JOB_START_FUNCTION,
+        job = sql_literal(&plan.name),
+        table = sql_literal(&plan.table),
+        lease_seconds = plan.lease_seconds,
+    )
+}
+
+fn add_operation_sql(job_name: &str, operation: &SchemaJobOperation) -> String {
+    match operation {
+        SchemaJobOperation::AddColumn { column, sql_type } => format!(
+            "SELECT {function}({job}, 'add_column', {column}, {sql_type}, NULL, NULL);",
+            function = SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+            job = sql_literal(job_name),
+            column = sql_literal(column),
+            sql_type = sql_literal(sql_type),
+        ),
+        SchemaJobOperation::Backfill { statement } => format!(
+            "SELECT {function}({job}, 'backfill', NULL, NULL, {statement}, NULL);",
+            function = SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+            job = sql_literal(job_name),
+            statement = sql_literal(statement),
+        ),
+        SchemaJobOperation::SwapColumn {
+            old_column,
+            new_column,
+        } => format!(
+            "SELECT {function}({job}, 'swap_column', {old_column}, NULL, NULL, {new_column});",
+            function = SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+            job = sql_literal(job_name),
+            old_column = sql_literal(old_column),
+            new_column = sql_literal(new_column),
+        ),
+        SchemaJobOperation::DropColumn { column } => format!(
+            "SELECT {function}({job}, 'drop_column', {column}, NULL, NULL, NULL);",
+            function = SCHEMA_JOB_ADD_OPERATION_FUNCTION,
+            job = sql_literal(job_name),
+            column = sql_literal(column),
+        ),
+    }
+}
+
+fn advance_sql(job_name: &str, state: SchemaJobState) -> String {
+    format!(
+        "SELECT {function}({job}, {state});",
+        function = SCHEMA_JOB_ADVANCE_FUNCTION,
+        job = sql_literal(job_name),
+        state = sql_literal(state.as_canonical()),
+    )
+}
+
+fn sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -175,10 +344,15 @@ mod tests {
             job_name: "users-display-name".to_string(),
             table: "public.users".to_string(),
             current_state: state,
-            operations: vec![SchemaJobOperation::AddColumn {
-                column: "display_name".to_string(),
-                sql_type: "text".to_string(),
-            }],
+            operations: vec![
+                SchemaJobOperation::AddColumn {
+                    column: "display_name".to_string(),
+                    sql_type: "text".to_string(),
+                },
+                SchemaJobOperation::Backfill {
+                    statement: "UPDATE public.users SET display_name = email".to_string(),
+                },
+            ],
             lease_seconds: 60,
             workers: vec!["worker-a".to_string(), "worker-b".to_string()],
         }
@@ -193,6 +367,8 @@ mod tests {
         .unwrap();
         assert_eq!(plan.target_state, SchemaJobState::WriteOnly);
         assert_eq!(plan.gate, TransitionGate::WaitForever);
+        assert_eq!(plan.migration_type_str(), "pgroll");
+        assert_eq!(plan.conflict_action_str(), "replace");
         assert!(plan
             .invariant_preflight_sql()
             .contains("verify_two_version_invariant"));
@@ -217,6 +393,27 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(plan.gate, TransitionGate::SkipMissing);
+    }
+
+    #[test]
+    fn apply_plan_renders_schema_job_sql_and_2vi_guard() {
+        let plan = MigrationReconcilePlan::try_from(&command(
+            SchemaJobState::DeleteOnly,
+            MigrationConflictAction::ManualReview,
+        ))
+        .unwrap();
+        let apply = plan.apply_plan();
+        assert_eq!(apply.steps.len(), 6);
+        assert!(apply.sql_script().contains(SCHEMA_JOB_START_FUNCTION));
+        assert!(apply
+            .sql_script()
+            .contains(SCHEMA_JOB_ADD_OPERATION_FUNCTION));
+        assert!(apply.sql_script().contains(SCHEMA_JOB_ADVANCE_FUNCTION));
+        assert!(apply.sql_script().contains("verify_two_version_invariant"));
+        assert!(plan.status_sql().contains(SCHEMA_JOB_STATUS_VIEW));
+        assert!(plan
+            .teardown_sql(MigrationTeardownAction::Pause)
+            .contains("'paused'"));
     }
 
     #[test]
