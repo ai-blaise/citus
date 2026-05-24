@@ -311,6 +311,7 @@ custom_probe_contract_file() {
     sidecar/graphql/src/main.rs) echo sidecar/graphql/src/lib.rs ;;
     sidecar/hlc/src/main.rs) echo sidecar/hlc/src/main.rs ;;
     sidecar/postgrest/src/main.rs) echo sidecar/postgrest/src/lib.rs ;;
+    sidecar/storage/src/main.rs) echo sidecar/storage/src/lib.rs ;;
     sidecar/txn_status/src/main.rs) echo sidecar/txn_status/src/main.rs ;;
     sidecar/vectorizer/src/main.rs) echo sidecar/vectorizer/src/runtime/server.rs ;;
     *) return 1 ;;
@@ -346,6 +347,10 @@ has_http_probe_contract() {
   local src_dir
 
   if grep -Fq 'run_probe_server' "${main_file}"; then
+    return 0
+  fi
+
+  if has_custom_http_probe "${main_file}"; then
     return 0
   fi
 
