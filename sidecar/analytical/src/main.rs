@@ -99,10 +99,10 @@ fn run_runtime_canonical() {
         .join(",");
 
     println!(
-        "mirror\tengine\ttable\tformat\tobject_uri\tpushdown_plan\tprojected_columns\tpredicates\tpushed_down\tlimit\testimated_rows\tsnapshot_id\tfederated_catalogs\tfederation_targets\tduckdb_extensions\tmotherduck\tmirrored_cdc_events\tlakehouse_reads\tpushed_down_plans\tsnapshot_commits\tfederated_catalog_publications\tduckdb_extension_loads\tmotherduck_sessions"
+        "mirror\tengine\ttable\tformat\tobject_uri\tpushdown_plan\tprojected_columns\tpredicates\tpushed_down\tlimit\testimated_rows\tsnapshot_id\tfederated_catalogs\tfederation_targets\tduckdb_extensions\tmotherduck\tmirrored_cdc_events\tlakehouse_reads\tpushed_down_plans\tsnapshot_commits\tfederated_catalog_publications\tduckdb_extension_loads\tmotherduck_sessions\tallowed_engines\tallowed_object_uri_schemes\tmax_pushdown_limit\texternal_io_enabled\texternal_io_attempted\tquery_engine_executed\tevidence_boundary"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.read.mirror_name,
         engine_name(&report.read.engine),
         report.read.table,
@@ -130,6 +130,19 @@ fn run_runtime_canonical() {
         report.state.federated_catalog_publications,
         report.state.duckdb_extension_loads,
         report.state.motherduck_sessions,
+        report
+            .runtime_policy
+            .allowed_engines
+            .iter()
+            .map(engine_name)
+            .collect::<Vec<_>>()
+            .join(","),
+        report.runtime_policy.allowed_object_uri_schemes.join(","),
+        report.runtime_policy.max_pushdown_limit,
+        report.runtime_policy.external_io_enabled,
+        report.external_io_attempted,
+        report.query_engine_executed,
+        report.evidence_boundary,
     );
 }
 

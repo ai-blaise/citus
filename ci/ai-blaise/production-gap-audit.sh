@@ -586,6 +586,32 @@ for phrase in ("sidecar-repack-smoke", "ci/ai-blaise/sidecar-repack-smoke.sh"):
         fail(f"Makefile.ai-blaise must wire the repack dry-run smoke: {phrase}")
 if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
+analytical_ids = {"L1", "L2", "L3", "L4", "L5", "L6", "L8", "L12", "L13"}
+entry_status = {entry["id"]: entry["status"] for entry in entries}
+not_alpha = sorted(feature_id for feature_id in analytical_ids if entry_status.get(feature_id) != "alpha")
+if not_alpha:
+    fail(
+        "analytical/lakehouse features must remain alpha until live execution evidence exists: "
+        + ", ".join(not_alpha)
+    )
+analytical_truth = compact(
+    docs + "\\n" + audit + "\\n" + read(ROOT / "sidecar/analytical/README.md")
+)
+for phrase in (
+    "external_io_attempted=false",
+    "query_engine_executed=false",
+    "deterministic-runtime-report-only",
+    "must not be cited as production evidence for live DataFusion",
+    "object-store IO",
+    "Citus planner integration",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical/lakehouse boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-smoke", "ci/ai-blaise/sidecar-analytical-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the analytical smoke: {phrase}")
+if "sidecar-analytical-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-smoke.sh")
 
 print(
     "production_gap_audit\t"
