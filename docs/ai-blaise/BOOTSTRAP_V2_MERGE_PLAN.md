@@ -35,14 +35,14 @@ open PR #70+ is missing from the manifest.
 
 ## Current Snapshot
 
-Captured from GitHub on `2026-05-24T03:02:39Z`:
+Captured from GitHub on `2026-05-24T03:05:29Z`:
 
-- Open series: PR #70 through PR #108 against `bootstrap-v2`.
-- Draft blockers: PR #108, PR #87, PR #104, PR #105, PR #103.
+- Open series: PR #70 through PR #109 against `bootstrap-v2`.
+- Draft blockers: PR #87, PR #109.
 - Non-draft merge-order blockers: PR #70, PR #71, PR #97.
-- PR #106 and PR #107 were validated and are no longer draft blockers in this
-  plan; PR #108 was added after it opened as the PG18 CDC catchup-diagnostics
-  follow-up.
+- PR #103, PR #104, PR #105, PR #106, PR #107, and PR #108 are no longer
+  draft blockers in this plan. PR #109 is tracked as the canonical integration
+  reconciliation branch for overlapping release-hardening lanes.
 - CI state is volatile and is not used as a merge-order drift signal. The plan
   requires title, head branch, base branch, and draft state to match live
   GitHub metadata.
@@ -52,7 +52,7 @@ Captured from GitHub on `2026-05-24T03:02:39Z`:
 | Order | PR | Status | Batch | Dependency hints |
 | --- | --- | --- | --- | --- |
 | 1 | #107 | ready | merge-plan-governance | none |
-| 2 | #108 | draft-blocked | source-patch-foundation | none |
+| 2 | #108 | ready | source-patch-foundation | none |
 | 3 | #78 | ready | source-patch-foundation | none |
 | 4 | #77 | ready | source-patch-foundation | #78 |
 | 5 | #70 | blocked | ready-runtime-foundation | #108 |
@@ -79,29 +79,27 @@ Captured from GitHub on `2026-05-24T03:02:39Z`:
 | 26 | #94 | ready | ready-release-evidence | #70, #71, #72, #73, #74, #75, #76, #82, #84, #86, #89, #90, #91, #92, #93 |
 | 27 | #95 | ready | ready-release-evidence | #70 |
 | 28 | #87 | draft-blocked | draft-runtime-durability-upgrade-pool | #77, #81 |
-| 29 | #104 | draft-blocked | draft-runtime-durability-upgrade-pool | #74 |
+| 29 | #104 | ready | draft-runtime-durability-upgrade-pool | #74 |
 | 30 | #101 | ready | draft-runtime-durability-upgrade-pool | #76, #83, #89 |
 | 31 | #96 | ready | draft-runtime-durability-upgrade-pool | #76, #81, #101 |
 | 32 | #98 | ready | draft-runtime-durability-upgrade-pool | #72 |
 | 33 | #99 | ready | draft-release-and-patch-audit | #78, #77 |
 | 34 | #100 | ready | draft-release-and-patch-audit | #88 |
 | 35 | #102 | ready | draft-release-and-patch-audit | #88, #99, #100 |
-| 36 | #105 | draft-blocked | draft-release-and-patch-audit | #95, #96, #100 |
-| 37 | #103 | draft-blocked | draft-release-and-patch-audit | #88, #102, #104 |
+| 36 | #105 | ready | draft-release-and-patch-audit | #95, #96, #100 |
+| 37 | #103 | ready | draft-release-and-patch-audit | #88, #102, #104 |
 | 38 | #106 | ready | draft-release-and-patch-audit | none |
-| 39 | #97 | blocked | draft-release-and-patch-audit | #81, #88, #91, #96, #100, #102, #103, #105, #106 |
+| 39 | #109 | draft-blocked | draft-release-and-patch-audit | #99, #100, #102, #103, #104, #105, #106 |
+| 40 | #97 | blocked | draft-release-and-patch-audit | #81, #88, #91, #96, #100, #102, #103, #105, #106, #109 |
 
 Use the JSON as canonical if this table drifts.
 
 ## Known Blockers
 
-- PR #108 (draft-blocked): Draft as of 2026-05-24T03:02:39Z. Review and prove PG18 CDC schema-change/move catchup behavior before relying on PR #70/#71 CDC matrix results. Touches src/test/cdc/** and shared Actions log capture; run focused PG18 CDC installcheck evidence plus the source-patch foundation matrix boundary.
 - PR #70 (blocked): Hold behind PR #108 until the PG18 CDC catchup timeout is resolved or conclusively isolated from the branch.
 - PR #71 (blocked): Hold behind PR #108 until the PG18 CDC schema-change/move catchup behavior is proved on PG18.
 - PR #87 (draft-blocked): Draft as of 2026-05-24T02:53:14Z. PR body states Timescale 2.28 evidence depends on the published timescale/timescaledb:2.28.0-pg17 image tag; keep the skip-with-note truthful until upstream publication is verified. Full Citus matrix jobs were still pending when metadata was refreshed.
-- PR #104 (draft-blocked): Draft as of 2026-05-24T02:53:14Z. Sidecar API runtime smoke should land after PR #74 so PostgREST, GraphQL, and edge-function runtime checks build on the API trio surface. Touches production-gap-audit and shared runtime code; run focused sidecar API smoke before the batch matrix.
-- PR #105 (draft-blocked): Draft as of 2026-05-24T02:53:14Z. Runbook command validation should land after DR restore, upgrade rollback, and release environment preflight checks so documented operational commands match the integrated gates. Touches production-readiness workflow and operational runbooks; keep in the final release-hardening tranche.
-- PR #103 (draft-blocked): Draft as of 2026-05-24T02:53:14Z. Machine-derived production gap inventory should land after sidecar API runtime and performance evidence changes so the final audit vocabulary reflects all release evidence gates. Touches production-gap-audit and production readiness prose; keep in the final release-hardening tranche to avoid stale count churn.
+- PR #109 (draft-blocked): Draft as of 2026-05-24T03:05:29Z. Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice. Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path.
 - PR #97 (blocked): Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan. Release publishability should land last after environment, performance, gap-audit, runbook, agentmemory recovery, upgrade, image, deployment, and release-monitor gates are integrated.
 
 ## Expensive Matrix Rules

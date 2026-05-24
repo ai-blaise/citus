@@ -6,7 +6,7 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T03:02:39Z",
+    "captured_at": "2026-05-24T03:05:29Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url"
   },
   "checklist": [
@@ -148,7 +148,7 @@
     },
     {
       "id": "draft-release-and-patch-audit",
-      "summary": "Land patch audit, environment preflight, performance evidence, runbook command validation, machine-derived gap inventory, agentmemory recovery docs, and release publishability last so final manifests reflect all merged evidence.",
+      "summary": "Merge release, performance, runbook, gap-audit, agentmemory, and canonical integration reconciliation work after their prerequisite runtime evidence is stable.",
       "prs": [
         99,
         100,
@@ -156,6 +156,7 @@
         105,
         103,
         106,
+        109,
         97
       ],
       "run_expensive_citus_matrix_after": true,
@@ -187,14 +188,10 @@
       "title": "[codex] Harden PG18 CDC catchup diagnostics",
       "head": "codex/pg18-cdc-schema-move-fix-20260524",
       "base": "bootstrap-v2",
-      "status": "draft-blocked",
-      "is_draft": true,
+      "status": "ready",
+      "is_draft": false,
       "dependency_hints": [],
-      "known_blockers": [
-        "Draft as of 2026-05-24T03:02:39Z.",
-        "Review and prove PG18 CDC schema-change/move catchup behavior before relying on PR #70/#71 CDC matrix results.",
-        "Touches src/test/cdc/** and shared Actions log capture; run focused PG18 CDC installcheck evidence plus the source-patch foundation matrix boundary."
-      ],
+      "known_blockers": [],
       "watch_paths": [
         ".github/actions/save_logs_and_results/action.yml",
         "src/test/cdc/t/cdctestlib.pm"
@@ -764,16 +761,12 @@
       "title": "[codex] Add sidecar API runtime smoke",
       "head": "codex/sidecar-runtime-contract-smoke-20260524",
       "base": "bootstrap-v2",
-      "status": "draft-blocked",
-      "is_draft": true,
+      "status": "ready",
+      "is_draft": false,
       "dependency_hints": [
         74
       ],
-      "known_blockers": [
-        "Draft as of 2026-05-24T02:53:14Z.",
-        "Sidecar API runtime smoke should land after PR #74 so PostgREST, GraphQL, and edge-function runtime checks build on the API trio surface.",
-        "Touches production-gap-audit and shared runtime code; run focused sidecar API smoke before the batch matrix."
-      ],
+      "known_blockers": [],
       "watch_paths": [
         "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
         "sidecar/shared/src/runtime.rs",
@@ -919,18 +912,14 @@
       "title": "Add runbook command validation gate",
       "head": "codex/runbook-command-checks-20260524-022745",
       "base": "bootstrap-v2",
-      "status": "draft-blocked",
-      "is_draft": true,
+      "status": "ready",
+      "is_draft": false,
       "dependency_hints": [
         95,
         96,
         100
       ],
-      "known_blockers": [
-        "Draft as of 2026-05-24T02:53:14Z.",
-        "Runbook command validation should land after DR restore, upgrade rollback, and release environment preflight checks so documented operational commands match the integrated gates.",
-        "Touches production-readiness workflow and operational runbooks; keep in the final release-hardening tranche."
-      ],
+      "known_blockers": [],
       "watch_paths": [
         "ci/ai-blaise/runbook-command-check.sh",
         ".github/workflows/ci-production-readiness.yml",
@@ -946,18 +935,14 @@
       "title": "[codex] Make production gap inventory machine-derived",
       "head": "codex/production-gap-inventory-audit",
       "base": "bootstrap-v2",
-      "status": "draft-blocked",
-      "is_draft": true,
+      "status": "ready",
+      "is_draft": false,
       "dependency_hints": [
         88,
         102,
         104
       ],
-      "known_blockers": [
-        "Draft as of 2026-05-24T02:53:14Z.",
-        "Machine-derived production gap inventory should land after sidecar API runtime and performance evidence changes so the final audit vocabulary reflects all release evidence gates.",
-        "Touches production-gap-audit and production readiness prose; keep in the final release-hardening tranche to avoid stale count churn."
-      ],
+      "known_blockers": [],
       "watch_paths": [
         "ci/ai-blaise/production-gap-audit.sh",
         "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
@@ -979,8 +964,41 @@
       ]
     },
     {
-      "number": 97,
+      "number": 109,
       "order": 39,
+      "batch": "draft-release-and-patch-audit",
+      "title": "[codex] Demonstrate production gap audit integration reconciliation",
+      "head": "codex/integration-gap-audit-canonical-20260524T024726Z",
+      "base": "bootstrap-v2",
+      "status": "draft-blocked",
+      "is_draft": true,
+      "dependency_hints": [
+        99,
+        100,
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "known_blockers": [
+        "Draft as of 2026-05-24T03:05:29Z.",
+        "Canonical integration PR overlaps the production gap audit, performance evidence, sidecar runtime smoke, runbook command, patch audit, and release preflight lanes; review as a reconciliation branch, not a small standalone slice.",
+        "Run the focused gates it wires together first, then use the draft-release-and-patch-audit matrix boundary if the integration remains the chosen landing path."
+      ],
+      "watch_paths": [
+        "Makefile.ai-blaise",
+        "ci/ai-blaise/production-gap-audit.sh",
+        "ci/ai-blaise/performance-evidence-check.sh",
+        "ci/ai-blaise/runbook-command-check.sh",
+        "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md",
+        "docs/ai-blaise/PRODUCTION_GAP_AUDIT_INTEGRATION_PLAN.md"
+      ]
+    },
+    {
+      "number": 97,
+      "order": 40,
       "batch": "draft-release-and-patch-audit",
       "title": "Harden ai-blaise release image publishability",
       "head": "codex/release-publishability-20260523-2357",
@@ -996,7 +1014,8 @@
         102,
         103,
         105,
-        106
+        106,
+        109
       ],
       "known_blockers": [
         "Ready for review as of 2026-05-24T02:42:19Z, but held behind final release-hardening PRs in this merge plan.",
