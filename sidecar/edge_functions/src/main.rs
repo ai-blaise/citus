@@ -100,7 +100,6 @@ fn run_runtime_canonical() {
     );
 }
 
-
 fn run_bun_runtime_canonical() {
     let report = canonical_bun_edge_function_runtime_report().unwrap_or_else(|error| {
         eprintln!("edge-functions: canonical Bun runtime report failed: {error}");
