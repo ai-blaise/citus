@@ -128,4 +128,14 @@ require_contains "${watch_frame}" 'citus-watch | cluster=prod-east | refresh=5s'
 require_contains "${watch_frame}" 'vectorizer-backlog'
 require_contains "${watch_frame}" 'companion.shard_placements'
 
+duplicate_snapshot="${tmp_dir}/duplicate-snapshot.tsv"
+cp "${snapshot}" "${duplicate_snapshot}"
+python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); t=p.read_text(); p.write_text(t.replace("worker\tworker-2\t10.0.0.12\treplica\tready", "worker\tworker-1\t10.0.0.12\treplica\tready"))' "${duplicate_snapshot}"
+require_fails_with   'worker.name duplicates value worker-1'   cargo run -q -p ai_blaise_citus_watch --     render-frame --snapshot "${duplicate_snapshot}"
+
+bad_vectorizer_snapshot="${tmp_dir}/bad-vectorizer-snapshot.tsv"
+cp "${snapshot}" "${bad_vectorizer_snapshot}"
+python3 -c 'from pathlib import Path; import sys; p=Path(sys.argv[1]); t=p.read_text(); p.write_text(t.replace("vectorizer\tdocuments-body\ttenant-a", "vectorizer\tdocuments-body\ttenant-z"))' "${bad_vectorizer_snapshot}"
+require_fails_with   'vectorizer.tenant_id references unknown value tenant-z'   cargo run -q -p ai_blaise_citus_watch --     render-frame --snapshot "${bad_vectorizer_snapshot}"
+
 echo $'tools_ui_runtime_smoke	admin=ok	schema_designer=ok	tui=ok	watch=ok'
