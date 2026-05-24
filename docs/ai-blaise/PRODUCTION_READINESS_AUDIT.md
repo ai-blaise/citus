@@ -437,6 +437,15 @@ more production-ready than the artifacts justified.
   behavior until networked multi-process Raft, MVCC follower-read execution,
   PostgreSQL-core patch integration, Citus executor integration, and Kubernetes
   operator reconciliation are live-gated.
+- The auto-API and edge-functions sidecars now have a bounded
+  process/socket runtime smoke for the canonical API contracts. The smoke
+  builds the real PostgREST, GraphQL, and edge-functions binaries, runs their
+  canonical TSV commands directly, starts each `serve` process on loopback,
+  verifies health/readiness/metrics/drain behavior persists across HTTP
+  requests, and verifies unknown commands plus empty listen addresses fail
+  closed. This is not evidence for table-backed PostgREST request serving,
+  `pg_graphql` query execution, external Deno/Bun user-code execution, or
+  Kubernetes deployment.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

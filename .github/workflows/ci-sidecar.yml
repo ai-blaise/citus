@@ -140,6 +140,14 @@ jobs:
       - name: Run canonical edge-function registry
         run: cargo run -q -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical
 
+  api-runtime-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run API sidecar runtime smoke
+        run: bash ci/ai-blaise/sidecar-api-runtime-smoke.sh
+
   graphql:
     runs-on: ubuntu-latest
     steps:

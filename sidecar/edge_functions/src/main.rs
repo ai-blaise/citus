@@ -7,9 +7,10 @@
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
 use ai_blaise_citus_sidecar_edge_functions::{
-    canonical_edge_function_registry_report, canonical_edge_function_report,
-    canonical_edge_function_runtime_report, serve_edge_functions_sidecar_http_forever,
-    EdgeFunctionRuntime, EdgeFunctionTriggerKind, FunctionTrigger, InvocationStatus,
+    canonical_bun_edge_function_runtime_report, canonical_edge_function_registry_report,
+    canonical_edge_function_report, canonical_edge_function_runtime_report,
+    serve_edge_functions_sidecar_http_forever, EdgeFunctionRuntime, EdgeFunctionRuntimeReport,
+    EdgeFunctionTriggerKind, FunctionTrigger, InvocationStatus,
 };
 use std::env;
 use std::process;
@@ -33,6 +34,11 @@ fn main() {
 
     if args == ["run-registry-canonical"] {
         run_registry_canonical();
+        return;
+    }
+
+    if args == ["run-bun-runtime-canonical"] {
+        run_bun_runtime_canonical();
         return;
     }
 
@@ -94,6 +100,36 @@ fn run_runtime_canonical() {
     );
 }
 
+
+fn run_bun_runtime_canonical() {
+    let report = canonical_bun_edge_function_runtime_report().unwrap_or_else(|error| {
+        eprintln!("edge-functions: canonical Bun runtime report failed: {error}");
+        process::exit(1);
+    });
+    print_runtime_report(&report);
+}
+
+fn print_runtime_report(report: &EdgeFunctionRuntimeReport) {
+    println!(
+        "function	runtime	command	trigger	tenant_id	payload_bytes	response_bytes	db_callback_used	launched_functions	invocations	db_callbacks	status"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.execution.function_name,
+        runtime_name(&report.execution.runtime),
+        report.execution.command.join(" "),
+        trigger_name(&report.execution.trigger),
+        report.execution.tenant_id,
+        report.execution.payload_bytes,
+        report.execution.response_bytes,
+        report.execution.db_callback_used,
+        report.state.launched_functions,
+        report.state.invocations,
+        report.state.db_callbacks,
+        status_name(&report.execution.status),
+    );
+}
+
 fn run_registry_canonical() {
     let report = canonical_edge_function_registry_report().unwrap_or_else(|error| {
         eprintln!("edge-functions: canonical registry report failed: {error}");
@@ -126,7 +162,7 @@ fn run_registry_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: edge-functions [serve|run-canonical|run-runtime-canonical|run-registry-canonical]"
+        "usage: edge-functions [serve|run-canonical|run-runtime-canonical|run-registry-canonical|run-bun-runtime-canonical]"
     );
     println!("serves the edge-functions sidecar or emits canonical TSV reports");
 }

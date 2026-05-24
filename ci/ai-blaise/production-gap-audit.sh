@@ -43,6 +43,10 @@ LIVE_K8S_E2E = ROOT / "ci/ai-blaise/live-k8s-e2e.sh"
 DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 
+MAKEFILE = ROOT / "Makefile.ai-blaise"
+SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
+SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+
 SOURCE_ROOTS = [
     "companion",
     "sidecar",
@@ -185,6 +189,9 @@ for path in (
     COHAB_MATRIX_README,
     IMAGES_OVERVIEW,
     PG_OVERLAY_README,
+    MAKEFILE,
+    SIDECAR_WORKFLOW,
+    SIDECAR_API_SMOKE,
 ):
     text = read(path)
     for pattern in (
@@ -323,6 +330,34 @@ for phrase in (
 for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready"):
     if compact(pattern) in matrix_truth:
         fail(f"Timescale 2.28 matrix overclaims production readiness: {pattern}")
+
+sidecar_smoke = read(SIDECAR_API_SMOKE)
+for required in (
+    "run-bun-runtime-canonical",
+    "POST",
+    "/drain",
+    "invalid listen address",
+    "definitely-not-a-command",
+    "ai_blaise_sidecar_accepting_new_work",
+):
+    if required not in sidecar_smoke:
+        fail(f"sidecar API runtime smoke lost required assertion: {required}")
+
+makefile = read(MAKEFILE)
+if "sidecar-api-runtime-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose sidecar-api-runtime-smoke")
+if (
+    "gate-close:" not in makefile
+    or "sidecar-api-runtime-smoke" not in makefile.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run sidecar-api-runtime-smoke")
+
+sidecar_workflow = read(SIDECAR_WORKFLOW)
+if (
+    "api-runtime-smoke:" not in sidecar_workflow
+    or "sidecar-api-runtime-smoke.sh" not in sidecar_workflow
+):
+    fail("ci-sidecar workflow must run sidecar-api-runtime-smoke.sh")
 
 deploy_k8s_tree = list(ROOT.glob("deploy/k8s/**/*"))
 if deploy_k8s_tree:

@@ -640,7 +640,9 @@ mod tests {
 
         assert_eq!(report.sql_plan_count, 22);
 
+
         assert_eq!(report.validation_count, 11);
+
 
         assert_eq!(report.command_count, 49);
         for feature_id in [
