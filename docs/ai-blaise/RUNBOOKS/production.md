@@ -75,16 +75,28 @@ Probe-only traffic is insufficient for production signoff.
 Run `REQUIRE_DOCKER=1 ci/ai-blaise/pool-proxy-smoke.sh` or the Kubernetes
 equivalent before promotion; the accepted result is a successful SQL query
 through the pool data port plus ready admin probes and pool traffic metrics.
-For a complete VM/container proof, run `ci/ai-blaise/kind-production-smoke.sh`;
-it builds the app images, installs the explicit `values-exhaustive.yaml`
-image-matrix profile, creates a real PostgreSQL upstream, verifies live SQL
-through the pool Kubernetes service, and port-forwards into the live operator
-plus every sidecar deployment to assert `/healthz`, `/readyz`, and `/metrics`
-from the actual pods. It also installs the default `values.yaml` profile with
-direct Helm and the `values-prod.yaml` profile through the deploy wrapper,
-verifying that production-safe values run the operator and pool with alpha
-sidecars/tools disabled while pool SQL/admin traffic still works. The deploy
-workflow and `gate-close` run this smoke at larger integration boundaries.
+For a complete VM/container proof, run the external-chart live harness in real
+mode with exact chart and image inputs:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center \
+LIVE_K8S_MODE=kind \
+LOCAL_IMAGE_REFS='registry.local/citus:dev' \
+AI_BLAISE_STACK_IMAGE_REF=registry.local/citus:dev \
+ci/ai-blaise/kind-production-smoke.sh
+```
+
+Use `CHART_DIR` instead of `COMMAND_CENTER_DIR` when the chart is checked out in
+a nonstandard location. For charts with richer image value structure, pass
+chart-specific `HELM_SET_ARGS`. The default `kind-production-smoke` invocation is
+only a CI-safe dry-run; it validates rendering when a chart is supplied but does
+not send HTTP or SQL traffic. Runtime evidence requires `LIVE_K8S_MODE=kind` or
+`LIVE_K8S_MODE=real`, successful workload readiness, live HTTP probe traffic,
+live PostgreSQL `psql` traffic through a port-forwarded service, and captured
+failure diagnostics. The harness tears down only namespaces it created during
+the run; pre-existing namespaces must be cleaned up by the operator. The Argo
+application manifest is a GitOps render contract unless an Argo
+controller-backed sync is run and recorded.
 
 The Makefile smoke targets set `REQUIRE_DOCKER=1` for the Docker-backed live
 smokes, including pool proxy, SQL extension, real TimescaleDB bridge, real
@@ -94,24 +106,19 @@ evidence. Running the direct scripts without `REQUIRE_DOCKER=1` is only for
 exploratory local checks.
 
 The Makefile release gate also runs the image and deploy contract checks
-directly. After the 2026-05-22 chart fold, this repository's `deploy-check`
+directly. After the 2026-05-22 chart fold, this repository.s `deploy-check`
 validates the Citus-side HPA, PodDisruptionBudget, and NetworkPolicy contract
 under `deploy/contracts/`; full Helm values rendering remains owned by
 `ai-blaise/command-center`. When kustomize or kubeconform is present on the
 runner, the Citus-side check also renders and schema-validates the manifest.
+`deploy-check` is CI-safe by default because the chart lives in
+`ai-blaise/command-center`; release jobs should set `REQUIRE_HELM=1` or
+`REQUIRE_CHART=1` and provide `CHART_DIR`/`COMMAND_CENTER_DIR` so missing render
+evidence fails closed.
 
-The `values-prod.yaml` phase of the Kubernetes smoke installs through
-`scripts/citus-scale/deploy.sh MODE=install`, so the production-safe deploy
-wrapper install path is live-gated. The optional `tools` Deployment is dev-only
-until separately promoted; production evidence executes the built `citusctl`
-image through the smoke Job. The Argo application manifest is a GitOps render
-contract unless an Argo controller-backed sync is run and recorded.
-
-The `scripts/citus-scale/deploy.sh` deploy wrapper defaults to
-`values-prod.yaml` through `DEPLOY_PROFILE=prod`. Rendering dev or exhaustive
-profiles is allowed for review and smoke-test work, but installing any
-non-production or custom values file is blocked unless `ALLOW_ALPHA_INSTALL=1`
-is set explicitly for that run.
+The `scripts/citus-scale/deploy.sh` wrapper is retired in this repository and
+exits nonzero with the command-center chart location. Use the live Kubernetes
+harness above for direct installs and traffic validation.
 
 Production renders and installs require immutable operator and pool image
 digests. The default `values.yaml` profile and `values-prod.yaml` both set

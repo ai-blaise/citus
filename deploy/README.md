@@ -45,5 +45,35 @@ Before promoting Citus-side image/runtime changes, run
 `make -f Makefile.ai-blaise deploy-check`. The check validates that
 `deploy/contracts/k8s-production-guardrails.yaml` is in sync with the renderer,
 that the rendered manifest covers the expected production guardrail resources,
-and, when available on the runner, that kustomize and kubeconform accept the
-manifest. Full Helm values rendering remains owned by `ai-blaise/command-center`.
+and that the external-chart-aware live harness at
+`ci/ai-blaise/live-k8s-e2e.sh` satisfies its dry-run contract unless a stricter
+mode is requested. Full Helm values rendering remains owned by
+`ai-blaise/command-center`.
+
+## Live Kubernetes E2E
+
+This repo now ships the external-chart-aware traffic harness at
+`ci/ai-blaise/live-k8s-e2e.sh`. Use `CHART_DIR` to point directly at the
+command-center chart, or `COMMAND_CENTER_DIR` to point at a checkout containing
+`helm/charts/citus-cluster`.
+
+Dry-run contract smoke:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center ci/ai-blaise/deploy-check.sh
+```
+
+Real kind traffic with locally built or published images:
+
+```bash
+COMMAND_CENTER_DIR=/path/to/command-center \
+LIVE_K8S_MODE=kind \
+LOCAL_IMAGE_REFS='registry.local/citus:dev' \
+AI_BLAISE_STACK_IMAGE_REF=registry.local/citus:dev \
+ci/ai-blaise/kind-production-smoke.sh
+```
+
+For richer command-center charts, pass chart-specific image values through
+`HELM_SET_ARGS`. The harness fails real mode when required image refs, HTTP
+probe targets, or SQL service traffic are missing; dry-run output is not live
+runtime evidence.

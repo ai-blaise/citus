@@ -5191,21 +5191,18 @@ queries.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Provides a production-safe direct Helm install surface for the
-ai-blaise overlay. The chart defaults in `values.yaml` require immutable
-operator/pool image digests and keep alpha sidecars, tools, and alpha
-runtime/security intent disabled. They also omit controller-grade operator
-RBAC while the operator production runtime only serves probes/metrics.
-Non-production image-matrix coverage moved to the explicit
-`values-exhaustive.yaml` profile, while `values-dev.yaml` remains the small
-developer profile.
+**Summary**: Provides the Citus-side contract for a production-safe direct Helm
+install surface while the actual chart lives in `ai-blaise/command-center`.
+This repository no longer owns `deploy/k8s/`; it owns the render and traffic
+harness that points at the external chart and fails real mode when image refs,
+HTTP probes, or SQL service traffic are missing.
 
-**Motivation**: A direct `helm upgrade --install` command should fail closed
-unless production image identity is supplied, and it must not install the
-exhaustive alpha profile by accident.
+**Motivation**: A direct `helm upgrade --install` command should be validated
+against the real chart and real images, not against in-repo stubs or synthetic
+responder containers.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise overlay chart
-or its production default profile.
+or this external-chart validation harness.
 
 Production evidence: after the 2026-05-22 chart fold, full Helm rendering
 and live chart smoke evidence live with `ai-blaise/command-center`. This
@@ -5216,6 +5213,16 @@ PodDisruptionBudget, and NetworkPolicy resources for the operator, pool, and
 sidecar surfaces. The production-readiness workflow and `gate-close` run that
 contract so Citus-side image/runtime changes cannot drift from the Kubernetes
 guardrails consumed by command-center.
+
+Production evidence: `ci/ai-blaise/deploy-check.sh` runs the CI-safe dry-run
+entrypoint for the external command-center chart. When `CHART_DIR` or
+`COMMAND_CENTER_DIR` is supplied, it runs Helm lint/template, records the
+rendered image set, and can run client-side Kubernetes validation when
+`KUBECTL_CLIENT_DRY_RUN=1` is set. Dry-run mode is not runtime evidence. `ci/ai-blaise/kind-production-smoke.sh` switches to real
+traffic only with `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real`; in those modes
+it requires a chart, explicit image availability, Kubernetes readiness, live
+HTTP probes, live `psql` traffic through port-forwarded services, failure
+log/event collection, and safe teardown.
 
 **References**:
 
@@ -5233,30 +5240,27 @@ guardrails consumed by command-center.
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Provides the production-safe human deploy wrapper for rendering
-and installing the Helm overlay. The wrapper defaults to `values-prod.yaml`,
-accepts release image tags and immutable operator/pool digests, refuses
-non-production installs unless `ALLOW_ALPHA_INSTALL=1` is set explicitly, and
-requires `ALLOW_MUTABLE_IMAGE_TAGS=1` before production rendering can bypass
-digest pinning for local smoke images.
+**Summary**: Preserves the in-repo deploy-wrapper boundary after the Helm chart
+folded into `ai-blaise/command-center`. `scripts/citus-scale/deploy.sh` now
+fails closed with a pointer to the command-center chart, while
+`ci/ai-blaise/live-k8s-e2e.sh` provides the real render/install/traffic path
+when operators pass `CHART_DIR` or `COMMAND_CENTER_DIR`.
 
-**Motivation**: Operators need one deploy entrypoint whose default behavior
-matches GitOps and production values, so a direct install cannot accidentally
-deploy the exhaustive alpha profile.
+**Motivation**: Operators need the old in-repo deploy wrapper to stop before it
+can install stale chart content, and they need a current harness that validates
+the external chart against real Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy
-wrapper or its production-profile guardrails.
+**Citus comparison**: Vanilla Citus does not ship the ai-blaise deploy wrapper
+boundary or external-chart traffic harness.
 
-Production evidence: `ci/ai-blaise/kind-production-smoke.sh` runs
-`scripts/citus-scale/deploy.sh` with `DEPLOY_PROFILE=prod` and `MODE=install`
-against a live kind cluster, verifies the resulting `values-prod.yaml` release
-has only operator/pool/PostgreSQL workloads, runs live SQL and pool admin
-traffic through the installed release, rejects controller-grade operator RBAC
-in the production profile, and proves the wrapper install path is part of
-`make -f Makefile.ai-blaise gate-close`. `ci/ai-blaise/deploy-check.sh`
-statically rejects regressions that remove the production default,
-digest-inputs, mutable-tag escape hatch, controller RBAC boundary, or
-non-production install refusal.
+Production evidence: `scripts/citus-scale/deploy.sh` exits nonzero with a
+clear command-center handoff instead of rendering removed manifests.
+`ci/ai-blaise/deploy-check.sh` and `ci/ai-blaise/kind-production-smoke.sh` are
+the supported validation entrypoints in this repo. Real mode requires external
+chart input and image refs that are published or locally loaded; if branch
+images are unpublished, the harness reports that explicitly and tells the
+operator to pass `AI_BLAISE_STACK_IMAGE_REF`, `HELM_SET_ARGS`, and
+`LOCAL_IMAGE_REFS` rather than faking traffic.
 
 **References**:
 
@@ -5274,21 +5278,17 @@ non-production install refusal.
 **Bundled extension dep**: none
 
 **Summary**: Builds real Rust application images for the operator, pool,
-sidecars, and `citusctl`, with deployed services defaulting to the long-running
-`serve` command and the `citusctl` tool image defaulting to `plan inspect
-cluster`. The pool image separates PostgreSQL TCP traffic from admin probes and
-requires a configured upstream before readiness. The Kubernetes production smoke
-also verifies live operator and sidecar health, readiness, and metrics over
-port-forwarded pod traffic before accepting the deployment, runs the built
-`citusctl` image as a Job, and aggregates pool request metrics across replicas
-after the SQL smoke so service load balancing cannot hide a cold pool pod.
-Controller-grade operator RBAC remains an alpha chart contract enabled only by
-the exhaustive profile until the operator runs real Kubernetes watches and
-reconciliation.
+sidecars, and `citusctl`, with service images defaulting to long-running
+`serve` commands and the `citusctl` tool image defaulting to `plan inspect
+cluster`. The live Kubernetes harness validates whatever command-center chart
+is supplied, waits for the rendered workloads, probes HTTP services through
+port-forwarding, sends SQL through a port-forwarded PostgreSQL service, and
+collects diagnostics on failure. The harness does not create stand-in traffic
+or pretend a dry-run is runtime evidence.
 
-**Motivation**: Production Kubernetes verification must exercise the actual
-app containers and PostgreSQL traffic path rather than synthetic responder
-images.
+**Motivation**: Production Kubernetes verification must exercise actual app
+containers and PostgreSQL traffic paths rather than synthetic responder images
+or chart-only tests.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise operator,
 pool, sidecar, or tool image matrix.
@@ -5320,6 +5320,19 @@ merely built or loaded. The
 `values-prod.yaml` for GitOps deployment with namespace creation and pruning
 enabled; the Argo application is a GitOps render contract, not live controller
 evidence.
+
+Production evidence: `scripts/citus-scale/build-app-images.sh` builds and, for
+release runs, pushes the Rust image matrix while writing
+`artifacts/ai-blaise-image-digests.tsv` and failing if pushed images do not
+report immutable digests. `ci/ai-blaise/kind-production-smoke.sh` defaults to a
+CI-safe dry-run, but `LIVE_K8S_MODE=kind` or `LIVE_K8S_MODE=real` turns it into
+a fail-closed live test: render the external chart, verify image availability
+or load `LOCAL_IMAGE_REFS` into kind, install into a namespace, wait for
+rollouts and ready pods, probe `/healthz`, `/readyz`, and `/metrics`, run a
+write/read `psql` script through an exposed PostgreSQL service, collect
+logs/events/Helm state on failure, and tear down unless debugging opts out.
+This is runtime evidence only when the real mode completes against the exact
+chart and image refs under review.
 
 **References**:
 
