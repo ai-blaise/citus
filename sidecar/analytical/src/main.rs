@@ -98,38 +98,59 @@ fn run_runtime_canonical() {
         .collect::<Vec<_>>()
         .join(",");
 
+    let datafusion = report.datafusion_execution.as_ref();
     println!(
-        "mirror\tengine\ttable\tformat\tobject_uri\tpushdown_plan\tprojected_columns\tpredicates\tpushed_down\tlimit\testimated_rows\tsnapshot_id\tfederated_catalogs\tfederation_targets\tduckdb_extensions\tmotherduck\tmirrored_cdc_events\tlakehouse_reads\tpushed_down_plans\tsnapshot_commits\tfederated_catalog_publications\tduckdb_extension_loads\tmotherduck_sessions\tallowed_engines\tallowed_object_uri_schemes\tmax_pushdown_limit\texternal_io_enabled\texternal_io_attempted\tquery_engine_executed\tevidence_boundary"
+        "mirror\tengine\ttable\tformat\tobject_uri\tpushdown_plan\tprojected_columns\tpredicates\tpushed_down\tlimit\testimated_rows\tsnapshot_id\tfederated_catalogs\tfederation_targets\tduckdb_extensions\tmotherduck\tmirrored_cdc_events\tlakehouse_reads\tpushed_down_plans\tsnapshot_commits\tfederated_catalog_publications\tduckdb_extension_loads\tmotherduck_sessions\tquery_engine_executions\tquery_engine_output_rows\tdatafusion_output_rows\tdatafusion_output_total\tprojection_pushdown_executed\tfilter_pushdown_executed\tlimit_pushdown_executed\tallowed_engines\tallowed_object_uri_schemes\tmax_pushdown_limit\texternal_io_enabled\texternal_io_attempted\tquery_engine_executed\tevidence_boundary"
     );
-    println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    let row = vec![
         report.read.mirror_name,
-        engine_name(&report.read.engine),
+        engine_name(&report.read.engine).to_string(),
         report.read.table,
-        format_name(&report.read.format),
+        format_name(&report.read.format).to_string(),
         report.read.object_uri,
         report.read.pushdown_plan_id,
         report.read.projected_columns.join(","),
         report.read.predicates.join(","),
-        report.read.pushed_down,
+        report.read.pushed_down.to_string(),
         report
             .read
             .limit
             .map(|limit| limit.to_string())
             .unwrap_or_else(|| "none".to_string()),
-        report.read.estimated_rows,
-        snapshot_id,
+        report.read.estimated_rows.to_string(),
+        snapshot_id.to_string(),
         federated_catalogs,
         federation_targets,
         report.duckdb_extensions.join(","),
-        report.motherduck_database.as_deref().unwrap_or("none"),
-        report.read.mirrored_cdc_events,
-        report.state.lakehouse_reads,
-        report.state.pushed_down_plans,
-        report.state.snapshot_commits,
-        report.state.federated_catalog_publications,
-        report.state.duckdb_extension_loads,
-        report.state.motherduck_sessions,
+        report
+            .motherduck_database
+            .as_deref()
+            .unwrap_or("none")
+            .to_string(),
+        report.read.mirrored_cdc_events.to_string(),
+        report.state.lakehouse_reads.to_string(),
+        report.state.pushed_down_plans.to_string(),
+        report.state.snapshot_commits.to_string(),
+        report.state.federated_catalog_publications.to_string(),
+        report.state.duckdb_extension_loads.to_string(),
+        report.state.motherduck_sessions.to_string(),
+        report.state.query_engine_executions.to_string(),
+        report.state.query_engine_output_rows.to_string(),
+        datafusion
+            .map(|execution| execution.output_rows.to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        datafusion
+            .map(|execution| execution.output_total.to_string())
+            .unwrap_or_else(|| "0".to_string()),
+        datafusion
+            .map(|execution| execution.projection_pushdown_executed.to_string())
+            .unwrap_or_else(|| "false".to_string()),
+        datafusion
+            .map(|execution| execution.filter_pushdown_executed.to_string())
+            .unwrap_or_else(|| "false".to_string()),
+        datafusion
+            .map(|execution| execution.limit_pushdown_executed.to_string())
+            .unwrap_or_else(|| "false".to_string()),
         report
             .runtime_policy
             .allowed_engines
@@ -138,12 +159,13 @@ fn run_runtime_canonical() {
             .collect::<Vec<_>>()
             .join(","),
         report.runtime_policy.allowed_object_uri_schemes.join(","),
-        report.runtime_policy.max_pushdown_limit,
-        report.runtime_policy.external_io_enabled,
-        report.external_io_attempted,
-        report.query_engine_executed,
+        report.runtime_policy.max_pushdown_limit.to_string(),
+        report.runtime_policy.external_io_enabled.to_string(),
+        report.external_io_attempted.to_string(),
+        report.query_engine_executed.to_string(),
         report.evidence_boundary,
-    );
+    ];
+    println!("{}", row.join("\t"));
 }
 
 fn print_usage() {

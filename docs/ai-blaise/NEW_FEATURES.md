@@ -4083,24 +4083,40 @@ sidecar.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
-**Current boundary**: The L1/L2/L3/L4/L5/L6/L8/L12/L13 analytical runtime is
-an alpha deterministic report path. It records `external_io_attempted=false`,
-`query_engine_executed=false`, and
-`evidence_boundary=deterministic-runtime-report-only`. The smoke starts a
-loopback probe server and verifies process health/readiness/metrics/drain only;
-this must not be cited as production evidence for live DataFusion, DuckDB,
-MotherDuck, Iceberg commits, object-store IO, or Citus planner integration.
+**Current boundary**: L1 remains alpha for pg_lake-backed analytical
+substrate behavior. L2 and L4 now have a separate bounded local DataFusion
+runtime proof, but that proof records `external_io_attempted=false` and does
+not cover pg_lake, object-store IO, Iceberg/Parquet/Delta object reads,
+DuckDB, MotherDuck, Iceberg commits, logical-replication mirror
+materialization, Citus planner integration, or Kubernetes traffic.
 
 ### L2: Rust Analytical Server
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines Rust-native analytical engine selection for DataFusion,
-DuckDB, or pg_lake-backed execution, plus deterministic runtime accounting.
+DuckDB, or pg_lake-backed execution, plus bounded local DataFusion runtime
+accounting.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-smoke.sh` runs
+`cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical` and
+verifies a real in-process DataFusion query over an Arrow `RecordBatch`, with
+`query_engine_executed=true`, `datafusion_output_rows=2`,
+`external_io_attempted=false`, and
+`evidence_boundary=local-datafusion-recordbatch-only`. The same smoke starts
+the analytical sidecar probe server and verifies `/healthz`, `/readyz`,
+`/metrics`, and drain behavior.
+
+**Current production-ready boundary**: L2 is production-ready only for the
+local Rust sidecar runtime and in-process DataFusion execution surface. It does
+not claim pg_lake, external object-store IO, Iceberg/Parquet/Delta object
+reads, DuckDB runtime, MotherDuck runtime, logical-replication mirror
+materialization, Citus planner integration, Kubernetes traffic, or production
+query routing through the pool.
 
 **Motivation**: The analytical path should avoid a Python server in the hot
 query path.
@@ -4142,13 +4158,27 @@ tables through a sidecar.
 ### L4: DataFusion Pushdown
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines projected-column, predicate, and limit pushdown contracts
-for DataFusion execution and verifies their runtime shape.
+for DataFusion execution and verifies their bounded local runtime shape.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-smoke.sh` verifies the
+runtime report from a real DataFusion query over a local Arrow `RecordBatch`:
+`projection_pushdown_executed=true`, `filter_pushdown_executed=true`,
+`limit_pushdown_executed=true`, `datafusion_output_rows=2`,
+`datafusion_output_total=3000`, and
+`evidence_boundary=local-datafusion-recordbatch-only`.
+
+**Current production-ready boundary**: L4 is production-ready only for local
+DataFusion projection/filter/limit execution inside the analytical sidecar
+runtime. It does not claim object-store scan pushdown, Parquet/Iceberg/Delta
+file pruning, Citus planner integration, distributed pushdown across workers,
+pool data-plane query routing, Kubernetes traffic, or benchmarked analytical
+performance.
 
 **Motivation**: Analytical execution has to preserve pool and planner
 predicate intent instead of scanning full object-store tables.

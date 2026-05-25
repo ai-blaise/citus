@@ -3110,27 +3110,58 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_ids = {"L1", "L2", "L3", "L4", "L5", "L6", "L8", "L12", "L13"}
+analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L8", "L12", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
-not_alpha = sorted(feature_id for feature_id in analytical_ids if entry_status.get(feature_id) != "alpha")
+not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
     fail(
-        "analytical/lakehouse features must remain alpha until live execution evidence exists: "
+        "analytical/lakehouse features without local DataFusion execution evidence must remain alpha: "
         + ", ".join(not_alpha)
     )
+for feature_id in ("L2", "L4"):
+    if entry_status.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready once local DataFusion runtime evidence is wired")
 analytical_truth = compact(
-    docs + "\\n" + audit + "\\n" + read(ROOT / "sidecar/analytical/README.md")
+    docs
+    + "\n"
+    + audit
+    + "\n"
+    + read(ROOT / "sidecar/analytical/README.md")
+    + "\n"
+    + read(ROOT / "sidecar/analytical/src/lib.rs")
+    + "\n"
+    + read(ROOT / "sidecar/analytical/src/main.rs")
+    + "\n"
+    + read(ROOT / "sidecar/analytical/Cargo.toml")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-smoke.sh")
 )
 for phrase in (
+    "**Status**: production-ready",
+    "datafusion = \"48.0.1\"",
+    "query_engine_executed=true",
+    "datafusion_output_rows=2",
+    "datafusion_output_total=3000",
+    "projection_pushdown_executed=true",
+    "filter_pushdown_executed=true",
+    "limit_pushdown_executed=true",
+    "local-datafusion-recordbatch-only",
     "external_io_attempted=false",
-    "query_engine_executed=false",
-    "deterministic-runtime-report-only",
-    "must not be cited as production evidence for live DataFusion",
+    "pg_lake",
     "object-store IO",
+    "Iceberg/Parquet/Delta",
+    "DuckDB",
+    "MotherDuck",
+    "logical-replication mirror materialization",
     "Citus planner integration",
+    "Kubernetes traffic",
 ):
     if compact(phrase) not in analytical_truth:
-        fail(f"analytical/lakehouse boundary missing truth phrase: {phrase}")
+        fail(f"analytical L2/L4 production boundary missing truth phrase: {phrase}")
+for feature_id in analytical_alpha_ids:
+    section = feature_section(docs, feature_id)
+    if "**Status**: alpha" not in section:
+        fail(f"{feature_id} analytical feature must remain alpha")
 for phrase in ("sidecar-analytical-smoke", "ci/ai-blaise/sidecar-analytical-smoke.sh"):
     if phrase not in makefile:
         fail(f"Makefile.ai-blaise must wire the analytical smoke: {phrase}")

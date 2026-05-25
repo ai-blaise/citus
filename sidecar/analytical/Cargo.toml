@@ -7,3 +7,5 @@ repository.workspace = true
 
 [dependencies]
 ai_blaise_citus_sidecar_shared = { path = "../shared" }
+datafusion = "48.0.1"
+tokio = { version = "1", features = ["rt"] }

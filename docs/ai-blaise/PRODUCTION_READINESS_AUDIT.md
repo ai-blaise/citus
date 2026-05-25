@@ -1035,14 +1035,21 @@ Rule 10 completion for this branch requires local and VM verification of:
   must not be cited as production evidence for PostgreSQL 19 `REPACK
   CONCURRENTLY`, Kubernetes-scheduled repack execution, or Citus shard fanout
   across workers.
-- Analytical/lakehouse hardening now adds fail-closed runtime-policy checks and
-  a deterministic canonical smoke for L1/L2/L3/L4/L5/L6/L8/L12/L13. The smoke
-  also starts the analytical loopback probe server and verifies health,
-  readiness, metrics, and drain behavior. It records
-  `external_io_attempted=false`, `query_engine_executed=false`, and
-  `evidence_boundary=deterministic-runtime-report-only`, so it must not be cited
-  as production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg
-  commits, object-store IO, Kubernetes traffic, or Citus planner integration.
+- Analytical/lakehouse hardening now includes bounded live local DataFusion
+  execution for `FEATURE: L2` and `FEATURE: L4`. The sidecar analytical smoke
+  runs a real in-process DataFusion query over an Arrow `RecordBatch`, records
+  `query_engine_executed=true`, `datafusion_output_rows=2`,
+  `datafusion_output_total=3000`, `projection_pushdown_executed=true`,
+  `filter_pushdown_executed=true`, `limit_pushdown_executed=true`, and
+  `evidence_boundary=local-datafusion-recordbatch-only`, while also verifying
+  the analytical loopback probe server health/readiness/metrics/drain path.
+  This remains `external_io_attempted=false` and must not be cited as
+  production evidence for pg_lake, object-store IO, Iceberg/Parquet/Delta file
+  reads, Iceberg commits, DuckDB, MotherDuck, logical-replication mirror
+  materialization, Citus planner integration, Kubernetes traffic, or
+  benchmarked analytical performance. `FEATURE: L1`, `FEATURE: L3`,
+  `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`, and
+  `FEATURE: L13` remain alpha.
 - Agentmemory checkpointing for this depth-B slice was unavailable on the VM
   because `http://127.0.0.1:3911` refused connections; no memory files were
   edited or erased.

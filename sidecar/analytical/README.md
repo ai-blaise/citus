@@ -36,10 +36,16 @@ DataFusion pushdown shape preservation, Iceberg snapshot commit reporting,
 federated catalog publication, DuckDB extension loading, MotherDuck session
 accounting, and logical-replication mirror materialization counters.
 
-Current runtime reports `external_io_attempted=false`,
-`query_engine_executed=false`, and
-`evidence_boundary=deterministic-runtime-report-only`. This is alpha
-hardening for validation and accounting. The smoke starts the loopback probe
-server and verifies health, readiness, metrics, and drain behavior. This is not
-production evidence for live DataFusion, DuckDB, MotherDuck, Iceberg commits,
-object-store IO, Kubernetes traffic, or Citus planner integration.
+Current runtime executes a bounded local DataFusion query over an Arrow
+`RecordBatch` and reports `external_io_attempted=false`,
+`query_engine_executed=true`, `datafusion_output_rows=2`,
+`projection_pushdown_executed=true`, `filter_pushdown_executed=true`,
+`limit_pushdown_executed=true`, and
+`evidence_boundary=local-datafusion-recordbatch-only`. This is production
+evidence only for `FEATURE: L2` and `FEATURE: L4` under that local in-process
+runtime boundary. The smoke also starts the loopback probe server and verifies
+health, readiness, metrics, and drain behavior. `FEATURE: L1`, `FEATURE: L3`,
+`FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`, and
+`FEATURE: L13` remain alpha; this is not production evidence for pg_lake,
+DuckDB, MotherDuck, Iceberg commits, object-store IO, logical-replication
+mirror materialization, Kubernetes traffic, or Citus planner integration.

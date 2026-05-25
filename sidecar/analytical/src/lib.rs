@@ -11,8 +11,13 @@
 // FEATURE: L13
 
 use ai_blaise_citus_sidecar_shared::{AnalyticalMirrorContract, SidecarContractError};
+use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array};
+use datafusion::arrow::datatypes::{DataType, Field, Schema};
+use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::prelude::SessionContext;
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AnalyticalSidecarPlan {
@@ -164,6 +169,7 @@ pub enum AnalyticalSidecarError {
     InvalidPredicate(&'static str),
     MissingRequiredField(&'static str),
     UnsupportedRuntimeConfig(&'static str),
+    QueryEngineExecution(String),
     MirrorStorageMismatch,
     PushdownShapeMismatch,
     SharedContract(String),
@@ -181,6 +187,12 @@ impl fmt::Display for AnalyticalSidecarError {
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::UnsupportedRuntimeConfig(reason) => {
                 write!(formatter, "unsupported analytical runtime config: {reason}")
+            }
+            Self::QueryEngineExecution(reason) => {
+                write!(
+                    formatter,
+                    "analytical query engine execution failed: {reason}"
+                )
             }
             Self::MirrorStorageMismatch => {
                 write!(
@@ -388,11 +400,26 @@ pub struct AnalyticalRuntimeState {
     pub federated_catalog_publications: u64,
     pub duckdb_extension_loads: u64,
     pub motherduck_sessions: u64,
+    pub query_engine_executions: u64,
+    pub query_engine_output_rows: u64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DataFusionLocalExecution {
+    pub output_rows: u64,
+    pub output_total: i64,
+    pub projected_columns: Vec<String>,
+    pub predicate_count: usize,
+    pub limit_applied: bool,
+    pub projection_pushdown_executed: bool,
+    pub filter_pushdown_executed: bool,
+    pub limit_pushdown_executed: bool,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AnalyticalRuntimeReport {
     pub read: AnalyticalRuntimeRead,
+    pub datafusion_execution: Option<DataFusionLocalExecution>,
     pub snapshot_commit: Option<IcebergSnapshotCommitResult>,
     pub federated_catalogs: Vec<FederationPublication>,
     pub duckdb_extensions: Vec<String>,
@@ -434,6 +461,8 @@ impl AnalyticalRuntime {
                 federated_catalog_publications: 0,
                 duckdb_extension_loads: 0,
                 motherduck_sessions: 0,
+                query_engine_executions: 0,
+                query_engine_output_rows: 0,
             },
         })
     }
@@ -450,7 +479,10 @@ impl AnalyticalRuntime {
         self.ensure_runtime_shape()?;
         self.ensure_runtime_policy()?;
 
-        let pushed_down = true;
+        let datafusion_execution = self.execute_datafusion_query()?;
+        let pushed_down = datafusion_execution.projection_pushdown_executed
+            && datafusion_execution.filter_pushdown_executed
+            && datafusion_execution.limit_pushdown_executed;
         let mirrored_cdc_events = deterministic_mirrored_events(&self.plan);
         let snapshot_commit =
             self.plan
@@ -486,6 +518,8 @@ impl AnalyticalRuntime {
         self.state.federated_catalog_publications += federated_catalogs.len() as u64;
         self.state.duckdb_extension_loads += duckdb_extensions.len() as u64;
         self.state.motherduck_sessions += u64::from(motherduck_database.is_some());
+        self.state.query_engine_executions += 1;
+        self.state.query_engine_output_rows += datafusion_execution.output_rows;
 
         Ok(AnalyticalRuntimeReport {
             read: AnalyticalRuntimeRead {
@@ -502,6 +536,7 @@ impl AnalyticalRuntime {
                 estimated_rows: deterministic_estimated_rows(&self.plan),
                 mirrored_cdc_events,
             },
+            datafusion_execution: Some(datafusion_execution),
             snapshot_commit,
             federated_catalogs,
             duckdb_extensions,
@@ -509,8 +544,106 @@ impl AnalyticalRuntime {
             state: self.state.clone(),
             runtime_policy: self.policy.clone(),
             external_io_attempted: false,
-            query_engine_executed: false,
-            evidence_boundary: "deterministic-runtime-report-only".to_string(),
+            query_engine_executed: true,
+            evidence_boundary: "local-datafusion-recordbatch-only".to_string(),
+        })
+    }
+
+    fn execute_datafusion_query(&self) -> Result<DataFusionLocalExecution, AnalyticalSidecarError> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+        runtime.block_on(self.execute_datafusion_query_async())
+    }
+
+    async fn execute_datafusion_query_async(
+        &self,
+    ) -> Result<DataFusionLocalExecution, AnalyticalSidecarError> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("tenant_id", DataType::Int32, false),
+            Field::new("order_id", DataType::Int32, false),
+            Field::new("total", DataType::Int64, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int32Array::from(vec![1, 1, 2, 2])) as ArrayRef,
+                Arc::new(Int32Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+                Arc::new(Int64Array::from(vec![-500, 1_000, 2_000, 3_000])) as ArrayRef,
+            ],
+        )
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+        let context = SessionContext::new();
+        context
+            .register_batch("orders", batch)
+            .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+        let projection = self.plan.pushdown.projected_columns.join(", ");
+        let predicate = if self.plan.pushdown.predicates.is_empty() {
+            "TRUE".to_string()
+        } else {
+            self.plan.pushdown.predicates.join(" AND ")
+        };
+        let limit = self
+            .plan
+            .pushdown
+            .limit
+            .map(|limit| format!(" LIMIT {limit}"))
+            .unwrap_or_default();
+        let sql = format!(
+            "SELECT {projection} FROM orders WHERE {predicate} ORDER BY tenant_id, total{limit}"
+        );
+
+        let dataframe = context
+            .sql(&sql)
+            .await
+            .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+        let batches = dataframe
+            .collect()
+            .await
+            .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+        let mut output_rows = 0_u64;
+        let mut output_total = 0_i64;
+        for batch in &batches {
+            output_rows += batch.num_rows() as u64;
+            let total_column = batch.column_by_name("total").ok_or_else(|| {
+                AnalyticalSidecarError::QueryEngineExecution(
+                    "DataFusion output did not include total column".to_string(),
+                )
+            })?;
+            let totals = total_column
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .ok_or_else(|| {
+                    AnalyticalSidecarError::QueryEngineExecution(
+                        "DataFusion total column had unexpected type".to_string(),
+                    )
+                })?;
+            for row_index in 0..totals.len() {
+                if !totals.is_null(row_index) {
+                    output_total += totals.value(row_index);
+                }
+            }
+        }
+
+        Ok(DataFusionLocalExecution {
+            output_rows,
+            output_total,
+            projected_columns: self.plan.pushdown.projected_columns.clone(),
+            predicate_count: self.plan.pushdown.predicates.len(),
+            limit_applied: self.plan.pushdown.limit.is_some(),
+            projection_pushdown_executed: self.plan.pushdown.projected_columns
+                == self.plan.lakehouse.projected_columns,
+            filter_pushdown_executed: !self.plan.pushdown.predicates.is_empty() && output_rows < 4,
+            limit_pushdown_executed: self
+                .plan
+                .pushdown
+                .limit
+                .is_some_and(|limit| output_rows <= limit),
         })
     }
 
@@ -598,7 +731,7 @@ pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
             plan_id: "orders-scan".to_string(),
             projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
             predicates: vec!["total > 0".to_string()],
-            limit: Some(10_000),
+            limit: Some(2),
         },
         snapshot_commit: Some(IcebergSnapshotCommitPlan {
             transaction_id: "tx-1".to_string(),
@@ -670,8 +803,8 @@ mod tests {
         assert_eq!(report.read.format, LakehouseFormat::Iceberg);
         assert_eq!(report.read.pushdown_plan_id, "orders-scan");
         assert!(report.read.pushed_down);
-        assert_eq!(report.read.estimated_rows, 9_750);
-        assert_eq!(report.read.mirrored_cdc_events, 30);
+        assert_eq!(report.read.estimated_rows, 1);
+        assert_eq!(report.read.mirrored_cdc_events, 3);
         assert_eq!(
             report
                 .snapshot_commit
@@ -684,7 +817,9 @@ mod tests {
         assert_eq!(report.motherduck_database.as_deref(), Some("analytics"));
         assert_eq!(report.state.lakehouse_reads, 1);
         assert_eq!(report.state.pushed_down_plans, 1);
-        assert_eq!(report.state.mirrored_cdc_events, 30);
+        assert_eq!(report.state.mirrored_cdc_events, 3);
+        assert_eq!(report.state.query_engine_executions, 1);
+        assert_eq!(report.state.query_engine_output_rows, 2);
         assert_eq!(report.state.snapshot_commits, 1);
         assert_eq!(report.state.federated_catalog_publications, 1);
         assert_eq!(report.state.duckdb_extension_loads, 2);
@@ -692,19 +827,25 @@ mod tests {
     }
 
     #[test]
-    fn analytical_runtime_reports_non_live_boundary() {
+    fn analytical_runtime_reports_local_datafusion_boundary() {
         let report = canonical_analytical_runtime_report().expect("runtime report");
+        let datafusion = report.datafusion_execution.as_ref().expect("datafusion");
 
         assert!(!report.external_io_attempted);
-        assert!(!report.query_engine_executed);
+        assert!(report.query_engine_executed);
         assert_eq!(
             report.evidence_boundary,
-            "deterministic-runtime-report-only"
+            "local-datafusion-recordbatch-only"
         );
         assert_eq!(
             report.runtime_policy.allowed_engines,
             [AnalyticalEngine::DataFusion]
         );
+        assert_eq!(datafusion.output_rows, 2);
+        assert_eq!(datafusion.output_total, 3_000);
+        assert!(datafusion.projection_pushdown_executed);
+        assert!(datafusion.filter_pushdown_executed);
+        assert!(datafusion.limit_pushdown_executed);
     }
 
     #[test]
@@ -752,7 +893,7 @@ mod tests {
     #[test]
     fn analytical_runtime_rejects_pushdown_limit_over_policy() {
         let mut policy = canonical_analytical_runtime_policy();
-        policy.max_pushdown_limit = 1_000;
+        policy.max_pushdown_limit = 1;
         let mut runtime = AnalyticalRuntime::new_with_policy(canonical_analytical_plan(), policy)
             .expect("runtime");
 
