@@ -50,10 +50,11 @@ use ai_blaise_citus_companion::{
     canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
     canonical_plan_runtime_report, canonical_regional_placement_report,
     canonical_regional_placement_sql_plan, canonical_release_hardening_report,
-    canonical_schema_drift_report, canonical_schema_drift_sql_plan,
-    canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
-    canonical_timescale_advanced_report, canonical_timescale_advanced_sql_plan,
-    canonical_transaction_state_report, canonical_transaction_state_sql_plan, render_all_views,
+    canonical_schema_drift_report, canonical_schema_drift_sql_plan, canonical_shard_split_report,
+    canonical_shard_split_sql_plan, canonical_shard_temperature_ranking_report,
+    canonical_shard_temperature_sql_plan, canonical_timescale_advanced_report,
+    canonical_timescale_advanced_sql_plan, canonical_transaction_state_report,
+    canonical_transaction_state_sql_plan, render_all_views,
 };
 use std::env;
 use std::process;
@@ -114,6 +115,12 @@ fn main() {
         }
         [command] if command == "run-shard-temperature-ranking-sql-canonical" => {
             run_shard_temperature_ranking_sql_canonical();
+        }
+        [command] if command == "run-shard-split-canonical" => {
+            run_shard_split_canonical();
+        }
+        [command] if command == "run-shard-split-sql-canonical" => {
+            run_shard_split_sql_canonical();
         }
         [command] if command == "run-transaction-state-canonical" => {
             run_transaction_state_canonical();
@@ -444,6 +451,44 @@ fn run_shard_temperature_ranking_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_shard_split_canonical() {
+    let report = canonical_shard_split_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: shard split report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id	table	tenant_id	initial_shard_count	statements	uses_isolate_tenant_to_new_shard	requires_logical_wal	records_shard_count_before_after	records_row_preservation	records_isolated_range	fail_closed_checks	policy_scheduler_exercised	threshold_telemetry_exercised	rollback_automation_exercised	multi_node_movement_exercised	kubernetes_traffic_exercised"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.feature_id,
+        report.table_name,
+        report.tenant_id,
+        report.initial_shard_count,
+        report.statement_count,
+        report.uses_isolate_tenant_to_new_shard,
+        report.requires_logical_wal,
+        report.records_shard_count_before_after,
+        report.records_row_preservation,
+        report.records_isolated_range,
+        report.fail_closed_checks,
+        report.policy_scheduler_exercised,
+        report.threshold_telemetry_exercised,
+        report.rollback_automation_exercised,
+        report.multi_node_movement_exercised,
+        report.kubernetes_traffic_exercised,
+    );
+}
+
+fn run_shard_split_sql_canonical() {
+    let sql_plan = canonical_shard_split_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: shard split SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_transaction_state_canonical() {
     let report = canonical_transaction_state_report().unwrap_or_else(|error| {
         eprintln!("companion-contracts: transaction state report failed: {error}");
@@ -560,7 +605,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

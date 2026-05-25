@@ -854,6 +854,16 @@ more production-ready than the artifacts justified.
   `2048:3`. This is not evidence for native Timescale bloom filters, planner
   integration, compressed-chunk scan pruning, multi-worker fanout, automated
   refresh scheduling, false-positive-rate calibration, or Kubernetes traffic.
+- `FEATURE: S1` now has bounded live Citus shard-split evidence in
+  `ci/ai-blaise/shard-split-live-smoke.sh`: a real Citus server with
+  `wal_level=logical`, a distributed `public.s1_orders` table, the
+  companion-rendered `isolate_tenant_to_new_shard` call, shard-count growth
+  `split_shard_count_before=4` to `split_shard_count_after=6`,
+  `split_tenant_rows_preserved=10`, `split_tenant_shard_changed=true`, and
+  `split_isolated_range_exact=true`. This is not evidence for an automated
+  policy scheduler, threshold telemetry, rollback automation, multi-node
+  movement, autonomous rebalancing, cross-table cascade coverage beyond the
+  tested Citus call, or Kubernetes traffic.
 - The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
   plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
   set names, and promotion policy thresholds, and PM4 evaluates latency/cost

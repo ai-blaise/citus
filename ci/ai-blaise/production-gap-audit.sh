@@ -113,6 +113,7 @@ COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
+SHARD_SPLIT_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-split-live-smoke.sh"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -2240,6 +2241,83 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing TS10/TS11 boundary phrase: {phrase}")
+
+
+shard_split_live_smoke = read(SHARD_SPLIT_LIVE_SMOKE)
+if status_by_id.get("S1") != "production-ready":
+    fail("S1 must be production-ready once live shard split evidence is wired")
+section_s1 = feature_section(docs, "S1")
+shard_split_truth = compact(
+    section_s1
+    + "\n"
+    + audit
+    + "\n"
+    + shard_split_live_smoke
+    + "\n"
+    + read(ROOT / "companion/src/shard_split.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+)
+for phrase in (
+    "**Status**: production-ready",
+    "ci/ai-blaise/shard-split-live-smoke.sh",
+    "wal_level=logical",
+    "isolate_tenant_to_new_shard",
+    "split_shard_count_before=4",
+    "split_shard_count_after=6",
+    "split_tenant_rows_preserved=10",
+    "split_isolated_range_exact=true",
+    "policy scheduler",
+    "threshold telemetry",
+    "rollback automation",
+    "multi-node movement",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_s1):
+        fail(f"S1 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: S1",
+    "ShardSplitPlan",
+    "run-shard-split-canonical",
+    "run-shard-split-sql-canonical",
+    "shard_split_live=passed",
+    "isolate_tenant_to_new_shard_executed=true",
+    "wal_level_logical_required=true",
+    "split_tenant_id=4",
+    "split_shard_count_before=4",
+    "split_shard_count_after=6",
+    "split_new_shard_created=true",
+    "split_tenant_rows_preserved=10",
+    "split_tenant_shard_changed=true",
+    "split_isolated_range_exact=true",
+    "policy_scheduler_exercised=false",
+    "threshold_telemetry_exercised=false",
+    "rollback_automation_exercised=false",
+    "multi_node_movement_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "shard-split-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in shard_split_truth:
+        fail(f"S1 live shard split production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "S1` now has bounded live Citus shard-split evidence",
+    "wal_level=logical",
+    "split_shard_count_before=4",
+    "split_shard_count_after=6",
+    "split_tenant_rows_preserved=10",
+    "split_tenant_shard_changed=true",
+    "split_isolated_range_exact=true",
+    "policy scheduler",
+    "threshold telemetry",
+    "rollback automation",
+    "multi-node movement",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing S1 boundary phrase: {phrase}")
 
 pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
 pool_geoip_live_smoke = read(POOL_GEOIP_LIVE_SMOKE)

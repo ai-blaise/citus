@@ -8773,24 +8773,48 @@ Current boundary: The production-ready claim is limited to the single-node raw W
 
 ### S1: Auto Shard Split
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/shard_split.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
+**Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Defines shard-group and split-threshold inputs for automated
-split intent.
+split intent, plus a bounded live Citus tenant-isolation shard split contract
+for a distributed table.
 
-**Current boundary**: The contract runner validates the policy declaration;
-actual shard splitting, data movement, and rollback remain alpha.
+**Current production-ready boundary**: S1 is production-ready for the bounded
+single-node Citus tenant-isolation primitive exercised by
+`ci/ai-blaise/shard-split-live-smoke.sh`.
 
-**Citus comparison**: Vanilla Citus does not expose declarative split intent.
+Production evidence: `ci/ai-blaise/shard-split-live-smoke.sh` starts a real
+Citus server with `wal_level=logical`, creates `public.s1_orders` as a
+distributed table with `split_shard_count_before=4`, calls
+`isolate_tenant_to_new_shard('public.s1_orders'::regclass, 4, 'CASCADE',
+'block_writes')` through the companion-rendered SQL plan, and verifies
+`split_shard_count_after=6`, `split_tenant_rows_preserved=10`,
+`split_new_shard_created=true`, `split_tenant_shard_changed=true`, and
+`split_isolated_range_exact=true`. The companion canonical report exposes the
+same boundary through `ShardSplitPlan`, `run-shard-split-canonical`, and
+`run-shard-split-sql-canonical`.
+
+This status does not claim an automated policy scheduler, threshold telemetry,
+rollback automation, multi-node movement, cross-table cascade coverage beyond
+the tested Citus call, autonomous rebalancing, or Kubernetes traffic.
+
+**Citus comparison**: Vanilla Citus exposes `isolate_tenant_to_new_shard` as a
+manual tenant-isolation primitive; ai-blaise adds a validated companion contract,
+live evidence gate, and explicit nonclaim markers for the surrounding automated
+split workflow.
 
 **References**:
 
 - In-source: `FEATURE: S1` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: S1` in `companion/src/shard_split.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-split-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-split-sql-canonical`
+- CI: `ci/ai-blaise/shard-split-live-smoke.sh`
 
 ### S3: Clone-Node Fast Scale-Out
 

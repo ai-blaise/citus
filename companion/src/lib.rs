@@ -29,6 +29,7 @@ pub mod runtime_depth_a;
 pub mod schema_drift;
 pub mod schema_jobs;
 pub mod search_bridge;
+pub mod shard_split;
 pub mod shard_temperature;
 pub mod tenants;
 pub mod timescale_advanced;
@@ -174,6 +175,11 @@ pub use schema_jobs::{
 pub use search_bridge::{
     HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
     SearchIndexDistributedPlan, SearchSqlPlan,
+};
+pub use shard_split::{
+    canonical_shard_split_fail_closed_checks, canonical_shard_split_plan,
+    canonical_shard_split_report, canonical_shard_split_sql_plan, ShardSplitError, ShardSplitPlan,
+    ShardSplitReport, ShardSplitSqlPlan,
 };
 pub use shard_temperature::{
     canonical_shard_temperature_fail_closed_checks, canonical_shard_temperature_ranking_plan,
