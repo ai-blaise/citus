@@ -1240,12 +1240,14 @@ if status_by_id.get("EF1") != "production-ready":
     fail("EF1 inline Deno runtime must be production-ready after live Deno process smoke evidence")
 if status_by_id.get("EF4") != "production-ready":
     fail("EF4 database callback over UDS must be production-ready after live PostgreSQL UDS smoke evidence")
-for feature_id in ("EF2", "EF5"):
-    if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} must remain alpha until Bun runtime or trigger dispatch paths are live-proven")
+if status_by_id.get("EF5") != "production-ready":
+    fail("EF5 trigger dispatch must be production-ready after live scheduled/CDC Deno dispatch evidence")
+if status_by_id.get("EF2") != "alpha":
+    fail("EF2 must remain alpha until Bun runtime execution is live-proven")
 edge_deno_live_smoke = read(EDGE_DENO_LIVE_SMOKE)
 for required in (
     "FEATURE: EF1",
+    "EF5",
     "AI_BLAISE_EDGE_RUNTIME_EXECUTION",
     "AI_BLAISE_DENO_BIN",
     "edge_deno_live=passed",
@@ -1255,6 +1257,8 @@ for required in (
     "live_mode_without_executor_rejected=true",
     "live_timeout_rejected=true",
     "live_stdout_cap_rejected=true",
+    "trigger_dispatch_scheduled_live=true",
+    "trigger_dispatch_cdc_live=true",
 ):
     if required not in edge_deno_live_smoke:
         fail(f"EF1 live Deno smoke lost production assertion: {required}")
@@ -1278,11 +1282,31 @@ for phrase in (
     "HTTP 504",
     "explicit opt-in inline Deno execution",
     "Bun execution",
-    "scheduled/CDC trigger dispatch",
+    "EF5 production boundary",
     "Kubernetes deployment",
 ):
     if compact(phrase) not in ef1_body:
         fail(f"EF1 docs lost live Deno evidence phrase: {phrase}")
+ef5_body = compact(entry_by_id["EF5"]["body"])
+for phrase in (
+    "production evidence",
+    "edge-functions-deno-live-smoke.sh",
+    "POST /triggers/scheduled",
+    "POST /triggers/cdc",
+    "public.edge_orders insert",
+    "matched=1",
+    "dispatched=1",
+    "execution_mode=live",
+    "user_code_executed=true",
+    "runtime_response_json",
+    "sidecar-owned trigger ingress and dispatch",
+    "Queue/broker integration",
+    "long-running CDC slot tailing",
+    "durable retry/DLQ",
+    "Kubernetes deployment",
+):
+    if compact(phrase) not in ef5_body:
+        fail(f"EF5 docs lost live trigger dispatch evidence phrase: {phrase}")
 edge_db_callback_smoke = read(EDGE_DB_CALLBACK_UDS_SMOKE)
 for required in (
     "FEATURE: EF4",
@@ -1313,7 +1337,7 @@ for phrase in (
     "Bun user-code execution",
     "separate EF1 production boundary",
     "explicit opt-in inline Deno execution",
-    "triggered dispatch",
+    "EF5 covers sidecar-owned trigger dispatch",
     "Kubernetes deployment",
 ):
     if compact(phrase) not in ef4_body:
@@ -1325,11 +1349,13 @@ for phrase in (
     "user_code_executed=true",
     "runtime_response_json",
     "HTTP 504",
+    "/triggers/scheduled",
+    "/triggers/cdc",
     "edge-functions-db-callback-uds-smoke.sh",
     "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
     "db_callback_rows=1",
     "Bun user-code execution",
-    "EF2 and EF5",
+    "live CDC slot tailing",
 ):
     if compact(phrase) not in audit_body:
         fail(f"production audit lost EF4 UDS callback boundary phrase: {phrase}")

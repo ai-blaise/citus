@@ -1343,7 +1343,79 @@ impl EdgeFunctionRegistry {
             .ok_or(EdgeFunctionError::FunctionNotFound)?;
         let execution = host.invoke_external_runtime(request, payload, runtime_executor)?;
         self.invocations += 1;
+        if matches!(
+            request.trigger,
+            FunctionTrigger::Scheduled { .. } | FunctionTrigger::CdcEvent { .. }
+        ) {
+            self.triggered_invocations += 1;
+        }
         Ok(execution)
+    }
+
+    pub fn dispatch_due_schedules(
+        &mut self,
+        epoch_seconds: u64,
+        envelope: &TriggerDispatchEnvelope,
+        runtime_executor: Option<&mut ExternalRuntimeExecutor>,
+    ) -> Result<Vec<EdgeFunctionExecution>, EdgeFunctionError> {
+        let due = TriggerScheduler::new(self, epoch_seconds).due_schedules();
+        let mut runtime_executor = runtime_executor;
+        let mut executions = Vec::new();
+        for tick in due {
+            let request = InvocationRequest {
+                function_name: tick.function_name,
+                tenant_id: envelope.tenant_id.clone(),
+                trigger: FunctionTrigger::Scheduled {
+                    schedule: tick.schedule,
+                },
+                payload_bytes: envelope.payload_bytes,
+                timeout_ms: envelope.timeout_ms,
+            };
+            let execution = match envelope.execution_mode {
+                RuntimeExecutionMode::PlanOnly => self.invoke(&request)?,
+                RuntimeExecutionMode::Live => self.invoke_external_runtime(
+                    &request,
+                    &envelope.payload,
+                    runtime_executor.as_deref_mut(),
+                )?,
+            };
+            executions.push(execution);
+        }
+        Ok(executions)
+    }
+
+    pub fn dispatch_cdc_event(
+        &mut self,
+        table: &str,
+        operation: CdcOperation,
+        envelope: &TriggerDispatchEnvelope,
+        runtime_executor: Option<&mut ExternalRuntimeExecutor>,
+    ) -> Result<Vec<EdgeFunctionExecution>, EdgeFunctionError> {
+        let events = TriggerScheduler::new(self, 0).matching_events(table, &operation);
+        let mut runtime_executor = runtime_executor;
+        let mut executions = Vec::new();
+        for event in events {
+            let request = InvocationRequest {
+                function_name: event.function_name,
+                tenant_id: envelope.tenant_id.clone(),
+                trigger: FunctionTrigger::CdcEvent {
+                    table: event.table,
+                    operation: event.operation,
+                },
+                payload_bytes: envelope.payload_bytes,
+                timeout_ms: envelope.timeout_ms,
+            };
+            let execution = match envelope.execution_mode {
+                RuntimeExecutionMode::PlanOnly => self.invoke(&request)?,
+                RuntimeExecutionMode::Live => self.invoke_external_runtime(
+                    &request,
+                    &envelope.payload,
+                    runtime_executor.as_deref_mut(),
+                )?,
+            };
+            executions.push(execution);
+        }
+        Ok(executions)
     }
 
     pub fn snapshot(&self) -> EdgeFunctionRegistrySnapshot {
@@ -1563,6 +1635,16 @@ fn schedule_due(schedule: &str, epoch_seconds: u64) -> bool {
     minute == "*"
 }
 
+fn cdc_operation_from_str(operation: &str) -> Result<CdcOperation, EdgeFunctionError> {
+    match operation {
+        "insert" => Ok(CdcOperation::Insert),
+        "update" => Ok(CdcOperation::Update),
+        "delete" => Ok(CdcOperation::Delete),
+        "truncate" => Ok(CdcOperation::Truncate),
+        _ => Err(EdgeFunctionError::InvalidIdentifier("cdc_operation")),
+    }
+}
+
 // -----------------------------------------------------------------------------
 // HTTP front door
 // -----------------------------------------------------------------------------
@@ -1604,6 +1686,42 @@ fn handle_edge_functions_sidecar_http_request(
                 )),
                 Err(error) => Ok(error_response(error)),
             },
+            Err(error) => Ok(error_response(error)),
+        };
+    }
+    if method == "POST" && path == "/triggers/scheduled" {
+        let envelope = match trigger_dispatch_envelope_from_body(body) {
+            Ok(envelope) => envelope,
+            Err(error) => return Ok(error_response(error)),
+        };
+        let epoch_seconds = match trigger_epoch_seconds_from_body(body) {
+            Ok(epoch_seconds) => epoch_seconds,
+            Err(error) => return Ok(error_response(error)),
+        };
+        return match registry.dispatch_due_schedules(epoch_seconds, &envelope, runtime_executor) {
+            Ok(executions) => Ok(HttpProbeResponse::new(
+                200,
+                "application/json",
+                render_trigger_dispatch("scheduled", executions),
+            )),
+            Err(error) => Ok(error_response(error)),
+        };
+    }
+    if method == "POST" && path == "/triggers/cdc" {
+        let envelope = match trigger_dispatch_envelope_from_body(body) {
+            Ok(envelope) => envelope,
+            Err(error) => return Ok(error_response(error)),
+        };
+        let (table, operation) = match cdc_trigger_from_body(body) {
+            Ok(trigger) => trigger,
+            Err(error) => return Ok(error_response(error)),
+        };
+        return match registry.dispatch_cdc_event(&table, operation, &envelope, runtime_executor) {
+            Ok(executions) => Ok(HttpProbeResponse::new(
+                200,
+                "application/json",
+                render_trigger_dispatch("cdc", executions),
+            )),
             Err(error) => Ok(error_response(error)),
         };
     }
@@ -1716,6 +1834,21 @@ fn render_registry_snapshot(snapshot: &EdgeFunctionRegistrySnapshot) -> String {
     )
 }
 
+fn render_trigger_dispatch(kind: &str, executions: Vec<EdgeFunctionExecution>) -> String {
+    let rendered = executions
+        .iter()
+        .map(|execution| render_execution(execution).trim().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"trigger\":\"{}\",\"matched\":{},\"dispatched\":{},\"executions\":[{}]}}\n",
+        escape_json(kind),
+        executions.len(),
+        executions.len(),
+        rendered,
+    )
+}
+
 fn render_execution(execution: &EdgeFunctionExecution) -> String {
     let db_callback_rows = execution
         .db_callback_rows
@@ -1782,7 +1915,13 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
     };
     let code =
         json_string_field(&json, "code").ok_or(EdgeFunctionError::MissingRequiredField("code"))?;
-    let trigger_path = json_string_field(&json, "http_path").unwrap_or_else(|| "/".to_string());
+    let trigger_path = json_string_field(&json, "http_path");
+    let schedule = json_string_field(&json, "schedule");
+    let cdc_table = json_string_field(&json, "cdc_table");
+    let cdc_operation = match json_string_field(&json, "cdc_operation") {
+        Some(operation) => Some(cdc_operation_from_str(&operation)?),
+        None => None,
+    };
     let env_secret_refs = json_string_array_field(&json, "env_secret_refs")?;
     let db_callback = match json_string_field(&json, "db_callback_socket") {
         Some(uds_path) => Some(DbCallbackPlan {
@@ -1797,11 +1936,32 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
         None => None,
     };
 
+    let mut triggers = Vec::new();
+    if let Some(path) = trigger_path {
+        triggers.push(FunctionTrigger::Http { path });
+    }
+    if let Some(schedule) = schedule {
+        triggers.push(FunctionTrigger::Scheduled { schedule });
+    }
+    match (cdc_table, cdc_operation) {
+        (Some(table), Some(operation)) => {
+            triggers.push(FunctionTrigger::CdcEvent { table, operation })
+        }
+        (None, None) => {}
+        (Some(_), None) => return Err(EdgeFunctionError::MissingRequiredField("cdc_operation")),
+        (None, Some(_)) => return Err(EdgeFunctionError::MissingRequiredField("cdc_table")),
+    }
+    if triggers.is_empty() {
+        triggers.push(FunctionTrigger::Http {
+            path: "/".to_string(),
+        });
+    }
+
     let plan = EdgeFunctionPlan {
         name,
         runtime,
         source: FunctionSource::Inline { code },
-        triggers: vec![FunctionTrigger::Http { path: trigger_path }],
+        triggers,
         env_secret_refs,
         db_callback,
     };
@@ -1814,6 +1974,15 @@ struct InvocationEnvelope {
     request: InvocationRequest,
     execution_mode: RuntimeExecutionMode,
     payload: Value,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TriggerDispatchEnvelope {
+    pub execution_mode: RuntimeExecutionMode,
+    pub tenant_id: String,
+    pub payload_bytes: u64,
+    pub timeout_ms: u32,
+    pub payload: Value,
 }
 
 fn invocation_envelope_for_registered(
@@ -1857,6 +2026,62 @@ fn invocation_envelope_for_registered(
         execution_mode,
         payload,
     })
+}
+
+fn trigger_dispatch_envelope_from_body(
+    body: &str,
+) -> Result<TriggerDispatchEnvelope, EdgeFunctionError> {
+    let json = parse_json_body(body)?;
+    let execution_mode = match json_string_field(&json, "execution_mode")
+        .unwrap_or_else(|| "plan_only".to_string())
+        .as_str()
+    {
+        "plan_only" => RuntimeExecutionMode::PlanOnly,
+        "live" => RuntimeExecutionMode::Live,
+        _ => return Err(EdgeFunctionError::UnsupportedExecutionMode),
+    };
+    let tenant_id = json_string_field(&json, "tenant_id").unwrap_or_else(|| "tenant-a".to_string());
+    let payload_bytes = json_u64_field(&json, "payload_bytes")?.unwrap_or(64);
+    let timeout_ms = json_u32_field(&json, "timeout_ms")?.unwrap_or(500);
+    let request = InvocationRequest {
+        function_name: "trigger_validation".to_string(),
+        tenant_id: tenant_id.clone(),
+        trigger: FunctionTrigger::Http {
+            path: "/trigger-validation".to_string(),
+        },
+        payload_bytes,
+        timeout_ms,
+    };
+    request.validate()?;
+    Ok(TriggerDispatchEnvelope {
+        execution_mode,
+        tenant_id,
+        payload_bytes,
+        timeout_ms,
+        payload: json.get("payload").cloned().unwrap_or(Value::Null),
+    })
+}
+
+fn trigger_epoch_seconds_from_body(body: &str) -> Result<u64, EdgeFunctionError> {
+    let json = parse_json_body(body)?;
+    Ok(json_u64_field(&json, "epoch_seconds")?.unwrap_or_else(current_epoch_seconds))
+}
+
+fn cdc_trigger_from_body(body: &str) -> Result<(String, CdcOperation), EdgeFunctionError> {
+    let json = parse_json_body(body)?;
+    let table = json_string_field(&json, "table")
+        .ok_or(EdgeFunctionError::MissingRequiredField("table"))?;
+    validate_qualified_name("table", &table)?;
+    let operation = json_string_field(&json, "operation")
+        .ok_or(EdgeFunctionError::MissingRequiredField("operation"))?;
+    Ok((table, cdc_operation_from_str(&operation)?))
+}
+
+fn current_epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 fn parse_json_body(body: &str) -> Result<Value, EdgeFunctionError> {
@@ -2356,6 +2581,86 @@ mod tests {
             handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("register");
         assert_eq!(response.status_code, 201);
         assert!(response.body.contains("hello"));
+    }
+
+    #[test]
+    fn http_front_door_dispatches_scheduled_and_cdc_triggers() {
+        let mut runtime = SidecarRuntime::ready("edge-functions");
+        let mut registry = EdgeFunctionRegistry::new();
+
+        let scheduled = r#"{"name":"scheduled_report","runtime":"deno","code":"export default async () => ({ok:true})","schedule":"*/5 * * * *"}"#;
+        let request = format!(
+            "POST /functions HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            scheduled.len(),
+            scheduled
+        );
+        let response = handle_edge_functions_sidecar_http_request(
+            request.as_bytes(),
+            &mut runtime,
+            &mut registry,
+            None,
+            None,
+        )
+        .expect("register scheduled");
+        assert_eq!(response.status_code, 201);
+
+        let cdc = r#"{"name":"order_event","runtime":"deno","code":"export default async () => ({ok:true})","cdc_table":"public.orders","cdc_operation":"insert"}"#;
+        let request = format!(
+            "POST /functions HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            cdc.len(),
+            cdc
+        );
+        let response = handle_edge_functions_sidecar_http_request(
+            request.as_bytes(),
+            &mut runtime,
+            &mut registry,
+            None,
+            None,
+        )
+        .expect("register cdc");
+        assert_eq!(response.status_code, 201);
+
+        let scheduled_dispatch =
+            r#"{"epoch_seconds":0,"tenant_id":"tenant-a","payload_bytes":64,"timeout_ms":250}"#;
+        let request = format!(
+            "POST /triggers/scheduled HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            scheduled_dispatch.len(),
+            scheduled_dispatch
+        );
+        let response = handle_edge_functions_sidecar_http_request(
+            request.as_bytes(),
+            &mut runtime,
+            &mut registry,
+            None,
+            None,
+        )
+        .expect("dispatch scheduled");
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains("\"trigger\":\"scheduled\""));
+        assert!(response.body.contains("\"dispatched\":1"));
+        assert!(response.body.contains("\"function\":\"scheduled_report\""));
+        assert!(response.body.contains("\"execution_mode\":\"plan_only\""));
+
+        let cdc_dispatch = r#"{"table":"public.orders","operation":"insert","tenant_id":"tenant-a","payload_bytes":64,"timeout_ms":250}"#;
+        let request = format!(
+            "POST /triggers/cdc HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            cdc_dispatch.len(),
+            cdc_dispatch
+        );
+        let response = handle_edge_functions_sidecar_http_request(
+            request.as_bytes(),
+            &mut runtime,
+            &mut registry,
+            None,
+            None,
+        )
+        .expect("dispatch cdc");
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains("\"trigger\":\"cdc\""));
+        assert!(response.body.contains("\"dispatched\":1"));
+        assert!(response.body.contains("\"function\":\"order_event\""));
+        assert_eq!(registry.snapshot().invocations, 2);
+        assert_eq!(registry.snapshot().triggered_invocations, 2);
     }
 
     #[test]

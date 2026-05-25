@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# FEATURE: EF1
+# FEATURE: EF1 EF5
 # Live inline-Deno execution smoke for the edge-functions sidecar. This proves
 # the explicit opt-in Deno process path, bounded timeout behavior, fail-closed
-# disabled mode, and default no-env-permission isolate boundary. It does not
+# disabled mode, default no-env-permission isolate boundary, and scheduled/CDC
+# trigger dispatch through the same live executor. It does not
 # prove Bun execution, package installation, URI/bundle fetching, user-code
-# initiated DB callbacks, triggered dispatch, or Kubernetes deployment.
+# initiated DB callbacks, queue/broker delivery, live CDC slot tailing, or
+# Kubernetes deployment.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -176,6 +178,23 @@ def register(port, name, code):
         fail(f"{name} registration failed: {status} {response}")
 
 
+def register_triggered(port, name, code, *, schedule=None, cdc_table=None, cdc_operation=None):
+    body = {
+        "name": name,
+        "runtime": "deno",
+        "code": code,
+    }
+    if schedule is not None:
+        body["schedule"] = schedule
+    if cdc_table is not None:
+        body["cdc_table"] = cdc_table
+    if cdc_operation is not None:
+        body["cdc_operation"] = cdc_operation
+    status, response = request(port, "POST", "/functions", body=json.dumps(body))
+    if status != 201:
+        fail(f"{name} triggered registration failed: {status} {response}")
+
+
 def invoke_live(port, name, payload, timeout_ms=5000):
     body = json.dumps(
         {
@@ -187,6 +206,35 @@ def invoke_live(port, name, payload, timeout_ms=5000):
         }
     )
     return request(port, "POST", f"/functions/{name}", body=body)
+
+
+def dispatch_scheduled(port, payload):
+    body = json.dumps(
+        {
+            "epoch_seconds": 0,
+            "tenant_id": "tenant-a",
+            "payload_bytes": 128,
+            "timeout_ms": 5000,
+            "execution_mode": "live",
+            "payload": payload,
+        }
+    )
+    return request(port, "POST", "/triggers/scheduled", body=body)
+
+
+def dispatch_cdc(port, payload):
+    body = json.dumps(
+        {
+            "table": "public.edge_orders",
+            "operation": "insert",
+            "tenant_id": "tenant-a",
+            "payload_bytes": 128,
+            "timeout_ms": 5000,
+            "execution_mode": "live",
+            "payload": payload,
+        }
+    )
+    return request(port, "POST", "/triggers/cdc", body=body)
 
 
 run(["cargo", "build", "-q", "-p", PACKAGE], timeout=300)
@@ -275,6 +323,64 @@ export default async function handler(_) {
     status, body = invoke_live(enabled_port, "noisy_live", {"custom": "noisy"})
     assert status == 400, body
     assert "runtime stdout bytes" in body, body
+
+    register_triggered(
+        enabled_port,
+        "scheduled_live",
+        """
+export default async function handler(input) {
+  return {
+    ok: true,
+    trigger: "scheduled",
+    schedule_payload: input.payload.custom,
+    tenant: input.tenant_id
+  };
+}
+""",
+        schedule="*/5 * * * *",
+    )
+    status, body = dispatch_scheduled(enabled_port, {"custom": "scheduled-live"})
+    assert status == 200, body
+    dispatch = json.loads(body)
+    assert dispatch["trigger"] == "scheduled", dispatch
+    assert dispatch["matched"] == 1, dispatch
+    assert dispatch["dispatched"] == 1, dispatch
+    scheduled_execution = dispatch["executions"][0]
+    assert scheduled_execution["function"] == "scheduled_live", scheduled_execution
+    assert scheduled_execution["execution_mode"] == "live", scheduled_execution
+    assert scheduled_execution["user_code_executed"] is True, scheduled_execution
+    scheduled_response = json.loads(scheduled_execution["runtime_response_json"])
+    assert scheduled_response["schedule_payload"] == "scheduled-live", scheduled_response
+
+    register_triggered(
+        enabled_port,
+        "cdc_live",
+        """
+export default async function handler(input) {
+  return {
+    ok: true,
+    trigger: "cdc",
+    cdc_payload: input.payload.custom,
+    function_name: input.function_name
+  };
+}
+""",
+        cdc_table="public.edge_orders",
+        cdc_operation="insert",
+    )
+    status, body = dispatch_cdc(enabled_port, {"custom": "cdc-live"})
+    assert status == 200, body
+    dispatch = json.loads(body)
+    assert dispatch["trigger"] == "cdc", dispatch
+    assert dispatch["matched"] == 1, dispatch
+    assert dispatch["dispatched"] == 1, dispatch
+    cdc_execution = dispatch["executions"][0]
+    assert cdc_execution["function"] == "cdc_live", cdc_execution
+    assert cdc_execution["execution_mode"] == "live", cdc_execution
+    assert cdc_execution["user_code_executed"] is True, cdc_execution
+    cdc_response = json.loads(cdc_execution["runtime_response_json"])
+    assert cdc_response["cdc_payload"] == "cdc-live", cdc_response
+    assert cdc_response["function_name"] == "cdc_live", cdc_response
 finally:
     if disabled is not None:
         terminate(disabled)
@@ -291,4 +397,6 @@ print("runtime_default_env_permission=permission_denied")
 print("live_mode_without_executor_rejected=true")
 print("live_timeout_rejected=true")
 print("live_stdout_cap_rejected=true")
+print("trigger_dispatch_scheduled_live=true")
+print("trigger_dispatch_cdc_live=true")
 PY

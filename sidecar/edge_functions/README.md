@@ -30,9 +30,11 @@ Implemented surface:
   configured database role, applies bounded statement timeouts, rejects
   multi-statement/DDL callback input, and reports affected rows.
 - Registry surface for function registration, listing, invocation, scheduled
-  trigger discovery, CDC event matching, and safe UDS callback statement checks.
+  trigger discovery, CDC event matching, sidecar-owned scheduled/CDC trigger
+  dispatch, and safe UDS callback statement checks.
 - HTTP front door for `/healthz`, `/readyz`, `/metrics`, `GET /functions`,
-  `POST /functions`, and `POST /functions/<name>`.
+  `POST /functions`, `POST /functions/<name>`, `POST /triggers/scheduled`, and
+  `POST /triggers/cdc`.
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`.
@@ -42,7 +44,8 @@ Implemented surface:
   bootstraps Deno when needed, verifies live mode fails closed without
   `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1`, executes inline user code through a
   real Deno process, verifies default environment access is denied, and proves
-  runtime timeout enforcement.
+  runtime timeout enforcement, stdout cap rejection, and scheduled/CDC trigger
+  dispatch into live Deno functions.
 - `bash ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh` runs a real
   `postgres:17` container with a mounted Unix socket, registers an HTTP edge
   function with a callback socket, proves disabled execution fails closed,
@@ -57,6 +60,9 @@ These contracts cover `FEATURE: EF1`, `FEATURE: EF2`, `FEATURE: EF4`, and
 EF1 is production-ready only for explicit opt-in, inline Deno execution with
 the bounded sidecar-owned process, timeout, stdout, and default-permission
 isolation described above. EF2 remains alpha because Bun execution is still
-launch-plan only, and EF5 remains alpha because queue/broker, scheduled, and
-CDC-trigger dispatch are not live-smoked. EF4 is production-ready only for the
-bounded sidecar-managed PostgreSQL UDS callback path described above.
+launch-plan only. EF5 is production-ready only for the sidecar-owned
+`/triggers/scheduled` and `/triggers/cdc` dispatch ingress into already
+registered inline Deno functions; queue/broker delivery, long-running CDC slot
+tailing, distributed trigger fan-out, durable retries, and Kubernetes
+deployment remain alpha. EF4 is production-ready only for the bounded
+sidecar-managed PostgreSQL UDS callback path described above.

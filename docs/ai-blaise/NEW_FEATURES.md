@@ -4601,8 +4601,9 @@ permissions, and an over-timeout function returns HTTP 504. This production
 claim is limited to explicit opt-in inline Deno execution owned by the sidecar:
 bundle URI/Git source fetch, package installation, custom permission grants,
 secret injection into user code, user-code initiated database callbacks, Bun
-execution, scheduled/CDC trigger dispatch, queue delivery, durable retries, and
-Kubernetes deployment remain alpha.
+execution, queue/broker delivery, durable retries, and Kubernetes deployment
+remain alpha. Scheduled and CDC trigger dispatch have their own EF5 production
+boundary.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -4711,10 +4712,10 @@ executes one insert through the UDS callback path, reports
 `db_callback_statement_executed=true` and `db_callback_rows=1`, and verifies the
 inserted row in PostgreSQL. The bounded production surface is the sidecar-owned
 PostgreSQL UDS callback executor and HTTP registration/invocation contract.
-Bun user-code execution, user-code initiated callback RPC, triggered dispatch,
-queue delivery, and Kubernetes deployment remain out of scope for EF4. The
-separate EF1 production boundary covers only explicit opt-in inline Deno
-execution without database callbacks.
+Bun user-code execution, user-code initiated callback RPC, queue delivery, and
+Kubernetes deployment remain out of scope for EF4. The separate EF1 production
+boundary covers only explicit opt-in inline Deno execution without database
+callbacks, and EF5 covers sidecar-owned trigger dispatch.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4737,15 +4738,28 @@ callback path.
 ### EF5: Triggered Edge Functions
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines scheduled and CDC-event invocation contracts for edge
-functions.
+**Summary**: Executes scheduled and CDC-event trigger dispatch through the live
+edge-functions sidecar.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the live Rust HTTP sidecar lists CDC-triggered functions, registers an inline function with validated env-secret refs, invokes registered/canonical functions as `planned`, and fail-closes unsafe trigger requests. EF5 remains alpha because queue/broker integration, live CDC tailing, scheduled dispatch, and triggered user-code execution are not live-smoked.
+Production evidence: VM proof run
+`bash ci/ai-blaise/edge-functions-deno-live-smoke.sh` builds the real
+`ai_blaise_citus_sidecar_edge_functions` binary, boots the live HTTP sidecar
+with `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1`, registers a scheduled-only function
+and a CDC-event-only function, posts `POST /triggers/scheduled` with
+`epoch_seconds=0`, posts `POST /triggers/cdc` for `public.edge_orders insert`,
+and verifies both dispatch responses report `matched=1`, `dispatched=1`,
+`execution_mode=live`, `user_code_executed=true`, and a function-specific
+`runtime_response_json`. `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
+keeps the plan-only registry and fail-closed trigger-request boundary covered.
+This production claim is limited to sidecar-owned trigger ingress and dispatch
+into already-registered inline Deno functions. Queue/broker integration,
+long-running CDC slot tailing, distributed trigger fan-out, durable retry/DLQ,
+Kubernetes deployment, and Bun-trigger execution remain alpha.
 
 **Motivation**: Cron and event-driven functions need the same validation path
 as HTTP functions before queue integration is wired in.
@@ -4760,6 +4774,7 @@ from schedules or CDC events.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
+- CI: `ci/ai-blaise/edge-functions-deno-live-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
