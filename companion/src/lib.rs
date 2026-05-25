@@ -47,9 +47,9 @@ pub mod webhooks;
 pub use advanced_planner::{
     canonical_advanced_planner_contract, canonical_advanced_planner_execution_report,
     canonical_advanced_planner_fail_closed_checks, canonical_advanced_planner_runtime_report,
-    AdvancedPlannerContract, AdvancedPlannerError, AdvancedPlannerExecutionReport,
-    AdvancedPlannerRuntimeReport, AdvancedPlannerRuntimeScenario, PlannerExecutionBoundary,
-    PlannerSurface, PlannerSurfaceKind,
+    canonical_libsql_read_tier_guard_report, AdvancedPlannerContract, AdvancedPlannerError,
+    AdvancedPlannerExecutionReport, AdvancedPlannerRuntimeReport, AdvancedPlannerRuntimeScenario,
+    LibsqlReadTierGuardReport, PlannerExecutionBoundary, PlannerSurface, PlannerSurfaceKind,
 };
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
 pub use bulk_distsql::{

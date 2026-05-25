@@ -8569,17 +8569,37 @@ traffic remain alpha.
 ### Edge2: libsql Read-Tier Research Guard
 
 **Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Keeps the libsql-shaped read-tier concept behind an explicit
-research decision record.
+fail-closed research guard so production surfaces cannot imply libsql behavior
+without a separate implementation and measured runtime evidence.
 
-**Current boundary**: The contract runner proves the guard exists; no libsql
-read-tier integration, replication adapter, or workload isolation is
-production-ready.
+**Current production-ready boundary**: Edge2 is production-ready only for the
+negative guard. The companion contract records
+`docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md`, blocks the
+`libsql production read tier` integration, enumerates five promotion evidence
+requirements, enumerates four forbidden runtime claims, and emits a canonical
+report with `live_execution_claims=0`, `replication_adapter_claimed=false`,
+`workload_isolation_claimed=false`, and
+`production_query_routing_claimed=false`. No libsql read-tier integration,
+replication adapter, workload isolation, production query routing, operator
+reconciliation, or Kubernetes traffic is production-ready.
+
+Production evidence:
+
+- In-source: `FEATURE: Edge2` in `companion/src/advanced_planner.rs`
+- ADR: `docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md`
+- Executable: `cargo test -p ai_blaise_citus_companion edge2_libsql_research_guard_is_fail_closed`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-libsql-read-tier-guard-canonical`
+- CI: `ci/ai-blaise/edge2-libsql-research-guard-smoke.sh`
+- Evidence markers: `edge2_libsql_research_guard_smoke`,
+  `guard_status=fail-closed`, `live_execution_claims=0`,
+  `replication_adapter_claimed=false`, `workload_isolation_claimed=false`, and
+  `production_query_routing_claimed=false`
 
 **Citus comparison**: Vanilla Citus does not include a libsql-shaped research
 gate.
@@ -8587,7 +8607,10 @@ gate.
 **References**:
 
 - In-source: `FEATURE: Edge2` in `companion/src/advanced_planner.rs`
+- ADR: `docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-libsql-read-tier-guard-canonical`
+- CI: `ci/ai-blaise/edge2-libsql-research-guard-smoke.sh`
 
 ### F3: Iceberg Federation To Warehouses
 

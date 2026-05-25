@@ -28,7 +28,7 @@ if ! printf '%s\n' "${summary_output}" | grep -Fqx "${expected_summary_row}"; th
 fi
 
 expected_runtime_header=$'scenarios\tcovered_features\tcontract_checks\tfail_closed_checks\tlive_execution_claims\tpatch_smoke_boundaries\tplan_only_boundaries\tdeterministic_boundaries\tresearch_guard_boundaries'
-expected_runtime_row=$'27\t27\t73\t5\t0\t1\t4\t20\t2'
+expected_runtime_row=$'27\t27\t96\t5\t0\t1\t4\t20\t2'
 runtime_output="$(cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical)"
 
 if ! printf '%s\n' "${runtime_output}" | grep -Fqx "${expected_runtime_header}"; then

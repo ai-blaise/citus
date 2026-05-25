@@ -35,6 +35,40 @@ pub const ADVANCED_PLANNER_FEATURE_IDS: &[&str] = &[
     "R12", "S1", "S3", "S8", "S12", "Sto2", "T4", "T10", "T11", "T13", "T14", "TS10", "TS11",
 ];
 
+pub const EDGE1_RESEARCH_GUARD_DECISION_RECORD: &str =
+    "docs/ai-blaise/ADR/0001-fork-not-rewrite.md";
+pub const EDGE2_LIBSQL_DECISION_RECORD: &str =
+    "docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md";
+pub const EDGE2_LIBSQL_BLOCKED_INTEGRATION: &str = "libsql production read tier";
+pub const EDGE2_LIBSQL_PROMOTION_EVIDENCE: &[&str] = &[
+    "libsql replication semantics ADR accepted",
+    "tenant isolation and workload routing tests",
+    "lag and consistency SLO runbook",
+    "failure-mode drill with stale-read rejection",
+    "production rollout owner signoff",
+];
+pub const EDGE2_LIBSQL_FORBIDDEN_CLAIMS: &[&str] = &[
+    "libsql read-tier integration",
+    "libsql replication adapter",
+    "libsql workload isolation",
+    "production query routing to libsql",
+];
+
+const EDGE1_PROMOTION_EVIDENCE: &[&str] = &[
+    "edge replica provisioning design",
+    "WAN/POP deployment proof",
+    "SQL/MVCC snapshot execution evidence",
+    "Kubernetes traffic proof",
+];
+const EDGE1_FORBIDDEN_CLAIMS: &[&str] = &[
+    "edge replica provisioning",
+    "POP/WAN network deployment",
+    "SQL/MVCC snapshot execution",
+    "planner integration",
+    "data-plane query routing",
+    "Kubernetes traffic",
+];
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AdvancedPlannerContract {
     pub surfaces: Vec<PlannerSurface>,
@@ -104,6 +138,9 @@ pub enum PlannerSurfaceKind {
     },
     ResearchGuard {
         decision_record: String,
+        blocked_integration: String,
+        promotion_evidence: Vec<String>,
+        forbidden_claims: Vec<String>,
     },
 }
 
@@ -299,6 +336,78 @@ impl AdvancedPlannerRuntimeReport {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LibsqlReadTierGuardReport {
+    pub feature_id: &'static str,
+    pub guard_status: &'static str,
+    pub decision_record: String,
+    pub blocked_integration: String,
+    pub promotion_evidence: usize,
+    pub forbidden_claims: usize,
+    pub live_execution_claims: usize,
+    pub replication_adapter_claimed: bool,
+    pub workload_isolation_claimed: bool,
+    pub production_query_routing_claimed: bool,
+}
+
+impl LibsqlReadTierGuardReport {
+    fn from_contract(contract: &AdvancedPlannerContract) -> Result<Self, AdvancedPlannerError> {
+        contract.validate()?;
+
+        let surface = contract
+            .surfaces
+            .iter()
+            .find(|surface| surface.feature_id == "Edge2")
+            .ok_or(AdvancedPlannerError::MissingFeature("Edge2"))?;
+        let PlannerSurfaceKind::ResearchGuard {
+            decision_record,
+            blocked_integration,
+            promotion_evidence,
+            forbidden_claims,
+        } = &surface.kind
+        else {
+            return Err(AdvancedPlannerError::InvalidResearchGuard("Edge2"));
+        };
+
+        if decision_record != EDGE2_LIBSQL_DECISION_RECORD
+            || blocked_integration != EDGE2_LIBSQL_BLOCKED_INTEGRATION
+            || !contains_all(promotion_evidence, EDGE2_LIBSQL_PROMOTION_EVIDENCE)
+            || !contains_all(forbidden_claims, EDGE2_LIBSQL_FORBIDDEN_CLAIMS)
+        {
+            return Err(AdvancedPlannerError::InvalidResearchGuard("Edge2"));
+        }
+
+        let scenario = runtime_scenario_for_surface(surface);
+        if scenario.execution_boundary != PlannerExecutionBoundary::ResearchGuard {
+            return Err(AdvancedPlannerError::InvalidResearchGuard("Edge2"));
+        }
+
+        Ok(Self {
+            feature_id: surface.feature_id,
+            guard_status: "fail-closed",
+            decision_record: decision_record.clone(),
+            blocked_integration: blocked_integration.clone(),
+            promotion_evidence: promotion_evidence.len(),
+            forbidden_claims: forbidden_claims.len(),
+            live_execution_claims: 0,
+            replication_adapter_claimed: false,
+            workload_isolation_claimed: false,
+            production_query_routing_claimed: false,
+        })
+    }
+}
+
+pub fn canonical_libsql_read_tier_guard_report(
+) -> Result<LibsqlReadTierGuardReport, AdvancedPlannerError> {
+    LibsqlReadTierGuardReport::from_contract(&canonical_advanced_planner_contract())
+}
+
+fn contains_all(values: &[String], expected: &[&str]) -> bool {
+    expected
+        .iter()
+        .all(|expected_value| values.iter().any(|value| value == expected_value))
+}
+
 pub fn canonical_advanced_planner_runtime_report(
 ) -> Result<AdvancedPlannerRuntimeReport, AdvancedPlannerError> {
     AdvancedPlannerRuntimeReport::from_contract(&canonical_advanced_planner_contract())
@@ -383,8 +492,16 @@ impl PlannerSurfaceKind {
                 validate_required("storage.domain_name", domain_name)?;
                 validate_required("storage.backing_table", backing_table)
             }
-            Self::ResearchGuard { decision_record } => {
-                validate_required("research.decision_record", decision_record)
+            Self::ResearchGuard {
+                decision_record,
+                blocked_integration,
+                promotion_evidence,
+                forbidden_claims,
+            } => {
+                validate_required("research.decision_record", decision_record)?;
+                validate_required("research.blocked_integration", blocked_integration)?;
+                validate_required_list("research.promotion_evidence", promotion_evidence)?;
+                validate_required_list("research.forbidden_claims", forbidden_claims)
             }
             _ => Ok(()),
         }
@@ -491,8 +608,22 @@ pub fn canonical_advanced_planner_contract() -> AdvancedPlannerContract {
                 &["server", "secret_ref"],
             ),
             storage_domain("Sto2", "file_attachment", "storage.file_attachment_refs"),
-            research_guard("Edge1", "edge bounded-staleness replica contract"),
-            research_guard("Edge2", "libsql read-tier research guard"),
+            research_guard(
+                "Edge1",
+                "edge bounded-staleness replica contract",
+                EDGE1_RESEARCH_GUARD_DECISION_RECORD,
+                "edge production read replica",
+                EDGE1_PROMOTION_EVIDENCE,
+                EDGE1_FORBIDDEN_CLAIMS,
+            ),
+            research_guard(
+                "Edge2",
+                "libsql read-tier research guard",
+                EDGE2_LIBSQL_DECISION_RECORD,
+                EDGE2_LIBSQL_BLOCKED_INTEGRATION,
+                EDGE2_LIBSQL_PROMOTION_EVIDENCE,
+                EDGE2_LIBSQL_FORBIDDEN_CLAIMS,
+            ),
         ],
     }
 }
@@ -555,10 +686,30 @@ fn runtime_scenario_for_surface(surface: &PlannerSurface) -> AdvancedPlannerRunt
                 format!("backing_table={backing_table}"),
             ],
         ),
-        PlannerSurfaceKind::ResearchGuard { decision_record } => (
-            PlannerExecutionBoundary::ResearchGuard,
-            vec![format!("decision_record={decision_record}")],
-        ),
+        PlannerSurfaceKind::ResearchGuard {
+            decision_record,
+            blocked_integration,
+            promotion_evidence,
+            forbidden_claims,
+        } => {
+            required_evidence.extend(promotion_evidence.clone());
+            let mut checks = vec![
+                format!("decision_record={decision_record}"),
+                format!("blocked_integration={blocked_integration}"),
+                "live_execution_not_claimed".to_string(),
+            ];
+            checks.extend(
+                promotion_evidence
+                    .iter()
+                    .map(|evidence| format!("promotion_evidence:{evidence}")),
+            );
+            checks.extend(
+                forbidden_claims
+                    .iter()
+                    .map(|claim| format!("forbidden_claim:{claim}")),
+            );
+            (PlannerExecutionBoundary::ResearchGuard, checks)
+        }
     };
 
     AdvancedPlannerRuntimeScenario {
@@ -653,13 +804,29 @@ fn storage_domain(
     }
 }
 
-fn research_guard(feature_id: &'static str, name: &str) -> PlannerSurface {
+fn research_guard(
+    feature_id: &'static str,
+    name: &str,
+    decision_record: &str,
+    blocked_integration: &str,
+    promotion_evidence: &[&str],
+    forbidden_claims: &[&str],
+) -> PlannerSurface {
     PlannerSurface {
         feature_id,
         name: name.to_string(),
         references: vec!["docs/ai-blaise/ARCHITECTURE.md".to_string()],
         kind: PlannerSurfaceKind::ResearchGuard {
-            decision_record: "docs/ai-blaise/ADR/0001-fork-not-rewrite.md".to_string(),
+            decision_record: decision_record.to_string(),
+            blocked_integration: blocked_integration.to_string(),
+            promotion_evidence: promotion_evidence
+                .iter()
+                .map(|evidence| (*evidence).to_string())
+                .collect(),
+            forbidden_claims: forbidden_claims
+                .iter()
+                .map(|claim| (*claim).to_string())
+                .collect(),
         },
     }
 }
@@ -687,6 +854,7 @@ pub enum AdvancedPlannerError {
     MissingRequiredField(&'static str),
     UnknownRuntimeFeature(&'static str),
     UnsupportedLiveExecutionClaim(&'static str),
+    InvalidResearchGuard(&'static str),
 }
 
 impl fmt::Display for AdvancedPlannerError {
@@ -716,6 +884,9 @@ impl fmt::Display for AdvancedPlannerError {
                 formatter,
                 "advanced planner runtime scenario for {feature_id} claims live distributed execution"
             ),
+            Self::InvalidResearchGuard(feature_id) => {
+                write!(formatter, "advanced planner research guard is invalid for {feature_id}")
+            }
         }
     }
 }
@@ -774,13 +945,32 @@ mod tests {
 
         assert_eq!(report.scenario_count, 27);
         assert_eq!(report.covered_features, 27);
-        assert_eq!(report.contract_checks, 73);
+        assert_eq!(report.contract_checks, 96);
         assert_eq!(report.fail_closed_checks, 5);
         assert_eq!(report.live_execution_claims, 0);
         assert_eq!(report.patch_smoke_boundaries, 1);
         assert_eq!(report.plan_only_boundaries, 4);
         assert_eq!(report.deterministic_boundaries, 20);
         assert_eq!(report.research_guard_boundaries, 2);
+    }
+
+    #[test]
+    fn edge2_libsql_research_guard_is_fail_closed() {
+        let report = canonical_libsql_read_tier_guard_report().expect("libsql guard report");
+
+        assert_eq!(report.feature_id, "Edge2");
+        assert_eq!(report.guard_status, "fail-closed");
+        assert_eq!(report.decision_record, EDGE2_LIBSQL_DECISION_RECORD);
+        assert_eq!(report.blocked_integration, EDGE2_LIBSQL_BLOCKED_INTEGRATION);
+        assert_eq!(
+            report.promotion_evidence,
+            EDGE2_LIBSQL_PROMOTION_EVIDENCE.len()
+        );
+        assert_eq!(report.forbidden_claims, EDGE2_LIBSQL_FORBIDDEN_CLAIMS.len());
+        assert_eq!(report.live_execution_claims, 0);
+        assert!(!report.replication_adapter_claimed);
+        assert!(!report.workload_isolation_claimed);
+        assert!(!report.production_query_routing_claimed);
     }
 
     #[test]

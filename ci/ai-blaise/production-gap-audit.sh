@@ -110,6 +110,8 @@ SIDECAR_HLC_SMOKE = ROOT / "ci/ai-blaise/sidecar-hlc-smoke.sh"
 TXN_STATUS_NETWORKED_RAFT_SMOKE = ROOT / "ci/ai-blaise/txn-status-networked-raft-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
+EDGE2_LIBSQL_GUARD_SMOKE = ROOT / "ci/ai-blaise/edge2-libsql-research-guard-smoke.sh"
+EDGE2_LIBSQL_ADR = ROOT / "docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 COLUMNAR_TIERING_LIVE_SMOKE = ROOT / "ci/ai-blaise/columnar-tiering-live-smoke.sh"
 CROSS_TIER_QUERY_LIVE_SMOKE = ROOT / "ci/ai-blaise/cross-tier-query-live-smoke.sh"
@@ -1456,6 +1458,66 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing Edge1 boundary phrase: {phrase}")
+
+
+if status_by_id.get("Edge2") != "production-ready":
+    fail("Edge2 must be Status: production-ready once fail-closed libsql research guard evidence is wired")
+section_edge2 = feature_section(docs, "Edge2")
+edge2_truth = compact(
+    section_edge2
+    + "\n"
+    + audit
+    + "\n"
+    + read(EDGE2_LIBSQL_GUARD_SMOKE)
+    + "\n"
+    + read(EDGE2_LIBSQL_ADR)
+    + "\n"
+    + read(ROOT / "companion/src/advanced_planner.rs")
+    + "\n"
+    + companion_contracts
+    + "\n"
+    + companion_workflow
+    + "\n"
+    + makefile
+)
+for phrase in (
+    "Production evidence:",
+    "docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md",
+    "run-libsql-read-tier-guard-canonical",
+    "edge2-libsql-research-guard-smoke.sh",
+    "edge2_libsql_research_guard_smoke",
+    "guard_status=fail-closed",
+    "libsql production read tier",
+    "promotion evidence requirements",
+    "forbidden runtime claims",
+    "live_execution_claims=0",
+    "replication_adapter_claimed=false",
+    "workload_isolation_claimed=false",
+    "production_query_routing_claimed=false",
+    "libsql read-tier integration",
+    "libsql replication adapter",
+    "workload isolation",
+    "production query routing to libsql",
+    "operator reconciliation",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in edge2_truth:
+        fail(f"Edge2 libsql research guard production boundary missing phrase: {phrase}")
+for phrase in (
+    "cargo test -q -p ai_blaise_citus_companion edge2_libsql_research_guard_is_fail_closed",
+    "run-libsql-read-tier-guard-canonical",
+    "Edge2	fail-closed",
+    "live_execution_claims=0",
+    "replication_adapter_claimed=false",
+    "workload_isolation_claimed=false",
+    "production_query_routing_claimed=false",
+):
+    if phrase not in read(EDGE2_LIBSQL_GUARD_SMOKE):
+        fail(f"Edge2 libsql guard smoke missing assertion: {phrase}")
+if "edge2-libsql-research-guard-smoke.sh" not in companion_workflow:
+    fail("ci-companion workflow must run edge2-libsql-research-guard-smoke.sh")
+if "companion-edge2-libsql-research-guard-smoke" not in makefile:
+    fail("Makefile.ai-blaise must wire companion-edge2-libsql-research-guard-smoke")
 
 if status_by_id.get("T5") != "production-ready":
     fail("T5 must be Status: production-ready once networked txn-status Raft evidence is wired")

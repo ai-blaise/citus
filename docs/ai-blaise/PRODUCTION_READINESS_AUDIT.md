@@ -1313,6 +1313,20 @@ This is not production evidence for live CSI `VolumeSnapshot` creation, PVC
 cloning, Kubernetes cluster materialization, StatefulSet scaling, traffic
 cut-over, DNS/Service retargeting, or production branch promotion.
 
+Edge2 libsql read-tier research-guard evidence from 2026-05-25 promotes only the
+fail-closed negative guard. `ci/ai-blaise/edge2-libsql-research-guard-smoke.sh`
+runs the targeted companion test and `run-libsql-read-tier-guard-canonical`,
+then verifies `edge2_libsql_research_guard_smoke`,
+`guard_status=fail-closed`, `live_execution_claims=0`,
+`replication_adapter_claimed=false`, `workload_isolation_claimed=false`, and
+`production_query_routing_claimed=false`. The guard points at
+`docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md`, blocks the
+`libsql production read tier` integration, and requires explicit promotion
+evidence before any replacement ADR can enable it. This does not claim libsql
+read-tier integration, a libsql replication adapter, workload isolation,
+production query routing to libsql, operator reconciliation, or Kubernetes
+traffic.
+
 
 
 C4/C5 production evidence from 2026-05-24 promotes only the bounded conflict-policy metadata and taxonomy surface. `REQUIRE_DOCKER=1 ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` boots the live Citus overlay image through `CONFLICT_POLICY_IMAGE`, runs `run-conflict-policy-runtime-canonical`, applies the generated SQL, and verifies `conflict_policy_live_row` rows for `accounts-lww` (`update_origin_differs`/`apply_remote_if_newer`) and `accounts-merge` (`update_exists`/`merge_function` with `public.merge_remote_into_local`) plus `replication_conflict_status`. The same evidence is paired with `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`, where `conflict_classes` is `7` and audit SQL targets `companion.replication_conflict_audit`. This does not claim live pgactive conflict traffic, does not claim live Spock apply traffic, and does not prove multi-node active-active replication, PGC1/PGC2 runtime activation, remote conflict replay, or a production replication apply worker.

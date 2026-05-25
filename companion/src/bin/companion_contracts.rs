@@ -50,14 +50,15 @@ use ai_blaise_citus_companion::{
     canonical_cross_tier_query_report, canonical_cross_tier_query_sql_plan,
     canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
     canonical_fdw_credential_rotation_report, canonical_fdw_credential_rotation_sql_plan,
-    canonical_operations_readiness_report, canonical_plan_runtime_report,
-    canonical_regional_placement_report, canonical_regional_placement_sql_plan,
-    canonical_regional_row_placement_report, canonical_regional_row_placement_sql_plan,
-    canonical_release_hardening_report, canonical_schema_drift_report,
-    canonical_schema_drift_sql_plan, canonical_shard_split_report, canonical_shard_split_sql_plan,
-    canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
-    canonical_timescale_advanced_report, canonical_timescale_advanced_sql_plan,
-    canonical_transaction_state_report, canonical_transaction_state_sql_plan, render_all_views,
+    canonical_libsql_read_tier_guard_report, canonical_operations_readiness_report,
+    canonical_plan_runtime_report, canonical_regional_placement_report,
+    canonical_regional_placement_sql_plan, canonical_regional_row_placement_report,
+    canonical_regional_row_placement_sql_plan, canonical_release_hardening_report,
+    canonical_schema_drift_report, canonical_schema_drift_sql_plan, canonical_shard_split_report,
+    canonical_shard_split_sql_plan, canonical_shard_temperature_ranking_report,
+    canonical_shard_temperature_sql_plan, canonical_timescale_advanced_report,
+    canonical_timescale_advanced_sql_plan, canonical_transaction_state_report,
+    canonical_transaction_state_sql_plan, render_all_views,
 };
 use std::env;
 use std::process;
@@ -76,6 +77,9 @@ fn main() {
         }
         [command] if command == "run-advanced-planner-runtime-canonical" => {
             run_advanced_planner_runtime_canonical();
+        }
+        [command] if command == "run-libsql-read-tier-guard-canonical" => {
+            run_libsql_read_tier_guard_canonical();
         }
         [command] if command == "run-columnar-tiering-canonical" => {
             run_columnar_tiering_canonical();
@@ -226,6 +230,30 @@ fn run_advanced_planner_runtime_canonical() {
         report.plan_only_boundaries,
         report.deterministic_boundaries,
         report.research_guard_boundaries,
+    );
+}
+
+fn run_libsql_read_tier_guard_canonical() {
+    let report = canonical_libsql_read_tier_guard_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: libsql read-tier guard report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\tguard_status\tdecision_record\tblocked_integration\tpromotion_evidence\tforbidden_claims\tlive_execution_claims\treplication_adapter_claimed\tworkload_isolation_claimed\tproduction_query_routing_claimed"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.guard_status,
+        report.decision_record,
+        report.blocked_integration,
+        report.promotion_evidence,
+        report.forbidden_claims,
+        report.live_execution_claims,
+        report.replication_adapter_claimed,
+        report.workload_isolation_claimed,
+        report.production_query_routing_claimed,
     );
 }
 
