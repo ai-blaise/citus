@@ -47,8 +47,8 @@ use ai_blaise_citus_companion::{
     canonical_cohabit_detection_report, canonical_domain_contracts_report,
     canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
     canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
-    canonical_plan_runtime_report, canonical_schema_drift_report, canonical_schema_drift_sql_plan,
-    render_all_views,
+    canonical_plan_runtime_report, canonical_release_hardening_report,
+    canonical_schema_drift_report, canonical_schema_drift_sql_plan, render_all_views,
 };
 use std::env;
 use std::process;
@@ -91,6 +91,9 @@ fn main() {
         }
         [command] if command == "run-operations-canonical" => {
             run_operations_canonical();
+        }
+        [command] if command == "run-release-hardening-canonical" => {
+            run_release_hardening_canonical();
         }
         [command] if command == "run-plan-runtime-canonical" => {
             run_plan_runtime_canonical();
@@ -296,6 +299,28 @@ fn run_operations_canonical() {
     );
 }
 
+fn run_release_hardening_canonical() {
+    let report = canonical_release_hardening_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: release hardening report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\trequired_gates\trelease_record_fields\tproduction_release_block_required\towner_signoff_required\trollback_evidence_required\tproduction_gap_audit_required\trunbook_command_check_required"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.required_gates,
+        report.release_record_fields,
+        report.production_release_block_required,
+        report.owner_signoff_required,
+        report.rollback_evidence_required,
+        report.production_gap_audit_required,
+        report.runbook_command_check_required,
+    );
+}
+
 fn run_plan_runtime_canonical() {
     let report = canonical_plan_runtime_report().unwrap_or_else(|error| {
         eprintln!("companion-contracts: plan runtime report failed: {error}");
@@ -329,7 +354,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

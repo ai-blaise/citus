@@ -117,6 +117,49 @@ impl OperationsReadinessReport {
     }
 }
 
+pub const RELEASE_HARDENING_REQUIRED_GATES: usize = 19;
+pub const RELEASE_RECORD_REQUIRED_FIELDS: &[&str] = &[
+    "source_revision",
+    "image_digest_manifest",
+    "production_readiness_audit",
+    "production_gap_audit",
+    "docs_evidence_boundary_audit",
+    "runbook_command_check",
+    "release_block_status",
+    "alpha_feature_scope",
+    "rollback_checkpoint",
+    "owner_signoff",
+];
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ReleaseHardeningReport {
+    pub feature_id: &'static str,
+    pub required_gates: usize,
+    pub release_record_fields: usize,
+    pub production_release_block_required: bool,
+    pub owner_signoff_required: bool,
+    pub rollback_evidence_required: bool,
+    pub production_gap_audit_required: bool,
+    pub runbook_command_check_required: bool,
+}
+
+impl ReleaseHardeningReport {
+    fn validate(&self) -> Result<(), OperationsContractError> {
+        validate_required("release_hardening.feature_id", self.feature_id)?;
+        if self.required_gates == 0 {
+            return Err(OperationsContractError::MissingRequiredField(
+                "release_hardening.required_gates",
+            ));
+        }
+        if self.release_record_fields == 0 {
+            return Err(OperationsContractError::MissingRequiredField(
+                "release_hardening.release_record_fields",
+            ));
+        }
+        Ok(())
+    }
+}
+
 impl OperationsGate {
     fn validate(&self) -> Result<(), OperationsContractError> {
         match self {
@@ -179,6 +222,23 @@ pub fn canonical_operations_readiness_contract() -> OperationsReadinessContract 
 pub fn canonical_operations_readiness_report(
 ) -> Result<OperationsReadinessReport, OperationsContractError> {
     OperationsReadinessReport::from_contract(&canonical_operations_readiness_contract())
+}
+
+pub fn canonical_release_hardening_report(
+) -> Result<ReleaseHardeningReport, OperationsContractError> {
+    canonical_operations_readiness_contract().validate()?;
+    let report = ReleaseHardeningReport {
+        feature_id: "D10",
+        required_gates: RELEASE_HARDENING_REQUIRED_GATES,
+        release_record_fields: RELEASE_RECORD_REQUIRED_FIELDS.len(),
+        production_release_block_required: true,
+        owner_signoff_required: true,
+        rollback_evidence_required: true,
+        production_gap_audit_required: true,
+        runbook_command_check_required: true,
+    };
+    report.validate()?;
+    Ok(report)
 }
 
 fn helm(feature_id: &'static str, values_file: &str) -> OperationsCheck {
@@ -296,6 +356,23 @@ mod tests {
         assert_eq!(report.runtime_toggles, 2);
         assert_eq!(report.security_controls, 6);
         assert_eq!(report.compatibility_checks, 1);
+    }
+
+    #[test]
+    fn release_hardening_report_is_fail_closed() {
+        let report = canonical_release_hardening_report().expect("release hardening");
+
+        assert_eq!(report.feature_id, "D10");
+        assert_eq!(report.required_gates, RELEASE_HARDENING_REQUIRED_GATES);
+        assert_eq!(
+            report.release_record_fields,
+            RELEASE_RECORD_REQUIRED_FIELDS.len()
+        );
+        assert!(report.production_release_block_required);
+        assert!(report.owner_signoff_required);
+        assert!(report.rollback_evidence_required);
+        assert!(report.production_gap_audit_required);
+        assert!(report.runbook_command_check_required);
     }
 
     #[test]

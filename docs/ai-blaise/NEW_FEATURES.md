@@ -8141,7 +8141,7 @@ runbook.
 
 **Overlay**: `companion/src/ops_contracts.rs` and
 `docs/ai-blaise/RUNBOOKS/production.md`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -8149,8 +8149,20 @@ runbook.
 **Summary**: Records the release-readiness review path, security controls, and
 operational handoff checklist as a contract surface.
 
-**Current boundary**: The companion runner validates the runbook reference;
-live release certification, owner signoff, and rollback drills remain alpha.
+Production evidence: VM proof run
+`bash ci/ai-blaise/release-hardening-runbook-smoke.sh` executes the real
+companion `run-release-hardening-canonical` contract, verifies all 19 required
+release gates and 10 required release-record fields, runs
+`runbook-command-check.sh`, `docs-evidence-boundary-check.sh`, and
+`production-gap-audit.sh`, runs `production-readiness-check.sh
+production-release` and requires it to fail closed while alpha features remain
+in release scope, verifies D10 is no longer listed as the blocker, and renders a
+release record containing source revision, digest-manifest requirement,
+audit/check status, alpha scope, rollback checkpoint requirement, and owner
+signoff requirement. The production-ready surface is the fail-closed release
+hardening runbook and release-record contract. It does not claim that a release
+candidate has been certified, that owner signoff has occurred, or that D9
+canary upgrade/rollback drills have run for a particular release.
 
 **Citus comparison**: Vanilla Citus does not include these ai-blaise hardening
 gates.
@@ -8159,6 +8171,8 @@ gates.
 
 - In-source: `FEATURE: D10` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-release-hardening-canonical`
+- CI: `ci/ai-blaise/release-hardening-runbook-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 

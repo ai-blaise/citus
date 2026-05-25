@@ -25,3 +25,5 @@ jobs:
         run: RELEASE_GATE_MONITOR_STATIC=1 bash ci/ai-blaise/release-gate-monitor.sh --local-only
       - name: Check runbook command examples
         run: bash ci/ai-blaise/runbook-command-check.sh
+      - name: Check release hardening runbook
+        run: bash ci/ai-blaise/release-hardening-runbook-smoke.sh

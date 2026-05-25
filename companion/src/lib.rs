@@ -104,8 +104,9 @@ pub use observability::{
 };
 pub use ops_contracts::{
     canonical_operations_readiness_contract, canonical_operations_readiness_report,
-    OperationsCheck, OperationsContractError, OperationsGate, OperationsReadinessContract,
-    OperationsReadinessReport,
+    canonical_release_hardening_report, OperationsCheck, OperationsContractError, OperationsGate,
+    OperationsReadinessContract, OperationsReadinessReport, ReleaseHardeningReport,
+    RELEASE_HARDENING_REQUIRED_GATES, RELEASE_RECORD_REQUIRED_FIELDS,
 };
 pub use plan_freeze::{
     PlanFreezeError, PlanFreezePlan, PlanFreezeSqlPlan, PlanPromotionPolicy, PlanRegressionPolicy,

@@ -66,6 +66,7 @@ OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
 RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
+RELEASE_HARDENING_SMOKE = ROOT / "ci/ai-blaise/release-hardening-runbook-smoke.sh"
 K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
 K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
 K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
@@ -1607,6 +1608,7 @@ for target in (
     "security-enforcement-smoke",
     "security-supply-chain-smoke",
     "runbook-command-check",
+    "release-hardening-runbook-smoke",
 ):
     if target not in phony_lines:
         fail(f"Makefile.ai-blaise .PHONY missing integration gate: {target}")
@@ -1639,6 +1641,58 @@ for phrase in (
 production_workflow = read(PRODUCTION_WORKFLOW)
 if "runbook-command-check.sh" not in production_workflow:
     fail("ci-production-readiness workflow must run runbook-command-check.sh")
+if "release-hardening-runbook-smoke.sh" not in production_workflow:
+    fail("ci-production-readiness workflow must run release-hardening-runbook-smoke.sh")
+
+if status_by_id.get("D10") != "production-ready":
+    fail("D10 release hardening runbook must be production-ready after fail-closed release-record smoke evidence")
+if status_by_id.get("D9") != "alpha":
+    fail("D9 canary upgrade runbook must remain alpha until live canary upgrade/rollback drill evidence exists")
+release_hardening_smoke = read(RELEASE_HARDENING_SMOKE)
+for phrase in (
+    "FEATURE: D10",
+    "run-release-hardening-canonical",
+    "required_gates=19",
+    "release_record_fields=10",
+    "production-readiness-check.sh production-release",
+    "production_release_blocked=true",
+    "owner_signoff_required=true",
+    "rollback_evidence_required=true",
+    "D10 must not be listed as a production-release blocker",
+    "release_record_source_revision",
+):
+    if phrase not in release_hardening_smoke:
+        fail(f"D10 release hardening smoke lost assertion: {phrase}")
+d10_body = compact(entry_by_id["D10"]["body"])
+for phrase in (
+    "production evidence",
+    "release-hardening-runbook-smoke.sh",
+    "run-release-hardening-canonical",
+    "all 19 required release gates",
+    "10 required release-record fields",
+    "production-readiness-check.sh production-release",
+    "requires it to fail closed while alpha features remain",
+    "D10 is no longer listed as the blocker",
+    "source revision",
+    "rollback checkpoint requirement",
+    "owner signoff requirement",
+    "does not claim that a release candidate has been certified",
+    "D9 canary upgrade/rollback drills",
+):
+    if compact(phrase) not in d10_body:
+        fail(f"D10 docs lost release hardening evidence phrase: {phrase}")
+production_runbook = read(RUNBOOK)
+for phrase in (
+    "release-hardening-runbook-smoke.sh",
+    "run-release-hardening-canonical",
+    "production_release_block_required=true",
+    "owner_signoff_required=true",
+    "rollback_evidence_required=true",
+    "release_block_status",
+    "alpha_feature_scope",
+):
+    if compact(phrase) not in compact(production_runbook):
+        fail(f"production runbook lost D10 release-record phrase: {phrase}")
 
 
 live_k8s = read(LIVE_K8S_E2E)

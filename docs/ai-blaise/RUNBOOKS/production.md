@@ -43,6 +43,23 @@ The runbook-command check statically parses the operational runbook command
 blocks, runs `bash -n` after placeholder normalization, and verifies referenced
 repo scripts, Cargo packages, Makefile targets, and sidecar binaries still exist.
 
+The release-hardening smoke binds this runbook to a machine-readable contract:
+
+```bash
+ci/ai-blaise/release-hardening-runbook-smoke.sh
+cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-release-hardening-canonical
+```
+
+The canonical report must list 19 required release gates, 10 release-record
+fields, `production_release_block_required=true`,
+`owner_signoff_required=true`, `rollback_evidence_required=true`,
+`production_gap_audit_required=true`, and
+`runbook_command_check_required=true`. The generated release record must carry:
+`source_revision`, `image_digest_manifest`, `production_readiness_audit`,
+`production_gap_audit`, `docs_evidence_boundary_audit`,
+`runbook_command_check`, `release_block_status`, `alpha_feature_scope`,
+`rollback_checkpoint`, and `owner_signoff`.
+
 The production-gap-audit gate is intentionally conservative: it asserts that
 V2 acceptance is a modeled prerequisite, that production-release mode remains
 blocked while alpha features exist, and that SQL/Kubernetes smoke tests still

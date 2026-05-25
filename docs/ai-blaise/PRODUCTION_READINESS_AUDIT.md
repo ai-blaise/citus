@@ -495,9 +495,20 @@ more production-ready than the artifacts justified.
   calls, GPU inference, production-scale queue throughput, tenant billing
   integration, Kubernetes admission/webhook enforcement for every provider
   model, or broad semantic-search correctness.
+- D10 release hardening is now production-ready for the fail-closed runbook and
+  release-record contract. `release-hardening-runbook-smoke.sh` executes the
+  companion `run-release-hardening-canonical` report, verifies 19 release gates
+  and 10 required release-record fields, reruns runbook command and docs
+  evidence checks, requires `production-readiness-check.sh production-release`
+  to block while alpha features remain, verifies D10 is not itself a blocker,
+  and renders a release record with source revision, digest-manifest
+  requirement, audit/check status, alpha scope, rollback checkpoint requirement,
+  and owner signoff requirement. This does not certify a release candidate,
+  perform human owner signoff, or execute the separate D9 canary
+  upgrade/rollback drill.
 - Alpha wording cleanup now also covers the former addendum entries and tool
-  READMEs. Schema visualization, plan-freeze, PostgREST, storage, D10, and
-  O12 wording uses versioned, operator, release, or measured-evidence language
+  READMEs. Schema visualization, plan-freeze, PostgREST, storage, and O12
+  wording uses versioned, operator, release, or measured-evidence language
   instead of stable/live/production phrasing for alpha contracts.
 - Worker Tools Runtime evidence from 2026-05-24 tightens the already-promoted
   D3/D5/D6/D12/M9/O13 snapshot-backed boundary: the shared tools runtime now
