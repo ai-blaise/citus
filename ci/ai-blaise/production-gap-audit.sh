@@ -69,6 +69,7 @@ SECURITY_SBOM_COSIGN_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-sbom-cosign-live
 PATCHES_WORKFLOW = ROOT / ".github/workflows/ci-patches.yml"
 OPERATOR_WORKFLOW = ROOT / ".github/workflows/ci-operator.yml"
 PRODUCTION_WORKFLOW = ROOT / ".github/workflows/ci-production-readiness.yml"
+COORDINATORLESS_MX_LIVE_SMOKE = ROOT / "ci/ai-blaise/coordinatorless-mx-live-smoke.sh"
 CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
 RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
 RELEASE_HARDENING_SMOKE = ROOT / "ci/ai-blaise/release-hardening-runbook-smoke.sh"
@@ -901,8 +902,81 @@ schema_drift_smoke = read(SCHEMA_DRIFT_LIVE_SMOKE)
 sidecar_raft_smoke = read(SIDECAR_RAFT_SMOKE)
 sidecar_hlc_smoke = read(SIDECAR_HLC_SMOKE)
 txn_status_networked_raft_smoke = read(TXN_STATUS_NETWORKED_RAFT_SMOKE)
+coordinatorless_mx_live_smoke = read(COORDINATORLESS_MX_LIVE_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
+
+if status_by_id.get("S4") != "production-ready":
+    fail("S4 must be Status: production-ready once live Citus MX worker-entry and pool-entry evidence is wired")
+section_s4 = feature_section(docs, "S4")
+s4_truth = compact(
+    section_s4
+    + "\n"
+    + audit
+    + "\n"
+    + coordinatorless_mx_live_smoke
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(ROOT / "operator/src/crds/citus_cluster.rs")
+    + "\n"
+    + read(ROOT / "operator/src/reconcile/citus_cluster.rs")
+)
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/coordinatorless-mx-live-smoke.sh",
+    "Citus MX metadata sync",
+    "worker entry point",
+    "pool proxy",
+    "Custom Scan (Citus Adaptive)",
+    "Task Count: 1",
+    "coordinator bootstrap removal",
+    "dynamic shard-aware pool routing",
+    "multi-shard plan-leader execution",
+    "Kubernetes reconciliation",
+    "WAN or cross-region behavior",
+):
+    if compact(phrase) not in compact(section_s4):
+        fail(f"S4 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: S4",
+    "POSTGRES_HOST_AUTH_METHOD=trust",
+    "citus_set_coordinator_host",
+    "citus_add_node",
+    "start_metadata_sync_to_node",
+    "AI_BLAISE_POOL_UPSTREAM_ADDR",
+    "coordinatorless_mx_live=passed",
+    "operator_coordinatorless_admission_checked=true",
+    "dedicated_coordinators=0",
+    "citus_mx_metadata_synced=true",
+    "metadata_synced_workers=2",
+    "worker_entry_query_served=true",
+    "worker_entry_sum=550",
+    "pool_worker_entry_query_served=true",
+    "pool_worker_entry_sum=550",
+    "citus_adaptive_plan_observed=true",
+    "citus_task_count_observed=1",
+    "coordinator_reroute_observed=false",
+    "coordinator_bootstrap_removed=false",
+    "dynamic_shard_aware_pool_routing=false",
+    "multi_shard_plan_leader_executed=false",
+    "kubernetes_reconciliation_exercised=false",
+    "wan_or_cross_region_exercised=false",
+    "coordinatorless-mx-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in s4_truth:
+        fail(f"S4 coordinator-less MX production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "S4 coordinator-less topology mode is production-ready only for the bounded Citus MX worker-entry and pool-entry smoke",
+    "does not claim coordinator bootstrap removal",
+    "does not claim dynamic shard-aware pool routing",
+    "does not claim multi-shard plan-leader execution",
+    "does not claim Kubernetes reconciliation",
+    "does not claim WAN or cross-region behavior",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing S4 boundary phrase: {phrase}")
 
 if status_by_id.get("S5") != "production-ready":
     fail("S5 must be Status: production-ready once live multi-process Raft transport evidence is wired")

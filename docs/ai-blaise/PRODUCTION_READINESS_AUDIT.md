@@ -693,10 +693,17 @@ more production-ready than the artifacts justified.
   runtime evidence without overclaiming full distributed-database integration:
   `topology-consensus-smoke.sh` proves S4 coordinator-less pool admission, S5
   fail-closed placement/member validation, and S9/MR6 closed-timestamp
-  follower-read serve/reject gates. S4 remains alpha for broader coordinator-less
-  behavior until pool routing, planner integration, and Kubernetes operator
-  reconciliation are live-gated; MR6 is promoted only for the live
-  closed-timestamp time-travel gate and not for SQL/MVCC execution.
+  follower-read serve/reject gates. S4 coordinator-less topology mode is
+  production-ready only for the bounded Citus MX worker-entry and pool-entry
+  smoke in `ci/ai-blaise/coordinatorless-mx-live-smoke.sh`: a real
+  three-node Citus topology, `start_metadata_sync_to_node`, worker-side
+  `Custom Scan (Citus Adaptive)` with `Task Count: 1`, `worker_entry_sum=550`,
+  and a real pool proxy pointed at the metadata-synced worker returning
+  `pool_worker_entry_sum=550`. This does not claim coordinator bootstrap
+  removal, does not claim dynamic shard-aware pool routing, does not claim
+  multi-shard plan-leader execution, does not claim Kubernetes reconciliation,
+  and does not claim WAN or cross-region behavior. MR6 is promoted only for
+  the live closed-timestamp time-travel gate and not for SQL/MVCC execution.
 - The schema-job sidecar now has an explicit runtime-boundary smoke for the
   narrow C10/M2 sidecar surface. `schema-txn-runtime-smoke.sh` runs the real
   binary canonical worker output, controller advance/wait/rollback output,

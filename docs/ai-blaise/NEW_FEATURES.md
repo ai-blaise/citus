@@ -1768,7 +1768,7 @@ Kubernetes-native CRD for topology spread constraints.
 ### S4: Coordinator-Less Topology Mode
 
 **Overlay**: `operator/`, `pool/`, `e2e/`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
@@ -1776,10 +1776,25 @@ Kubernetes-native CRD for topology spread constraints.
 **Summary**: Allows any node to serve as the entry point for single-shard
 queries while multi-shard plans route to a chosen plan leader.
 
-**Current boundary**: The CRD admission surface now rejects coordinator-less
-specs that omit the pool entry point and the reconciler keeps the dedicated
-coordinator count at zero. Real worker-local query serving, pool routing, MX
-metadata synchronization, and multi-shard plan-leader execution remain alpha.
+Production evidence: `ci/ai-blaise/coordinatorless-mx-live-smoke.sh` runs a
+real three-node Citus topology from the VM cohabitation image, registers two
+workers from a bootstrap coordinator, creates a distributed
+`public.s4_orders` table, calls `start_metadata_sync_to_node` for both
+workers, and proves a metadata-synced worker can serve
+`SELECT sum(total) ... WHERE tenant_id = 1` with `worker_entry_sum=550`. The
+worker-side `EXPLAIN (COSTS OFF)` must contain `Custom Scan (Citus Adaptive)`
+and `Task Count: 1` and must not route back through the bootstrap
+coordinator. The same smoke then starts the real ai-blaise pool proxy with
+`AI_BLAISE_POOL_UPSTREAM_ADDR` pointed at that worker and proves the pool entry
+point returns `pool_worker_entry_sum=550`. This closes the bounded S4
+production surface for Citus MX metadata sync, worker entry point serving,
+pool proxy entry, and the operator CRD admission/reconcile contract that keeps
+dedicated coordinators at zero.
+
+The S4 production-ready boundary does not claim coordinator bootstrap removal,
+dynamic shard-aware pool routing, multi-shard plan-leader execution,
+Kubernetes reconciliation, WAN or cross-region behavior, or every Citus query
+shape.
 
 **Motivation**: The classic coordinator is a throughput and availability
 bottleneck.
@@ -1793,6 +1808,7 @@ not ship ai-blaise's pool/operator topology mode.
 - In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- CI: `ci/ai-blaise/coordinatorless-mx-live-smoke.sh`
 - CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 
 ### S5: Raft Per Shard Group
