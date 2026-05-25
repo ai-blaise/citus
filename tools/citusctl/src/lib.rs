@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const K8S_MANIFEST_EVIDENCE_BOUNDARY: &str = "live-kubernetes-manifest-apply";
+const TIME_TRAVEL_EVIDENCE_BOUNDARY: &str = "time-travel-intent-validation-only";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CitusCtlRequest {
@@ -1157,6 +1158,385 @@ pub fn render_k8s_manifest_cli_report_from_args(
     Ok(Some(report.render(options.format)))
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TimeTravelIntentRuntime {
+    target_time: String,
+    now: String,
+    max_staleness_seconds: u64,
+    state_dir: PathBuf,
+}
+
+impl TimeTravelIntentRuntime {
+    pub fn new(
+        target_time: impl Into<String>,
+        now: impl Into<String>,
+        max_staleness_seconds: u64,
+        state_dir: impl Into<PathBuf>,
+    ) -> Result<Self, CitusCtlError> {
+        let target_time = target_time.into();
+        let now = now.into();
+        validate_timestamp(&target_time)?;
+        validate_timestamp(&now)?;
+        if max_staleness_seconds == 0 {
+            return Err(CitusCtlError::UnknownValue {
+                field: "max_staleness_seconds",
+                value: "0".to_string(),
+            });
+        }
+        let state_dir = state_dir.into();
+        validate_state_dir(&state_dir)?;
+        let runtime = Self {
+            target_time,
+            now,
+            max_staleness_seconds,
+            state_dir,
+        };
+        runtime.validate_window()?;
+        Ok(runtime)
+    }
+
+    pub fn audit_path(&self) -> PathBuf {
+        self.state_dir.join("time-travel-intent.audit.tsv")
+    }
+
+    pub fn plan(&self) -> Result<TimeTravelIntentPlan, CitusCtlError> {
+        let age_seconds = self.age_seconds()?;
+        Ok(TimeTravelIntentPlan {
+            plan_id: self.plan_id()?,
+            target_time: self.target_time.clone(),
+            now: self.now.clone(),
+            age_seconds,
+            max_staleness_seconds: self.max_staleness_seconds,
+            accepted: true,
+            dry_run: true,
+            steps: vec![
+                TimeTravelIntentStep::ValidateUtcTimestamp,
+                TimeTravelIntentStep::ValidateStalenessWindow,
+                TimeTravelIntentStep::RenderIntentPlan,
+            ],
+            evidence_boundary: TIME_TRAVEL_EVIDENCE_BOUNDARY,
+        })
+    }
+
+    pub fn apply(
+        &self,
+        plan_id: impl Into<String>,
+    ) -> Result<TimeTravelIntentReport, CitusCtlError> {
+        let plan_id = plan_id.into();
+        validate_plan_id(&plan_id)?;
+        let plan = self.plan()?;
+        if plan.plan_id != plan_id {
+            return Err(CitusCtlError::TimeTravelPlanIdMismatch);
+        }
+        fs::create_dir_all(&self.state_dir)?;
+        append_time_travel_intent_audit_record(&self.audit_path(), &plan)?;
+        Ok(TimeTravelIntentReport {
+            plan,
+            accepted: true,
+            audit_record_written: true,
+            evidence_boundary: TIME_TRAVEL_EVIDENCE_BOUNDARY,
+        })
+    }
+
+    fn validate_window(&self) -> Result<(), CitusCtlError> {
+        let _ = self.age_seconds()?;
+        Ok(())
+    }
+
+    fn age_seconds(&self) -> Result<u64, CitusCtlError> {
+        let target_epoch = utc_timestamp_epoch_seconds(&self.target_time)?;
+        let now_epoch = utc_timestamp_epoch_seconds(&self.now)?;
+        if target_epoch > now_epoch {
+            return Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: "must not be in the future".to_string(),
+            });
+        }
+        let age_seconds = (now_epoch - target_epoch) as u64;
+        if age_seconds > self.max_staleness_seconds {
+            return Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: format!(
+                    "older than max_staleness_seconds {}",
+                    self.max_staleness_seconds
+                ),
+            });
+        }
+        Ok(age_seconds)
+    }
+
+    fn plan_id(&self) -> Result<String, CitusCtlError> {
+        let material = format!(
+            "{}\0{}\0{}",
+            self.target_time, self.now, self.max_staleness_seconds
+        );
+        Ok(format!("time-travel-{:016x}", fnv1a64(material.as_bytes())))
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TimeTravelIntentPlan {
+    pub plan_id: String,
+    pub target_time: String,
+    pub now: String,
+    pub age_seconds: u64,
+    pub max_staleness_seconds: u64,
+    pub accepted: bool,
+    pub dry_run: bool,
+    pub steps: Vec<TimeTravelIntentStep>,
+    pub evidence_boundary: &'static str,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct TimeTravelIntentReport {
+    pub plan: TimeTravelIntentPlan,
+    pub accepted: bool,
+    pub audit_record_written: bool,
+    pub evidence_boundary: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum TimeTravelIntentStep {
+    ValidateUtcTimestamp,
+    ValidateStalenessWindow,
+    RenderIntentPlan,
+    WriteAuditRecord,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum TimeTravelIntentOutputFormat {
+    Tsv,
+    Json,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TimeTravelIntentCliOptions {
+    now: Option<String>,
+    max_staleness_seconds: Option<u64>,
+    state_dir: Option<PathBuf>,
+    format: TimeTravelIntentOutputFormat,
+}
+
+impl TimeTravelIntentCliOptions {
+    fn parse(args: &[String]) -> Result<Self, CitusCtlError> {
+        let mut now = None;
+        let mut max_staleness_seconds = None;
+        let mut state_dir = None;
+        let mut format = TimeTravelIntentOutputFormat::Tsv;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--now" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("now"));
+                    };
+                    validate_timestamp(value)?;
+                    now = Some(value.clone());
+                    index += 2;
+                }
+                "--max-staleness-seconds" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("max_staleness_seconds"));
+                    };
+                    let parsed = value.parse::<u64>().ok().filter(|value| *value > 0).ok_or(
+                        CitusCtlError::UnknownValue {
+                            field: "max_staleness_seconds",
+                            value: value.clone(),
+                        },
+                    )?;
+                    max_staleness_seconds = Some(parsed);
+                    index += 2;
+                }
+                "--state-dir" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("state_dir"));
+                    };
+                    state_dir = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--format" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("format"));
+                    };
+                    format = match value.as_str() {
+                        "tsv" => TimeTravelIntentOutputFormat::Tsv,
+                        "json" => TimeTravelIntentOutputFormat::Json,
+                        other => {
+                            return Err(CitusCtlError::UnknownValue {
+                                field: "format",
+                                value: other.to_string(),
+                            })
+                        }
+                    };
+                    index += 2;
+                }
+                value if value.starts_with("--") => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "time_travel_option",
+                        value: value.to_string(),
+                    })
+                }
+                value => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "argument",
+                        value: value.to_string(),
+                    })
+                }
+            }
+        }
+
+        Ok(Self {
+            now,
+            max_staleness_seconds,
+            state_dir,
+            format,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TimeTravelIntentCliReport {
+    mode: &'static str,
+    plan_id: String,
+    target_time: String,
+    now: String,
+    age_seconds: u64,
+    max_staleness_seconds: u64,
+    accepted: bool,
+    dry_run: bool,
+    audit_record_written: bool,
+    steps: usize,
+    evidence_boundary: &'static str,
+}
+
+impl TimeTravelIntentCliReport {
+    fn from_plan(plan: TimeTravelIntentPlan) -> Self {
+        Self {
+            mode: "plan",
+            plan_id: plan.plan_id,
+            target_time: plan.target_time,
+            now: plan.now,
+            age_seconds: plan.age_seconds,
+            max_staleness_seconds: plan.max_staleness_seconds,
+            accepted: plan.accepted,
+            dry_run: plan.dry_run,
+            audit_record_written: false,
+            steps: plan.steps.len(),
+            evidence_boundary: plan.evidence_boundary,
+        }
+    }
+
+    fn from_apply(report: TimeTravelIntentReport) -> Self {
+        Self {
+            mode: "apply",
+            plan_id: report.plan.plan_id,
+            target_time: report.plan.target_time,
+            now: report.plan.now,
+            age_seconds: report.plan.age_seconds,
+            max_staleness_seconds: report.plan.max_staleness_seconds,
+            accepted: report.accepted,
+            dry_run: false,
+            audit_record_written: report.audit_record_written,
+            steps: 4,
+            evidence_boundary: report.evidence_boundary,
+        }
+    }
+
+    fn tsv_header() -> &'static str {
+        "mode\tplan_id\ttarget_time\tnow\tage_seconds\tmax_staleness_seconds\taccepted\tdry_run\taudit_record_written\tsteps\tevidence_boundary"
+    }
+
+    fn to_tsv(&self) -> String {
+        format!(
+            "{}\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            Self::tsv_header(),
+            self.mode,
+            self.plan_id,
+            self.target_time,
+            self.now,
+            self.age_seconds,
+            self.max_staleness_seconds,
+            self.accepted,
+            self.dry_run,
+            self.audit_record_written,
+            self.steps,
+            self.evidence_boundary,
+        )
+    }
+
+    fn to_json(&self) -> String {
+        format!(
+            "{{\"accepted\":{},\"age_seconds\":{},\"audit_record_written\":{},\"dry_run\":{},\"evidence_boundary\":\"{}\",\"max_staleness_seconds\":{},\"mode\":\"{}\",\"now\":\"{}\",\"plan_id\":\"{}\",\"steps\":{},\"target_time\":\"{}\"}}",
+            self.accepted,
+            self.age_seconds,
+            self.audit_record_written,
+            self.dry_run,
+            self.evidence_boundary,
+            self.max_staleness_seconds,
+            self.mode,
+            json_escape(&self.now),
+            json_escape(&self.plan_id),
+            self.steps,
+            json_escape(&self.target_time),
+        )
+    }
+
+    fn render(&self, format: TimeTravelIntentOutputFormat) -> String {
+        match format {
+            TimeTravelIntentOutputFormat::Tsv => self.to_tsv(),
+            TimeTravelIntentOutputFormat::Json => self.to_json(),
+        }
+    }
+}
+
+pub fn render_time_travel_intent_cli_report_from_args(
+    args: &[String],
+) -> Result<Option<String>, CitusCtlError> {
+    let Some(first) = args.first() else {
+        return Ok(None);
+    };
+    let (apply_plan_id, rest) = match first.as_str() {
+        "plan" => (None, &args[1..]),
+        "apply" => {
+            let Some(plan_id) = args.get(1) else {
+                return Ok(None);
+            };
+            (Some(plan_id.clone()), &args[2..])
+        }
+        _ => return Ok(None),
+    };
+
+    if rest.first().map(String::as_str) != Some("time-travel") {
+        return Ok(None);
+    }
+    let Some(target_time) = rest.get(1) else {
+        return Ok(None);
+    };
+    let option_args = &rest[2..];
+    if !option_args.iter().any(|arg| arg.starts_with("--")) {
+        return Ok(None);
+    }
+
+    let options = TimeTravelIntentCliOptions::parse(option_args)?;
+    let now = options
+        .now
+        .ok_or(CitusCtlError::MissingRequiredField("now"))?;
+    let max_staleness_seconds = options
+        .max_staleness_seconds
+        .ok_or(CitusCtlError::MissingRequiredField("max_staleness_seconds"))?;
+    let state_dir = options
+        .state_dir
+        .ok_or(CitusCtlError::MissingRequiredField("state_dir"))?;
+    let runtime = TimeTravelIntentRuntime::new(target_time, now, max_staleness_seconds, state_dir)?;
+    let report = match apply_plan_id {
+        None => TimeTravelIntentCliReport::from_plan(runtime.plan()?),
+        Some(plan_id) => TimeTravelIntentCliReport::from_apply(runtime.apply(plan_id)?),
+    };
+
+    Ok(Some(report.render(options.format)))
+}
+
 pub fn canonical_dev_lifecycle_report() -> Result<DevLifecycleCanonicalReport, CitusCtlError> {
     let state_dir = std::env::temp_dir().join(format!(
         "ai-blaise-citusctl-dev-lifecycle-{}",
@@ -1213,6 +1593,7 @@ pub enum CitusCtlError {
     KubernetesCommand(String),
     PlanIdMismatch,
     StateIo(String),
+    TimeTravelPlanIdMismatch,
     UnknownCommand(String),
     UnknownIntent(String),
     UnknownValue { field: &'static str, value: String },
@@ -1244,6 +1625,12 @@ impl fmt::Display for CitusCtlError {
                 )
             }
             Self::StateIo(error) => write!(formatter, "dev lifecycle state io failed: {error}"),
+            Self::TimeTravelPlanIdMismatch => {
+                write!(
+                    formatter,
+                    "plan_id does not match current time-travel intent plan"
+                )
+            }
             Self::UnknownCommand(command) => write!(formatter, "unknown command: {command}"),
             Self::UnknownIntent(intent) => write!(formatter, "unknown intent: {intent}"),
             Self::UnknownValue { field, value } => write!(formatter, "unknown {field}: {value}"),
@@ -1769,13 +2156,104 @@ fn append_k8s_manifest_audit_record(
     Ok(())
 }
 
+fn append_time_travel_intent_audit_record(
+    path: &Path,
+    plan: &TimeTravelIntentPlan,
+) -> Result<(), CitusCtlError> {
+    let write_header = !path.exists();
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    if write_header {
+        writeln!(
+            file,
+            "plan_id\ttarget_time\tnow\tage_seconds\tmax_staleness_seconds\tevidence_boundary"
+        )?;
+    }
+    writeln!(
+        file,
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        plan.plan_id,
+        plan.target_time,
+        plan.now,
+        plan.age_seconds,
+        plan.max_staleness_seconds,
+        TIME_TRAVEL_EVIDENCE_BOUNDARY
+    )?;
+    Ok(())
+}
+
 fn validate_timestamp(value: &str) -> Result<(), CitusCtlError> {
     validate_required("target_time", value)?;
-    if value.len() >= 20 && value.contains('T') && value.ends_with('Z') {
-        Ok(())
-    } else {
-        Err(CitusCtlError::InvalidTimestamp)
+    utc_timestamp_epoch_seconds(value).map(|_| ())
+}
+
+fn utc_timestamp_epoch_seconds(value: &str) -> Result<i64, CitusCtlError> {
+    if value.len() != 20 {
+        return Err(CitusCtlError::InvalidTimestamp);
     }
+    let bytes = value.as_bytes();
+    if bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+        || bytes.get(19) != Some(&b'Z')
+    {
+        return Err(CitusCtlError::InvalidTimestamp);
+    }
+    let year = parse_fixed_digits(&value[0..4])? as i32;
+    let month = parse_fixed_digits(&value[5..7])? as u32;
+    let day = parse_fixed_digits(&value[8..10])? as u32;
+    let hour = parse_fixed_digits(&value[11..13])? as u32;
+    let minute = parse_fixed_digits(&value[14..16])? as u32;
+    let second = parse_fixed_digits(&value[17..19])? as u32;
+
+    if !(1..=12).contains(&month) || hour > 23 || minute > 59 || second > 59 {
+        return Err(CitusCtlError::InvalidTimestamp);
+    }
+    let max_day = days_in_month(year, month);
+    if day == 0 || day > max_day {
+        return Err(CitusCtlError::InvalidTimestamp);
+    }
+
+    let days = days_from_civil(year, month, day);
+    Ok(days * 86_400 + i64::from(hour * 3_600 + minute * 60 + second))
+}
+
+fn parse_fixed_digits(value: &str) -> Result<u32, CitusCtlError> {
+    if !value.chars().all(|character| character.is_ascii_digit()) {
+        return Err(CitusCtlError::InvalidTimestamp);
+    }
+    value
+        .parse::<u32>()
+        .map_err(|_| CitusCtlError::InvalidTimestamp)
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let adjusted_year = year - i32::from(month <= 2);
+    let era = if adjusted_year >= 0 {
+        adjusted_year
+    } else {
+        adjusted_year - 399
+    } / 400;
+    let year_of_era = adjusted_year - era * 400;
+    let month_for_formula = month as i32 + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_for_formula + 2) / 5 + day as i32 - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    i64::from(era * 146_097 + day_of_era - 719_468)
 }
 
 fn validate_feature_id(value: &str) -> Result<(), CitusCtlError> {
@@ -2531,6 +3009,112 @@ mod tests {
                 value: "Not_A_Namespace".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn time_travel_intent_reports_json_tsv_and_audit_append() {
+        let dir = temp_state_dir("time-travel");
+        let _ = fs::remove_dir_all(&dir);
+        let state_dir = dir.to_str().expect("state dir");
+        let plan_json = render_time_travel_intent_cli_report_from_args(&args(&[
+            "plan",
+            "time-travel",
+            "2026-05-24T00:00:00Z",
+            "--now",
+            "2026-05-24T00:00:30Z",
+            "--max-staleness-seconds",
+            "60",
+            "--state-dir",
+            state_dir,
+            "--format",
+            "json",
+        ]))
+        .expect("plan json")
+        .expect("time travel plan");
+        assert!(plan_json.contains("\"mode\":\"plan\""));
+        assert!(plan_json.contains("\"age_seconds\":30"));
+        assert!(plan_json.contains("\"accepted\":true"));
+        assert!(plan_json.contains("\"audit_record_written\":false"));
+        assert!(plan_json.contains(TIME_TRAVEL_EVIDENCE_BOUNDARY));
+
+        let runtime = TimeTravelIntentRuntime::new(
+            "2026-05-24T00:00:00Z",
+            "2026-05-24T00:00:30Z",
+            60,
+            state_dir,
+        )
+        .expect("runtime");
+        let plan = runtime.plan().expect("plan");
+        let apply_tsv = render_time_travel_intent_cli_report_from_args(&args(&[
+            "apply",
+            &plan.plan_id,
+            "time-travel",
+            "2026-05-24T00:00:00Z",
+            "--now",
+            "2026-05-24T00:00:30Z",
+            "--max-staleness-seconds",
+            "60",
+            "--state-dir",
+            state_dir,
+            "--format",
+            "tsv",
+        ]))
+        .expect("apply tsv")
+        .expect("time travel apply");
+        assert!(apply_tsv.starts_with(TimeTravelIntentCliReport::tsv_header()));
+        assert!(apply_tsv.contains("\t30\t60\ttrue\tfalse\ttrue\t4\t"));
+        let audit = fs::read_to_string(runtime.audit_path()).expect("audit");
+        assert_eq!(audit.lines().count(), 2);
+        assert!(audit.contains(TIME_TRAVEL_EVIDENCE_BOUNDARY));
+        assert_eq!(
+            runtime.apply("wrong-plan"),
+            Err(CitusCtlError::TimeTravelPlanIdMismatch)
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn time_travel_intent_rejects_out_of_window_and_future_targets() {
+        assert_eq!(
+            TimeTravelIntentRuntime::new(
+                "2026-05-23T23:59:00Z",
+                "2026-05-24T00:00:30Z",
+                60,
+                "/tmp/time-travel-state",
+            ),
+            Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: "older than max_staleness_seconds 60".to_string(),
+            })
+        );
+        assert_eq!(
+            TimeTravelIntentRuntime::new(
+                "2026-05-24T00:00:31Z",
+                "2026-05-24T00:00:30Z",
+                60,
+                "/tmp/time-travel-state",
+            ),
+            Err(CitusCtlError::UnknownValue {
+                field: "target_time",
+                value: "must not be in the future".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn strict_utc_timestamp_rejects_invalid_calendar_dates() {
+        for value in [
+            "2026-02-29T00:00:00Z",
+            "2026-05-24T24:00:00Z",
+            "2026-05-24T00:00:60Z",
+            "2026-05-24 00:00:00",
+        ] {
+            assert_eq!(
+                validate_timestamp(value),
+                Err(CitusCtlError::InvalidTimestamp)
+            );
+        }
+        assert!(validate_timestamp("2024-02-29T00:00:00Z").is_ok());
     }
 
     #[test]

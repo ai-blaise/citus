@@ -87,6 +87,7 @@ TOOLS_WORKFLOW = ROOT / ".github/workflows/ci-tools.yml"
 CITUSCTL_SMOKE = ROOT / "ci/ai-blaise/citusctl-smoke.sh"
 CITUSCTL_DEV_LIFECYCLE_SMOKE = ROOT / "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh"
 CITUSCTL_K8S_APPLY_LIVE_SMOKE = ROOT / "ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh"
+CITUSCTL_TIME_TRAVEL_INTENT_SMOKE = ROOT / "ci/ai-blaise/citusctl-time-travel-intent-smoke.sh"
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
@@ -258,6 +259,7 @@ if len(production_entries) + len(alpha_entries) != len(entries):
 
 d1_section = feature_section(docs, "D1")
 m8_section = feature_section(docs, "M8")
+b5_section = feature_section(docs, "B5")
 for phrase in (
     "**Status**: production-ready",
     "explicit `--state-dir`",
@@ -283,6 +285,19 @@ for phrase in (
     if compact(phrase) not in compact(m8_section):
         fail(f"M8 citusctl plan/apply boundary missing phrase: {phrase}")
 for phrase in (
+    "**Status**: production-ready",
+    "citusctl plan/apply time-travel <target_time>",
+    "strict RFC3339 UTC calendar validation",
+    "rejects future targets",
+    "rejects targets older than the explicit staleness window",
+    "deterministic `time-travel-*` plan id",
+    "time-travel-intent.audit.tsv",
+    "time-travel-intent-validation-only",
+    "does not execute follower reads",
+):
+    if compact(phrase) not in compact(b5_section):
+        fail(f"B5 citusctl time-travel boundary missing phrase: {phrase}")
+for phrase in (
     "explicit `--state-dir` invocations",
     "deterministic JSON/TSV output",
     "local audit append",
@@ -296,6 +311,16 @@ for phrase in (
 ):
     if compact(phrase) not in compact(audit):
         fail(f"PRODUCTION_READINESS_AUDIT.md must preserve D1/M8 citusctl boundary: {phrase}")
+for phrase in (
+    "B5 time-travel intent",
+    "strict RFC3339 UTC timestamp parsing",
+    "explicit `--max-staleness-seconds` enforcement",
+    "deterministic `time-travel-*`",
+    "time-travel-intent.audit.tsv",
+    "follower-read execution",
+):
+    if compact(phrase) not in compact(audit):
+        fail(f"PRODUCTION_READINESS_AUDIT.md must preserve B5 citusctl boundary: {phrase}")
 
 citusctl_lib = read(CITUSCTL_LIB)
 for phrase in (
@@ -309,6 +334,11 @@ for phrase in (
     "live-kubernetes-manifest-apply",
     "kubectl_apply_server_dry_run",
     "PlanIdMismatch",
+    "render_time_travel_intent_cli_report_from_args",
+    "append_time_travel_intent_audit_record",
+    "time-travel-intent-validation-only",
+    "utc_timestamp_epoch_seconds",
+    "TimeTravelPlanIdMismatch",
 ):
     if phrase not in citusctl_lib:
         fail(f"tools/citusctl runtime lost production D1/M8 contract code: {phrase}")
@@ -350,15 +380,33 @@ for phrase in (
     if phrase not in citusctl_k8s_smoke:
         fail(f"citusctl-k8s-apply-live-smoke.sh lost required M8 live assertion: {phrase}")
 
+citusctl_time_travel_smoke = read(CITUSCTL_TIME_TRAVEL_INTENT_SMOKE)
+for phrase in (
+    "FEATURE: B5",
+    "run_citusctl plan time-travel",
+    "run_citusctl apply \"${plan_id}\" time-travel",
+    "plan_id does not match current time-travel intent plan",
+    "target_time must be an RFC3339 UTC timestamp",
+    "older than max_staleness_seconds 60",
+    "must not be in the future",
+    "time-travel-intent.audit.tsv",
+    "time-travel-intent-validation-only",
+):
+    if phrase not in citusctl_time_travel_smoke:
+        fail(f"citusctl-time-travel-intent-smoke.sh lost required B5 assertion: {phrase}")
+
 makefile_text = read(MAKEFILE)
 for phrase in (
     "citusctl-dev-lifecycle-smoke:",
     "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh",
     "citusctl-k8s-apply-live-smoke:",
     "ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh",
+    "citusctl-time-travel-intent-smoke:",
+    "ci/ai-blaise/citusctl-time-travel-intent-smoke.sh",
     "gate-close:",
     "citusctl-dev-lifecycle-smoke",
     "citusctl-k8s-apply-live-smoke",
+    "citusctl-time-travel-intent-smoke",
 ):
     if phrase not in makefile_text:
         fail(f"Makefile.ai-blaise must wire citusctl smoke: {phrase}")

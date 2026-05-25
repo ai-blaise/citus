@@ -560,6 +560,14 @@ more production-ready than the artifacts justified.
   migrations, backups, PITR, WAL replay, multi-step Citus data-plane rollout
   semantics, or production cluster lifecycle management beyond applying the
   supplied manifest.
+- B5 time-travel intent now has a real `citusctl` binary smoke for the bounded
+  validation surface. `citusctl-time-travel-intent-smoke.sh` proves strict
+  RFC3339 UTC timestamp parsing, calendar validation, future-target rejection,
+  explicit `--max-staleness-seconds` enforcement, deterministic `time-travel-*`
+  plan ids, apply-time plan-id match rejection, TSV/JSON output, and
+  `time-travel-intent.audit.tsv` append evidence. This is not evidence for
+  follower reads, backup-backed query replay, closed-timestamp MVCC reads,
+  Citus executor integration, or production query execution.
 - The `citus-lsp` CLI now has direct executable smokes for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
@@ -834,6 +842,14 @@ Rule 10 completion for this branch requires local and VM verification of:
   migrations, backups, PITR, WAL replay, Postgres/Citus data-plane health,
   extension-service orchestration, or production cluster lifecycle management
   beyond applying the supplied manifest.
+- B5 time-travel intent evidence is limited to the real `citusctl` CLI
+  validation and audit path:
+  `citusctl plan/apply time-travel <target_time> --now ... --max-staleness-seconds
+  ... --state-dir ... --format json|tsv`. It proves strict UTC calendar
+  validation, stale/future rejection, plan-id-gated apply, and
+  `time-travel-intent.audit.tsv` append evidence only. It must not be cited for
+  follower-read execution, backup-backed query replay, closed-timestamp MVCC
+  reads, Citus executor integration, or production query execution.
 - D2 production evidence is limited to the real `citusctl` CLI apply-mode
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,

@@ -3515,13 +3515,32 @@ to become explicit read-only data sources.
 ### B5: Time-Travel Query Intent
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds CLI validation for UTC time-travel targets before follower
 read and backup-backed query paths execute.
+
+**Current production-ready boundary**: B5 is production-ready for the real
+`citusctl plan/apply time-travel <target_time> --now <utc_now>
+--max-staleness-seconds <seconds> --state-dir <dir> --format json|tsv` intent
+path. The CLI performs strict RFC3339 UTC calendar validation, rejects future
+targets, rejects targets older than the explicit staleness window, emits a
+deterministic `time-travel-*` plan id, requires apply to match that rendered
+plan id, and appends `time-travel-intent.audit.tsv` with
+`time-travel-intent-validation-only` evidence. This does not execute follower
+reads, backup-backed query replay, closed-timestamp MVCC reads, or Citus
+executor integration; those remain covered by S9/MR6 and backup runtime
+boundaries.
+
+Production evidence: `ci/ai-blaise/citusctl-time-travel-intent-smoke.sh`
+drives the real CLI binary through deterministic JSON planning, TSV apply,
+audit append, mismatched plan-id rejection, invalid UTC timestamp rejection,
+out-of-window rejection, and future-target rejection. `cargo test -p
+ai_blaise_citusctl --all-targets` covers leap-day, invalid calendar, age, and
+future-target validation at the Rust boundary.
 
 **Motivation**: Time-travel operations need explicit timestamp validation at
 the operator entrypoint before sidecars and companion GUCs consume the request.
@@ -3533,6 +3552,7 @@ the operator entrypoint before sidecars and companion GUCs consume the request.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: B5` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
+- CI: `ci/ai-blaise/citusctl-time-travel-intent-smoke.sh`
 
 ### B6: Encrypted Backups
 

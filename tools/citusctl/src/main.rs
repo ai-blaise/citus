@@ -1,7 +1,7 @@
 use ai_blaise_citusctl::{
     canonical_citusctl_report, canonical_dev_lifecycle_report, parse_request,
     render_dev_lifecycle_cli_report_from_args, render_k8s_manifest_cli_report_from_args,
-    wal_replay_debug_plan_from_args,
+    render_time_travel_intent_cli_report_from_args, wal_replay_debug_plan_from_args,
 };
 use std::env;
 use std::process;
@@ -50,6 +50,18 @@ fn main() {
     }
 
     match render_k8s_manifest_cli_report_from_args(&args) {
+        Ok(Some(output)) => {
+            println!("{output}");
+            return;
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("citusctl: {error}");
+            process::exit(2);
+        }
+    }
+
+    match render_time_travel_intent_cli_report_from_args(&args) {
         Ok(Some(output)) => {
             println!("{output}");
             return;
