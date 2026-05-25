@@ -1111,6 +1111,24 @@ Rule 10 completion for this branch requires local and VM verification of:
   `iceberg_runtime_exercised=false`, `delta_runtime_exercised=false`,
   `pg_lake_runtime_exercised=false`, `motherduck_session_exercised=false`, and
   `kubernetes_traffic_exercised=false`.
+- `FEATURE: L5` now has bounded local Iceberg-style snapshot commit evidence.
+  `ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh` runs
+  `run-local-iceberg-snapshot-commit-canonical`, writes a local manifest JSON,
+  a local metadata JSON, and a `current-snapshot.txt` pointer using temp-file
+  plus atomic rename and fsync, then reads the artifacts back. The smoke
+  requires `iceberg_snapshot_commit_live=passed`,
+  `l5_local_metadata_written=true`, `l5_local_manifest_written=true`,
+  `l5_current_pointer_committed=true`, `l5_prepare_lsn_recorded=true`,
+  `l5_snapshot_metadata_round_tripped=true`, `atomic_rename_used=true`,
+  `fsync_executed=true`, and
+  `local-iceberg-snapshot-metadata-commit-only`. The claim is bounded to local
+  prepare-LSN metadata commit artifacts. It is not evidence for live Iceberg
+  catalog commits, object-store IO, a Citus prepare hook, multi-writer conflict
+  detection, warehouse federation, or Kubernetes traffic; the smoke requires
+  `iceberg_catalog_commit_exercised=false`, `object_store_io_attempted=false`,
+  `citus_prepare_hook_exercised=false`,
+  `multi_writer_conflict_detection_exercised=false`,
+  `warehouse_federation_exercised=false`, and `kubernetes_traffic_exercised=false`.
 - `FEATURE: L7`, `FEATURE: R3`, and `FEATURE: R8` now have bounded live
   Citus columnar evidence. `ci/ai-blaise/columnar-tiering-live-smoke.sh` starts
   a real Citus coordinator and worker, installs `citus_columnar`, creates
@@ -1204,7 +1222,7 @@ Rule 10 completion for this branch requires local and VM verification of:
   federation, or Kubernetes traffic; the report requires
   `external_warehouse_connections_attempted=false`,
   `object_store_io_attempted=false`, and `catalog_auth_exercised=false`.
-  `FEATURE: L1`, `FEATURE: L5`, and `FEATURE: L13` remain alpha.
+  `FEATURE: L1` and `FEATURE: L13` remain alpha.
 - Agentmemory checkpointing for this slice used the scaleable-database-infra
   service at `http://127.0.0.1:3911` and did not edit or erase the backing
   memory file directly.

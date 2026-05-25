@@ -32,6 +32,8 @@ jobs:
         run: bash ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh
       - name: Run analytical DuckDB extension live smoke
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh
+      - name: Run analytical Iceberg snapshot smoke
+        run: bash ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh
       - name: Run analytical federation catalog live smoke
         run: bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh
 

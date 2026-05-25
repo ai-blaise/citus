@@ -27,12 +27,14 @@ Current implemented surface:
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-parquet-read-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-iceberg-snapshot-commit-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-logical-mirror-materialization-from-stdin`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-duckdb-extension-catalog-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-federation-catalog-publication-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- serve`
 - `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
 - `bash ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh`
+- `bash ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
 - `bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh`
@@ -69,6 +71,22 @@ Parquet reads; it does not cover Iceberg runtime reads, Delta runtime reads,
 object-store IO, pg_lake, MotherDuck, Citus planner integration, or Kubernetes
 traffic.
 
+`FEATURE: L5` has separate bounded production evidence:
+`sidecar-analytical-iceberg-snapshot-smoke.sh` runs
+`run-local-iceberg-snapshot-commit-canonical`, writes a local manifest JSON, a
+local Iceberg-style metadata JSON, and a `current-snapshot.txt` pointer using
+temp-file plus atomic rename and fsync. The smoke reads the artifacts back and
+requires `iceberg_snapshot_commit_live=passed`,
+`l5_local_metadata_written=true`, `l5_local_manifest_written=true`,
+`l5_current_pointer_committed=true`, `l5_prepare_lsn_recorded=true`,
+`l5_snapshot_metadata_round_tripped=true`, `atomic_rename_used=true`,
+`fsync_executed=true`, and
+`evidence_boundary=local-iceberg-snapshot-metadata-commit-only`. This is
+production evidence only for a local prepare-LSN metadata commit primitive; it
+does not cover live Iceberg catalog commits, object-store IO, a Citus prepare
+hook, multi-writer conflict detection, warehouse federation, or Kubernetes
+traffic.
+
 `FEATURE: L8` has separate bounded production evidence:
 `sidecar-analytical-mirror-live-smoke.sh` starts a real PostgreSQL 17 container
 with `wal_level=logical`, creates a `test_decoding` logical slot, inserts three
@@ -98,11 +116,15 @@ with the generated artifact. The smoke requires
 `l6_local_catalog_artifact_created=true`, `l6_local_http_catalog_served=true`,
 and `evidence_boundary=local-federation-catalog-artifact-http-only`.
 
-`FEATURE: L1`, `FEATURE: L5`, and `FEATURE: L13` remain alpha. The L3 local
-Parquet path remains explicitly bounded: `external_io_attempted=false`,
+`FEATURE: L1` and `FEATURE: L13` remain alpha. The L3 local Parquet path
+remains explicitly bounded: `external_io_attempted=false`,
 `object_store_io_attempted=false`, `iceberg_runtime_exercised=false`,
 `delta_runtime_exercised=false`, `pg_lake_runtime_exercised=false`,
 `motherduck_session_exercised=false`, and `kubernetes_traffic_exercised=false`.
+The L5 local snapshot path is bounded: `iceberg_catalog_commit_exercised=false`,
+`object_store_io_attempted=false`, `citus_prepare_hook_exercised=false`,
+`multi_writer_conflict_detection_exercised=false`, and
+`kubernetes_traffic_exercised=false`.
 The L8 mirror path remains explicitly bounded:
 `object_store_io_attempted=false`, `long_running_slot_tailing=false`,
 `checkpoint_persistence_exercised=false`, and `kubernetes_traffic_exercised=false`.

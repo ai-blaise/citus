@@ -3503,7 +3503,7 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = {"L1", "L5", "L13"}
+analytical_alpha_ids = {"L1", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
@@ -3518,6 +3518,8 @@ if entry_status.get("L3") != "production-ready":
     fail("L3 must be production-ready once local Parquet read evidence is wired")
 if entry_status.get("L8") != "production-ready":
     fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
+if entry_status.get("L5") != "production-ready":
+    fail("L5 must be production-ready once local Iceberg snapshot metadata commit evidence is wired")
 if entry_status.get("L12") != "production-ready":
     fail("L12 must be production-ready once live DuckDB extension load evidence is wired")
 if entry_status.get("L6") != "production-ready":
@@ -3538,6 +3540,8 @@ analytical_truth = compact(
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-smoke.sh")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh")
     + "\n"
@@ -3614,6 +3618,43 @@ for phrase in ("sidecar-analytical-parquet-read-smoke", "ci/ai-blaise/sidecar-an
         fail(f"Makefile.ai-blaise must wire the analytical Parquet read smoke: {phrase}")
 if "sidecar-analytical-parquet-read-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-analytical-parquet-read-smoke.sh")
+
+for phrase in (
+    "run-local-iceberg-snapshot-commit-canonical",
+    "sidecar-analytical-iceberg-snapshot-smoke.sh",
+    "LocalIcebergSnapshotMetadata",
+    "LocalIcebergManifest",
+    "atomic_write_synced",
+    "sync_all",
+    "iceberg_snapshot_commit_live=passed",
+    "l5_local_metadata_written=true",
+    "l5_local_manifest_written=true",
+    "l5_current_pointer_committed=true",
+    "l5_prepare_lsn_recorded=true",
+    "l5_snapshot_metadata_round_tripped=true",
+    "atomic_rename_used=true",
+    "fsync_executed=true",
+    "local-iceberg-snapshot-metadata-commit-only",
+    "iceberg_catalog_commit_exercised=false",
+    "object_store_io_attempted=false",
+    "citus_prepare_hook_exercised=false",
+    "multi_writer_conflict_detection_exercised=false",
+    "warehouse_federation_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "live Iceberg catalog commits",
+    "object-store IO",
+    "Citus prepare hook",
+    "multi-writer conflict detection",
+    "warehouse federation",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical L5 production boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-iceberg-snapshot-smoke", "ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the analytical Iceberg snapshot smoke: {phrase}")
+if "sidecar-analytical-iceberg-snapshot-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-iceberg-snapshot-smoke.sh")
 
 for phrase in (
     "run-logical-mirror-materialization-from-stdin",

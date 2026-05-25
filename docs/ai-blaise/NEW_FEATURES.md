@@ -4247,7 +4247,7 @@ predicate intent instead of scanning full object-store tables.
 ### L5: Iceberg Snapshot Commit At Prepare
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -4255,6 +4255,23 @@ predicate intent instead of scanning full object-store tables.
 **Summary**: Defines transaction, snapshot, prepare-LSN, and manifest URI
 contracts for aligning Iceberg snapshot commits with distributed prepare, plus
 canonical runtime commit reporting.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh`
+runs `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-iceberg-snapshot-commit-canonical`,
+writes a local manifest JSON, local Iceberg-style metadata JSON, and a
+`current-snapshot.txt` pointer using temp-file plus atomic rename and fsync,
+then reads the artifacts back. The smoke requires
+`iceberg_snapshot_commit_live=passed`, `l5_local_metadata_written=true`,
+`l5_local_manifest_written=true`, `l5_current_pointer_committed=true`,
+`l5_prepare_lsn_recorded=true`, `l5_snapshot_metadata_round_tripped=true`,
+`atomic_rename_used=true`, `fsync_executed=true`, and
+`evidence_boundary=local-iceberg-snapshot-metadata-commit-only`.
+
+**Current production-ready boundary**: L5 is production-ready only for a local
+prepare-LSN metadata commit primitive that durably writes manifest, metadata,
+and current-snapshot pointer artifacts. It does not claim live Iceberg catalog
+commits, object-store IO, a Citus prepare hook, multi-writer conflict detection,
+warehouse federation, or Kubernetes traffic.
 
 **Motivation**: Warm-tier visibility must line up with Citus distributed
 transaction boundaries.
@@ -4265,7 +4282,8 @@ transaction boundaries.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L5` in `sidecar/analytical/src/lib.rs`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-iceberg-snapshot-commit-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-iceberg-snapshot-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L6: Lakehouse Federation Catalogs

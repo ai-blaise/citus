@@ -10,7 +10,8 @@
 
 use ai_blaise_citus_sidecar_analytical::{
     canonical_analytical_execution_plan, canonical_analytical_runtime_report,
-    canonical_duckdb_extension_catalog_report, materialize_and_query_canonical_local_parquet,
+    canonical_duckdb_extension_catalog_report, commit_canonical_local_iceberg_snapshot,
+    materialize_and_query_canonical_local_parquet,
     materialize_test_decoding_mirror_to_local_artifact,
     publish_canonical_federation_catalog_artifact, AnalyticalEngine, FederationTarget,
     LakehouseFormat,
@@ -44,6 +45,11 @@ fn main() {
 
     if args == ["run-local-parquet-read-canonical"] {
         run_local_parquet_read_canonical();
+        return;
+    }
+
+    if args == ["run-local-iceberg-snapshot-commit-canonical"] {
+        run_local_iceberg_snapshot_commit_canonical();
         return;
     }
 
@@ -233,6 +239,47 @@ fn run_local_parquet_read_canonical() {
     println!("{}", row.join("\t"));
 }
 
+fn run_local_iceberg_snapshot_commit_canonical() {
+    let commit_dir = env::var("AI_BLAISE_ICEBERG_SNAPSHOT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/ai-blaise-l5-iceberg-snapshot"));
+    let report = commit_canonical_local_iceberg_snapshot(&commit_dir).unwrap_or_else(|error| {
+        eprintln!("analytical: local Iceberg snapshot commit failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\ttransaction_id\tsnapshot_id\tprepare_lsn\tmanifest_uri\tmetadata_path\tmanifest_path\tcurrent_pointer_path\tmetadata_bytes\tmanifest_bytes\tlocal_metadata_written\tlocal_manifest_written\tcurrent_pointer_committed\tprepare_lsn_recorded\tsnapshot_metadata_round_tripped\tatomic_rename_used\tfsync_executed\ticeberg_catalog_commit_exercised\tobject_store_io_attempted\tcitus_prepare_hook_exercised\tmulti_writer_conflict_detection_exercised\twarehouse_federation_exercised\tkubernetes_traffic_exercised\tevidence_boundary"
+    );
+    let row = vec![
+        report.feature_id,
+        report.transaction_id,
+        report.snapshot_id,
+        report.prepare_lsn,
+        report.manifest_uri,
+        report.metadata_path,
+        report.manifest_path,
+        report.current_pointer_path,
+        report.metadata_bytes.to_string(),
+        report.manifest_bytes.to_string(),
+        report.local_metadata_written.to_string(),
+        report.local_manifest_written.to_string(),
+        report.current_pointer_committed.to_string(),
+        report.prepare_lsn_recorded.to_string(),
+        report.snapshot_metadata_round_tripped.to_string(),
+        report.atomic_rename_used.to_string(),
+        report.fsync_executed.to_string(),
+        report.iceberg_catalog_commit_exercised.to_string(),
+        report.object_store_io_attempted.to_string(),
+        report.citus_prepare_hook_exercised.to_string(),
+        report.multi_writer_conflict_detection_exercised.to_string(),
+        report.warehouse_federation_exercised.to_string(),
+        report.kubernetes_traffic_exercised.to_string(),
+        report.evidence_boundary,
+    ];
+    println!("{}", row.join("\t"));
+}
+
 fn run_federation_catalog_publication_canonical() {
     let artifact_path = env::var("AI_BLAISE_FEDERATION_CATALOG_ARTIFACT")
         .map(PathBuf::from)
@@ -331,7 +378,7 @@ fn run_logical_mirror_materialization_from_stdin() {
 }
 
 fn print_usage() {
-    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-local-parquet-read-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical|run-federation-catalog-publication-canonical]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-local-parquet-read-canonical|run-local-iceberg-snapshot-commit-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical|run-federation-catalog-publication-canonical]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
 }
 

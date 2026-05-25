@@ -17,10 +17,11 @@ use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::prelude::{CsvReadOptions, ParquetReadOptions, SessionContext};
 use parquet::arrow::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
 use std::fs::{self, File};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -447,6 +448,34 @@ pub struct LocalParquetReadReport {
     pub delta_runtime_exercised: bool,
     pub pg_lake_runtime_exercised: bool,
     pub motherduck_session_exercised: bool,
+    pub kubernetes_traffic_exercised: bool,
+    pub evidence_boundary: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LocalIcebergSnapshotCommitReport {
+    pub feature_id: String,
+    pub transaction_id: String,
+    pub snapshot_id: String,
+    pub prepare_lsn: String,
+    pub manifest_uri: String,
+    pub metadata_path: String,
+    pub manifest_path: String,
+    pub current_pointer_path: String,
+    pub metadata_bytes: u64,
+    pub manifest_bytes: u64,
+    pub local_metadata_written: bool,
+    pub local_manifest_written: bool,
+    pub current_pointer_committed: bool,
+    pub prepare_lsn_recorded: bool,
+    pub snapshot_metadata_round_tripped: bool,
+    pub atomic_rename_used: bool,
+    pub fsync_executed: bool,
+    pub iceberg_catalog_commit_exercised: bool,
+    pub object_store_io_attempted: bool,
+    pub citus_prepare_hook_exercised: bool,
+    pub multi_writer_conflict_detection_exercised: bool,
+    pub warehouse_federation_exercised: bool,
     pub kubernetes_traffic_exercised: bool,
     pub evidence_boundary: String,
 }
@@ -892,6 +921,221 @@ async fn execute_datafusion_over_parquet_async(
     })
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct LocalIcebergSnapshotMetadata {
+    format_version: u8,
+    table: String,
+    transaction_id: String,
+    snapshot_id: String,
+    prepare_lsn: String,
+    manifest_uri: String,
+    manifest_path: String,
+    committed_at_boundary: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct LocalIcebergManifest {
+    format_version: u8,
+    snapshot_id: String,
+    data_files: Vec<LocalIcebergDataFile>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+struct LocalIcebergDataFile {
+    content: String,
+    file_path: String,
+    file_format: String,
+    record_count: u64,
+}
+
+fn local_iceberg_paths(
+    commit_dir: &Path,
+    snapshot_id: &str,
+) -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf) {
+    let metadata_path = commit_dir.join(format!("{snapshot_id}.metadata.json"));
+    let manifest_path = commit_dir.join(format!("{snapshot_id}.manifest.json"));
+    let current_pointer_path = commit_dir.join("current-snapshot.txt");
+    (metadata_path, manifest_path, current_pointer_path)
+}
+
+fn atomic_write_synced(path: &Path, bytes: &[u8]) -> Result<u64, AnalyticalSidecarError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                AnalyticalSidecarError::QueryEngineExecution(format!(
+                    "create commit directory {} failed: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("iceberg-snapshot.json");
+    let temp_path = path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        std::process::id(),
+        bytes.len()
+    ));
+    let mut file = File::create(&temp_path).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "create {} failed: {error}",
+            temp_path.display()
+        ))
+    })?;
+    file.write_all(bytes).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "write {} failed: {error}",
+            temp_path.display()
+        ))
+    })?;
+    file.sync_all().map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "fsync {} failed: {error}",
+            temp_path.display()
+        ))
+    })?;
+    drop(file);
+    fs::rename(&temp_path, path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "rename {} to {} failed: {error}",
+            temp_path.display(),
+            path.display()
+        ))
+    })?;
+    sync_parent_dir(path)?;
+    fs::metadata(path)
+        .map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "metadata {} failed: {error}",
+                path.display()
+            ))
+        })
+        .map(|metadata| metadata.len())
+}
+
+fn sync_parent_dir(path: &Path) -> Result<(), AnalyticalSidecarError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            File::open(parent)
+                .and_then(|file| file.sync_all())
+                .map_err(|error| {
+                    AnalyticalSidecarError::QueryEngineExecution(format!(
+                        "fsync directory {} failed: {error}",
+                        parent.display()
+                    ))
+                })?;
+        }
+    }
+    Ok(())
+}
+
+fn commit_local_iceberg_snapshot(
+    snapshot: &IcebergSnapshotCommitPlan,
+    commit_dir: &Path,
+) -> Result<LocalIcebergSnapshotCommitReport, AnalyticalSidecarError> {
+    let (metadata_path, manifest_path, current_pointer_path) =
+        local_iceberg_paths(commit_dir, &snapshot.snapshot_id);
+    if current_pointer_path.exists() {
+        let current = fs::read_to_string(&current_pointer_path).map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "read {} failed: {error}",
+                current_pointer_path.display()
+            ))
+        })?;
+        if current.trim() != snapshot.snapshot_id {
+            return Err(AnalyticalSidecarError::QueryEngineExecution(format!(
+                "current snapshot pointer already contains {}",
+                current.trim()
+            )));
+        }
+    }
+
+    let manifest = LocalIcebergManifest {
+        format_version: 1,
+        snapshot_id: snapshot.snapshot_id.clone(),
+        data_files: vec![LocalIcebergDataFile {
+            content: "data".to_string(),
+            file_path: "local://warehouse/orders/data/orders.parquet".to_string(),
+            file_format: "parquet".to_string(),
+            record_count: 4,
+        }],
+    };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "render local Iceberg manifest failed: {error}"
+        ))
+    })?;
+    let manifest_size = atomic_write_synced(&manifest_path, &manifest_bytes)?;
+
+    let metadata = LocalIcebergSnapshotMetadata {
+        format_version: 2,
+        table: "public.orders".to_string(),
+        transaction_id: snapshot.transaction_id.clone(),
+        snapshot_id: snapshot.snapshot_id.clone(),
+        prepare_lsn: snapshot.prepare_lsn.clone(),
+        manifest_uri: snapshot.manifest_uri.clone(),
+        manifest_path: manifest_path.display().to_string(),
+        committed_at_boundary: "prepare-lsn-local-metadata".to_string(),
+    };
+    let metadata_bytes = serde_json::to_vec_pretty(&metadata).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "render local Iceberg metadata failed: {error}"
+        ))
+    })?;
+    let metadata_size = atomic_write_synced(&metadata_path, &metadata_bytes)?;
+    atomic_write_synced(&current_pointer_path, snapshot.snapshot_id.as_bytes())?;
+
+    let round_tripped: LocalIcebergSnapshotMetadata =
+        serde_json::from_slice(&fs::read(&metadata_path).map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "read {} failed: {error}",
+                metadata_path.display()
+            ))
+        })?)
+        .map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "parse local Iceberg metadata failed: {error}"
+            ))
+        })?;
+    let pointer = fs::read_to_string(&current_pointer_path).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "read {} failed: {error}",
+            current_pointer_path.display()
+        ))
+    })?;
+
+    Ok(LocalIcebergSnapshotCommitReport {
+        feature_id: "L5".to_string(),
+        transaction_id: snapshot.transaction_id.clone(),
+        snapshot_id: snapshot.snapshot_id.clone(),
+        prepare_lsn: snapshot.prepare_lsn.clone(),
+        manifest_uri: snapshot.manifest_uri.clone(),
+        metadata_path: metadata_path.display().to_string(),
+        manifest_path: manifest_path.display().to_string(),
+        current_pointer_path: current_pointer_path.display().to_string(),
+        metadata_bytes: metadata_size,
+        manifest_bytes: manifest_size,
+        local_metadata_written: metadata_path.exists(),
+        local_manifest_written: manifest_path.exists(),
+        current_pointer_committed: pointer.trim() == snapshot.snapshot_id,
+        prepare_lsn_recorded: round_tripped.prepare_lsn == snapshot.prepare_lsn,
+        snapshot_metadata_round_tripped: round_tripped == metadata,
+        atomic_rename_used: true,
+        fsync_executed: true,
+        iceberg_catalog_commit_exercised: false,
+        object_store_io_attempted: false,
+        citus_prepare_hook_exercised: false,
+        multi_writer_conflict_detection_exercised: false,
+        warehouse_federation_exercised: false,
+        kubernetes_traffic_exercised: false,
+        evidence_boundary: "local-iceberg-snapshot-metadata-commit-only".to_string(),
+    })
+}
+
 pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
     AnalyticalSidecarPlan {
         mirror: AnalyticalMirrorContract {
@@ -1012,6 +1256,19 @@ pub fn materialize_and_query_canonical_local_parquet(
         kubernetes_traffic_exercised: false,
         evidence_boundary: "local-datafusion-parquet-file-only".to_string(),
     })
+}
+
+pub fn commit_canonical_local_iceberg_snapshot(
+    commit_dir: &Path,
+) -> Result<LocalIcebergSnapshotCommitReport, AnalyticalSidecarError> {
+    let plan = canonical_analytical_execution_plan()?;
+    let snapshot =
+        plan.snapshot_commit
+            .as_ref()
+            .ok_or(AnalyticalSidecarError::MissingRequiredField(
+                "snapshot_commit",
+            ))?;
+    commit_local_iceberg_snapshot(snapshot, commit_dir)
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1595,6 +1852,49 @@ mod tests {
             "local-datafusion-parquet-file-only"
         );
         let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
+    fn local_iceberg_snapshot_commit_writes_and_round_trips_metadata() {
+        let temp_dir =
+            std::env::temp_dir().join(format!("ai-blaise-l5-iceberg-{}", std::process::id()));
+        let report = commit_canonical_local_iceberg_snapshot(&temp_dir)
+            .expect("local iceberg snapshot commit");
+
+        assert_eq!(report.feature_id, "L5");
+        assert_eq!(report.transaction_id, "tx-1");
+        assert_eq!(report.snapshot_id, "snapshot-1");
+        assert_eq!(report.prepare_lsn, "16/B374D848");
+        assert!(report.metadata_bytes > 0);
+        assert!(report.manifest_bytes > 0);
+        assert!(report.local_metadata_written);
+        assert!(report.local_manifest_written);
+        assert!(report.current_pointer_committed);
+        assert!(report.prepare_lsn_recorded);
+        assert!(report.snapshot_metadata_round_tripped);
+        assert!(report.atomic_rename_used);
+        assert!(report.fsync_executed);
+        assert!(!report.iceberg_catalog_commit_exercised);
+        assert!(!report.object_store_io_attempted);
+        assert!(!report.citus_prepare_hook_exercised);
+        assert!(!report.multi_writer_conflict_detection_exercised);
+        assert_eq!(
+            report.evidence_boundary,
+            "local-iceberg-snapshot-metadata-commit-only"
+        );
+        let metadata = std::fs::read_to_string(temp_dir.join("snapshot-1.metadata.json"))
+            .expect("metadata artifact");
+        assert!(metadata.contains("\"prepare_lsn\": \"16/B374D848\""));
+        assert!(metadata.contains("\"committed_at_boundary\": \"prepare-lsn-local-metadata\""));
+        let manifest = std::fs::read_to_string(temp_dir.join("snapshot-1.manifest.json"))
+            .expect("manifest artifact");
+        assert!(manifest.contains("\"file_format\": \"parquet\""));
+        assert_eq!(
+            std::fs::read_to_string(temp_dir.join("current-snapshot.txt"))
+                .expect("current snapshot pointer"),
+            "snapshot-1"
+        );
+        let _ = std::fs::remove_dir_all(temp_dir);
     }
 
     #[test]
