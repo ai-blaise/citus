@@ -93,6 +93,7 @@ FDW_CREDENTIAL_ROTATION_SMOKE = ROOT / "ci/ai-blaise/fdw-credential-rotation-liv
 SCHEMA_DRIFT_LIVE_SMOKE = ROOT / "ci/ai-blaise/schema-drift-live-smoke.sh"
 SIDECAR_RAFT_SMOKE = ROOT / "ci/ai-blaise/sidecar-raft-smoke.sh"
 SIDECAR_HLC_SMOKE = ROOT / "ci/ai-blaise/sidecar-hlc-smoke.sh"
+TXN_STATUS_NETWORKED_RAFT_SMOKE = ROOT / "ci/ai-blaise/txn-status-networked-raft-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
@@ -597,6 +598,7 @@ fdw_smoke = read(FDW_CREDENTIAL_ROTATION_SMOKE)
 schema_drift_smoke = read(SCHEMA_DRIFT_LIVE_SMOKE)
 sidecar_raft_smoke = read(SIDECAR_RAFT_SMOKE)
 sidecar_hlc_smoke = read(SIDECAR_HLC_SMOKE)
+txn_status_networked_raft_smoke = read(TXN_STATUS_NETWORKED_RAFT_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
 
@@ -699,6 +701,63 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S9 boundary phrase: {phrase}")
+
+if status_by_id.get("T5") != "production-ready":
+    fail("T5 must be Status: production-ready once networked txn-status Raft evidence is wired")
+section_t5 = feature_section(docs, "T5")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/txn-status-networked-raft-smoke.sh",
+    "three separate `ai_blaise_citus_sidecar_raft serve` OS processes",
+    "`ai_blaise_citus_sidecar_txn_status serve`",
+    "AI_BLAISE_TXN_RAFT_LEADER_ADDR",
+    "stage:txn-live-raft-1:worker-a",
+    "commit:txn-live-raft-1",
+    "follower-backed replication failures fail closed",
+    "Citus distributed executor",
+    "PostgreSQL-core commit timestamp patches",
+    "Kubernetes operator wiring",
+):
+    if compact(phrase) not in compact(section_t5):
+        fail(f"T5 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "txn_status_networked_raft=passed",
+    "AI_BLAISE_TXN_RAFT_LEADER_ADDR",
+    "start_raft_node worker-a",
+    "start_raft_node worker-b",
+    "start_raft_node worker-c",
+    "start_txn_status txn-status-leader",
+    "start_txn_status txn-status-follower",
+    "/raft/campaign",
+    "stage:txn-live-raft-1:worker-a",
+    "commit:txn-live-raft-1",
+    "follower_replication_failure=fail_closed",
+):
+    if phrase not in txn_status_networked_raft_smoke:
+        fail(f"txn-status-networked-raft-smoke.sh missing live assertion: {phrase}")
+for phrase in (
+    "txn-status-networked-raft-smoke:",
+    "ci/ai-blaise/txn-status-networked-raft-smoke.sh",
+    "gate-close:",
+    "txn-status-networked-raft-smoke",
+):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire txn-status networked Raft smoke: {phrase}")
+if "txn-status-networked-raft-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run txn-status-networked-raft-smoke.sh")
+for phrase in (
+    "T5 parallel commit transaction status is production-ready",
+    "`ai_blaise_citus_sidecar_txn_status serve`",
+    "AI_BLAISE_TXN_RAFT_LEADER_ADDR",
+    "stage:txn-live-raft-1:worker-a",
+    "commit:txn-live-raft-1",
+    "follower-backed replication failures fail closed",
+    "Citus distributed executor integration",
+    "PostgreSQL-core commit timestamp patch integration",
+    "Kubernetes operator reconciliation",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing T5 boundary phrase: {phrase}")
 
 if status_by_id.get("F4") != "production-ready":
     fail("F4 must be Status: production-ready once live postgres_fdw rotation evidence is wired")

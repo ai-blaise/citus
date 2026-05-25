@@ -7,7 +7,8 @@ pub mod runtime;
 pub use runtime::{
     canonical_txn_runtime_report, finalize_decision_name, render_finalize_json, render_record_json,
     run_parallel_commit_microbench, txn_status_name, IntentEvidence, ParallelCommitMicrobench,
-    TxnRuntimeCanonicalReport, TxnRuntimeError, TxnRuntimeRecord, TxnStatusRuntime,
+    TxnRaftReplication, TxnRuntimeCanonicalReport, TxnRuntimeError, TxnRuntimeRecord,
+    TxnStatusRuntime,
 };
 
 use ai_blaise_citus_sidecar_hlc::HlcTimestamp;

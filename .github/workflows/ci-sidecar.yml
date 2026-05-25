@@ -307,3 +307,9 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_txn_status --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_txn_status
+      - name: Run canonical txn-status runtime
+        run: cargo run -q -p ai_blaise_citus_sidecar_txn_status -- run-runtime-canonical
+      - name: Run parallel commit smoke
+        run: bash ci/ai-blaise/parallel-commits-smoke.sh
+      - name: Run txn-status networked Raft smoke
+        run: bash ci/ai-blaise/txn-status-networked-raft-smoke.sh

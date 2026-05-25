@@ -398,7 +398,7 @@ load.
 ### T5: Parallel Commit Transaction Status
 
 **Overlay**: `sidecar/txn_status`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -424,16 +424,28 @@ parallel-commit transaction-status sidecar.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_txn_status -- run-runtime-canonical`
 - CI: `ci/ai-blaise/parallel-commits-smoke.sh`
+- CI: `ci/ai-blaise/txn-status-networked-raft-smoke.sh`
 - CI: `ci/ai-blaise/schema-txn-runtime-smoke.sh`
 - CI: `ci/ai-blaise/sql-extension-smoke.sh`
-- Current boundary: the sidecar has deterministic Raft-backed staging/finalize
-  runtime evidence, a loopback HTTP runtime smoke that drives stage -> wait ->
-  ack -> commit with serde-validated JSON and malformed-input rejection, the
-  microbenchmark proves the modeled fast-path step count, and the SQL extension
-  installs `companion.txn_stage`/`companion.txn_finalize` against real
-  PostgreSQL. Integration with the Citus distributed executor,
-  real multi-process networked Raft transport, PostgreSQL-core commit timestamp
-  patches, and Kubernetes operator wiring remain alpha.
+Production evidence: the sidecar has deterministic Raft-backed
+staging/finalize runtime evidence, a loopback HTTP runtime smoke that drives
+stage -> wait -> ack -> commit with serde-validated JSON and malformed-input
+rejection, and `txn-status-networked-raft-smoke.sh` starts three separate
+`ai_blaise_citus_sidecar_raft serve` OS processes plus a real
+`ai_blaise_citus_sidecar_txn_status serve` process configured with
+`AI_BLAISE_TXN_RAFT_LEADER_ADDR`. The smoke elects `worker-a`, stages
+`txn-live-raft-1`, proves the Raft log commits
+`stage:txn-live-raft-1:worker-a` before the transaction record is returned,
+waits without appending when replication evidence is incomplete, records shard
+acks, proves the Raft log commits `commit:txn-live-raft-1` before the sidecar
+reports committed, verifies every voter converges on commit index 2, and
+proves follower-backed replication failures fail closed without materialising a
+transaction record. The microbenchmark proves the modeled fast-path step count,
+and the SQL extension installs `companion.txn_stage`/
+`companion.txn_finalize` against real PostgreSQL. This production-ready
+boundary is the networked transaction-status sidecar API and SQL contract;
+integration with the Citus distributed executor, PostgreSQL-core commit
+timestamp patches, and Kubernetes operator wiring remain alpha.
 - Executable: `patches/postgres/0001-logical-commit-clock.patch` carries the
   PostgreSQL-core logical commit clock the parallel-commit path depends on for
   monotonic shard-finalize ordering. The patch is the upstream-quality diff that

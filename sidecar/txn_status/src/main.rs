@@ -5,8 +5,8 @@ use ai_blaise_citus_sidecar_shared::{listen_addr_from_env, HttpProbeResponse, Si
 use ai_blaise_citus_sidecar_txn_status::{
     canonical_txn_runtime_report, canonical_txn_status_report, finalize_decision_name,
     render_finalize_json, render_record_json, run_parallel_commit_microbench, txn_status_name,
-    ParallelCommitMicrobench, ParallelCommitRecord, TxnFinalizeDecision, TxnIntent, TxnStatus,
-    TxnStatusRuntime,
+    ParallelCommitMicrobench, ParallelCommitRecord, TxnFinalizeDecision, TxnIntent,
+    TxnRaftReplication, TxnStatus, TxnStatusRuntime,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -150,17 +150,19 @@ fn run_txn_status_server(default_addr: &str) {
 
     let runtime = match TxnStatusRuntime::new(
         env::var("AI_BLAISE_TXN_RAFT_GROUP").unwrap_or_else(|_| "txn-status-orders".to_string()),
-        vec![
-            "worker-a".to_string(),
-            "worker-b".to_string(),
-            "worker-c".to_string(),
-        ],
+        parse_voters(),
         env::var("AI_BLAISE_TXN_MAX_STAGING_MS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(5_000),
     ) {
-        Ok(runtime) => Mutex::new(runtime),
+        Ok(runtime) => match raft_replication_from_env() {
+            Ok(replication) => Mutex::new(runtime.with_raft_replication(replication)),
+            Err(error) => {
+                eprintln!("txn-status: raft replication config failed: {error}");
+                process::exit(1);
+            }
+        },
         Err(error) => {
             eprintln!("txn-status: runtime init failed: {error}");
             process::exit(1);
@@ -186,6 +188,26 @@ fn run_txn_status_server(default_addr: &str) {
         if let Err(error) = stream.write_all(response.to_http_string().as_bytes()) {
             eprintln!("txn-status: write failed: {error}");
         }
+    }
+}
+
+fn parse_voters() -> Vec<String> {
+    env::var("AI_BLAISE_TXN_RAFT_VOTERS")
+        .unwrap_or_else(|_| "worker-a,worker-b,worker-c".to_string())
+        .split(',')
+        .map(str::trim)
+        .filter(|voter| !voter.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn raft_replication_from_env() -> Result<TxnRaftReplication, String> {
+    match env::var("AI_BLAISE_TXN_RAFT_LEADER_ADDR") {
+        Ok(leader_addr) => {
+            TxnRaftReplication::http_leader(leader_addr).map_err(|error| error.to_string())
+        }
+        Err(env::VarError::NotPresent) => Ok(TxnRaftReplication::InProcess),
+        Err(error) => Err(format!("AI_BLAISE_TXN_RAFT_LEADER_ADDR: {error}")),
     }
 }
 

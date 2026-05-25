@@ -603,19 +603,32 @@ more production-ready than the artifacts justified.
   claim MVCC snapshot execution, replica query routing, planner integration,
   stale-read SQL syntax, cross-region clock discipline, or Kubernetes
   reconciliation.
+- T5 parallel commit transaction status is production-ready for the bounded
+  networked transaction-status sidecar API and SQL contract.
+  `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
+  step count; `schema-txn-runtime-smoke.sh` drives the real txn-status HTTP
+  server through stage -> wait -> ack -> commit with malformed/unknown-field
+  rejection; `sql-extension-smoke.sh` installs `companion.txn_stage`/
+  `companion.txn_finalize` into real PostgreSQL; and
+  `txn-status-networked-raft-smoke.sh` starts three separate
+  `ai_blaise_citus_sidecar_raft serve` OS processes plus a real
+  `ai_blaise_citus_sidecar_txn_status serve` process configured with
+  `AI_BLAISE_TXN_RAFT_LEADER_ADDR`, elects `worker-a`, proves
+  `stage:txn-live-raft-1:worker-a` is committed through the Raft log before
+  the staged transaction is returned, proves wait decisions do not append
+  terminal log entries, proves `commit:txn-live-raft-1` is committed before the
+  sidecar reports committed, verifies every voter reaches commit index 2, and
+  proves follower-backed replication failures fail closed without
+  materialising a transaction record. This does not claim Citus distributed
+  executor integration, PostgreSQL-core commit timestamp patch integration, or
+  Kubernetes operator reconciliation.
 - The broader Raft/HLC/transaction-status triad still has executable sidecar
   runtime evidence without overclaiming full distributed-database integration:
   `topology-consensus-smoke.sh` proves S4 coordinator-less pool admission, S5
   fail-closed placement/member validation, and S9/MR6 closed-timestamp
-  follower-read serve/reject gates; `parallel-commits-smoke.sh` proves staging,
-  finalize, and modeled fast-path step count;
-  `schema-txn-runtime-smoke.sh` drives the real txn-status HTTP server through
-  stage -> wait -> ack -> commit with malformed/unknown-field rejection; and
-  `sql-extension-smoke.sh` installs `companion.txn_stage`/
-  `companion.txn_finalize` into real PostgreSQL. S4, MR6, and T5 remain alpha
-  for the broader behavior until PostgreSQL-core patch integration, Citus
-  executor integration, pool routing, and Kubernetes operator reconciliation
-  are live-gated.
+  follower-read serve/reject gates. S4 and MR6 remain alpha for the broader
+  behavior until pool routing, planner integration, and Kubernetes operator
+  reconciliation are live-gated.
 - The schema-job sidecar now has an explicit runtime-boundary smoke for the
   narrow C10/M2 sidecar surface. `schema-txn-runtime-smoke.sh` runs the real
   binary canonical worker output, controller advance/wait/rollback output,

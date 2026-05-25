@@ -1,11 +1,11 @@
-//! Parallel-commit transaction-status runtime backed by a deterministic
-//! in-process Raft state-machine boundary.
+//! Parallel-commit transaction-status runtime backed by a deterministic Raft
+//! state-machine boundary.
 //!
 //! This is the executable runtime evidence for the narrow `FEATURE: T5`
 //! sidecar contract. It records transaction staging records, intent
-//! replication evidence, and final commit/abort decisions through the local
-//! Raft round-trip model before acknowledging a modeled commit. It is not the
-//! networked multi-process Raft transport or Citus executor integration; when
+//! replication evidence, and final commit/abort decisions through either the
+//! local Raft round-trip model or the live Raft HTTP sidecar before
+//! acknowledging a modeled commit. It is not Citus executor integration; when
 //! the sidecar path is unavailable, callers must fall back to standard
 //! distributed 2PC. The contract surface in `lib.rs` carries the deterministic
 //! boundary used by the companion fallback path.
@@ -21,6 +21,9 @@ use serde_json::json;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum TxnRuntimeError {
@@ -53,6 +56,37 @@ impl From<RaftRuntimeError> for TxnRuntimeError {
     fn from(error: RaftRuntimeError) -> Self {
         Self::RaftFailure(error.to_string())
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum TxnRaftReplication {
+    InProcess,
+    HttpLeader { leader_addr: String },
+}
+
+impl TxnRaftReplication {
+    pub fn http_leader(leader_addr: impl Into<String>) -> Result<Self, TxnRuntimeError> {
+        let leader_addr = leader_addr.into();
+        if leader_addr.trim().is_empty() {
+            return Err(TxnRuntimeError::RaftFailure(
+                "raft leader address must not be empty".to_string(),
+            ));
+        }
+        Ok(Self::HttpLeader { leader_addr })
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::InProcess => "in_process",
+            Self::HttpLeader { .. } => "http_leader",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TxnRaftCommitEvidence {
+    committed_index: u64,
+    committed_payload: Vec<u8>,
 }
 
 /// Replication evidence for a single intent: replica acks observed since the
@@ -89,6 +123,7 @@ pub struct TxnRuntimeRecord {
     pub staging_at: HlcTimestamp,
     pub intents: Vec<IntentEvidence>,
     pub raft_index: u64,
+    pub raft_transport: String,
 }
 
 /// Parallel-commit runtime. Holds the transaction state machine and tracks
@@ -102,6 +137,7 @@ pub struct TxnStatusRuntime {
     max_staging_ms: u64,
     records: BTreeMap<String, TxnRuntimeRecord>,
     next_raft_index: u64,
+    raft_replication: TxnRaftReplication,
 }
 
 impl TxnStatusRuntime {
@@ -132,7 +168,13 @@ impl TxnStatusRuntime {
             max_staging_ms,
             records: BTreeMap::new(),
             next_raft_index: 1,
+            raft_replication: TxnRaftReplication::InProcess,
         })
+    }
+
+    pub fn with_raft_replication(mut self, replication: TxnRaftReplication) -> Self {
+        self.raft_replication = replication;
+        self
     }
 
     pub fn raft_group(&self) -> &str {
@@ -145,6 +187,10 @@ impl TxnStatusRuntime {
 
     pub fn max_staging_ms(&self) -> u64 {
         self.max_staging_ms
+    }
+
+    pub fn raft_replication(&self) -> &TxnRaftReplication {
+        &self.raft_replication
     }
 
     pub fn records(&self) -> &BTreeMap<String, TxnRuntimeRecord> {
@@ -164,7 +210,8 @@ impl TxnStatusRuntime {
             return Err(TxnRuntimeError::DuplicateTxn(record.txn_id));
         }
         let payload = format!("stage:{}:{}", record.txn_id, record.coordinator).into_bytes();
-        let round_trip = self.replicate_through_raft(payload)?;
+        let round_trip = self.replicate_through_raft(payload.clone())?;
+        validate_committed_payload(&round_trip, &payload)?;
         let runtime_record = TxnRuntimeRecord {
             txn_id: record.txn_id.clone(),
             coordinator: record.coordinator,
@@ -176,6 +223,7 @@ impl TxnStatusRuntime {
                 .map(IntentEvidence::from_intent)
                 .collect(),
             raft_index: round_trip.committed_index,
+            raft_transport: self.raft_replication.name().to_string(),
         };
         self.records
             .insert(record.txn_id.clone(), runtime_record.clone());
@@ -276,7 +324,9 @@ impl TxnStatusRuntime {
             decision,
             TxnFinalizeDecision::Commit | TxnFinalizeDecision::AbortStaleStagingRecord
         ) {
-            let round_trip = self.replicate_through_raft(payload.into_bytes())?;
+            let payload = payload.into_bytes();
+            let round_trip = self.replicate_through_raft(payload.clone())?;
+            validate_committed_payload(&round_trip, &payload)?;
             self.next_raft_index = round_trip.committed_index + 1;
             Some(round_trip.committed_index)
         } else {
@@ -303,16 +353,140 @@ impl TxnStatusRuntime {
     fn replicate_through_raft(
         &mut self,
         payload: Vec<u8>,
-    ) -> Result<RaftRoundTripReport, TxnRuntimeError> {
-        let leader = self
-            .voters
-            .first()
-            .cloned()
-            .ok_or(TxnRuntimeError::RaftFailure(
-                "no voters configured".to_string(),
-            ))?;
-        Ok(run_raft_round_trip(self.voters.clone(), &leader, payload)?)
+    ) -> Result<TxnRaftCommitEvidence, TxnRuntimeError> {
+        match &self.raft_replication {
+            TxnRaftReplication::InProcess => {
+                let leader = self
+                    .voters
+                    .first()
+                    .cloned()
+                    .ok_or(TxnRuntimeError::RaftFailure(
+                        "no voters configured".to_string(),
+                    ))?;
+                Ok(TxnRaftCommitEvidence::from(run_raft_round_trip(
+                    self.voters.clone(),
+                    &leader,
+                    payload,
+                )?))
+            }
+            TxnRaftReplication::HttpLeader { leader_addr } => {
+                replicate_via_http_raft(leader_addr, &payload)
+            }
+        }
     }
+}
+
+impl From<RaftRoundTripReport> for TxnRaftCommitEvidence {
+    fn from(report: RaftRoundTripReport) -> Self {
+        Self {
+            committed_index: report.committed_index,
+            committed_payload: report.committed_payload,
+        }
+    }
+}
+
+fn replicate_via_http_raft(
+    leader_addr: &str,
+    payload: &[u8],
+) -> Result<TxnRaftCommitEvidence, TxnRuntimeError> {
+    let payload_text = std::str::from_utf8(payload).map_err(|_| {
+        TxnRuntimeError::RaftFailure("txn-status raft payload must be utf-8".to_string())
+    })?;
+    let response = http_post(leader_addr, "/raft/propose", payload_text)?;
+    let (status, body) = split_http_response(&response)?;
+    if status != 201 {
+        return Err(TxnRuntimeError::RaftFailure(format!(
+            "raft leader returned HTTP {status}: {body}"
+        )));
+    }
+    let value: serde_json::Value = serde_json::from_str(body.trim()).map_err(|error| {
+        TxnRuntimeError::RaftFailure(format!("raft leader response was not JSON: {error}"))
+    })?;
+    let committed_index = value
+        .get("commit_index")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            TxnRuntimeError::RaftFailure("raft leader response missing commit_index".to_string())
+        })?;
+    let committed_payload = value
+        .get("committed_payload")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            TxnRuntimeError::RaftFailure(
+                "raft leader response missing committed_payload".to_string(),
+            )
+        })?;
+    if committed_payload != payload_text {
+        return Err(TxnRuntimeError::RaftFailure(format!(
+            "raft leader committed unexpected payload {committed_payload:?}"
+        )));
+    }
+    Ok(TxnRaftCommitEvidence {
+        committed_index,
+        committed_payload: committed_payload.as_bytes().to_vec(),
+    })
+}
+
+fn http_post(addr: &str, path: &str, body: &str) -> Result<String, TxnRuntimeError> {
+    let mut stream = TcpStream::connect(addr).map_err(|error| {
+        TxnRuntimeError::RaftFailure(format!("connect raft leader {addr}: {error}"))
+    })?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|error| TxnRuntimeError::RaftFailure(format!("set read timeout: {error}")))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|error| TxnRuntimeError::RaftFailure(format!("set write timeout: {error}")))?;
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nhost: {addr}\r\ncontent-type: text/plain\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).map_err(|error| {
+        TxnRuntimeError::RaftFailure(format!("write raft leader {addr}: {error}"))
+    })?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).map_err(|error| {
+        TxnRuntimeError::RaftFailure(format!("read raft leader {addr}: {error}"))
+    })?;
+    Ok(response)
+}
+
+fn split_http_response(response: &str) -> Result<(u16, &str), TxnRuntimeError> {
+    let status_line = response.lines().next().ok_or_else(|| {
+        TxnRuntimeError::RaftFailure("missing raft HTTP response status".to_string())
+    })?;
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| {
+            TxnRuntimeError::RaftFailure(format!(
+                "malformed raft HTTP response status: {status_line}"
+            ))
+        })?
+        .parse::<u16>()
+        .map_err(|_| {
+            TxnRuntimeError::RaftFailure(format!(
+                "invalid raft HTTP status in response: {status_line}"
+            ))
+        })?;
+    let body = response
+        .split_once("\r\n\r\n")
+        .or_else(|| response.split_once("\n\n"))
+        .map(|(_, body)| body)
+        .unwrap_or("");
+    Ok((status, body))
+}
+
+fn validate_committed_payload(
+    evidence: &TxnRaftCommitEvidence,
+    expected: &[u8],
+) -> Result<(), TxnRuntimeError> {
+    if evidence.committed_payload == expected {
+        return Ok(());
+    }
+    Err(TxnRuntimeError::RaftFailure(
+        "raft committed payload does not match transaction decision".to_string(),
+    ))
 }
 
 /// JSON-rendering helpers used by the `/txn/*` HTTP routes.
@@ -339,6 +513,7 @@ pub fn render_record_json(record: &TxnRuntimeRecord) -> String {
                 "logical": record.staging_at.logical,
             },
             "raft_index": record.raft_index,
+            "raft_transport": record.raft_transport,
             "intents": intents,
         })
     )
@@ -363,6 +538,7 @@ pub fn render_finalize_json(record: &TxnRuntimeRecord, decision: TxnFinalizeDeci
             "decision": finalize_decision_name(decision),
             "status": txn_status_name(record.status),
             "raft_index": record.raft_index,
+            "raft_transport": record.raft_transport,
             "intents": intents,
         })
     )
@@ -522,6 +698,7 @@ mod tests {
         let staged = runtime.stage(fixture_record()).expect("stage");
         assert_eq!(staged.status, TxnStatus::Staging);
         assert_eq!(staged.raft_index, 1);
+        assert_eq!(staged.raft_transport, "in_process");
         assert_eq!(runtime.records().len(), 1);
     }
 
@@ -596,6 +773,12 @@ mod tests {
         assert_eq!(micro.two_phase_commit_steps, 6);
         assert_eq!(micro.parallel_commit_steps, 2);
         assert!(micro.speedup() >= 3.0);
+    }
+
+    #[test]
+    fn http_raft_replication_requires_leader_address() {
+        let error = TxnRaftReplication::http_leader(" ").unwrap_err();
+        assert!(matches!(error, TxnRuntimeError::RaftFailure(_)));
     }
 
     #[test]
