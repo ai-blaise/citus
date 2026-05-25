@@ -6,6 +6,7 @@
 .PHONY: structured-log-ingestion-smoke
 .PHONY: operator-hypertable-live-smoke
 .PHONY: placement-generation-udf-contract-smoke
+.PHONY: sidecar-hlc-smoke
 .NOTPARALLEL: gate-close
 
 preflight-local:
@@ -316,6 +317,9 @@ run-hlc-canonical:
 
 run-hlc-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical
+
+sidecar-hlc-smoke:
+	@bash ci/ai-blaise/sidecar-hlc-smoke.sh
 
 build-sidecar-raft:
 	cargo check -p ai_blaise_citus_sidecar_raft --all-targets

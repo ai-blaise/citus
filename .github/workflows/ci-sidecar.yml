@@ -177,6 +177,8 @@ jobs:
         run: cargo check -p ai_blaise_citus_sidecar_hlc --all-targets
       - name: Test
         run: cargo test -p ai_blaise_citus_sidecar_hlc
+      - name: Run sidecar HLC smoke
+        run: bash ci/ai-blaise/sidecar-hlc-smoke.sh
 
   mcp:
     runs-on: ubuntu-latest

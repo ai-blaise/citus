@@ -92,6 +92,7 @@ CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 FDW_CREDENTIAL_ROTATION_SMOKE = ROOT / "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh"
 SCHEMA_DRIFT_LIVE_SMOKE = ROOT / "ci/ai-blaise/schema-drift-live-smoke.sh"
 SIDECAR_RAFT_SMOKE = ROOT / "ci/ai-blaise/sidecar-raft-smoke.sh"
+SIDECAR_HLC_SMOKE = ROOT / "ci/ai-blaise/sidecar-hlc-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
@@ -595,6 +596,7 @@ makefile = read(MAKEFILE)
 fdw_smoke = read(FDW_CREDENTIAL_ROTATION_SMOKE)
 schema_drift_smoke = read(SCHEMA_DRIFT_LIVE_SMOKE)
 sidecar_raft_smoke = read(SIDECAR_RAFT_SMOKE)
+sidecar_hlc_smoke = read(SIDECAR_HLC_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
 
@@ -645,6 +647,58 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S5 boundary phrase: {phrase}")
+
+if status_by_id.get("S9") != "production-ready":
+    fail("S9 must be Status: production-ready once live HLC follower-read gate evidence is wired")
+section_s9 = feature_section(docs, "S9")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/sidecar-hlc-smoke.sh",
+    "`ai_blaise_citus_sidecar_hlc serve`",
+    "/clock/tick",
+    "/clock/observe",
+    "/closed_ts",
+    "/follower_read",
+    "HTTP 409",
+    "unknown peers fail closed",
+    "MVCC snapshot execution",
+    "replica query routing",
+    "planner integration",
+):
+    if compact(phrase) not in compact(section_s9):
+        fail(f"S9 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "hlc_live_gate=passed",
+    "/clock/tick",
+    "/clock/observe",
+    "/closed_ts",
+    "/follower_read",
+    "reject_not_closed",
+    "unknown HLC peer",
+    "AI_BLAISE_HLC_PEERS",
+    "AI_BLAISE_HLC_MAX_OFFSET_MS",
+):
+    if phrase not in sidecar_hlc_smoke:
+        fail(f"sidecar-hlc-smoke.sh missing live HLC assertion: {phrase}")
+if "sidecar-hlc-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-hlc-smoke.sh for S9 production evidence")
+if "sidecar-hlc-smoke:" not in makefile or "ci/ai-blaise/sidecar-hlc-smoke.sh" not in makefile:
+    fail("Makefile.ai-blaise must expose sidecar-hlc-smoke target for S9 production evidence")
+for phrase in (
+    "S9 closed-timestamp follower-read gating is production-ready",
+    "`ai_blaise_citus_sidecar_hlc serve`",
+    "/clock/tick",
+    "/clock/observe",
+    "/closed_ts",
+    "/follower_read",
+    "HTTP 409",
+    "unknown peers fail closed",
+    "MVCC snapshot execution",
+    "replica query routing",
+    "planner integration",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing S9 boundary phrase: {phrase}")
 
 if status_by_id.get("F4") != "production-ready":
     fail("F4 must be Status: production-ready once live postgres_fdw rotation evidence is wired")

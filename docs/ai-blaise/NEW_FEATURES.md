@@ -1867,13 +1867,27 @@ planner invalidation, and operator-driven placement changes remain alpha.
 ### S9: Closed-Timestamp Follower Reads
 
 **Overlay**: `sidecar/hlc`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines hybrid logical clock timestamps, closed timestamp plans,
-and follower-read safety checks.
+**Summary**: Provides the bounded HLC sidecar closed-timestamp gate for
+follower reads: local clock ticks, peer clock-exchange observation,
+closed-timestamp derivation, `/closed_ts` publication, and fail-closed
+`/follower_read` serve/reject decisions.
+
+Production evidence: `ci/ai-blaise/sidecar-hlc-smoke.sh` starts the real
+`ai_blaise_citus_sidecar_hlc serve` process with a three-replica shard group,
+waits for `/readyz`, verifies the initial `/closed_ts`, advances the local
+clock through `/clock/tick`, merges a peer timestamp through `/clock/observe`,
+verifies the peer appears in `/closed_ts`, proves `/follower_read` serves an
+`AS OF` exactly at the closed timestamp, proves an `AS OF` newer than the
+closed timestamp is rejected with HTTP 409, and verifies unknown peers fail
+closed. The production-ready boundary is the sidecar closed-timestamp and
+follower-read gate only; MVCC snapshot execution, replica query routing,
+planner integration, stale-read SQL syntax, cross-region clock discipline, and
+Kubernetes reconciliation remain alpha.
 
 **Motivation**: Bounded-staleness reads need a shared clock and closed
 timestamp contract before replicas can serve `AS OF` queries.
@@ -1888,11 +1902,9 @@ reads.
 - In-source: `FEATURE: S9` in `sidecar/hlc/src/runtime.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- serve`
+- CI: `ci/ai-blaise/sidecar-hlc-smoke.sh`
 - CI: `ci/ai-blaise/topology-consensus-smoke.sh`
-- Current boundary: the sidecar now has deterministic peer clock-exchange,
-  closed-timestamp derivation, explicit follower-read serve/reject decisions,
-  `/closed_ts`, health, readiness, and metrics surfaces. MVCC snapshot
-  execution, replica routing, and stale-read planner integration remain alpha.
 
 ### S10: Schema-Based Tenancy
 
