@@ -26,6 +26,7 @@ Run the static gate before any image promotion or canary apply:
 
 ```bash
 make -f Makefile.ai-blaise upgrade-rollback-guardrails
+REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh
 ```
 
 The gate executes `ci/ai-blaise/upgrade-rollback-guardrails.sh`. It fails
@@ -42,9 +43,28 @@ closed when:
 - this runbook, release docs, image docs, Make target, or Dockerfile wiring stop
   referencing the gate.
 
-This is not production evidence for the full upstream Citus upgrade matrix. It
-is a fast guardrail that keeps local overlay transition contracts explicit while
-the full matrix and live canary remain release-gate evidence.
+The static guardrail is not production evidence for the full upstream Citus
+upgrade matrix. It keeps local overlay transition contracts explicit. The
+Docker-backed canary smoke above is the bounded D9 live evidence for the local
+companion SQL extension upgrade and rollback path; the broader upstream Citus
+upgrade matrix remains a separate release gate.
+
+## Live Companion SQL Canary Drill
+
+`ci/ai-blaise/canary-upgrade-rollback-smoke.sh` is the executable canary drill
+for the local companion SQL extension. It mounts the shipped
+`ai_blaise_citus.control`, `ai_blaise_citus--0.1.0.sql`,
+`ai_blaise_citus--0.1.0--0.1.1.sql`, and
+`ai_blaise_citus--0.1.1--0.1.0.sql` files into a real PostgreSQL extension
+directory, creates the extension at `0.1.0`, upgrades to `0.1.1`, records a
+canary event, downgrades to `0.1.0`, and asserts that the 0.1.1 event surface is
+removed. Release evidence must retain the smoke output row and the
+`pg_extension.extversion` observations before and after rollback.
+
+This smoke is intentionally local to the ai-blaise companion SQL surface. It
+does not replace upstream Citus `check-citus-upgrade`, mixed-version Citus
+upgrade tests, or production canary traffic observation for a release
+candidate.
 
 ## SQL Preflight
 
@@ -108,8 +128,9 @@ smoked, and recorded for the exact release candidate.
 1. Fetch upstream Citus and re-run the patch series gate; integrated TS6
    patches should either apply cleanly to the upstream-like tree or reverse
    cleanly when already present.
-2. Run `make -f Makefile.ai-blaise upgrade-rollback-guardrails`; treat any
-   failure as a release blocker, not a warning.
+2. Run `make -f Makefile.ai-blaise upgrade-rollback-guardrails` and
+   `REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh`;
+   treat any failure as a release blocker, not a warning.
 3. If Bundle1 is promoted, run the promoted operand-image build/initdb smoke
    for bundled, optional, and hard-blocked extension validation. While Bundle1
    remains alpha, run the static image contract and SQL runtime smokes, but do

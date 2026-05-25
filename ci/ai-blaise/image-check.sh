@@ -205,6 +205,8 @@ grep -Fq "COPY images/citus-pg-overlay/extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql" "${dockerfile}"
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm.control" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql" "${dockerfile}"
@@ -475,13 +477,17 @@ grep -Fq 'psql -h 127.0.0.1 -p "${pool_port}"' "${pool_proxy_smoke}"
 
 for file in \
   "${image_dir}/extensions/ai_blaise_citus.control" \
-  "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"; do
+  "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql" \
+  "${image_dir}/extensions/ai_blaise_citus--0.1.0--0.1.1.sql" \
+  "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.0.sql"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing companion SQL extension artifact: ${file}" >&2
     exit 1
   fi
 done
 
+grep -Fq "CREATE TABLE companion_internal.extension_upgrade_events" "${image_dir}/extensions/ai_blaise_citus--0.1.0--0.1.1.sql"
+grep -Fq "DROP TABLE IF EXISTS companion_internal.extension_upgrade_events" "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_feature_status()" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_distribute_hypertable_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"

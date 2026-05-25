@@ -497,6 +497,15 @@ more production-ready than the artifacts justified.
   calls, GPU inference, production-scale queue throughput, tenant billing
   integration, Kubernetes admission/webhook enforcement for every provider
   model, or broad semantic-search correctness.
+- D9 canary upgrade runbook is now production-ready for the local companion SQL
+  extension upgrade/rollback path. `canary-upgrade-rollback-smoke.sh` starts a
+  real PostgreSQL container, installs `ai_blaise_citus` at `0.1.0`, upgrades to
+  `0.1.1`, records `companion_internal.extension_upgrade_events`, rolls back to
+  `0.1.0`, and proves the 0.1.1 event table and recorder are absent after
+  rollback. `upgrade-rollback-guardrails.sh` keeps the reverse manifest row,
+  Dockerfile packaging, runbook, release docs, Make target, and workflow wiring
+  fail-closed. This does not claim full upstream Citus upgrade-matrix evidence,
+  operand image release certification, or human production promotion.
 - D10 release hardening is now production-ready for the fail-closed runbook and
   release-record contract. `release-hardening-runbook-smoke.sh` executes the
   companion `run-release-hardening-canonical` report, verifies 19 release gates

@@ -27,3 +27,7 @@ jobs:
         run: bash ci/ai-blaise/runbook-command-check.sh
       - name: Check release hardening runbook
         run: bash ci/ai-blaise/release-hardening-runbook-smoke.sh
+      - name: Run canary upgrade rollback smoke
+        env:
+          REQUIRE_DOCKER: "1"
+        run: bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh

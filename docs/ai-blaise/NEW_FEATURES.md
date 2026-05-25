@@ -8144,29 +8144,47 @@ catalog.
 
 ### D9: Canary Upgrade Runbook
 
-**Overlay**: `companion/src/ops_contracts.rs` and
-`docs/ai-blaise/RUNBOOKS/upgrade.md`
-**Status**: alpha
+**Overlay**: `companion/src/ops_contracts.rs`,
+`docs/ai-blaise/RUNBOOKS/upgrade.md`, and
+`images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Tracks the canary-upgrade rehearsal artifact as a required
-operations contract and adds a fail-closed static guard for companion extension
-transition manifests, bounded Citus upgrade/downgrade SQL, and version-skew
-rollback wording.
+operations contract, validates the local companion extension transition
+manifest, and now executes a live reversible PostgreSQL canary drill for the
+`ai_blaise_citus` SQL extension.
 
-**Current boundary**: The operations runner verifies the runbook contract and
-`ci/ai-blaise/upgrade-rollback-guardrails.sh` verifies static artifacts, but an
-automated canary cluster upgrade with rollback evidence is still alpha.
+Production evidence: VM proof run
+`REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh` starts a
+real `postgres:17` container with the shipped control, install, upgrade, and
+downgrade SQL files mounted into the PostgreSQL extension directory. The smoke
+creates `ai_blaise_citus` at `0.1.0`, runs `ALTER EXTENSION ai_blaise_citus
+UPDATE TO '0.1.1'`, records a canary event through
+`companion_internal.record_extension_upgrade_event`, verifies
+`companion_extension_upgrade_events`, rolls back with `ALTER EXTENSION
+ai_blaise_citus UPDATE TO '0.1.0'`, and proves the 0.1.1 event table and
+recorder are removed after rollback. `ci/ai-blaise/upgrade-rollback-guardrails.sh`
+keeps the manifest, reverse SQL, Dockerfile packaging, Make target, release
+docs, and runbook wiring fail-closed. This production-ready boundary is the
+local companion-extension canary upgrade/rollback path and runbook gate; it is
+not full upstream Citus upgrade-matrix evidence, does not certify an operand
+image release, and does not perform human production promotion.
 
 **Citus comparison**: Vanilla Citus does not include this canary upgrade
-runbook.
+runbook or ai-blaise companion-extension rollback contract.
 
 **References**:
 
 - In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
+- SQL transition: `FEATURE: D9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql`
+- SQL rollback: `FEATURE: D9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql`
 - CI: `ci/ai-blaise/upgrade-rollback-guardrails.sh`
+- CI: `ci/ai-blaise/canary-upgrade-rollback-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`

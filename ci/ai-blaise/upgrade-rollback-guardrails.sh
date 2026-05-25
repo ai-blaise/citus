@@ -21,6 +21,7 @@ AI_EXTENSION_DIR = ROOT / "images/citus-pg-overlay/extensions"
 AI_MANIFEST = AI_EXTENSION_DIR / "ai_blaise_citus-upgrade-manifest.tsv"
 AI_OVERLAY_CONTROL = AI_EXTENSION_DIR / "ai_blaise_citus.control"
 AI_COMPANION_CONTROL = ROOT / "companion/ai_blaise_citus.control"
+CANARY_UPGRADE_SMOKE = ROOT / "ci/ai-blaise/canary-upgrade-rollback-smoke.sh"
 CITUS_CONTROL = ROOT / "src/backend/distributed/citus.control"
 CITUS_BOUNDED_FROM = "14.0-1"
 
@@ -222,16 +223,38 @@ require_contains(ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md", "ALTER EXTENSION a
 require_contains(ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md", "version-skew")
 require_contains(ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md", "PITR")
 require_contains(ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md", "not production evidence")
+require_contains(ROOT / "docs/ai-blaise/RUNBOOKS/upgrade.md", "canary-upgrade-rollback-smoke.sh")
 require_contains(ROOT / "docs/ai-blaise/RELEASING.md", "upgrade-rollback-guardrails")
+require_contains(ROOT / "docs/ai-blaise/RELEASING.md", "canary-upgrade-rollback-smoke")
+
+
+require_file(CANARY_UPGRADE_SMOKE)
+for phrase in (
+    "FEATURE: D9",
+    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.1'",
+    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.0'",
+    "companion_internal.record_extension_upgrade_event",
+    "companion_extension_upgrade_events",
+    "version_after_rollback",
+):
+    require_contains(CANARY_UPGRADE_SMOKE, phrase)
+require_contains(AI_EXTENSION_DIR / "ai_blaise_citus--0.1.0--0.1.1.sql", "CREATE TABLE companion_internal.extension_upgrade_events")
+require_contains(AI_EXTENSION_DIR / "ai_blaise_citus--0.1.1--0.1.0.sql", "DROP TABLE IF EXISTS companion_internal.extension_upgrade_events")
 
 makefile = read(ROOT / "Makefile.ai-blaise")
 if "upgrade-rollback-guardrails:" not in makefile:
     fail("Makefile.ai-blaise must expose upgrade-rollback-guardrails")
 if "ci/ai-blaise/upgrade-rollback-guardrails.sh" not in makefile:
     fail("Makefile.ai-blaise target must call ci/ai-blaise/upgrade-rollback-guardrails.sh")
-gate_close = next((line for line in makefile.splitlines() if line.startswith("gate-close:")), "")
+if "canary-upgrade-rollback-smoke:" not in makefile:
+    fail("Makefile.ai-blaise must expose canary-upgrade-rollback-smoke")
+if "ci/ai-blaise/canary-upgrade-rollback-smoke.sh" not in makefile:
+    fail("Makefile.ai-blaise target must call ci/ai-blaise/canary-upgrade-rollback-smoke.sh")
+gate_close = "\n".join(line for line in makefile.splitlines() if line.startswith("gate-close:"))
 if "upgrade-rollback-guardrails" not in gate_close:
     fail("gate-close must include upgrade-rollback-guardrails")
+if "canary-upgrade-rollback-smoke" not in gate_close:
+    fail("gate-close must include canary-upgrade-rollback-smoke")
 
 print(
     "upgrade_rollback_guardrails\t"

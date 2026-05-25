@@ -18,6 +18,7 @@ upgrade/rollback compatibility guard must also be green for the exact commit:
 
 ```bash
 make -f Makefile.ai-blaise upgrade-rollback-guardrails
+REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh
 ```
 
 Benchmark scaffolds are also local-only. Under `gate-close`, scaffold JSON
@@ -93,5 +94,7 @@ Release artifacts must include:
   matching the shipped companion SQL files
 - `make -f Makefile.ai-blaise upgrade-rollback-guardrails` output for the
   release commit
+- `REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh` output
+  showing the companion SQL extension upgrade and rollback versions
 - benchmark JSON artifacts validated against `benchmarks/performance-evidence-thresholds.json`
 - production-readiness audit evidence for every release-scope custom feature
