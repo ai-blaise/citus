@@ -45,7 +45,8 @@
 use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
     canonical_cohabit_detection_report, canonical_domain_contracts_report,
-    canonical_extension_catalog_execution_report, canonical_operations_readiness_report,
+    canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
+    canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
     canonical_plan_runtime_report, render_all_views,
 };
 use std::env;
@@ -65,6 +66,12 @@ fn main() {
         }
         [command] if command == "run-advanced-planner-runtime-canonical" => {
             run_advanced_planner_runtime_canonical();
+        }
+        [command] if command == "run-fdw-credential-rotation-canonical" => {
+            run_fdw_credential_rotation_canonical();
+        }
+        [command] if command == "run-fdw-credential-rotation-sql-canonical" => {
+            run_fdw_credential_rotation_sql_canonical();
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();
@@ -138,6 +145,36 @@ fn run_advanced_planner_runtime_canonical() {
         report.deterministic_boundaries,
         report.research_guard_boundaries,
     );
+}
+
+fn run_fdw_credential_rotation_canonical() {
+    let report = canonical_fdw_credential_rotation_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: FDW credential rotation report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\tserver\tmapping_user\tvalidation_table\tstatements\tdisconnect_calls\tuses_secret_variable\tplan_secret_literals"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.server_name,
+        report.mapping_user,
+        report.validation_table,
+        report.statement_count,
+        report.disconnect_calls,
+        report.uses_secret_variable,
+        report.plan_secret_literals,
+    );
+}
+
+fn run_fdw_credential_rotation_sql_canonical() {
+    let sql_plan = canonical_fdw_credential_rotation_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: FDW credential rotation SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
 }
 
 fn run_cohabit_detection_canonical() {
@@ -257,7 +294,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

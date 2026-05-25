@@ -6,6 +6,7 @@ pub mod citus_timescale;
 pub mod db_doctor;
 pub mod domain_contracts;
 pub mod extension_catalog;
+pub mod fdw_rotation;
 pub mod feature_status;
 pub mod geo_distributed;
 pub mod graph_bridge;
@@ -59,6 +60,11 @@ pub use extension_catalog::{
     validate_extension_contracts, CohabitExtensionDetectionReport, CohabitExtensionObservation,
     CohabitExtensionRole, CohabitExtensionSpec, ExtensionCatalogError,
     ExtensionCatalogExecutionReport, ExtensionCatalogSummary, ExtensionContract, ExtensionTier,
+};
+pub use fdw_rotation::{
+    canonical_fdw_credential_rotation_plan, canonical_fdw_credential_rotation_report,
+    canonical_fdw_credential_rotation_sql_plan, FdwCredentialRotationPlan,
+    FdwCredentialRotationReport, FdwCredentialRotationSqlPlan, FdwRotationError, FdwUserMapping,
 };
 pub use feature_status::{
     companion_feature_statuses, validate_companion_feature_statuses, FeatureStatus,

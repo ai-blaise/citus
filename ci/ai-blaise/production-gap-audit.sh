@@ -89,6 +89,9 @@ CITUSCTL_DEV_LIFECYCLE_SMOKE = ROOT / "ci/ai-blaise/citusctl-dev-lifecycle-smoke
 CITUSCTL_K8S_APPLY_LIVE_SMOKE = ROOT / "ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh"
 CITUSCTL_TIME_TRAVEL_INTENT_SMOKE = ROOT / "ci/ai-blaise/citusctl-time-travel-intent-smoke.sh"
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
+FDW_CREDENTIAL_ROTATION_SMOKE = ROOT / "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh"
+COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
+COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -587,6 +590,65 @@ sql_extension = read(SQL_EXTENSION)
 ai_sql_smoke = read(AI_SQL_CONTRACT_SMOKE)
 ci_image_workflow = read(CI_IMAGE_WORKFLOW)
 makefile = read(MAKEFILE)
+fdw_smoke = read(FDW_CREDENTIAL_ROTATION_SMOKE)
+companion_contracts = read(COMPANION_CONTRACTS)
+companion_workflow = read(COMPANION_WORKFLOW)
+
+if status_by_id.get("F4") != "production-ready":
+    fail("F4 must be Status: production-ready once live postgres_fdw rotation evidence is wired")
+section_f4 = feature_section(docs, "F4")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh",
+    "old_password_rejected=true",
+    "new_password_succeeded=true",
+    "plan_secret_literals=false",
+    "postgres_fdw_disconnect_all()",
+    "Managed secret backends",
+    "Kubernetes `ExternalSecret`",
+):
+    if compact(phrase) not in compact(section_f4):
+        fail(f"F4 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "old_password_rejected=true",
+    "new_password_succeeded=true",
+    "plan_secret_literals=false",
+    "postgres_fdw_disconnect_all",
+    "ALTER USER MAPPING FOR CURRENT_USER",
+    "fdw_new_password",
+    "CREATE EXTENSION postgres_fdw",
+):
+    if phrase not in fdw_smoke:
+        fail(f"fdw-credential-rotation-live-smoke.sh missing live assertion: {phrase}")
+for phrase in (
+    "run-fdw-credential-rotation-canonical",
+    "run-fdw-credential-rotation-sql-canonical",
+    "canonical_fdw_credential_rotation_report",
+    "canonical_fdw_credential_rotation_sql_plan",
+):
+    if phrase not in companion_contracts:
+        fail(f"companion_contracts missing FDW rotation command: {phrase}")
+for phrase in (
+    "fdw-credential-rotation-live-smoke:",
+    "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh",
+    "gate-close:",
+    "fdw-credential-rotation-live-smoke",
+):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire FDW rotation smoke: {phrase}")
+if "fdw-credential-rotation-live-smoke.sh" not in companion_workflow:
+    fail("ci-companion workflow must run fdw-credential-rotation-live-smoke.sh")
+for phrase in (
+    "F4 production evidence",
+    "old_password_rejected=true",
+    "new_password_succeeded=true",
+    "plan_secret_literals=false",
+    "managed secret backend",
+    "Kubernetes `ExternalSecret`",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing F4 boundary phrase: {phrase}")
+
 for phrase in (
     "CREATE TABLE IF NOT EXISTS companion_internal.ai_provider_bindings",
     "CREATE TABLE IF NOT EXISTS companion_internal.semantic_catalog_objects",

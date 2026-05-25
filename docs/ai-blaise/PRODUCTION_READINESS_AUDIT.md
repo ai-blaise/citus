@@ -961,6 +961,20 @@ cut-over, DNS/Service retargeting, or production branch promotion.
 
 C4/C5 production evidence from 2026-05-24 promotes only the bounded conflict-policy metadata and taxonomy surface. `REQUIRE_DOCKER=1 ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` boots the live Citus overlay image through `CONFLICT_POLICY_IMAGE`, runs `run-conflict-policy-runtime-canonical`, applies the generated SQL, and verifies `conflict_policy_live_row` rows for `accounts-lww` (`update_origin_differs`/`apply_remote_if_newer`) and `accounts-merge` (`update_exists`/`merge_function` with `public.merge_remote_into_local`) plus `replication_conflict_status`. The same evidence is paired with `ci/ai-blaise/companion-runtime-depth-a-smoke.sh`, where `conflict_classes` is `7` and audit SQL targets `companion.replication_conflict_audit`. This does not claim live pgactive conflict traffic, does not claim live Spock apply traffic, and does not prove multi-node active-active replication, PGC1/PGC2 runtime activation, remote conflict replay, or a production replication apply worker.
 
+F4 production evidence from 2026-05-25 promotes only bounded `postgres_fdw`
+credential rotation. `REQUIRE_DOCKER=1 ci/ai-blaise/fdw-credential-rotation-live-smoke.sh`
+starts two live `postgres:17-bookworm` containers, creates a real
+`postgres_fdw` foreign server and user mapping, proves the original mapping can
+read a remote table, changes the remote role password, proves the stale mapping
+is rejected with `old_password_rejected=true`, executes the companion-rendered
+`ALTER USER MAPPING` plan, and proves the rotated mapping reads successfully
+with `new_password_succeeded=true`. The generated SQL uses
+`:'fdw_new_password'`, calls `postgres_fdw_disconnect_all()`, and is checked
+with `plan_secret_literals=false`. This does not claim managed secret backend
+reconciliation, Kubernetes `ExternalSecret` updates, application connection
+draining outside `postgres_fdw`, cross-region FDW topology changes, or
+multi-tenant secret distribution.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

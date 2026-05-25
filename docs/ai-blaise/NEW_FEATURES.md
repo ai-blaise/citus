@@ -8195,24 +8195,44 @@ federation.
 
 ### F4: postgres_fdw Credential Rotation
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/fdw_rotation.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `postgres_fdw`
 
-**Summary**: Records the server and secret-reference inputs needed for a safe
-FDW credential rotation path.
+**Summary**: Renders a secret-safe `postgres_fdw` user-mapping credential
+rotation plan and proves it against a live local PostgreSQL-to-PostgreSQL FDW
+link.
 
-**Current boundary**: Contract validation is executable; actual credential
-rollover, connection draining, and foreign server reconciliation remain alpha.
+**Current boundary**: Production-ready for rotating one existing
+`postgres_fdw` user mapping by rendering a parameterized `ALTER USER MAPPING`
+statement, disconnecting cached FDW connections with
+`postgres_fdw_disconnect_all()`, and validating the new credential through a
+foreign table query. Managed secret backends, Kubernetes `ExternalSecret`
+reconciliation, application connection draining outside `postgres_fdw`,
+cross-region FDW topology changes, and multi-tenant secret distribution are not
+claimed by this feature.
+
+Production evidence: `REQUIRE_DOCKER=1 ci/ai-blaise/fdw-credential-rotation-live-smoke.sh`
+starts two `postgres:17-bookworm` containers, creates a real `postgres_fdw`
+foreign server, proves the original mapping can read the remote table, changes
+the remote password, proves the stale mapping is rejected
+(`old_password_rejected=true`), executes the companion-rendered SQL plan, proves
+the rotated mapping succeeds (`new_password_succeeded=true`), and verifies the
+rendered plan uses a psql secret variable with `plan_secret_literals=false`.
 
 **Citus comparison**: Vanilla Citus does not prescribe FDW secret rotation.
 
 **References**:
 
 - In-source: `FEATURE: F4` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: F4` in `companion/src/fdw_rotation.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-fdw-credential-rotation-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-fdw-credential-rotation-sql-canonical`
+- CI: `ci/ai-blaise/fdw-credential-rotation-live-smoke.sh`
+- Runbook: `docs/ai-blaise/RUNBOOKS/fdw-credential-rotation.md`
 
 ### L7: Citus Columnar Analytical Path
 
