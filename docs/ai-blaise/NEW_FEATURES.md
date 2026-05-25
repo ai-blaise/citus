@@ -2069,7 +2069,7 @@ tenant-level online migration plan.
 ### R1: Cold Tier On Iceberg And Parquet
 
 **Overlay**: `sidecar/coldtier`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_lake`, `pg_parquet`
@@ -2078,14 +2078,19 @@ tenant-level online migration plan.
 storage on object stores, plus runnable canonical move-plan and runtime
 emitters.
 
-Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+Production evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
 `cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical`,
 `cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
-`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic
-local `file://` cold-layer validation and accounting: layer URIs must stay below the shard object
-URI, paths fail closed on traversal/relative/space-bearing forms, and the runtime reports image and
-delta layer bytes materialized. Live S3/GCS/Azure writes, pageserver deployment, and Citus cold-read
-serving remain alpha.
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`,
+with `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh` wired into CI and `gate-close`. The
+production-ready boundary is deterministic local `file://` cold-tier artifact materialization:
+layer URIs must stay below the shard object URI, paths fail closed on traversal/relative/space-bearing
+forms, the runtime writes canonical image and delta Parquet artifacts under `/tmp/ai-blaise-coldtier`,
+verifies `coldtier_local_file_materialization=passed`, `materialized_artifact_count=4`,
+`materialized_bytes=1408`, `materialized_layer_files=2`, `object_store_io_attempted=false`, and
+`citus_cold_read_serving=false`, and rejects non-file materialization. S3/GCS/Azure object-store
+writes, pageserver deployment, Citus cold-read serving, distributed query planner integration,
+operator/Kubernetes scheduling, and production object-store lifecycle remain alpha.
 
 **Motivation**: Cold shard data needs a predictable object layout before
 operators can evict low-temperature shards from the hot tier.
@@ -2099,6 +2104,8 @@ tier.
 - In-source: `FEATURE: R1` in `sidecar/coldtier/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`
+- CI: `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`
 
 ### R2: Scale-To-Zero Compute
 
@@ -2160,7 +2167,7 @@ container.
 ### R5: Hot/Warm/Cold Tier Policy Job
 
 **Overlay**: `sidecar/coldtier`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2169,12 +2176,17 @@ container.
 plans between hot, warm, and cold tiers, then accounts for canonical runtime
 move execution.
 
-Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
-`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
-`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic policy
-planning and local runtime accounting: invalid threshold order fails closed, canonical hot-to-cold
-movement emits one move, and runtime counters record moved shards, materialized files, bytes written,
-and simulated cold-route read counters. Operator scheduling, live shard relocation, and production Citus cold reads remain alpha.
+Production evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The production-ready boundary is deterministic
+policy planning plus local `file://` runtime materialization: invalid threshold order fails closed,
+canonical hot-to-cold movement emits one move, and runtime counters record moved shards,
+`materialized_artifact_count=4`, `materialized_layer_files=2`, `materialized_bytes=1408`,
+`planner_routes_refreshed=1`,
+`cold_tier_reads=1`, `object_store_io_attempted=false`, and `citus_cold_read_serving=false` for
+the bounded local sidecar cycle. Operator scheduling, live shard relocation, distributed query
+planner execution, S3/GCS/Azure object-store IO, pageserver deployment, and Citus cold-read serving remain alpha.
 
 **Motivation**: Tiering policy needs deterministic move plans before an
 operator or sidecar starts relocating shard data.
@@ -2187,6 +2199,8 @@ movement.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R5` in `sidecar/coldtier/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`
+- CI: `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`
 
 ### R7: REPACK CONCURRENTLY Adoption
 
@@ -2251,7 +2265,7 @@ after execution.
 ### R9: Cross-Tier Query Planner Input
 
 **Overlay**: `sidecar/coldtier`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2260,12 +2274,17 @@ after execution.
 planner paths that span hot, warm, and cold storage, with runtime planner-route
 refresh accounting.
 
-Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
-`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
-`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic route
-metadata publication only: the runtime emits shard id, table, storage tier, object URI, format, route
-refresh counts, and simulated cold-route read counters for local `file://` materializations. Companion planner
-integration and production Citus route changes remain alpha.
+Production evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The production-ready boundary is deterministic route
+metadata publication plus local `file://` materialized artifacts: the runtime emits shard id, table,
+storage tier, object URI, format, artifact URIs, `planner_routes_refreshed=1`, `cold_tier_reads=1`,
+`local_file_materialized=true`, `materialized_artifact_count=4`, `materialized_bytes=1408`,
+`object_store_io_attempted=false`, and `citus_cold_read_serving=false`.
+The `cold_tier_reads` value is a sidecar accounting counter, not Citus executor evidence. Companion
+planner integration, distributed query planner integration, S3/GCS/Azure object-store IO, pageserver
+deployment, Citus cold-read serving, production Citus route changes, and Kubernetes traffic remain alpha.
 
 **Motivation**: Cross-tier planning needs machine-readable cold-shard location
 and format metadata before the companion planner can combine tiers.
@@ -2278,6 +2297,8 @@ cold shard layers.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R9` in `sidecar/coldtier/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`
+- CI: `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`
 
 ### R10: TLS Session Ticket Reuse In Pool
 
@@ -3920,7 +3941,7 @@ objects.
 ### Search8: Search-Aware Cold Tier
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/coldtier`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -3929,12 +3950,17 @@ objects.
 cold-tier data can preserve search semantics, and materializes cold-tier
 Tantivy/LanceDB search artifacts in the runtime report.
 
-Alpha hardening evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
-`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`, and
-`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The hardened alpha boundary is deterministic search
-artifact publication for local cold-tier simulation: index columns must be SQL identifiers, index URIs
-must be typed Tantivy/LanceDB/index paths, and the runtime reports materialized index URIs plus search
-index bytes. Actual Tantivy/LanceDB query serving remains alpha.
+Production evidence: VM proof runs `cargo test -q -p ai_blaise_citus_sidecar_coldtier --all-targets`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`,
+`cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`, and
+`ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`. The production-ready boundary is deterministic
+search artifact materialization for local `file://` cold-tier artifacts: index columns must be SQL
+identifiers, index URIs must be typed Tantivy/LanceDB/index paths, the runtime writes the two search
+artifact files under `/tmp/ai-blaise-coldtier/indexes`, and the smoke verifies
+`search_indexes_materialized=2`, `materialized_artifact_count=4`, `materialized_bytes=1408`,
+`object_store_io_attempted=false`, and `citus_cold_read_serving=false`. Real Tantivy/LanceDB index
+construction, real Tantivy/LanceDB query execution, Citus query fanout, S3/GCS/Azure object-store IO,
+pageserver deployment, and Citus cold-read serving remain alpha.
 
 **Motivation**: Cold-tier movement should not discard full-text or hybrid
 search availability.
@@ -3948,6 +3974,8 @@ mirrors.
 - In-source: `FEATURE: Search8` in `sidecar/shared/src/contracts.rs`
 - In-source: `FEATURE: Search8` in `sidecar/coldtier/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_coldtier -- run-local-file-materialization-canonical`
+- CI: `ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh`
 
 ### Search9: Search Reranker UDF Plan
 

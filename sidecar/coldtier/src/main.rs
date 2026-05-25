@@ -5,7 +5,7 @@
 
 use ai_blaise_citus_sidecar_coldtier::{
     canonical_cold_tier_plan, canonical_cold_tier_runtime_report, canonical_move_plans,
-    ColdTierFormat, StorageTier,
+    materialize_file_artifacts, ColdTierFormat, StorageTier,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -25,6 +25,11 @@ fn main() {
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["run-local-file-materialization-canonical"] {
+        run_local_file_materialization_canonical();
         return;
     }
 
@@ -118,9 +123,29 @@ fn run_runtime_canonical() {
     }
 }
 
+fn run_local_file_materialization_canonical() {
+    let report = canonical_cold_tier_runtime_report().unwrap_or_else(|error| {
+        eprintln!("coldtier: canonical runtime failed: {error}");
+        process::exit(1);
+    });
+    let materialized = materialize_file_artifacts(&report).unwrap_or_else(|error| {
+        eprintln!("coldtier: local file materialization failed: {error}");
+        process::exit(1);
+    });
+    println!("artifact_count\tbytes_written\tfile_paths");
+    println!(
+        "{}\t{}\t{}",
+        materialized.artifact_count,
+        materialized.bytes_written,
+        materialized.file_paths.join(",")
+    );
+}
+
 fn print_usage() {
-    println!("usage: coldtier [serve|run-canonical|run-runtime-canonical]");
-    println!("runs deterministic canonical cold-tier plan/runtime reports and emits TSV");
+    println!("usage: coldtier [serve|run-canonical|run-runtime-canonical|run-local-file-materialization-canonical]");
+    println!(
+        "runs deterministic canonical cold-tier plan/runtime/materialization reports and emits TSV"
+    );
 }
 
 fn run_server(component: &str, default_addr: &str) {

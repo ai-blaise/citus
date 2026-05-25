@@ -38,6 +38,9 @@ PERF_CHECK = ROOT / "ci/ai-blaise/performance-evidence-check.sh"
 MAKEFILE = ROOT / "Makefile.ai-blaise"
 SIDECAR_WORKFLOW = ROOT / ".github/workflows/ci-sidecar.yml"
 SIDECAR_API_SMOKE = ROOT / "ci/ai-blaise/sidecar-api-runtime-smoke.sh"
+SIDECAR_COLDTIER_SMOKE = ROOT / "ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh"
+SIDECAR_COLDTIER_LIB = ROOT / "sidecar/coldtier/src/lib.rs"
+SIDECAR_COLDTIER_MAIN = ROOT / "sidecar/coldtier/src/main.rs"
 SIDECAR_CONTROLLER_LIVE_SMOKE = ROOT / "ci/ai-blaise/sidecar-controller-live-smoke.sh"
 SIDECAR_SHARED_README = ROOT / "sidecar/shared/README.md"
 SIDECAR_CDC_SMOKE = ROOT / "ci/ai-blaise/sidecar-cdc-smoke.sh"
@@ -239,6 +242,89 @@ for feature_id in ("MR3", "MR5", "MR9"):
         fail(f"{feature_id} must remain alpha until live multi-region runtime evidence exists")
 
 audit_compact = compact(audit)
+
+sidecar_coldtier_smoke = read(SIDECAR_COLDTIER_SMOKE)
+sidecar_coldtier_lib = read(SIDECAR_COLDTIER_LIB)
+sidecar_coldtier_main = read(SIDECAR_COLDTIER_MAIN)
+coldtier_makefile_text = read(MAKEFILE)
+sidecar_workflow = read(SIDECAR_WORKFLOW)
+
+for feature_id in ("R1", "R5", "R9", "Search8"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} cold-tier local file materialization must be production-ready")
+    section = compact(feature_section(docs, feature_id))
+    for phrase in (
+        "Production evidence:",
+        "ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh",
+        "run-local-file-materialization-canonical",
+        "local `file://`",
+        "materialized_artifact_count=4",
+        "materialized_bytes=1408",
+        "object_store_io_attempted=false",
+        "citus_cold_read_serving=false",
+        "S3/GCS/Azure object-store",
+        "pageserver deployment",
+        "Citus cold-read serving",
+    ):
+        if compact(phrase) not in section:
+            fail(f"{feature_id} docs lost cold-tier production boundary phrase: {phrase}")
+
+for phrase in (
+    "run-local-file-materialization-canonical",
+    "coldtier_local_file_materialization=passed",
+    "local_file_materialized=true",
+    "materialized_artifact_count=4",
+    "materialized_bytes=1408",
+    "materialized_layer_files=2",
+    "search_indexes_materialized=2",
+    "planner_routes_refreshed=1",
+    "cold_tier_reads=1",
+    "object_store_io_attempted=false",
+    "citus_cold_read_serving=false",
+    "/tmp/ai-blaise-coldtier/events/42/image.parquet",
+):
+    if phrase not in sidecar_coldtier_smoke:
+        fail(f"sidecar-coldtier-runtime-smoke.sh lost local materialization assertion: {phrase}")
+
+for phrase in (
+    "materialize_file_artifacts",
+    "ColdTierMaterializationReport",
+    "UnsupportedMaterializationUri",
+    "materialization supports only local file:// artifact URIs",
+    "file://",
+):
+    if phrase not in sidecar_coldtier_lib:
+        fail(f"sidecar/coldtier/src/lib.rs lost local materialization code: {phrase}")
+for phrase in (
+    "run-local-file-materialization-canonical",
+    "materialize_file_artifacts",
+):
+    if phrase not in sidecar_coldtier_main:
+        fail(f"sidecar/coldtier/src/main.rs lost local materialization command: {phrase}")
+for phrase in (
+    "sidecar-coldtier-runtime-smoke:",
+    "ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh",
+    "gate-close:",
+    "sidecar-coldtier-runtime-smoke",
+):
+    if phrase not in coldtier_makefile_text:
+        fail(f"Makefile.ai-blaise must wire cold-tier materialization smoke: {phrase}")
+if "sidecar-coldtier-runtime-smoke.sh" not in sidecar_workflow:
+    fail("ci-sidecar workflow must run sidecar-coldtier-runtime-smoke.sh")
+for phrase in (
+    "R1/R5/R9/Search8 cold-tier local file materialization is production-ready",
+    "local `file://` runtime",
+    "coldtier_local_file_materialization=passed",
+    "local_file_materialized=true",
+    "materialized_artifact_count=4",
+    "materialized_bytes=1408",
+    "search_indexes_materialized=2",
+    "object_store_io_attempted=false",
+    "citus_cold_read_serving=false",
+    "real Tantivy/LanceDB query execution",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing cold-tier boundary phrase: {phrase}")
 
 for pattern in (
     r"current feature inventory contains\s+\d+\s+source\s+`feature:`\s+markers",

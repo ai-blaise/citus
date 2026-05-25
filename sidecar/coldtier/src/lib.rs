@@ -7,6 +7,9 @@
 
 use std::error::Error;
 use std::fmt;
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ColdTierPlan {
@@ -179,6 +182,8 @@ pub enum ColdTierError {
     InvalidUriPath(&'static str),
     InvalidTierThresholds,
     MissingRequiredField(&'static str),
+    UnsupportedMaterializationUri(String),
+    Io(String),
 }
 
 impl fmt::Display for ColdTierError {
@@ -202,11 +207,22 @@ impl fmt::Display for ColdTierError {
                 write!(formatter, "tier thresholds must satisfy hot > warm > cold")
             }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::UnsupportedMaterializationUri(uri) => write!(
+                formatter,
+                "materialization supports only local file:// artifact URIs, got {uri}"
+            ),
+            Self::Io(error) => write!(formatter, "{error}"),
         }
     }
 }
 
 impl Error for ColdTierError {}
+
+impl From<std::io::Error> for ColdTierError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error.to_string())
+    }
+}
 
 fn validate_required(field: &'static str, value: &str) -> Result<(), ColdTierError> {
     if value.trim().is_empty() {
@@ -268,6 +284,7 @@ fn validate_object_uri(field: &'static str, value: &str) -> Result<(), ColdTierE
         || path.contains(' ')
         || path.contains("//")
         || path.contains('\0')
+        || path.chars().any(|ch| ch.is_ascii_control())
     {
         return Err(ColdTierError::InvalidUriPath(field));
     }
@@ -350,6 +367,79 @@ pub struct ColdTierRuntimeReport {
     pub search: Option<SearchIndexMaterialization>,
     pub artifacts: Vec<ColdTierArtifact>,
     pub state: ColdTierRuntimeState,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ColdTierMaterializationReport {
+    pub artifact_count: u64,
+    pub bytes_written: u64,
+    pub file_paths: Vec<String>,
+}
+
+pub fn materialize_file_artifacts(
+    report: &ColdTierRuntimeReport,
+) -> Result<ColdTierMaterializationReport, ColdTierError> {
+    let mut materialized = ColdTierMaterializationReport {
+        artifact_count: 0,
+        bytes_written: 0,
+        file_paths: Vec::new(),
+    };
+
+    for artifact in &report.artifacts {
+        let path = file_path_from_uri(&artifact.uri)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        write_deterministic_artifact(&path, artifact)?;
+        let bytes_written = fs::metadata(&path)?.len();
+        if bytes_written != artifact.bytes {
+            return Err(ColdTierError::Io(format!(
+                "materialized artifact {} has {} bytes, expected {}",
+                artifact.uri, bytes_written, artifact.bytes
+            )));
+        }
+        materialized.artifact_count += 1;
+        materialized.bytes_written += bytes_written;
+        materialized
+            .file_paths
+            .push(path.to_string_lossy().to_string());
+    }
+
+    Ok(materialized)
+}
+
+fn file_path_from_uri(uri: &str) -> Result<PathBuf, ColdTierError> {
+    validate_object_uri("artifact.uri", uri)?;
+    let Some(path) = uri.strip_prefix("file://") else {
+        return Err(ColdTierError::UnsupportedMaterializationUri(
+            uri.to_string(),
+        ));
+    };
+    if path.ends_with('/') {
+        return Err(ColdTierError::InvalidUriPath("artifact.uri"));
+    }
+    Ok(PathBuf::from(path))
+}
+
+fn write_deterministic_artifact(
+    path: &Path,
+    artifact: &ColdTierArtifact,
+) -> Result<(), ColdTierError> {
+    let mut file = fs::File::create(path)?;
+    let kind = match artifact.kind {
+        ColdTierArtifactKind::Layer => "layer",
+        ColdTierArtifactKind::SearchIndex => "search-index",
+    };
+    let marker = format!("ai-blaise-coldtier\nkind={kind}\nuri={}\n", artifact.uri);
+    let marker = marker.as_bytes();
+    let mut remaining = artifact.bytes;
+    while remaining > 0 {
+        let chunk_len = marker.len().min(remaining as usize);
+        file.write_all(&marker[..chunk_len])?;
+        remaining -= chunk_len as u64;
+    }
+    file.sync_all()?;
+    Ok(())
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -688,6 +778,12 @@ mod tests {
             plan.validate(),
             Err(ColdTierError::InvalidUriPath("shard.object_uri"))
         );
+
+        plan.shards[0].object_uri = "file:///tmp/ai-blaise-coldtier/events\n42".to_string();
+        assert_eq!(
+            plan.validate(),
+            Err(ColdTierError::InvalidUriPath("shard.object_uri"))
+        );
     }
 
     #[test]
@@ -713,5 +809,108 @@ mod tests {
                 "search.tantivy_index_uri"
             ))
         );
+    }
+
+    #[test]
+    fn cold_tier_materializes_local_file_artifacts() {
+        let root =
+            std::env::temp_dir().join(format!("ai-blaise-coldtier-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let root_uri = format!("file://{}", root.to_string_lossy());
+        let mut plan = canonical_cold_tier_plan();
+        plan.shards[0].object_uri = format!("{root_uri}/events/42");
+        plan.shards[0].layers[0].uri = format!("{root_uri}/events/42/image.parquet");
+        plan.shards[0].layers[1].uri = format!("{root_uri}/events/42/delta-1.parquet");
+        let search = plan.search.as_mut().expect("search plan");
+        search.tantivy_index_uri = format!("{root_uri}/indexes/events.tantivy");
+        search.lancedb_index_uri = Some(format!("{root_uri}/indexes/events.lance"));
+
+        let mut runtime = ColdTierRuntime::new(plan).expect("runtime");
+        let report = runtime.execute_tier_cycle().expect("cycle");
+        let materialized = materialize_file_artifacts(&report).expect("materialized");
+
+        assert_eq!(materialized.artifact_count, 4);
+        assert_eq!(materialized.bytes_written, 1_408);
+        assert_eq!(
+            fs::metadata(root.join("events/42/image.parquet"))
+                .unwrap()
+                .len(),
+            1_024
+        );
+        assert_eq!(
+            fs::metadata(root.join("events/42/delta-1.parquet"))
+                .unwrap()
+                .len(),
+            128
+        );
+        assert_eq!(
+            fs::metadata(root.join("indexes/events.tantivy"))
+                .unwrap()
+                .len(),
+            128
+        );
+        assert_eq!(
+            fs::metadata(root.join("indexes/events.lance"))
+                .unwrap()
+                .len(),
+            128
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn cold_tier_materialization_rejects_directory_artifact_paths() {
+        let report = ColdTierRuntimeReport {
+            moves: Vec::new(),
+            planner_routes: Vec::new(),
+            search: None,
+            artifacts: vec![ColdTierArtifact {
+                uri: "file:///tmp/ai-blaise-coldtier/events/42/".to_string(),
+                kind: ColdTierArtifactKind::Layer,
+                bytes: 1,
+            }],
+            state: ColdTierRuntimeState {
+                moved_shards: 0,
+                materialized_layer_files: 0,
+                object_bytes_written: 0,
+                search_indexes_materialized: 0,
+                planner_routes_refreshed: 0,
+                cold_tier_reads: 0,
+                search_index_bytes_written: 0,
+            },
+        };
+
+        assert_eq!(
+            materialize_file_artifacts(&report),
+            Err(ColdTierError::InvalidUriPath("artifact.uri"))
+        );
+    }
+
+    #[test]
+    fn cold_tier_materialization_rejects_non_file_artifacts() {
+        let report = ColdTierRuntimeReport {
+            moves: Vec::new(),
+            planner_routes: Vec::new(),
+            search: None,
+            artifacts: vec![ColdTierArtifact {
+                uri: "s3://bucket/events/42/image.parquet".to_string(),
+                kind: ColdTierArtifactKind::Layer,
+                bytes: 1,
+            }],
+            state: ColdTierRuntimeState {
+                moved_shards: 0,
+                materialized_layer_files: 0,
+                object_bytes_written: 0,
+                search_indexes_materialized: 0,
+                planner_routes_refreshed: 0,
+                cold_tier_reads: 0,
+                search_index_bytes_written: 0,
+            },
+        };
+
+        assert!(matches!(
+            materialize_file_artifacts(&report),
+            Err(ColdTierError::UnsupportedMaterializationUri(_))
+        ));
     }
 }

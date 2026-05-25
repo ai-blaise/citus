@@ -123,6 +123,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-canonical
       - name: Run canonical cold-tier runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_coldtier -- run-runtime-canonical
+      - name: Run cold-tier runtime smoke
+        run: bash ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh
 
   edge-functions:
     runs-on: ubuntu-latest

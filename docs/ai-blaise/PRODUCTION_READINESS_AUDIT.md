@@ -566,6 +566,20 @@ more production-ready than the artifacts justified.
   fingerprints. This is not evidence for live canary mirroring, managed GeoIP
   databases, rustls listener/session-resumption traffic, analytical sidecar
   query execution, live multi-region read routing, or Kubernetes traffic.
+- R1/R5/R9/Search8 cold-tier local file materialization is production-ready for
+  the bounded sidecar local `file://` runtime. `sidecar-coldtier-runtime-smoke.sh`
+  runs the real `ai_blaise_citus_sidecar_coldtier` binary through
+  `run-runtime-canonical` and `run-local-file-materialization-canonical`, writes
+  four deterministic artifacts under `/tmp/ai-blaise-coldtier`, and verifies
+  `coldtier_local_file_materialization=passed`, `local_file_materialized=true`,
+  `materialized_artifact_count=4`, `materialized_bytes=1408`,
+  `materialized_layer_files=2`, `search_indexes_materialized=2`,
+  `planner_routes_refreshed=1`, `cold_tier_reads=1`,
+  `object_store_io_attempted=false`, and `citus_cold_read_serving=false`. This
+  is not evidence for S3/GCS/Azure object-store writes, pageserver deployment,
+  Citus cold-read serving, distributed query planner integration,
+  operator/Kubernetes scheduling, production object-store lifecycle, or real
+  Tantivy/LanceDB query execution.
 - The SQL extension now installs `FEATURE: Auth2` session-claim helpers that
   set and read `uid`, `role`, `tenant_id`, and optional JWT ID through custom
   GUCs. The PostgreSQL extension smoke proves valid claims and empty-claim
