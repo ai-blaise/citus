@@ -48,6 +48,7 @@ COMPANION_RUNTIME_DEPTH_A_SMOKE = ROOT / "ci/ai-blaise/companion-runtime-depth-a
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 GRAPHQL_PGGRAPHQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/graphql-pggraphql-live-smoke.sh"
 POSTGREST_LIVE_DATA_PLANE_SMOKE = ROOT / "ci/ai-blaise/postgrest-live-data-plane-smoke.sh"
+EDGE_DB_CALLBACK_UDS_SMOKE = ROOT / "ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
 SIDECAR_REALTIME_SMOKE = ROOT / "ci/ai-blaise/sidecar-realtime-smoke.sh"
@@ -1232,6 +1233,55 @@ for phrase in (
 ):
     if compact(phrase) not in api6_body:
         fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
+
+if status_by_id.get("EF4") != "production-ready":
+    fail("EF4 database callback over UDS must be production-ready after live PostgreSQL UDS smoke evidence")
+for feature_id in ("EF1", "EF2", "EF5"):
+    if status_by_id.get(feature_id) != "alpha":
+        fail(f"{feature_id} must remain alpha until external runtime and trigger dispatch paths are live-proven")
+edge_db_callback_smoke = read(EDGE_DB_CALLBACK_UDS_SMOKE)
+for required in (
+    "FEATURE: EF4",
+    "POSTGRES_IMAGE",
+    "postgres:17",
+    ".s.PGSQL.5432",
+    "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION",
+    "disabled_executor_rejected=true",
+    "unsafe_statement_rejected=true",
+    "db_callback_statement_executed=true",
+    "db_callback_rows=1",
+    "inserted_rows=1",
+):
+    if required not in edge_db_callback_smoke:
+        fail(f"EF4 UDS callback smoke lost production assertion: {required}")
+ef4_body = compact(entry_by_id["EF4"]["body"])
+for phrase in (
+    "production evidence",
+    "edge-functions-db-callback-uds-smoke.sh",
+    "postgres:17",
+    ".s.PGSQL.5432",
+    "db_callback_socket",
+    "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
+    "unsafe multi-statement callback SQL",
+    "db_callback_statement_executed=true",
+    "db_callback_rows=1",
+    "sidecar-owned PostgreSQL UDS callback executor",
+    "External Deno/Bun user-code execution",
+    "triggered dispatch",
+    "Kubernetes deployment",
+):
+    if compact(phrase) not in ef4_body:
+        fail(f"EF4 docs lost live UDS callback evidence phrase: {phrase}")
+audit_body = compact(read(AUDIT))
+for phrase in (
+    "edge-functions-db-callback-uds-smoke.sh",
+    "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
+    "db_callback_rows=1",
+    "External Deno/Bun user-code execution",
+    "EF1, EF2, and EF5",
+):
+    if compact(phrase) not in audit_body:
+        fail(f"production audit lost EF4 UDS callback boundary phrase: {phrase}")
 
 structured_log_smoke = read(STRUCTURED_LOG_INGESTION_SMOKE)
 for required in (

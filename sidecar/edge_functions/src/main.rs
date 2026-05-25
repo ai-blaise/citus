@@ -208,6 +208,7 @@ fn runtime_name(runtime: &EdgeFunctionRuntime) -> &'static str {
 fn status_name(status: &InvocationStatus) -> &'static str {
     match status {
         InvocationStatus::Planned => "planned",
+        InvocationStatus::DbCallbackExecuted => "db_callback_executed",
     }
 }
 

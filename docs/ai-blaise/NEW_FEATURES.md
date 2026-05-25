@@ -4673,15 +4673,30 @@ sidecar runtimes can share the same desired state.
 ### EF4: Database Callback Over UDS
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines Unix-domain-socket callback plans so edge functions can
-call back into Postgres with a bounded statement timeout.
+**Summary**: Executes bounded, sidecar-managed Unix-domain-socket callbacks so
+edge functions can call back into PostgreSQL with a configured database role and
+statement timeout.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the database-callback socket is rendered into the launch plan, canonical HTTP invocation reports `db_callback_used=true`, and Rust unit tests preserve statement-safety and timeout bounds. EF4 remains alpha because this is callback planning/accounting only; it does not open a Unix socket to PostgreSQL or execute arbitrary user SQL.
+Production evidence: VM proof run
+`bash ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh` builds the real
+`ai_blaise_citus_sidecar_edge_functions` binary, starts a real `postgres:17`
+container with a mounted `.s.PGSQL.5432` Unix socket, registers an HTTP edge
+function with `db_callback_socket`, `db_callback_database`,
+`db_callback_role`, and `db_callback_statement_timeout_ms`, verifies callback
+requests fail closed unless `AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1` is set,
+rejects unsafe multi-statement callback SQL before it mutates PostgreSQL,
+executes one insert through the UDS callback path, reports
+`db_callback_statement_executed=true` and `db_callback_rows=1`, and verifies the
+inserted row in PostgreSQL. The bounded production surface is the sidecar-owned
+PostgreSQL UDS callback executor and HTTP registration/invocation contract.
+External Deno/Bun user-code execution, user-code initiated callback RPC,
+triggered dispatch, queue delivery, and Kubernetes deployment remain out of
+scope for EF4 and stay covered by EF1/EF2/EF5 alpha boundaries.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4697,6 +4712,7 @@ callback path.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
+- CI: `ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF5: Triggered Edge Functions

@@ -6,9 +6,13 @@
 // FEATURE: EF5
 
 use ai_blaise_citus_sidecar_cdc::CdcOperation;
+use postgres::{Config, NoTls, SimpleQueryMessage};
 use serde_json::Value;
+use std::env;
 use std::error::Error;
 use std::fmt;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const MAX_INLINE_SOURCE_BYTES: usize = 262_144;
 const MAX_ENTRYPOINT_BYTES: usize = 256;
@@ -17,6 +21,8 @@ const MAX_SECRET_REFS: usize = 32;
 const MAX_INVOCATION_PAYLOAD_BYTES: u64 = 1_048_576;
 const MAX_INVOCATION_TIMEOUT_MS: u32 = 30_000;
 const MAX_UDS_PATH_BYTES: usize = 107;
+
+pub const EDGE_DB_CALLBACK_EXECUTION_ENV: &str = "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EdgeFunctionPlan {
@@ -268,7 +274,9 @@ impl InvocationRequest {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum EdgeFunctionError {
+    DbCallbackExecutionDisabled,
     FunctionNameMismatch,
+    InvalidDbCallbackSocket,
     FunctionNotFound,
     InvalidEntrypoint(&'static str),
     InvalidHttpPath,
@@ -306,14 +314,25 @@ pub enum EdgeFunctionError {
         max_count: usize,
     },
     TriggerNotAllowed,
+    UnsafeDbCallbackStatement,
     UnsupportedExecutionMode,
 }
 
 impl fmt::Display for EdgeFunctionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DbCallbackExecutionDisabled => write!(
+                formatter,
+                "database callback execution requires AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1"
+            ),
             Self::FunctionNameMismatch => {
                 write!(formatter, "invocation function_name does not match plan")
+            }
+            Self::InvalidDbCallbackSocket => {
+                write!(
+                    formatter,
+                    "database callback UDS path must point at .s.PGSQL.<port>"
+                )
             }
             Self::FunctionNotFound => write!(formatter, "no registered function matches the name"),
             Self::InvalidEntrypoint(field) => {
@@ -378,6 +397,10 @@ impl fmt::Display for EdgeFunctionError {
                 "env_secret_refs count {count} exceeds max runtime bound {max_count}"
             ),
             Self::TriggerNotAllowed => write!(formatter, "invocation trigger is not configured"),
+            Self::UnsafeDbCallbackStatement => write!(
+                formatter,
+                "database callback statement must be a single safe DML/SELECT/CALL statement"
+            ),
             Self::UnsupportedExecutionMode => write!(
                 formatter,
                 "external Deno/Bun user-code execution is not enabled by this sidecar boundary"
@@ -542,6 +565,7 @@ pub struct EdgeFunctionCanonicalReport {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum InvocationStatus {
     Planned,
+    DbCallbackExecuted,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -554,6 +578,8 @@ pub struct EdgeFunctionExecution {
     pub payload_bytes: u64,
     pub response_bytes: u64,
     pub db_callback_used: bool,
+    pub db_callback_statement_executed: bool,
+    pub db_callback_rows: Option<u64>,
     pub status: InvocationStatus,
     pub execution_mode: RuntimeExecutionMode,
 }
@@ -606,6 +632,61 @@ impl EdgeFunctionRuntimeHost {
         &mut self,
         request: &InvocationRequest,
     ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        let db_callback_used = self.validate_invocation(request)?;
+        self.record_invocation(db_callback_used);
+
+        Ok(self.render_invocation_execution(
+            request,
+            db_callback_used,
+            false,
+            None,
+            InvocationStatus::Planned,
+        ))
+    }
+
+    pub fn invoke_with_db_callback(
+        &mut self,
+        request: &InvocationRequest,
+        db_statement: Option<&str>,
+        db_executor: Option<&mut DbCallbackExecutor>,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        let mut db_callback_used = self.validate_invocation(request)?;
+        let mut db_callback_statement_executed = false;
+        let mut db_callback_rows = None;
+        let mut status = InvocationStatus::Planned;
+
+        if let Some(statement) = db_statement {
+            let callback = self
+                .plan
+                .db_callback
+                .as_ref()
+                .ok_or(EdgeFunctionError::MissingRequiredField("db_callback"))?;
+            let executor = db_executor.ok_or(EdgeFunctionError::DbCallbackExecutionDisabled)?;
+            db_callback_rows = Some(executor.execute(callback, statement, request.timeout_ms)?);
+            db_callback_used = true;
+            db_callback_statement_executed = true;
+            status = InvocationStatus::DbCallbackExecuted;
+        }
+
+        self.record_invocation(db_callback_used);
+        Ok(self.render_invocation_execution(
+            request,
+            db_callback_used,
+            db_callback_statement_executed,
+            db_callback_rows,
+            status,
+        ))
+    }
+
+    pub fn invoke_external_runtime(
+        &mut self,
+        request: &InvocationRequest,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        request.validate()?;
+        Err(EdgeFunctionError::UnsupportedExecutionMode)
+    }
+
+    fn validate_invocation(&self, request: &InvocationRequest) -> Result<bool, EdgeFunctionError> {
         request.validate()?;
         if request.function_name != self.plan.name {
             return Err(EdgeFunctionError::FunctionNameMismatch);
@@ -626,17 +707,28 @@ impl EdgeFunctionRuntimeHost {
                 });
             }
         }
+        Ok(self.plan.db_callback.is_some())
+    }
 
-        let db_callback_used = self.plan.db_callback.is_some();
+    fn record_invocation(&mut self, db_callback_used: bool) {
         self.state.invocations += 1;
         if db_callback_used {
             self.state.db_callbacks += 1;
         }
+    }
 
+    fn render_invocation_execution(
+        &self,
+        request: &InvocationRequest,
+        db_callback_used: bool,
+        db_callback_statement_executed: bool,
+        db_callback_rows: Option<u64>,
+        status: InvocationStatus,
+    ) -> EdgeFunctionExecution {
         let mut command = vec![self.launch.executable.clone()];
         command.extend(self.launch.args.clone());
 
-        Ok(EdgeFunctionExecution {
+        EdgeFunctionExecution {
             function_name: request.function_name.clone(),
             runtime: self.plan.runtime,
             command,
@@ -645,22 +737,105 @@ impl EdgeFunctionRuntimeHost {
             payload_bytes: request.payload_bytes,
             response_bytes: deterministic_response_bytes(request.payload_bytes),
             db_callback_used,
-            status: InvocationStatus::Planned,
+            db_callback_statement_executed,
+            db_callback_rows,
+            status,
             execution_mode: RuntimeExecutionMode::PlanOnly,
-        })
-    }
-
-    pub fn invoke_external_runtime(
-        &mut self,
-        request: &InvocationRequest,
-    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
-        request.validate()?;
-        Err(EdgeFunctionError::UnsupportedExecutionMode)
+        }
     }
 }
 
 fn deterministic_response_bytes(payload_bytes: u64) -> u64 {
     (payload_bytes / 2) + 64
+}
+
+#[derive(Debug)]
+pub struct DbCallbackExecutor;
+
+impl DbCallbackExecutor {
+    pub fn connect_from_env() -> Result<Option<Self>, EdgeFunctionError> {
+        if !db_callback_execution_enabled_from_env() {
+            return Ok(None);
+        }
+        Ok(Some(Self))
+    }
+
+    pub fn execute(
+        &mut self,
+        callback: &DbCallbackPlan,
+        statement: &str,
+        invocation_timeout_ms: u32,
+    ) -> Result<u64, EdgeFunctionError> {
+        callback.validate()?;
+        if !is_safe_statement(statement) {
+            return Err(EdgeFunctionError::UnsafeDbCallbackStatement);
+        }
+        let target = PostgresUdsTarget::parse(&callback.uds_path)?;
+        let mut config = Config::new();
+        config.user(&callback.role);
+        config.dbname(&callback.database);
+        config.host_path(&target.socket_dir);
+        config.port(target.port);
+        config.connect_timeout(Duration::from_millis(u64::from(
+            invocation_timeout_ms.min(callback.statement_timeout_ms),
+        )));
+
+        let mut client = config.connect(NoTls)?;
+        let mut transaction = client.transaction()?;
+        let timeout_ms = invocation_timeout_ms.min(callback.statement_timeout_ms);
+        transaction.batch_execute(&format!(
+            "SET LOCAL statement_timeout = '{}ms'; SET LOCAL idle_in_transaction_session_timeout = '{}ms'",
+            timeout_ms, timeout_ms
+        ))?;
+        let rows = count_simple_query_rows(transaction.simple_query(statement)?);
+        transaction.commit()?;
+        Ok(rows)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct PostgresUdsTarget {
+    socket_dir: PathBuf,
+    port: u16,
+}
+
+impl PostgresUdsTarget {
+    fn parse(uds_path: &str) -> Result<Self, EdgeFunctionError> {
+        let path = Path::new(uds_path);
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            return Err(EdgeFunctionError::InvalidDbCallbackSocket);
+        };
+        let Some(port_text) = file_name.strip_prefix(".s.PGSQL.") else {
+            return Err(EdgeFunctionError::InvalidDbCallbackSocket);
+        };
+        let port = port_text
+            .parse::<u16>()
+            .map_err(|_| EdgeFunctionError::InvalidDbCallbackSocket)?;
+        let Some(socket_dir) = path.parent() else {
+            return Err(EdgeFunctionError::InvalidDbCallbackSocket);
+        };
+        Ok(Self {
+            socket_dir: socket_dir.to_path_buf(),
+            port,
+        })
+    }
+}
+
+fn db_callback_execution_enabled_from_env() -> bool {
+    env::var(EDGE_DB_CALLBACK_EXECUTION_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn count_simple_query_rows(messages: Vec<SimpleQueryMessage>) -> u64 {
+    messages
+        .into_iter()
+        .map(|message| match message {
+            SimpleQueryMessage::Row(_) => 1,
+            SimpleQueryMessage::CommandComplete(rows) => rows,
+            _ => 0,
+        })
+        .sum()
 }
 
 pub fn canonical_edge_function_plan() -> EdgeFunctionPlan {
@@ -825,11 +1000,20 @@ impl EdgeFunctionRegistry {
         &mut self,
         request: &InvocationRequest,
     ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        self.invoke_with_db_callback(request, None, None)
+    }
+
+    pub fn invoke_with_db_callback(
+        &mut self,
+        request: &InvocationRequest,
+        db_statement: Option<&str>,
+        db_executor: Option<&mut DbCallbackExecutor>,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
         let host = self
             .functions
             .get_mut(&request.function_name)
             .ok_or(EdgeFunctionError::FunctionNotFound)?;
-        let execution = host.invoke(request)?;
+        let execution = host.invoke_with_db_callback(request, db_statement, db_executor)?;
         self.invocations += 1;
         if matches!(
             request.trigger,
@@ -942,7 +1126,7 @@ impl EdgeFunctionUdsCallback {
             return Err(EdgeFunctionError::MissingRequiredField("statement"));
         }
         if !is_safe_statement(statement) {
-            return Err(EdgeFunctionError::TriggerNotAllowed);
+            return Err(EdgeFunctionError::UnsafeDbCallbackStatement);
         }
         self.statements.push(statement.to_string());
         Ok("ok")
@@ -955,13 +1139,24 @@ impl EdgeFunctionUdsCallback {
 
 fn is_safe_statement(statement: &str) -> bool {
     let lower = statement.to_ascii_lowercase();
-    let trimmed = lower.trim_start();
-    trimmed.starts_with("select")
-        || trimmed.starts_with("insert")
-        || trimmed.starts_with("update")
-        || trimmed.starts_with("delete")
-        || trimmed.starts_with("with")
-        || trimmed.starts_with("call")
+    let trimmed = lower.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('\0')
+        || trimmed.contains(';')
+        || trimmed.contains("--")
+        || trimmed.contains("/*")
+        || trimmed.contains("*/")
+    {
+        return false;
+    }
+    let first_token = trimmed
+        .split(|ch: char| ch.is_ascii_whitespace() || ch == '(')
+        .next()
+        .unwrap_or("");
+    matches!(
+        first_token,
+        "select" | "insert" | "update" | "delete" | "with" | "call"
+    )
 }
 
 // -----------------------------------------------------------------------------
@@ -1058,13 +1253,14 @@ pub fn handle_edge_functions_sidecar_http_bytes(
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let mut runtime = SidecarRuntime::ready("edge-functions");
     let mut registry = canonical_edge_function_registry()?;
-    handle_edge_functions_sidecar_http_request(request, &mut runtime, &mut registry)
+    handle_edge_functions_sidecar_http_request(request, &mut runtime, &mut registry, None)
 }
 
 fn handle_edge_functions_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
     registry: &mut EdgeFunctionRegistry,
+    db_executor: Option<&mut DbCallbackExecutor>,
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let request =
         std::str::from_utf8(request).map_err(|_| EdgeFunctionError::MalformedHttpRequest)?;
@@ -1097,7 +1293,15 @@ fn handle_edge_functions_sidecar_http_request(
             Ok(invocation) => invocation,
             Err(error) => return Ok(error_response(error)),
         };
-        return match registry.invoke(&invocation) {
+        let db_statement = match db_statement_from_body(body) {
+            Ok(statement) => statement,
+            Err(error) => return Ok(error_response(error)),
+        };
+        return match registry.invoke_with_db_callback(
+            &invocation,
+            db_statement.as_deref(),
+            db_executor,
+        ) {
             Ok(execution) => Ok(HttpProbeResponse::new(
                 200,
                 "application/json",
@@ -1179,8 +1383,12 @@ fn render_registry_snapshot(snapshot: &EdgeFunctionRegistrySnapshot) -> String {
 }
 
 fn render_execution(execution: &EdgeFunctionExecution) -> String {
+    let db_callback_rows = execution
+        .db_callback_rows
+        .map(|rows| rows.to_string())
+        .unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"status\":\"{}\",\"execution_mode\":\"{}\"}}\n",
+        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"db_callback_statement_executed\":{},\"db_callback_rows\":{},\"status\":\"{}\",\"execution_mode\":\"{}\"}}\n",
         execution.function_name,
         match execution.runtime {
             EdgeFunctionRuntime::Deno => "deno",
@@ -1205,8 +1413,11 @@ fn render_execution(execution: &EdgeFunctionExecution) -> String {
         execution.payload_bytes,
         execution.response_bytes,
         execution.db_callback_used,
+        execution.db_callback_statement_executed,
+        db_callback_rows,
         match execution.status {
             InvocationStatus::Planned => "planned",
+            InvocationStatus::DbCallbackExecuted => "db_callback_executed",
         },
         match execution.execution_mode {
             RuntimeExecutionMode::PlanOnly => "plan_only",
@@ -1230,6 +1441,18 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
         json_string_field(&json, "code").ok_or(EdgeFunctionError::MissingRequiredField("code"))?;
     let trigger_path = json_string_field(&json, "http_path").unwrap_or_else(|| "/".to_string());
     let env_secret_refs = json_string_array_field(&json, "env_secret_refs")?;
+    let db_callback = match json_string_field(&json, "db_callback_socket") {
+        Some(uds_path) => Some(DbCallbackPlan {
+            uds_path,
+            database: json_string_field(&json, "db_callback_database")
+                .unwrap_or_else(|| "app".to_string()),
+            role: json_string_field(&json, "db_callback_role")
+                .unwrap_or_else(|| "edge_runtime".to_string()),
+            statement_timeout_ms: json_u32_field(&json, "db_callback_statement_timeout_ms")?
+                .unwrap_or(1_000),
+        }),
+        None => None,
+    };
 
     let plan = EdgeFunctionPlan {
         name,
@@ -1237,7 +1460,7 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
         source: FunctionSource::Inline { code },
         triggers: vec![FunctionTrigger::Http { path: trigger_path }],
         env_secret_refs,
-        db_callback: None,
+        db_callback,
     };
     plan.validate()?;
     Ok(plan)
@@ -1325,6 +1548,11 @@ fn json_string_array_field(value: &Value, field: &str) -> Result<Vec<String>, Ed
     }
 }
 
+fn db_statement_from_body(body: &str) -> Result<Option<String>, EdgeFunctionError> {
+    let json = parse_json_body(body)?;
+    Ok(json_string_field(&json, "db_statement"))
+}
+
 fn error_response(error: EdgeFunctionError) -> HttpProbeResponse {
     let status_code = http_status_for_error(&error);
     HttpProbeResponse::new(
@@ -1335,6 +1563,7 @@ fn error_response(error: EdgeFunctionError) -> HttpProbeResponse {
 }
 fn http_status_for_error(error: &EdgeFunctionError) -> u16 {
     match error {
+        EdgeFunctionError::DbCallbackExecutionDisabled => 501,
         EdgeFunctionError::FunctionNotFound => 404,
         EdgeFunctionError::UnsupportedExecutionMode => 501,
         _ => 400,
@@ -1349,6 +1578,7 @@ pub fn serve_edge_functions_sidecar_http_forever(
 
     let mut registry = canonical_edge_function_registry()?;
     let mut runtime = SidecarRuntime::ready("edge-functions");
+    let mut db_executor = DbCallbackExecutor::connect_from_env()?;
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise edge-functions sidecar listening on {listen_addr}");
@@ -1356,15 +1586,19 @@ pub fn serve_edge_functions_sidecar_http_forever(
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response =
-            handle_edge_functions_sidecar_http_request(&request, &mut runtime, &mut registry)
-                .unwrap_or_else(|error| {
-                    HttpProbeResponse::new(
-                        400,
-                        "application/json",
-                        format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-                    )
-                });
+        let response = handle_edge_functions_sidecar_http_request(
+            &request,
+            &mut runtime,
+            &mut registry,
+            db_executor.as_mut(),
+        )
+        .unwrap_or_else(|error| {
+            HttpProbeResponse::new(
+                400,
+                "application/json",
+                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+            )
+        });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())
@@ -1455,6 +1689,19 @@ impl From<SidecarRuntimeError> for EdgeFunctionError {
 
 impl From<std::io::Error> for EdgeFunctionError {
     fn from(error: std::io::Error) -> Self {
+        Self::Runtime(error.to_string())
+    }
+}
+
+impl From<postgres::Error> for EdgeFunctionError {
+    fn from(error: postgres::Error) -> Self {
+        if let Some(db_error) = error.as_db_error() {
+            return Self::Runtime(format!(
+                "{}: {}",
+                db_error.code().code(),
+                db_error.message()
+            ));
+        }
         Self::Runtime(error.to_string())
     }
 }
@@ -1683,8 +1930,33 @@ mod tests {
         assert_eq!(callback.statements().len(), 1);
         assert_eq!(
             callback.execute("drop table orders"),
-            Err(EdgeFunctionError::TriggerNotAllowed)
+            Err(EdgeFunctionError::UnsafeDbCallbackStatement)
         );
+    }
+
+    #[test]
+    fn postgres_uds_target_parses_socket_path() {
+        let target = PostgresUdsTarget::parse("/tmp/edge/.s.PGSQL.5432").expect("target");
+        assert_eq!(target.socket_dir, PathBuf::from("/tmp/edge"));
+        assert_eq!(target.port, 5432);
+        assert_eq!(
+            PostgresUdsTarget::parse("/tmp/edge/postgresql.sock"),
+            Err(EdgeFunctionError::InvalidDbCallbackSocket)
+        );
+    }
+
+    #[test]
+    fn db_callback_statement_guard_rejects_multi_statement_input() {
+        assert!(is_safe_statement(
+            "insert into edge_callback_events(tenant_id) values ('tenant-a')"
+        ));
+        assert!(!is_safe_statement(
+            "select 1; drop table edge_callback_events"
+        ));
+        assert!(!is_safe_statement("select 1 -- comment"));
+        assert!(!is_safe_statement(
+            "alter table edge_callback_events add column x int"
+        ));
     }
 
     #[test]
@@ -1738,6 +2010,23 @@ mod tests {
         assert!(response.body.contains("\"function\":\"order_created\""));
         assert!(response.body.contains("\"status\":\"planned\""));
         assert!(response.body.contains("\"execution_mode\":\"plan_only\""));
+        assert!(response
+            .body
+            .contains("\"db_callback_statement_executed\":false"));
+    }
+
+    #[test]
+    fn http_front_door_rejects_db_callback_statement_without_live_executor() {
+        let body = r#"{"tenant_id":"tenant-a","payload_bytes":256,"timeout_ms":250,"db_statement":"select 1"}"#;
+        let request = format!(
+            "POST /functions/order_created HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let response =
+            handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("invoke");
+        assert_eq!(response.status_code, 501);
+        assert!(response.body.contains(EDGE_DB_CALLBACK_EXECUTION_ENV));
     }
 
     #[test]
@@ -1755,7 +2044,7 @@ mod tests {
         );
 
         plan.source = FunctionSource::Inline {
-            code: "bad source".to_string(),
+            code: "bad\0source".to_string(),
         };
         assert_eq!(
             plan.validate(),
