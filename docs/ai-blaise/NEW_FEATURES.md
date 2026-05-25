@@ -8280,17 +8280,28 @@ through this overlay planner.
 
 ### M4: Schema Drift Detection
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/schema_drift.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Models the observed-schema and desired-schema inputs for drift
-reconciliation.
+**Summary**: Renders a live `information_schema.columns` drift detector for a
+declared table-column manifest.
 
-**Current boundary**: The runner verifies the contract surface; live schema
-diffing, remediation planning, and operator apply behavior remain alpha.
+**Current boundary**: Production-ready for detecting missing columns,
+unexpected columns, data-type mismatches, and nullability mismatches on existing
+PostgreSQL tables using a temporary expected-schema table plus live
+`information_schema.columns` introspection. Remediation planning, DDL
+execution, operator apply behavior, cross-database inventory fanout, and
+automatic migration generation are not claimed by this feature.
+
+Production evidence: `REQUIRE_DOCKER=1 ci/ai-blaise/schema-drift-live-smoke.sh`
+starts a `postgres:17-bookworm` container, creates a live `public.accounts`
+table with one `missing_column`, one `type_mismatch`, one
+`nullability_mismatch`, and one `unexpected_column`, executes the
+companion-rendered SQL plan, verifies all four drift rows, fixes the schema,
+and reruns the same plan to prove `clean_schema_zero_drift=true`.
 
 **Citus comparison**: Vanilla Citus does not reconcile declarative schema
 drift.
@@ -8298,7 +8309,12 @@ drift.
 **References**:
 
 - In-source: `FEATURE: M4` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: M4` in `companion/src/schema_drift.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-schema-drift-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-schema-drift-sql-canonical`
+- CI: `ci/ai-blaise/schema-drift-live-smoke.sh`
+- Runbook: `docs/ai-blaise/RUNBOOKS/schema-drift-detection.md`
 
 ### MR3: Regional Row Placement
 

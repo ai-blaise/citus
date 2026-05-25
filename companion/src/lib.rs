@@ -24,6 +24,7 @@ pub mod queue;
 pub mod replication_conflict;
 pub mod router_assist;
 pub mod runtime_depth_a;
+pub mod schema_drift;
 pub mod schema_jobs;
 pub mod search_bridge;
 pub mod tenants;
@@ -135,6 +136,11 @@ pub use router_assist::{
 pub use runtime_depth_a::{
     canonical_companion_runtime_depth_a_report, CompanionRuntimeDepthAError,
     CompanionRuntimeDepthAReport,
+};
+pub use schema_drift::{
+    canonical_schema_drift_plan, canonical_schema_drift_report, canonical_schema_drift_sql_plan,
+    ExpectedSchemaColumn, SchemaDriftError, SchemaDriftKind, SchemaDriftPlan, SchemaDriftReport,
+    SchemaDriftSqlPlan,
 };
 pub use schema_jobs::{
     controller::{

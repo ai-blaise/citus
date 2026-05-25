@@ -975,6 +975,16 @@ reconciliation, Kubernetes `ExternalSecret` updates, application connection
 draining outside `postgres_fdw`, cross-region FDW topology changes, or
 multi-tenant secret distribution.
 
+M4 production evidence from 2026-05-25 promotes only live schema drift
+detection. `REQUIRE_DOCKER=1 ci/ai-blaise/schema-drift-live-smoke.sh` starts a
+live `postgres:17-bookworm` container, creates an intentionally drifted
+`public.accounts` table, executes the companion-rendered
+`information_schema.columns` detector, and verifies rows for `missing_column`,
+`type_mismatch`, `nullability_mismatch`, and `unexpected_column`. The same smoke
+then fixes the table and proves `clean_schema_zero_drift=true`. This does not
+claim remediation planning, DDL execution, operator apply behavior,
+cross-database inventory fanout, or automatic migration generation.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

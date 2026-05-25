@@ -47,7 +47,8 @@ use ai_blaise_citus_companion::{
     canonical_cohabit_detection_report, canonical_domain_contracts_report,
     canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
     canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
-    canonical_plan_runtime_report, render_all_views,
+    canonical_plan_runtime_report, canonical_schema_drift_report, canonical_schema_drift_sql_plan,
+    render_all_views,
 };
 use std::env;
 use std::process;
@@ -72,6 +73,12 @@ fn main() {
         }
         [command] if command == "run-fdw-credential-rotation-sql-canonical" => {
             run_fdw_credential_rotation_sql_canonical();
+        }
+        [command] if command == "run-schema-drift-canonical" => {
+            run_schema_drift_canonical();
+        }
+        [command] if command == "run-schema-drift-sql-canonical" => {
+            run_schema_drift_sql_canonical();
         }
         [command] if command == "run-extension-catalog-canonical" => {
             run_extension_catalog_canonical();
@@ -172,6 +179,34 @@ fn run_fdw_credential_rotation_canonical() {
 fn run_fdw_credential_rotation_sql_canonical() {
     let sql_plan = canonical_fdw_credential_rotation_sql_plan().unwrap_or_else(|error| {
         eprintln!("companion-contracts: FDW credential rotation SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
+fn run_schema_drift_canonical() {
+    let report = canonical_schema_drift_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: schema drift report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\texpected_columns\tstatements\tdrift_kinds\tinformation_schema_queries\ttemporary_tables"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.expected_columns,
+        report.statement_count,
+        report.drift_kinds.join(","),
+        report.information_schema_queries,
+        report.temporary_tables,
+    );
+}
+
+fn run_schema_drift_sql_canonical() {
+    let sql_plan = canonical_schema_drift_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: schema drift SQL render failed: {error}");
         process::exit(1);
     });
     println!("{}", sql_plan.render_psql_script());
@@ -294,7 +329,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

@@ -90,6 +90,7 @@ CITUSCTL_K8S_APPLY_LIVE_SMOKE = ROOT / "ci/ai-blaise/citusctl-k8s-apply-live-smo
 CITUSCTL_TIME_TRAVEL_INTENT_SMOKE = ROOT / "ci/ai-blaise/citusctl-time-travel-intent-smoke.sh"
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 FDW_CREDENTIAL_ROTATION_SMOKE = ROOT / "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh"
+SCHEMA_DRIFT_LIVE_SMOKE = ROOT / "ci/ai-blaise/schema-drift-live-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
@@ -591,6 +592,7 @@ ai_sql_smoke = read(AI_SQL_CONTRACT_SMOKE)
 ci_image_workflow = read(CI_IMAGE_WORKFLOW)
 makefile = read(MAKEFILE)
 fdw_smoke = read(FDW_CREDENTIAL_ROTATION_SMOKE)
+schema_drift_smoke = read(SCHEMA_DRIFT_LIVE_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
 
@@ -648,6 +650,65 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing F4 boundary phrase: {phrase}")
+
+if status_by_id.get("M4") != "production-ready":
+    fail("M4 must be Status: production-ready once live schema drift evidence is wired")
+section_m4 = feature_section(docs, "M4")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/schema-drift-live-smoke.sh",
+    "missing_column",
+    "type_mismatch",
+    "nullability_mismatch",
+    "unexpected_column",
+    "clean_schema_zero_drift=true",
+    "information_schema.columns",
+    "Remediation planning",
+    "operator apply behavior",
+):
+    if compact(phrase) not in compact(section_m4):
+        fail(f"M4 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "CREATE TEMP TABLE ai_blaise_expected_schema_columns",
+    "information_schema.columns",
+    "missing_column=true",
+    "type_mismatch=true",
+    "nullability_mismatch=true",
+    "unexpected_column=true",
+    "clean_schema_zero_drift=true",
+):
+    if phrase not in schema_drift_smoke:
+        fail(f"schema-drift-live-smoke.sh missing live assertion: {phrase}")
+for phrase in (
+    "run-schema-drift-canonical",
+    "run-schema-drift-sql-canonical",
+    "canonical_schema_drift_report",
+    "canonical_schema_drift_sql_plan",
+):
+    if phrase not in companion_contracts:
+        fail(f"companion_contracts missing schema drift command: {phrase}")
+for phrase in (
+    "schema-drift-live-smoke:",
+    "ci/ai-blaise/schema-drift-live-smoke.sh",
+    "gate-close:",
+    "schema-drift-live-smoke",
+):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire schema drift smoke: {phrase}")
+if "schema-drift-live-smoke.sh" not in companion_workflow:
+    fail("ci-companion workflow must run schema-drift-live-smoke.sh")
+for phrase in (
+    "M4 production evidence",
+    "missing_column",
+    "type_mismatch",
+    "nullability_mismatch",
+    "unexpected_column",
+    "clean_schema_zero_drift=true",
+    "remediation planning",
+    "operator apply behavior",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing M4 boundary phrase: {phrase}")
 
 for phrase in (
     "CREATE TABLE IF NOT EXISTS companion_internal.ai_provider_bindings",
