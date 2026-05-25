@@ -396,7 +396,7 @@ for phrase in (
     "**Status**: production-ready",
     "citusctl plan/apply time-travel <target_time>",
     "strict RFC3339 UTC calendar validation",
-    "rejects future targets",
+    "rejects ahead-of-now targets",
     "rejects targets older than the explicit staleness window",
     "deterministic `time-travel-*` plan id",
     "time-travel-intent.audit.tsv",
@@ -1144,6 +1144,83 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing MR6 boundary phrase: {phrase}")
+
+
+if status_by_id.get("Edge1") != "production-ready":
+    fail("Edge1 must be Status: production-ready once live edge-read HLC gate evidence is wired")
+section_edge1 = feature_section(docs, "Edge1")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/sidecar-hlc-smoke.sh",
+    "`ai_blaise_citus_sidecar_hlc serve`",
+    "AI_BLAISE_HLC_EDGE_REPLICAS",
+    "/closed_ts",
+    "/clock/tick",
+    "/clock/observe",
+    "/edge_read",
+    "HTTP 409",
+    "edge_bounded_staleness_gate=passed",
+    "edge_read_as_of_closed_served=true",
+    "edge_read_newer_than_closed_rejected=true",
+    "edge_read_too_stale_rejected=true",
+    "edge_read_replica_mismatch_rejected=true",
+    "edge_unknown_region_rejected=true",
+    "Edge replica provisioning",
+    "POP/WAN network deployment",
+    "SQL/MVCC snapshot execution",
+    "planner integration",
+    "data-plane query routing",
+    "failover automation",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_edge1):
+        fail(f"Edge1 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: S9/MR6/Edge1",
+    "FEATURE: Edge1",
+    "AI_BLAISE_HLC_EDGE_REPLICAS",
+    "/edge_read",
+    "edge_bounded_staleness_gate=passed",
+    "edge_read_as_of_closed_served=true",
+    "edge_read_newer_than_closed_rejected=true",
+    "edge_read_too_stale_rejected=true",
+    "edge_read_replica_mismatch_rejected=true",
+    "edge_unknown_region_rejected=true",
+    "edge_replica_provisioning_exercised=false",
+    "edge_kubernetes_traffic_exercised=false",
+    "reject_too_stale",
+    "reject_replica_mismatch",
+    "unknown edge region",
+):
+    if phrase not in sidecar_hlc_smoke:
+        fail(f"sidecar-hlc-smoke.sh missing live Edge1 assertion: {phrase}")
+if "EdgeReadPlan" not in read(ROOT / "sidecar/hlc/src/lib.rs") or "EdgeReadDecision" not in read(ROOT / "sidecar/hlc/src/lib.rs"):
+    fail("sidecar HLC lib must expose Edge1 edge-read plan/decision types")
+if "edge_read_decision" not in read(ROOT / "sidecar/hlc/src/runtime.rs"):
+    fail("sidecar HLC runtime must expose Edge1 edge_read_decision")
+if '\"/edge_read\"' not in read(ROOT / "sidecar/hlc/src/main.rs"):
+    fail("sidecar HLC HTTP server must expose Edge1 /edge_read route")
+for phrase in (
+    "Edge1 bounded-staleness edge read gating is production-ready",
+    "`ai_blaise_citus_sidecar_hlc serve`",
+    "AI_BLAISE_HLC_EDGE_REPLICAS",
+    "/closed_ts",
+    "/clock/tick",
+    "/clock/observe",
+    "/edge_read",
+    "HTTP 409",
+    "edge_bounded_staleness_gate=passed",
+    "edge_read_too_stale_rejected=true",
+    "edge_read_replica_mismatch_rejected=true",
+    "edge_unknown_region_rejected=true",
+    "edge replica provisioning",
+    "POP/WAN network deployment",
+    "SQL/MVCC snapshot execution",
+    "data-plane query routing",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing Edge1 boundary phrase: {phrase}")
 
 if status_by_id.get("T5") != "production-ready":
     fail("T5 must be Status: production-ready once networked txn-status Raft evidence is wired")

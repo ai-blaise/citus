@@ -622,7 +622,8 @@ more production-ready than the artifacts justified.
   supplied manifest.
 - B5 time-travel intent now has a real `citusctl` binary smoke for the bounded
   validation surface. `citusctl-time-travel-intent-smoke.sh` proves strict
-  RFC3339 UTC timestamp parsing, calendar validation, future-target rejection,
+  RFC3339 UTC timestamp parsing, calendar validation, ahead-of-now target
+  rejection,
   explicit `--max-staleness-seconds` enforcement, deterministic `time-travel-*`
   plan ids, apply-time plan-id match rejection, TSV/JSON output, and
   `time-travel-intent.audit.tsv` append evidence. This is not evidence for
@@ -674,6 +675,23 @@ more production-ready than the artifacts justified.
   `closed_ts_peer_exchange_observed=true`. This does not claim MVCC snapshot
   execution, replica query routing, stale-read SQL syntax, planner integration,
   cross-region clock discipline, or Kubernetes reconciliation.
+- Edge1 bounded-staleness edge read gating is production-ready for the bounded
+  HLC sidecar admission-control surface. `sidecar-hlc-smoke.sh` starts the real
+  `ai_blaise_citus_sidecar_hlc serve` process with
+  `AI_BLAISE_HLC_EDGE_REPLICAS`, waits for `/readyz`, verifies `/closed_ts`,
+  advances `/clock/tick`, observes peer evidence through `/clock/observe`, and
+  exercises `/edge_read`. The live smoke proves exact-closed edge read serving,
+  newer-than-closed HTTP 409 rejection, too-stale HTTP 409 rejection,
+  replica/edge-region mismatch HTTP 409 rejection, and unknown-edge-region HTTP
+  409 rejection. The smoke emits `edge_bounded_staleness_gate=passed`,
+  `edge_read_as_of_closed_served=true`,
+  `edge_read_newer_than_closed_rejected=true`,
+  `edge_read_too_stale_rejected=true`,
+  `edge_read_replica_mismatch_rejected=true`, and
+  `edge_unknown_region_rejected=true`. This does not claim edge replica
+  provisioning, POP/WAN network deployment, SQL/MVCC snapshot execution,
+  planner integration, data-plane query routing, failover automation, or
+  Kubernetes traffic.
 - T5 parallel commit transaction status is production-ready for the bounded
   networked transaction-status sidecar API and SQL contract.
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
@@ -1006,7 +1024,7 @@ Rule 10 completion for this branch requires local and VM verification of:
   validation and audit path:
   `citusctl plan/apply time-travel <target_time> --now ... --max-staleness-seconds
   ... --state-dir ... --format json|tsv`. It proves strict UTC calendar
-  validation, stale/future rejection, plan-id-gated apply, and
+  validation, stale/ahead-of-now rejection, plan-id-gated apply, and
   `time-travel-intent.audit.tsv` append evidence only. It must not be cited for
   follower-read execution, backup-backed query replay, closed-timestamp MVCC
   reads, Citus executor integration, or production query execution.

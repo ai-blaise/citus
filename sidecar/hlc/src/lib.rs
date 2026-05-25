@@ -1,6 +1,7 @@
 //! Hybrid logical clock sidecar contracts.
 
 // FEATURE: S9
+// FEATURE: Edge1
 
 pub mod runtime;
 
@@ -190,20 +191,119 @@ pub enum FollowerReadDecision {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct EdgeReadPlan {
+    pub edge_region: String,
+    pub replica: String,
+    pub expected_replica: String,
+    pub as_of: HlcTimestamp,
+    pub closed_timestamp: ClosedTimestampPlan,
+}
+
+impl EdgeReadPlan {
+    pub fn validate(&self) -> Result<(), HlcError> {
+        match self.decision()? {
+            EdgeReadDecision::ServeFromEdge { .. } => Ok(()),
+            EdgeReadDecision::RejectReplicaMismatch { .. } => Err(HlcError::EdgeReplicaMismatch),
+            EdgeReadDecision::RejectNotClosed { .. } => Err(HlcError::TimestampNotClosed),
+            EdgeReadDecision::RejectTooStale { .. } => Err(HlcError::TimestampTooStale),
+        }
+    }
+
+    pub fn decision(&self) -> Result<EdgeReadDecision, HlcError> {
+        validate_required("edge_read.edge_region", &self.edge_region)?;
+        validate_required("edge_read.replica", &self.replica)?;
+        validate_required("edge_read.expected_replica", &self.expected_replica)?;
+        self.closed_timestamp.validate()?;
+        if self.replica != self.expected_replica {
+            return Ok(EdgeReadDecision::RejectReplicaMismatch {
+                edge_region: self.edge_region.clone(),
+                requested_replica: self.replica.clone(),
+                expected_replica: self.expected_replica.clone(),
+            });
+        }
+        if self.as_of > self.closed_timestamp.closed_at {
+            return Ok(EdgeReadDecision::RejectNotClosed {
+                edge_region: self.edge_region.clone(),
+                replica: self.replica.clone(),
+                as_of: self.as_of,
+                closed_at: self.closed_timestamp.closed_at,
+            });
+        }
+        let observed_staleness_ms = self
+            .closed_timestamp
+            .closed_at
+            .physical_ms
+            .saturating_sub(self.as_of.physical_ms);
+        if observed_staleness_ms > self.closed_timestamp.max_staleness_ms {
+            return Ok(EdgeReadDecision::RejectTooStale {
+                edge_region: self.edge_region.clone(),
+                replica: self.replica.clone(),
+                as_of: self.as_of,
+                closed_at: self.closed_timestamp.closed_at,
+                max_staleness_ms: self.closed_timestamp.max_staleness_ms,
+                observed_staleness_ms,
+            });
+        }
+        Ok(EdgeReadDecision::ServeFromEdge {
+            edge_region: self.edge_region.clone(),
+            replica: self.replica.clone(),
+            as_of: self.as_of,
+            closed_at: self.closed_timestamp.closed_at,
+            max_staleness_ms: self.closed_timestamp.max_staleness_ms,
+            observed_staleness_ms,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum EdgeReadDecision {
+    ServeFromEdge {
+        edge_region: String,
+        replica: String,
+        as_of: HlcTimestamp,
+        closed_at: HlcTimestamp,
+        max_staleness_ms: u64,
+        observed_staleness_ms: u64,
+    },
+    RejectReplicaMismatch {
+        edge_region: String,
+        requested_replica: String,
+        expected_replica: String,
+    },
+    RejectNotClosed {
+        edge_region: String,
+        replica: String,
+        as_of: HlcTimestamp,
+        closed_at: HlcTimestamp,
+    },
+    RejectTooStale {
+        edge_region: String,
+        replica: String,
+        as_of: HlcTimestamp,
+        closed_at: HlcTimestamp,
+        max_staleness_ms: u64,
+        observed_staleness_ms: u64,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum HlcError {
     ClockMovedBackwards,
+    EdgeReplicaMismatch,
     InvalidPhysicalTime,
     InvalidReplicaCount,
     InvalidStalenessBudget,
     LogicalCounterOverflow,
     MissingRequiredField(&'static str),
     TimestampNotClosed,
+    TimestampTooStale,
 }
 
 impl fmt::Display for HlcError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::ClockMovedBackwards => write!(formatter, "clock moved beyond max offset"),
+            Self::EdgeReplicaMismatch => write!(formatter, "edge replica does not match region"),
             Self::InvalidPhysicalTime => write!(formatter, "physical_ms must be greater than zero"),
             Self::InvalidReplicaCount => {
                 write!(formatter, "replica_count must be greater than zero")
@@ -215,6 +315,9 @@ impl fmt::Display for HlcError {
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
             Self::TimestampNotClosed => {
                 write!(formatter, "AS OF timestamp is newer than closed timestamp")
+            }
+            Self::TimestampTooStale => {
+                write!(formatter, "AS OF timestamp exceeds max staleness budget")
             }
         }
     }
@@ -367,6 +470,63 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn edge_read_serves_only_matching_closed_bounded_staleness() {
+        let plan = EdgeReadPlan {
+            edge_region: "iad-edge".to_string(),
+            replica: "worker-a-replica".to_string(),
+            expected_replica: "worker-a-replica".to_string(),
+            as_of: HlcTimestamp {
+                physical_ms: 1_699_999_500,
+                logical: 0,
+            },
+            closed_timestamp: valid_closed_timestamp(),
+        };
+
+        assert_eq!(
+            plan.decision(),
+            Ok(EdgeReadDecision::ServeFromEdge {
+                edge_region: "iad-edge".to_string(),
+                replica: "worker-a-replica".to_string(),
+                as_of: HlcTimestamp {
+                    physical_ms: 1_699_999_500,
+                    logical: 0,
+                },
+                closed_at: HlcTimestamp {
+                    physical_ms: 1_700_000_000,
+                    logical: 10,
+                },
+                max_staleness_ms: 5_000,
+                observed_staleness_ms: 500,
+            })
+        );
+
+        let mut too_new = plan.clone();
+        too_new.as_of = HlcTimestamp {
+            physical_ms: 1_700_000_001,
+            logical: 0,
+        };
+        assert!(matches!(
+            too_new.decision(),
+            Ok(EdgeReadDecision::RejectNotClosed { .. })
+        ));
+
+        let mut too_stale = plan.clone();
+        too_stale.as_of = HlcTimestamp {
+            physical_ms: 1_699_990_000,
+            logical: 0,
+        };
+        assert_eq!(too_stale.validate(), Err(HlcError::TimestampTooStale));
+        assert!(matches!(
+            too_stale.decision(),
+            Ok(EdgeReadDecision::RejectTooStale { .. })
+        ));
+
+        let mut mismatch = plan;
+        mismatch.replica = "worker-b-replica".to_string();
+        assert_eq!(mismatch.validate(), Err(HlcError::EdgeReplicaMismatch));
     }
 
     #[test]

@@ -1,10 +1,11 @@
 // FEATURE: S9
-// FEATURE: S9
 // FEATURE: MR6
+// FEATURE: Edge1
 
 use ai_blaise_citus_sidecar_hlc::{
-    canonical_hlc_report, canonical_hlc_runtime_report, render_closed_ts_json,
-    FollowerReadDecision, HlcClock, HlcRuntime, HlcRuntimeReport, HlcTimestamp, PeerClockExchange,
+    canonical_hlc_report, canonical_hlc_runtime_report, render_closed_ts_json, EdgeReadDecision,
+    FollowerReadDecision, HlcClock, HlcRuntime, HlcRuntimeError, HlcRuntimeReport, HlcTimestamp,
+    PeerClockExchange,
 };
 use ai_blaise_citus_sidecar_shared::{listen_addr_from_env, HttpProbeResponse, SidecarRuntime};
 use std::collections::BTreeMap;
@@ -169,14 +170,26 @@ impl HlcHttpServer {
         let replica_count_default = peers.len().saturating_add(1) as u32;
         let replica_count =
             parse_env_u32("AI_BLAISE_HLC_REPLICA_COUNT", replica_count_default.max(1))?;
+        let edge_replicas = parse_edge_replicas(
+            &env::var("AI_BLAISE_HLC_EDGE_REPLICAS").unwrap_or_else(|_| {
+                "iad-edge=worker-a-replica,sfo-edge=worker-c-replica".to_string()
+            }),
+        )?;
         let clock = HlcClock {
             node_id,
             timestamp: HlcTimestamp::new(initial_physical_ms, 0)
                 .map_err(|error| error.to_string())?,
             max_offset_ms,
         };
-        let runtime = HlcRuntime::new(shard_group, clock, peers, replica_count, max_staleness_ms)
-            .map_err(|error| error.to_string())?;
+        let runtime = HlcRuntime::new_with_edge_replicas(
+            shard_group,
+            clock,
+            peers,
+            replica_count,
+            max_staleness_ms,
+            edge_replicas,
+        )
+        .map_err(|error| error.to_string())?;
         Ok(Self {
             runtime: Mutex::new(runtime),
             probe: Mutex::new(SidecarRuntime::ready("hlc")),
@@ -195,9 +208,11 @@ impl HlcHttpServer {
             ("POST", "/clock/tick") => self.tick_response(body),
             ("POST", "/clock/observe") => self.observe_response(body),
             ("GET", "/follower_read") => self.follower_read_response(query),
-            (_, "/closed_ts" | "/clock/tick" | "/clock/observe" | "/follower_read") => {
-                error_response(405, "method not allowed")
-            }
+            ("GET", "/edge_read") => self.edge_read_response(query),
+            (
+                _,
+                "/closed_ts" | "/clock/tick" | "/clock/observe" | "/follower_read" | "/edge_read",
+            ) => error_response(405, "method not allowed"),
             _ => {
                 let mut probe = self.probe.lock().expect("probe mutex");
                 probe.handle_http_bytes(request).unwrap_or_else(|error| {
@@ -297,6 +312,50 @@ impl HlcHttpServer {
             Err(error) => error_response(400, &error.to_string()),
         }
     }
+
+    fn edge_read_response(&self, query: Option<&str>) -> HttpProbeResponse {
+        let params = parse_params(query.unwrap_or(""));
+        let edge_region = match required_param(&params, "edge_region") {
+            Ok(value) => value.to_string(),
+            Err(error) => return error_response(400, &error),
+        };
+        let replica = match required_param(&params, "replica") {
+            Ok(value) => value.to_string(),
+            Err(error) => return error_response(400, &error),
+        };
+        let physical_ms = match required_u64(&params, "as_of_physical_ms") {
+            Ok(value) => value,
+            Err(error) => return error_response(400, &error),
+        };
+        let logical = match optional_u32(&params, "as_of_logical", 0) {
+            Ok(value) => value,
+            Err(error) => return error_response(400, &error),
+        };
+        let runtime = self.runtime.lock().expect("hlc mutex");
+        match runtime.edge_read_decision(
+            edge_region,
+            replica,
+            HlcTimestamp {
+                physical_ms,
+                logical,
+            },
+        ) {
+            Ok(decision @ EdgeReadDecision::ServeFromEdge { .. }) => HttpProbeResponse::new(
+                200,
+                "application/json",
+                render_edge_decision_json(&decision),
+            ),
+            Ok(decision) => HttpProbeResponse::new(
+                409,
+                "application/json",
+                render_edge_decision_json(&decision),
+            ),
+            Err(HlcRuntimeError::UnknownEdgeRegion(error)) => {
+                error_response(409, &format!("unknown edge region: {error}"))
+            }
+            Err(error) => error_response(400, &error.to_string()),
+        }
+    }
 }
 
 fn runtime_report(runtime: &HlcRuntime) -> HlcRuntimeReport {
@@ -348,6 +407,65 @@ fn render_decision_json(decision: &FollowerReadDecision) -> String {
             escape_json(replica),
             render_timestamp_json(*as_of),
             render_timestamp_json(*closed_at),
+        ),
+    }
+}
+
+fn render_edge_decision_json(decision: &EdgeReadDecision) -> String {
+    match decision {
+        EdgeReadDecision::ServeFromEdge {
+            edge_region,
+            replica,
+            as_of,
+            closed_at,
+            max_staleness_ms,
+            observed_staleness_ms,
+        } => format!(
+            "{{\"decision\":\"serve_from_edge\",\"serve_from_edge\":true,\"edge_region\":\"{}\",\"replica\":\"{}\",\"as_of\":{},\"closed_at\":{},\"max_staleness_ms\":{},\"observed_staleness_ms\":{}}}\n",
+            escape_json(edge_region),
+            escape_json(replica),
+            render_timestamp_json(*as_of),
+            render_timestamp_json(*closed_at),
+            max_staleness_ms,
+            observed_staleness_ms,
+        ),
+        EdgeReadDecision::RejectReplicaMismatch {
+            edge_region,
+            requested_replica,
+            expected_replica,
+        } => format!(
+            "{{\"decision\":\"reject_replica_mismatch\",\"serve_from_edge\":false,\"edge_region\":\"{}\",\"requested_replica\":\"{}\",\"expected_replica\":\"{}\"}}\n",
+            escape_json(edge_region),
+            escape_json(requested_replica),
+            escape_json(expected_replica),
+        ),
+        EdgeReadDecision::RejectNotClosed {
+            edge_region,
+            replica,
+            as_of,
+            closed_at,
+        } => format!(
+            "{{\"decision\":\"reject_not_closed\",\"serve_from_edge\":false,\"edge_region\":\"{}\",\"replica\":\"{}\",\"as_of\":{},\"closed_at\":{}}}\n",
+            escape_json(edge_region),
+            escape_json(replica),
+            render_timestamp_json(*as_of),
+            render_timestamp_json(*closed_at),
+        ),
+        EdgeReadDecision::RejectTooStale {
+            edge_region,
+            replica,
+            as_of,
+            closed_at,
+            max_staleness_ms,
+            observed_staleness_ms,
+        } => format!(
+            "{{\"decision\":\"reject_too_stale\",\"serve_from_edge\":false,\"edge_region\":\"{}\",\"replica\":\"{}\",\"as_of\":{},\"closed_at\":{},\"max_staleness_ms\":{},\"observed_staleness_ms\":{}}}\n",
+            escape_json(edge_region),
+            escape_json(replica),
+            render_timestamp_json(*as_of),
+            render_timestamp_json(*closed_at),
+            max_staleness_ms,
+            observed_staleness_ms,
         ),
     }
 }
@@ -452,6 +570,26 @@ fn parse_csv(value: &str) -> Vec<String> {
         .collect()
 }
 
+fn parse_edge_replicas(value: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut replicas = BTreeMap::new();
+    for item in value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
+        let (edge_region, replica) = item
+            .split_once('=')
+            .ok_or_else(|| format!("invalid edge replica mapping: {item}"))?;
+        let edge_region = edge_region.trim();
+        let replica = replica.trim();
+        if edge_region.is_empty() || replica.is_empty() {
+            return Err(format!("invalid edge replica mapping: {item}"));
+        }
+        replicas.insert(edge_region.to_string(), replica.to_string());
+    }
+    Ok(replicas)
+}
+
 fn parse_env_u64(key: &str, default: u64) -> Result<u64, String> {
     match env::var(key) {
         Ok(value) => value
@@ -543,5 +681,41 @@ mod tests {
         let json = render_decision_json(&decision);
         assert!(json.contains("\"decision\":\"reject_not_closed\""));
         assert!(json.contains("\"serve_from_follower\":false"));
+    }
+
+    #[test]
+    fn edge_replicas_parse_csv_mapping() {
+        let mappings = parse_edge_replicas("iad-edge=worker-a-replica,sfo-edge=worker-c-replica")
+            .expect("mappings");
+
+        assert_eq!(
+            mappings.get("iad-edge"),
+            Some(&"worker-a-replica".to_string())
+        );
+        assert_eq!(
+            mappings.get("sfo-edge"),
+            Some(&"worker-c-replica".to_string())
+        );
+    }
+
+    #[test]
+    fn edge_decision_json_marks_fail_closed_rejects() {
+        let decision = EdgeReadDecision::RejectTooStale {
+            edge_region: "iad-edge".to_string(),
+            replica: "worker-a-replica".to_string(),
+            as_of: HlcTimestamp {
+                physical_ms: 90,
+                logical: 0,
+            },
+            closed_at: HlcTimestamp {
+                physical_ms: 100,
+                logical: 0,
+            },
+            max_staleness_ms: 5,
+            observed_staleness_ms: 10,
+        };
+        let json = render_edge_decision_json(&decision);
+        assert!(json.contains("\"decision\":\"reject_too_stale\""));
+        assert!(json.contains("\"serve_from_edge\":false"));
     }
 }

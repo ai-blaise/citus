@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Live HLC sidecar smoke for FEATURE: S9/MR6.
+# Live HLC sidecar smoke for FEATURE: S9/MR6/Edge1.
+# FEATURE: Edge1
 #
 # Starts the real HLC sidecar HTTP server, advances its local clock, merges a
 # peer clock exchange, verifies closed timestamp advancement, and proves
-# follower-read AS OF requests serve only at or before the closed timestamp.
+# follower-read and edge-read AS OF requests serve only at or before the closed
+# timestamp within the configured bounded-staleness budget.
 
 set -euo pipefail
 
@@ -51,6 +53,7 @@ AI_BLAISE_HLC_NODE_ID="worker-a" \
   AI_BLAISE_HLC_MAX_OFFSET_MS="500" \
   AI_BLAISE_HLC_MAX_STALENESS_MS="5000" \
   AI_BLAISE_HLC_INITIAL_PHYSICAL_MS="1700000000" \
+  AI_BLAISE_HLC_EDGE_REPLICAS="iad-edge=worker-a-replica,sfo-edge=worker-c-replica" \
   AI_BLAISE_LISTEN_ADDR="127.0.0.1:${port}" \
   "${hlc_bin}" serve >"${tmpdir}/hlc.log" 2>&1 &
 hlc_pid="$!"
@@ -141,12 +144,62 @@ status, unknown = request(
 assert status == 409, (status, unknown)
 assert "unknown HLC peer" in unknown["error"], unknown
 
+status, edge_served = request(
+    "GET",
+    f"/edge_read?edge_region=iad-edge&replica=worker-a-replica&as_of_physical_ms={closed_physical}&as_of_logical=0",
+)
+assert status == 200, (status, edge_served)
+assert edge_served["decision"] == "serve_from_edge", edge_served
+assert edge_served["serve_from_edge"] is True, edge_served
+assert edge_served["edge_region"] == "iad-edge", edge_served
+assert edge_served["observed_staleness_ms"] == 0, edge_served
+
+status, edge_newer = request(
+    "GET",
+    f"/edge_read?edge_region=iad-edge&replica=worker-a-replica&as_of_physical_ms={closed_physical + 1}&as_of_logical=0",
+)
+assert status == 409, (status, edge_newer)
+assert edge_newer["decision"] == "reject_not_closed", edge_newer
+assert edge_newer["serve_from_edge"] is False, edge_newer
+
+status, edge_stale = request(
+    "GET",
+    f"/edge_read?edge_region=iad-edge&replica=worker-a-replica&as_of_physical_ms={closed_physical - 5001}&as_of_logical=0",
+)
+assert status == 409, (status, edge_stale)
+assert edge_stale["decision"] == "reject_too_stale", edge_stale
+assert edge_stale["observed_staleness_ms"] == 5001, edge_stale
+
+status, edge_mismatch = request(
+    "GET",
+    f"/edge_read?edge_region=iad-edge&replica=worker-z-replica&as_of_physical_ms={closed_physical}&as_of_logical=0",
+)
+assert status == 409, (status, edge_mismatch)
+assert edge_mismatch["decision"] == "reject_replica_mismatch", edge_mismatch
+assert edge_mismatch["serve_from_edge"] is False, edge_mismatch
+
+status, unknown_edge = request(
+    "GET",
+    f"/edge_read?edge_region=unknown-edge&replica=worker-a-replica&as_of_physical_ms={closed_physical}&as_of_logical=0",
+)
+assert status == 409, (status, unknown_edge)
+assert "unknown edge region" in unknown_edge["error"], unknown_edge
+
+
 print("hlc_live_gate=passed")
 print("closed_timestamp_time_travel_gate=passed")
 print("follower_read_as_of_closed_served=true")
 print("follower_read_newer_than_closed_rejected=true")
 print("unknown_peer_rejected=true")
 print("closed_ts_peer_exchange_observed=true")
+print("edge_bounded_staleness_gate=passed")
+print("edge_read_as_of_closed_served=true")
+print("edge_read_newer_than_closed_rejected=true")
+print("edge_read_too_stale_rejected=true")
+print("edge_read_replica_mismatch_rejected=true")
+print("edge_unknown_region_rejected=true")
+print("edge_replica_provisioning_exercised=false")
+print("edge_kubernetes_traffic_exercised=false")
 PY
 
 echo "==> sidecar-hlc-smoke: cargo test"

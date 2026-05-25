@@ -1,7 +1,7 @@
 //! HLC sidecar runtime: peer clock exchange and closed-timestamp tracking.
 //!
 //! This is the production runtime that backs closed-timestamp follower reads
-//! (`FEATURE: S9`, `FEATURE: MR6`). It runs entirely in std-only Rust to
+//! (`FEATURE: S9`, `FEATURE: MR6`, `FEATURE: Edge1`). It runs entirely in std-only Rust to
 //! stay aligned with the rest of the sidecar workspace, so it can be embedded
 //! by `txn_status` and exercised by smoke tests without bringing in tokio,
 //! tonic, or extra async runtimes.
@@ -12,9 +12,11 @@
 
 // FEATURE: S9
 // FEATURE: MR6
+// FEATURE: Edge1
 
 use crate::{
-    ClosedTimestampPlan, FollowerReadDecision, FollowerReadPlan, HlcClock, HlcError, HlcTimestamp,
+    ClosedTimestampPlan, EdgeReadDecision, EdgeReadPlan, FollowerReadDecision, FollowerReadPlan,
+    HlcClock, HlcError, HlcTimestamp,
 };
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -24,6 +26,7 @@ use std::fmt;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum HlcRuntimeError {
     MissingShardGroup,
+    UnknownEdgeRegion(String),
     UnknownPeer(String),
     ZeroStalenessBudget,
     Hlc(HlcError),
@@ -33,6 +36,7 @@ impl fmt::Display for HlcRuntimeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::MissingShardGroup => write!(formatter, "shard_group must be set"),
+            Self::UnknownEdgeRegion(region) => write!(formatter, "unknown edge region: {region}"),
             Self::UnknownPeer(peer) => write!(formatter, "unknown HLC peer: {peer}"),
             Self::ZeroStalenessBudget => {
                 write!(formatter, "max_offset_ms must be greater than zero")
@@ -68,6 +72,7 @@ pub struct HlcRuntime {
     closed_at: HlcTimestamp,
     replica_count: u32,
     max_staleness_ms: u64,
+    edge_replicas: BTreeMap<String, String>,
 }
 
 impl HlcRuntime {
@@ -77,6 +82,24 @@ impl HlcRuntime {
         peers: Vec<String>,
         replica_count: u32,
         max_staleness_ms: u64,
+    ) -> Result<Self, HlcRuntimeError> {
+        Self::new_with_edge_replicas(
+            shard_group,
+            clock,
+            peers,
+            replica_count,
+            max_staleness_ms,
+            BTreeMap::new(),
+        )
+    }
+
+    pub fn new_with_edge_replicas(
+        shard_group: impl Into<String>,
+        clock: HlcClock,
+        peers: Vec<String>,
+        replica_count: u32,
+        max_staleness_ms: u64,
+        edge_replicas: BTreeMap<String, String>,
     ) -> Result<Self, HlcRuntimeError> {
         let shard_group = shard_group.into();
         if shard_group.trim().is_empty() {
@@ -101,6 +124,14 @@ impl HlcRuntime {
                 },
             );
         }
+        for (edge_region, replica) in &edge_replicas {
+            if edge_region.trim().is_empty() {
+                return Err(HlcRuntimeError::UnknownEdgeRegion(edge_region.clone()));
+            }
+            if replica.trim().is_empty() {
+                return Err(HlcRuntimeError::UnknownPeer(replica.clone()));
+            }
+        }
         let closed_at = compute_closed_timestamp(&clock.timestamp, &peer_map, clock.max_offset_ms);
         Ok(Self {
             shard_group,
@@ -109,6 +140,7 @@ impl HlcRuntime {
             closed_at,
             replica_count,
             max_staleness_ms,
+            edge_replicas,
         })
     }
 
@@ -134,6 +166,10 @@ impl HlcRuntime {
 
     pub fn max_staleness_ms(&self) -> u64 {
         self.max_staleness_ms
+    }
+
+    pub fn edge_replicas(&self) -> &BTreeMap<String, String> {
+        &self.edge_replicas
     }
 
     /// Advance the local clock from a wall-clock reading.
@@ -189,6 +225,33 @@ impl HlcRuntime {
     ) -> Result<FollowerReadDecision, HlcRuntimeError> {
         let plan = FollowerReadPlan {
             replica: replica.into(),
+            as_of,
+            closed_timestamp: self.closed_timestamp_plan()?,
+        };
+        Ok(plan.decision()?)
+    }
+
+    /// Decide whether an edge replica is eligible to serve a bounded-staleness
+    /// read. This is an admission-control gate only: it proves the edge region
+    /// is known, the request is pinned to the configured replica, the AS OF
+    /// timestamp is closed, and the requested snapshot is not older than the
+    /// configured staleness budget.
+    pub fn edge_read_decision(
+        &self,
+        edge_region: impl Into<String>,
+        replica: impl Into<String>,
+        as_of: HlcTimestamp,
+    ) -> Result<EdgeReadDecision, HlcRuntimeError> {
+        let edge_region = edge_region.into();
+        let edge_key = edge_region.trim();
+        let expected_replica = self
+            .edge_replicas
+            .get(edge_key)
+            .ok_or_else(|| HlcRuntimeError::UnknownEdgeRegion(edge_region.clone()))?;
+        let plan = EdgeReadPlan {
+            edge_region: edge_key.to_string(),
+            replica: replica.into(),
+            expected_replica: expected_replica.clone(),
             as_of,
             closed_timestamp: self.closed_timestamp_plan()?,
         };
@@ -424,6 +487,49 @@ mod tests {
             ),
             Ok(FollowerReadDecision::RejectNotClosed { .. })
         ));
+    }
+
+    #[test]
+    fn runtime_edge_read_gate_serves_only_configured_fresh_closed_replica() {
+        let mut edge_replicas = BTreeMap::new();
+        edge_replicas.insert("iad-edge".to_string(), "worker-a-replica".to_string());
+        let mut runtime = HlcRuntime::new_with_edge_replicas(
+            "orders-sg",
+            fixture_clock(),
+            vec!["worker-b".to_string()],
+            2,
+            5_000,
+            edge_replicas,
+        )
+        .expect("runtime");
+        runtime.tick(1_700_000_100).expect("tick");
+        let closed_at = runtime.closed_timestamp();
+
+        assert!(matches!(
+            runtime.edge_read_decision("iad-edge", "worker-a-replica", closed_at),
+            Ok(EdgeReadDecision::ServeFromEdge { .. })
+        ));
+        assert!(matches!(
+            runtime.edge_read_decision(
+                "iad-edge",
+                "worker-a-replica",
+                HlcTimestamp {
+                    physical_ms: closed_at.physical_ms + 1,
+                    logical: 0,
+                },
+            ),
+            Ok(EdgeReadDecision::RejectNotClosed { .. })
+        ));
+        assert!(matches!(
+            runtime.edge_read_decision("iad-edge", "worker-b-replica", closed_at),
+            Ok(EdgeReadDecision::RejectReplicaMismatch { .. })
+        ));
+        assert_eq!(
+            runtime.edge_read_decision("unknown-edge", "worker-a-replica", closed_at),
+            Err(HlcRuntimeError::UnknownEdgeRegion(
+                "unknown-edge".to_string()
+            ))
+        );
     }
 
     #[test]

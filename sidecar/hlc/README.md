@@ -15,6 +15,7 @@ Current implemented surface:
 - `HlcClock`
 - `ClosedTimestampPlan`
 - `FollowerReadPlan`
+- `EdgeReadPlan`
 - `cargo run -p ai_blaise_citus_sidecar_hlc -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_hlc -- serve`
@@ -22,10 +23,13 @@ Current implemented surface:
 
 The `serve` mode exposes the bounded HTTP gate used by the live smoke:
 `/clock/tick`, `/clock/observe`, `/closed_ts`, and `/follower_read`, plus the
-shared `/healthz`, `/readyz`, `/drain`, and `/metrics` probe surface.
-`sidecar-hlc-smoke.sh` starts the real sidecar process, advances the local
-clock, observes a peer clock exchange, verifies closed timestamp advancement,
-serves a follower read at the closed timestamp, and rejects an AS OF timestamp
-newer than the closed timestamp.
+Edge1 `/edge_read` gate and the shared `/healthz`, `/readyz`, `/drain`, and
+`/metrics` probe surface. `sidecar-hlc-smoke.sh` starts the real sidecar
+process, advances the local clock, observes a peer clock exchange, verifies
+closed timestamp advancement, serves follower and edge reads at the closed
+timestamp, and rejects AS OF timestamps that are newer than closed, too stale
+for the configured edge budget, mapped to the wrong edge replica, or mapped to
+an unknown edge region.
 
-These contracts cover `FEATURE: S9`.
+These contracts cover `FEATURE: S9`, `FEATURE: MR6`, and `FEATURE: Edge1` for
+the bounded sidecar gates described in `docs/ai-blaise/NEW_FEATURES.md`.

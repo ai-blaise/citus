@@ -3624,8 +3624,8 @@ read and backup-backed query paths execute.
 **Current production-ready boundary**: B5 is production-ready for the real
 `citusctl plan/apply time-travel <target_time> --now <utc_now>
 --max-staleness-seconds <seconds> --state-dir <dir> --format json|tsv` intent
-path. The CLI performs strict RFC3339 UTC calendar validation, rejects future
-targets, rejects targets older than the explicit staleness window, emits a
+path. The CLI performs strict RFC3339 UTC calendar validation, rejects
+ahead-of-now targets, rejects targets older than the explicit staleness window, emits a
 deterministic `time-travel-*` plan id, requires apply to match that rendered
 plan id, and appends `time-travel-intent.audit.tsv` with
 `time-travel-intent-validation-only` evidence. This does not execute follower
@@ -3636,9 +3636,9 @@ boundaries.
 Production evidence: `ci/ai-blaise/citusctl-time-travel-intent-smoke.sh`
 drives the real CLI binary through deterministic JSON planning, TSV apply,
 audit append, mismatched plan-id rejection, invalid UTC timestamp rejection,
-out-of-window rejection, and future-target rejection. `cargo test -p
+out-of-window rejection, and ahead-of-now rejection. `cargo test -p
 ai_blaise_citusctl --all-targets` covers leap-day, invalid calendar, age, and
-future-target validation at the Rust boundary.
+ahead-of-now validation at the Rust boundary.
 
 **Motivation**: Time-travel operations need explicit timestamp validation at
 the operator entrypoint before sidecars and companion GUCs consume the request.
@@ -8387,8 +8387,8 @@ Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-bla
 
 ### Edge1: Bounded-Staleness Edge Replicas
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `sidecar/hlc`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -8396,16 +8396,40 @@ Production evidence: VM proof runs `ci/ai-blaise/mcp-stdio-smoke.sh`, `ci/ai-bla
 **Summary**: Captures the decision-record gate for edge read replicas with a
 bounded-staleness contract.
 
-**Current boundary**: The advanced-planner runner validates the research guard;
-edge replica provisioning, freshness measurement, and failover behavior remain
-alpha.
+Production evidence: `ci/ai-blaise/sidecar-hlc-smoke.sh` starts the real
+`ai_blaise_citus_sidecar_hlc serve` process with configured
+`AI_BLAISE_HLC_EDGE_REPLICAS`, waits for `/readyz`, verifies `/closed_ts`,
+advances the local clock through `/clock/tick`, observes peer clock evidence
+through `/clock/observe`, and drives `/edge_read` against a configured edge
+region. The live smoke proves `/edge_read` serves an `AS OF` exactly at the
+closed timestamp, rejects a newer-than-closed edge read with HTTP 409, rejects a
+read outside the configured `max_staleness_ms` budget with HTTP 409, rejects a
+replica/edge-region mismatch with HTTP 409, and rejects an unknown edge region
+with HTTP 409. It emits `edge_bounded_staleness_gate=passed`,
+`edge_read_as_of_closed_served=true`,
+`edge_read_newer_than_closed_rejected=true`,
+`edge_read_too_stale_rejected=true`,
+`edge_read_replica_mismatch_rejected=true`, and
+`edge_unknown_region_rejected=true`.
+
+The production-ready boundary is the sidecar edge read-eligibility gate only:
+closed timestamp publication, configured edge-region to replica mapping, maximum
+staleness enforcement, and fail-closed HTTP decisions. Edge replica
+provisioning, POP/WAN network deployment, SQL/MVCC snapshot execution, planner
+integration, data-plane query routing, failover automation, and Kubernetes
+traffic remain alpha.
 
 **Citus comparison**: Vanilla Citus does not model edge POP read replicas.
 
 **References**:
 
 - In-source: `FEATURE: Edge1` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: Edge1` in `sidecar/hlc/src/lib.rs`
+- In-source: `FEATURE: Edge1` in `sidecar/hlc/src/runtime.rs`
+- In-source: `FEATURE: Edge1` in `sidecar/hlc/src/main.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- serve`
+- CI: `ci/ai-blaise/sidecar-hlc-smoke.sh`
 
 ### Edge2: libsql Read-Tier Research Guard
 
