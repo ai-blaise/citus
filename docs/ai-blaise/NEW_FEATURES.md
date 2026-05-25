@@ -8872,25 +8872,53 @@ split workflow.
 
 ### S3: Clone-Node Fast Scale-Out
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/clone_node.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
 **Bundled extension dep**: none
 
 **Summary**: Records source-worker and target-worker inputs for a clone-node
-scale-out operation.
+scale-out operation, plus a bounded live Citus physical-replica clone promotion
+contract.
 
-**Current boundary**: Contract execution proves required inputs; live clone,
-catch-up, validation, and cutover workflows remain alpha.
+**Current production-ready boundary**: S3 is production-ready for the bounded
+VM-proven clone-node flow in `ci/ai-blaise/clone-node-live-smoke.sh`: one real
+Citus coordinator, one primary worker, and one PostgreSQL physical streaming
+replica clone.
 
-**Citus comparison**: Vanilla Citus exposes clone-node primitives but not this
-operator contract.
+Production evidence: the live smoke starts the real Citus containers, registers
+the primary worker through companion-rendered setup SQL, creates distributed
+`public.s3_orders` with four shard placements, builds the clone worker with
+`pg_basebackup`, verifies the clone is in recovery before promotion, executes
+`citus_add_clone_node` and `citus_promote_clone_and_rebalance` through
+companion-rendered promote SQL, waits for Citus catch-up and `pg_promote`, and
+verifies `clone_rows_preserved=20`, `clone_sum_preserved=5060`,
+`clone_role_after_promote=primary`, `clone_active_after_promote=true`,
+`clone_should_have_shards_after_promote=true`, `clone_shard_placements_after=2`,
+and `primary_shard_placements_after=2`. The companion canonical report exposes
+the same boundary through `CloneNodePlan`, `run-clone-node-canonical`,
+`run-clone-node-setup-sql-canonical`, and
+`run-clone-node-promote-sql-canonical`.
+
+This status does not claim Kubernetes clone orchestration, CSI snapshot based
+cloning, automatic capacity policy, WAN/cross-region clone operation,
+service/DNS retargeting, or production traffic cutover.
+
+**Citus comparison**: Vanilla Citus exposes `citus_add_clone_node` and
+`citus_promote_clone_and_rebalance`; ai-blaise adds a validated companion
+contract, a live physical-replica proof, and explicit nonclaim markers around
+the surrounding automated scale-out workflow.
 
 **References**:
 
 - In-source: `FEATURE: S3` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: S3` in `companion/src/clone_node.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-clone-node-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-clone-node-setup-sql-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-clone-node-promote-sql-canonical`
+- CI: `ci/ai-blaise/clone-node-live-smoke.sh`
 
 ### S7: Cross-Region Replication Via pgactive
 

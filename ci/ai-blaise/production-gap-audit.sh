@@ -114,6 +114,7 @@ SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ra
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
 SHARD_SPLIT_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-split-live-smoke.sh"
+CLONE_NODE_LIVE_SMOKE = ROOT / "ci/ai-blaise/clone-node-live-smoke.sh"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -2395,6 +2396,87 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S1 boundary phrase: {phrase}")
+
+
+clone_node_live_smoke = read(CLONE_NODE_LIVE_SMOKE)
+if status_by_id.get("S3") != "production-ready":
+    fail("S3 must be production-ready once live clone-node evidence is wired")
+section_s3 = feature_section(docs, "S3")
+clone_node_truth = compact(
+    section_s3
+    + "\n"
+    + audit
+    + "\n"
+    + clone_node_live_smoke
+    + "\n"
+    + read(ROOT / "companion/src/clone_node.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+)
+for phrase in (
+    "**Status**: production-ready",
+    "ci/ai-blaise/clone-node-live-smoke.sh",
+    "pg_basebackup",
+    "citus_add_clone_node",
+    "citus_promote_clone_and_rebalance",
+    "clone_rows_preserved=20",
+    "clone_sum_preserved=5060",
+    "clone_role_after_promote=primary",
+    "clone_shard_placements_after=2",
+    "primary_shard_placements_after=2",
+    "Kubernetes clone orchestration",
+    "CSI snapshot",
+    "automatic capacity policy",
+    "WAN/cross-region",
+    "production traffic cutover",
+):
+    if compact(phrase) not in compact(section_s3):
+        fail(f"S3 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: S3",
+    "CloneNodePlan",
+    "run-clone-node-canonical",
+    "run-clone-node-setup-sql-canonical",
+    "run-clone-node-promote-sql-canonical",
+    "clone_node_live=passed",
+    "pg_basebackup_clone_in_recovery_before=true",
+    "citus_add_clone_node_executed=true",
+    "citus_promote_clone_and_rebalance_executed=true",
+    "pg_promote_clone_recovery_after=false",
+    "clone_rows_preserved=20",
+    "clone_sum_preserved=5060",
+    "clone_should_have_shards_after_promote=true",
+    "clone_shard_placements_after=2",
+    "primary_shard_placements_after=2",
+    "kubernetes_clone_orchestration_exercised=false",
+    "csi_snapshot_exercised=false",
+    "automatic_capacity_policy_exercised=false",
+    "production_traffic_cutover_exercised=false",
+    "clone-node-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in clone_node_truth:
+        fail(f"S3 live clone-node production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "S3 clone-node fast scale-out is production-ready",
+    "pg_basebackup",
+    "citus_add_clone_node",
+    "citus_promote_clone_and_rebalance",
+    "clone_rows_preserved=20",
+    "clone_sum_preserved=5060",
+    "clone_role_after_promote=primary",
+    "clone_shard_placements_after=2",
+    "primary_shard_placements_after=2",
+    "Kubernetes clone orchestration",
+    "CSI snapshot",
+    "automatic capacity policy",
+    "WAN/cross-region",
+    "production traffic cutover",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing S3 boundary phrase: {phrase}")
 
 pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
 pool_geoip_live_smoke = read(POOL_GEOIP_LIVE_SMOKE)

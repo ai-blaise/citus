@@ -692,6 +692,20 @@ more production-ready than the artifacts justified.
   provisioning, POP/WAN network deployment, SQL/MVCC snapshot execution,
   planner integration, data-plane query routing, failover automation, or
   Kubernetes traffic.
+- S3 clone-node fast scale-out is production-ready for the bounded live Citus
+  physical-replica clone promotion path. `clone-node-live-smoke.sh` starts a
+  real Citus coordinator and primary worker, creates distributed
+  `public.s3_orders`, bootstraps a PostgreSQL physical streaming replica clone
+  with `pg_basebackup`, verifies the clone is in recovery, executes
+  `citus_add_clone_node` and `citus_promote_clone_and_rebalance` through
+  companion-rendered SQL, waits for Citus catch-up and `pg_promote`, and proves
+  `clone_rows_preserved=20`, `clone_sum_preserved=5060`,
+  `clone_role_after_promote=primary`, `clone_active_after_promote=true`,
+  `clone_should_have_shards_after_promote=true`,
+  `clone_shard_placements_after=2`, and `primary_shard_placements_after=2`.
+  This does not claim Kubernetes clone orchestration, CSI snapshot based
+  cloning, automatic capacity policy, WAN/cross-region clone operation,
+  service/DNS retargeting, or production traffic cutover.
 - T5 parallel commit transaction status is production-ready for the bounded
   networked transaction-status sidecar API and SQL contract.
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path

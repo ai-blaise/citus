@@ -44,17 +44,17 @@
 
 use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
-    canonical_bulk_distsql_report, canonical_bulk_distsql_sql_plan,
-    canonical_cohabit_detection_report, canonical_domain_contracts_report,
-    canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
-    canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
-    canonical_plan_runtime_report, canonical_regional_placement_report,
-    canonical_regional_placement_sql_plan, canonical_release_hardening_report,
-    canonical_schema_drift_report, canonical_schema_drift_sql_plan, canonical_shard_split_report,
-    canonical_shard_split_sql_plan, canonical_shard_temperature_ranking_report,
-    canonical_shard_temperature_sql_plan, canonical_timescale_advanced_report,
-    canonical_timescale_advanced_sql_plan, canonical_transaction_state_report,
-    canonical_transaction_state_sql_plan, render_all_views,
+    canonical_bulk_distsql_report, canonical_bulk_distsql_sql_plan, canonical_clone_node_report,
+    canonical_clone_node_sql_plan, canonical_cohabit_detection_report,
+    canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
+    canonical_fdw_credential_rotation_report, canonical_fdw_credential_rotation_sql_plan,
+    canonical_operations_readiness_report, canonical_plan_runtime_report,
+    canonical_regional_placement_report, canonical_regional_placement_sql_plan,
+    canonical_release_hardening_report, canonical_schema_drift_report,
+    canonical_schema_drift_sql_plan, canonical_shard_split_report, canonical_shard_split_sql_plan,
+    canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
+    canonical_timescale_advanced_report, canonical_timescale_advanced_sql_plan,
+    canonical_transaction_state_report, canonical_transaction_state_sql_plan, render_all_views,
 };
 use std::env;
 use std::process;
@@ -121,6 +121,15 @@ fn main() {
         }
         [command] if command == "run-shard-split-sql-canonical" => {
             run_shard_split_sql_canonical();
+        }
+        [command] if command == "run-clone-node-canonical" => {
+            run_clone_node_canonical();
+        }
+        [command] if command == "run-clone-node-setup-sql-canonical" => {
+            run_clone_node_setup_sql_canonical();
+        }
+        [command] if command == "run-clone-node-promote-sql-canonical" => {
+            run_clone_node_promote_sql_canonical();
         }
         [command] if command == "run-transaction-state-canonical" => {
             run_transaction_state_canonical();
@@ -489,6 +498,54 @@ fn run_shard_split_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_clone_node_canonical() {
+    let report = canonical_clone_node_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: clone node report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id	table	shard_count	expected_rows	expected_sum	catchup_timeout_seconds	setup_statements	promote_statements	uses_citus_add_clone_node	uses_citus_promote_clone_and_rebalance	records_data_preservation	records_clone_metadata	registers_primary_worker	fail_closed_checks	kubernetes_clone_orchestration_exercised	csi_snapshot_exercised	automatic_capacity_policy_exercised	production_traffic_cutover_exercised"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.feature_id,
+        report.table_name,
+        report.shard_count,
+        report.expected_rows,
+        report.expected_sum,
+        report.catchup_timeout_seconds,
+        report.setup_statement_count,
+        report.promote_statement_count,
+        report.uses_citus_add_clone_node,
+        report.uses_citus_promote_clone_and_rebalance,
+        report.records_data_preservation,
+        report.records_clone_metadata,
+        report.registers_primary_worker,
+        report.fail_closed_checks,
+        report.kubernetes_clone_orchestration_exercised,
+        report.csi_snapshot_exercised,
+        report.automatic_capacity_policy_exercised,
+        report.production_traffic_cutover_exercised,
+    );
+}
+
+fn run_clone_node_setup_sql_canonical() {
+    let sql_plan = canonical_clone_node_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: clone node setup SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_setup_psql_script());
+}
+
+fn run_clone_node_promote_sql_canonical() {
+    let sql_plan = canonical_clone_node_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: clone node promote SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_promote_psql_script());
+}
+
 fn run_transaction_state_canonical() {
     let report = canonical_transaction_state_report().unwrap_or_else(|error| {
         eprintln!("companion-contracts: transaction state report failed: {error}");
@@ -605,7 +662,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-clone-node-canonical|run-clone-node-setup-sql-canonical|run-clone-node-promote-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

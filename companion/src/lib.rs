@@ -4,6 +4,7 @@ pub mod advanced_planner;
 pub mod auth;
 pub mod bulk_distsql;
 pub mod citus_timescale;
+pub mod clone_node;
 pub mod db_doctor;
 pub mod domain_contracts;
 pub mod extension_catalog;
@@ -57,6 +58,11 @@ pub use citus_timescale::{
     AddContinuousAggregateDistributedPlan, AddPolicyDistributed, AddPolicyDistributedPlan,
     CompanionError, CompanionSqlPlan, DistributedHypertablePlan, TimeRangeShardPrunerPlan,
     FEATURE_COHABIT_DETECTION, FEATURE_DISTRIBUTE_HYPERTABLE, FEATURE_TIME_RANGE_SHARD_PRUNER,
+};
+pub use clone_node::{
+    canonical_clone_node_fail_closed_checks, canonical_clone_node_plan,
+    canonical_clone_node_report, canonical_clone_node_sql_plan, CloneNodeError, CloneNodePlan,
+    CloneNodeReport, CloneNodeSqlPlan,
 };
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,
