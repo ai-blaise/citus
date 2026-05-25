@@ -249,10 +249,10 @@ more production-ready than the artifacts justified.
   default. The deploy check and production gap audit reject production values
   that enable protocol pipelining, PG18 `io_uring`,
   or release attestations before those controls are rendered, enforced, and
-  verified end to end. Sec7/Sec8 External Secrets and TLS now have a separate
-  live kind proof for controller reconciliation, Secret mounts, RBAC denial,
-  and TLS 1.3 mTLS enforcement, while cloud provider auth and rotation remain
-  outside the claim.
+  verified end to end. A9 vector-provider secret binding and Sec7/Sec8
+  External Secrets and TLS now have a separate live kind proof for controller
+  reconciliation, Secret mounts, RBAC denial, and TLS 1.3 mTLS enforcement,
+  while cloud provider auth and rotation remain outside the claim.
 - Sec13 pool CIDR access control is now enforced by the live pool data path and
   rendered by Helm. The pool rejects PostgreSQL clients outside
   `AI_BLAISE_POOL_CLIENT_CIDR_ALLOWLIST` before connecting upstream, exposes
@@ -261,10 +261,12 @@ more production-ready than the artifacts justified.
   proven by Docker plus kind smokes that verify allowed and denied SQL traffic.
 - Operator RBAC now enumerates the ai-blaise CRD resources instead of using a
   wildcard grant, and runtime ServiceAccounts still receive no Secret API
-  grants. Sec7/Sec8 production evidence from
+  grants. A9/Sec7/Sec8 production evidence from
   `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh` installs External
   Secrets Operator chart `0.10.7`, reconciles fake-provider ExternalSecrets
   from deterministic ExternalSecret manifest shape into real Kubernetes Secrets, verifies runtime Secret API reads are denied,
+  proves `ai-blaise-vector-provider-openai` stays reference-only while its
+  reconciled API key is hashed into the evidence file,
   mounts TLS Secret-reference material into pods, proves TLS 1.3 mTLS success, and proves
   no-client-cert and TLS 1.2 clients fail. Cloud provider authentication,
   cert-manager integration, production rotation SLOs, service-mesh policy, and

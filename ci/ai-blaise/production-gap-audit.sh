@@ -1019,7 +1019,7 @@ security_external_tls_smoke = read(SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE)
 if not (SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE.stat().st_mode & 0o111):
     fail("security-external-secrets-tls-live-smoke.sh must be executable")
 for required in (
-    "FEATURE: Sec7 Sec8",
+    "FEATURE: A9 Sec7 Sec8",
     "external-secrets/external-secrets",
     "SEC78_ESO_CHART_VERSION",
     "0.10.7",
@@ -1027,6 +1027,10 @@ for required in (
     "provider:",
     "fake:",
     "ExternalSecret",
+    "ai-blaise-vector-provider-openai",
+    "/providers/openai/api-key",
+    "vector_provider_secret_binding",
+    "literal_manifest=false",
     "kubectl -n \"$ns\" wait externalsecret",
     "auth can-i get secrets",
     "ssl.TLSVersion.TLSv1_3",
@@ -1068,6 +1072,21 @@ operator_workflow = read(OPERATOR_WORKFLOW)
 if "security-supply-chain-smoke.sh" not in operator_workflow:
     fail("operator workflow must run security-supply-chain-smoke.sh")
 
+if status_by_id.get("A9") != "production-ready":
+    fail("A9 must be production-ready after live vector-provider ExternalSecret reconciliation evidence")
+a9_body = compact(entry_by_id["A9"]["body"])
+for phrase in (
+    "Production evidence",
+    "security-external-secrets-tls-live-smoke.sh",
+    "ai-blaise-vector-provider-openai",
+    "External Secrets Operator chart `0.10.7`",
+    "fake-provider `ExternalSecret`",
+    "runtime ServiceAccount is denied Secret API reads",
+    "does not claim cloud provider authentication",
+    "provider credential rotation",
+):
+    if compact(phrase) not in a9_body:
+        fail(f"A9 docs lost live proof/boundary phrase: {phrase}")
 if status_by_id.get("Sec9") != "production-ready":
     fail("Sec9 must remain production-ready after registry-backed SBOM/cosign proof")
 for feature_id in ("Sec7", "Sec8"):

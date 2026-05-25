@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# FEATURE: Sec7 Sec8
-# Live security proof: External Secrets Operator reconciles reference-only
-# ExternalSecrets into Kubernetes Secrets, runtime ServiceAccounts cannot read
-# Secret objects through the API, and mounted TLS Secret material enforces TLS
-# 1.3 plus client certificates over in-cluster traffic.
+# FEATURE: A9 Sec7 Sec8
+# Live security proof: External Secrets Operator reconciles reference-only pool,
+# vector-provider, and TLS ExternalSecrets into Kubernetes Secrets, runtime
+# ServiceAccounts cannot read Secret objects through the API, and mounted TLS
+# Secret material enforces TLS 1.3 plus client certificates over in-cluster
+# traffic.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -21,7 +22,7 @@ work=""
 
 require_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is required for Sec7/Sec8 live smoke" >&2
+    echo "$1 is required for A9/Sec7/Sec8 live smoke" >&2
     exit 1
   fi
 }
@@ -80,6 +81,8 @@ spec:
       data:
         - key: /postgres/pool/password
           value: sec78-postgres-password
+        - key: /providers/openai/api-key
+          value: a9-vector-openai-api-key
         - key: /tls/pool/server
           valueMap:
             tls.crt: |-
@@ -119,6 +122,23 @@ spec:
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
+  name: ai-blaise-vector-provider-openai
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: ai-blaise-cluster-secrets
+    kind: SecretStore
+  target:
+    name: ai-blaise-vector-provider-openai
+    creationPolicy: Owner
+  data:
+    - secretKey: apiKey
+      remoteRef:
+        key: /providers/openai/api-key
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
   name: ai-blaise-citus-pool-tls
 spec:
   refreshInterval: 5m
@@ -153,9 +173,10 @@ spec:
         key: /tls/pool/client
 EOF
 kubectl -n "$ns" wait externalsecret/ai-blaise-citus-pool-postgres-auth --for=condition=Ready --timeout=120s >/dev/null
+kubectl -n "$ns" wait externalsecret/ai-blaise-vector-provider-openai --for=condition=Ready --timeout=120s >/dev/null
 kubectl -n "$ns" wait externalsecret/ai-blaise-citus-pool-tls --for=condition=Ready --timeout=120s >/dev/null
 kubectl -n "$ns" wait externalsecret/ai-blaise-citus-pool-client-tls --for=condition=Ready --timeout=120s >/dev/null
-for s in ai-blaise-citus-pool-postgres-auth ai-blaise-citus-pool-tls ai-blaise-citus-pool-client-tls; do kubectl -n "$ns" get secret "$s" >/dev/null; done
+for s in ai-blaise-citus-pool-postgres-auth ai-blaise-vector-provider-openai ai-blaise-citus-pool-tls ai-blaise-citus-pool-client-tls; do kubectl -n "$ns" get secret "$s" >/dev/null; done
 kubectl -n "$ns" create serviceaccount ai-blaise-citus-pool >/dev/null
 can_i=$(kubectl -n "$ns" auth can-i get secrets --as "system:serviceaccount:${ns}:ai-blaise-citus-pool" || true)
 [[ "$can_i" == no ]]
@@ -304,16 +325,23 @@ run_job sec78-client-success success
 run_job sec78-client-no-cert no-cert
 run_job sec78-client-tls12 tls12
 password_sha="$(kubectl -n "${ns}" get secret ai-blaise-citus-pool-postgres-auth -o jsonpath="{.data.password}" | base64 -d | sha256sum | sed "s/ .*//")"
+api_key_sha="$(kubectl -n "${ns}" get secret ai-blaise-vector-provider-openai -o jsonpath="{.data.apiKey}" | base64 -d | sha256sum | sed "s/ .*//")"
+vector_manifest="$(kubectl -n "${ns}" get externalsecret ai-blaise-vector-provider-openai -o yaml)"
+if grep -Fq "a9-vector-openai-api-key" <<<"${vector_manifest}"; then
+  echo "A9 ExternalSecret manifest leaked vector provider secret material" >&2
+  exit 1
+fi
 git_sha="$(git rev-parse --short=12 HEAD)"
 {
   printf "feature\tassertion\tstatus\tdetail\n"
   printf "Sec7\texternal_secrets_operator\tpassed\tchart=external-secrets-%s namespace=external-secrets\n" "${eso_chart_version}"
-  printf "Sec7\tfake_provider_secret_sync\tpassed\tstore=ai-blaise-cluster-secrets secrets=3 password_sha256=%s\n" "${password_sha}"
+  printf "Sec7\tfake_provider_secret_sync\tpassed\tstore=ai-blaise-cluster-secrets secrets=4 password_sha256=%s\n" "${password_sha}"
   printf "Sec7\truntime_secret_api_denied\tpassed\tserviceaccount=ai-blaise-citus-pool can_get_secrets=%s\n" "${can_i}"
+  printf "A9\tvector_provider_secret_binding\tpassed\texternalsecret=ai-blaise-vector-provider-openai target_secret=ai-blaise-vector-provider-openai remote_ref=/providers/openai/api-key api_key_sha256=%s literal_manifest=false\n" "${api_key_sha}"
   printf "Sec8\ttls_secret_mount\tpassed\tsecret=ai-blaise-citus-pool-tls keys=tls.crt,tls.key,ca.crt\n"
   printf "Sec8\ttls13_mtls_success\tpassed\tserver=sec78-tls-server client=sec78-client-success image=%s git=%s\n" "${python_image}" "${git_sha}"
   printf "Sec8\tclient_cert_required\tpassed\tjob=sec78-client-no-cert expected_failure=true\n"
   printf "Sec8\ttls12_rejected\tpassed\tjob=sec78-client-tls12 expected_failure=true\n"
 } >"${evidence_file}"
 cat "${evidence_file}"
-echo "ai_blaise_citus Sec7/Sec8 external-secrets TLS live smoke passed"
+echo "ai_blaise_citus A9/Sec7/Sec8 external-secrets TLS live smoke passed"

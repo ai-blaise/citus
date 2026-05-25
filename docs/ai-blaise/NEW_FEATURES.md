@@ -7907,7 +7907,7 @@ claims for the full feature behavior.
 ### A9: Secret Binding Via External Secrets
 
 **Overlay**: `companion/src/ops_contracts.rs` and Helm values
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -7915,11 +7915,18 @@ claims for the full feature behavior.
 **Summary**: Captures the vector-provider secret-reference contract that keeps
 API keys outside literal values and points operators at External Secrets.
 
-**Current boundary**: The executable operations runner validates the expected
-secret-control shape. The operator security supply-chain runner additionally
-validates deterministic ExternalSecret manifest shape for runtime Secret refs
-and fail-closed missing-binding behavior. Live External Secrets reconciliation,
-provider credential rotation, and controller/provider status remain alpha.
+Production evidence: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
+boots kind, installs External Secrets Operator chart `0.10.7`, creates a
+fake-provider `ExternalSecret` named `ai-blaise-vector-provider-openai`, waits
+for it to reconcile into a real Kubernetes Secret, verifies the rendered
+ExternalSecret manifest does not contain the vector provider API key literal,
+hashes the reconciled `apiKey` value in
+`artifacts/security-external-secrets-tls-live-evidence.tsv`, and verifies the
+runtime ServiceAccount is denied Secret API reads. This production-ready claim
+covers reference-only vector-provider secret binding through live External
+Secrets reconciliation with the deterministic fake provider; it does not claim
+cloud provider authentication, provider credential rotation, production
+rotation SLOs, or runtime loading of that key by a live vectorizer data plane.
 
 **Citus comparison**: Vanilla Citus does not define vector-provider secret
 binding.
@@ -7930,7 +7937,8 @@ binding.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
-- Executable: `bash ci/ai-blaise/security-supply-chain-smoke.sh`
+- CI: `ci/ai-blaise/security-supply-chain-smoke.sh`
+- Live smoke: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
 
 ### A10: Streaming Chat Completion UDF
 
@@ -8557,10 +8565,11 @@ condition behavior beyond the fake provider used for deterministic CI.
 Production evidence: `ci/ai-blaise/security-external-secrets-tls-live-smoke.sh`
 boots kind, installs External Secrets Operator, creates
 `SecretStore/ai-blaise-cluster-secrets` with the fake provider, reconciles
-`ai-blaise-citus-pool-postgres-auth`, `ai-blaise-citus-pool-tls`, and
-`ai-blaise-citus-pool-client-tls` ExternalSecrets into Kubernetes Secrets,
-checks their `Ready` conditions, verifies the pool runtime ServiceAccount is
-denied Secret API reads, and writes
+`ai-blaise-citus-pool-postgres-auth`, `ai-blaise-vector-provider-openai`,
+`ai-blaise-citus-pool-tls`, and `ai-blaise-citus-pool-client-tls`
+ExternalSecrets into Kubernetes Secrets, checks their `Ready` conditions,
+verifies the pool runtime ServiceAccount is denied Secret API reads, records
+the vector-provider secret binding evidence for `FEATURE: A9`, and writes
 `artifacts/security-external-secrets-tls-live-evidence.tsv`. `gate-close`
 depends on this smoke.
 
