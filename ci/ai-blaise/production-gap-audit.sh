@@ -3313,7 +3313,7 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L12", "L13"}
+analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
@@ -3326,6 +3326,8 @@ for feature_id in ("L2", "L4"):
         fail(f"{feature_id} must be production-ready once local DataFusion runtime evidence is wired")
 if entry_status.get("L8") != "production-ready":
     fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
+if entry_status.get("L12") != "production-ready":
+    fail("L12 must be production-ready once live DuckDB extension load evidence is wired")
 analytical_truth = compact(
     docs
     + "\n"
@@ -3342,6 +3344,8 @@ analytical_truth = compact(
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-smoke.sh")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh")
 )
 for phrase in (
     "**Status**: production-ready",
@@ -3406,6 +3410,38 @@ for phrase in ("sidecar-analytical-mirror-live-smoke", "ci/ai-blaise/sidecar-ana
         fail(f"Makefile.ai-blaise must wire the analytical mirror live smoke: {phrase}")
 if "sidecar-analytical-mirror-live-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-analytical-mirror-live-smoke.sh")
+
+for phrase in (
+    "run-duckdb-extension-catalog-canonical",
+    "sidecar-analytical-duckdb-extension-live-smoke.sh",
+    "duckdb/duckdb@sha256:ddc7ffc382dfd3f8213ac3d29435a7ce0ea4446fb3fc966a57a28d39b46174b1",
+    "INSTALL httpfs",
+    "LOAD httpfs",
+    "INSTALL iceberg",
+    "LOAD iceberg",
+    "duckdb_extensions()",
+    "duckdb_extension_catalog_live=passed",
+    "l12_extensions_installed=2",
+    "l12_extensions_loaded=2",
+    "l12_duckdb_extensions_catalog_queried=true",
+    "live-duckdb-container-extension-load-only",
+    "pg_duckdb_runtime_exercised=false",
+    "motherduck_session_exercised=false",
+    "object_store_io_attempted=false",
+    "extension_repository_mirror_verified=false",
+    "pg_duckdb inside PostgreSQL",
+    "MotherDuck cloud sessions",
+    "object-store reads",
+    "warehouse federation",
+    "internally mirrored DuckDB extension repository",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical L12 production boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-duckdb-extension-live-smoke", "ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the DuckDB extension live smoke: {phrase}")
+if "sidecar-analytical-duckdb-extension-live-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-duckdb-extension-live-smoke.sh")
 
 print(
     "production_gap_audit\t"

@@ -10,8 +10,8 @@
 
 use ai_blaise_citus_sidecar_analytical::{
     canonical_analytical_execution_plan, canonical_analytical_runtime_report,
-    materialize_test_decoding_mirror_to_local_artifact, AnalyticalEngine, FederationTarget,
-    LakehouseFormat,
+    canonical_duckdb_extension_catalog_report, materialize_test_decoding_mirror_to_local_artifact,
+    AnalyticalEngine, FederationTarget, LakehouseFormat,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -37,6 +37,11 @@ fn main() {
 
     if args == ["run-logical-mirror-materialization-from-stdin"] {
         run_logical_mirror_materialization_from_stdin();
+        return;
+    }
+
+    if args == ["run-duckdb-extension-catalog-canonical"] {
+        run_duckdb_extension_catalog_canonical();
         return;
     }
 
@@ -176,6 +181,29 @@ fn run_runtime_canonical() {
     println!("{}", row.join("\t"));
 }
 
+fn run_duckdb_extension_catalog_canonical() {
+    let report = canonical_duckdb_extension_catalog_report().unwrap_or_else(|error| {
+        eprintln!("analytical: DuckDB extension catalog report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\tallowed_extensions\tallowed_extension_count\tinstall_sql\tload_sql\texternal_io_attempted\tpg_duckdb_runtime_exercised\tmotherduck_session_exercised\tevidence_boundary"
+    );
+    let row = vec![
+        report.feature_id.to_string(),
+        report.allowed_extensions.join(","),
+        report.allowed_extension_count.to_string(),
+        report.install_sql.join(";"),
+        report.load_sql.join(";"),
+        report.external_io_attempted.to_string(),
+        report.pg_duckdb_runtime_exercised.to_string(),
+        report.motherduck_session_exercised.to_string(),
+        report.evidence_boundary.to_string(),
+    ];
+    println!("{}", row.join("\t"));
+}
+
 fn run_logical_mirror_materialization_from_stdin() {
     let artifact_path = env::var("AI_BLAISE_ANALYTICAL_MIRROR_ARTIFACT")
         .map(PathBuf::from)
@@ -221,7 +249,7 @@ fn run_logical_mirror_materialization_from_stdin() {
 }
 
 fn print_usage() {
-    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
 }
 

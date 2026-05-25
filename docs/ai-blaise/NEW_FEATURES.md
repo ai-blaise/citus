@@ -4329,13 +4329,32 @@ not this explicit Toolkit/HTAP aggregate bridge.
 ### L12: DuckDB Extension Catalog
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_duckdb`
 
-**Summary**: Defines the allow-list of DuckDB extensions that analytical
-sidecars may enable and counts canonical runtime extension loads.
+**Summary**: Provides a bounded DuckDB extension allow-list and live runtime
+proof that the catalog's `httpfs` and `iceberg` extensions can be installed,
+loaded, and observed through DuckDB's `duckdb_extensions()` catalog.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
+runs `run-duckdb-extension-catalog-canonical`, verifies the sidecar catalog emits
+`INSTALL httpfs`, `LOAD httpfs`, `INSTALL iceberg`, and `LOAD iceberg`, then runs
+a pinned DuckDB container
+`duckdb/duckdb@sha256:ddc7ffc382dfd3f8213ac3d29435a7ce0ea4446fb3fc966a57a28d39b46174b1`.
+Inside that real DuckDB runtime, the smoke executes the install/load statements
+and queries `duckdb_extensions()` for `httpfs,true,true` and `iceberg,true,true`.
+It requires `duckdb_extension_catalog_live=passed`,
+`l12_extensions_installed=2`, `l12_extensions_loaded=2`, and
+`l12_duckdb_extensions_catalog_queried=true`.
+
+Boundary: this production claim is the pinned DuckDB container extension-catalog
+load path only. It intentionally records `pg_duckdb_runtime_exercised=false`,
+`motherduck_session_exercised=false`, `object_store_io_attempted=false`, and
+`extension_repository_mirror_verified=false`; it must not be cited as evidence
+for pg_duckdb inside PostgreSQL, MotherDuck cloud sessions, object-store reads,
+warehouse federation, or an internally mirrored DuckDB extension repository.
 
 **Motivation**: DuckDB extension use needs to be explicit before sidecars load
 code from extension repositories.
@@ -4347,7 +4366,9 @@ code from extension repositories.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L12` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-duckdb-extension-catalog-canonical`
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
 
 ### L13: MotherDuck Connector
 

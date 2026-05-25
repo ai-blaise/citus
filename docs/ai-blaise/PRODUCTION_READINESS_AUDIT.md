@@ -1107,8 +1107,24 @@ Rule 10 completion for this branch requires local and VM verification of:
   and `kubernetes_traffic_exercised=false` are required. It is not evidence for
   object-store mirror writes, a long-running logical-replication mirror daemon,
   exactly-once checkpoint persistence, Citus distributed mirror routing, or
-  Kubernetes traffic. `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`,
-  `FEATURE: L6`, `FEATURE: L12`, and `FEATURE: L13` remain alpha.
+  Kubernetes traffic.
+- `FEATURE: L12` now has separate bounded live DuckDB extension-catalog
+  evidence. `ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
+  runs `run-duckdb-extension-catalog-canonical`, verifies `INSTALL httpfs`,
+  `LOAD httpfs`, `INSTALL iceberg`, and `LOAD iceberg`, then runs the pinned
+  DuckDB container
+  `duckdb/duckdb@sha256:ddc7ffc382dfd3f8213ac3d29435a7ce0ea4446fb3fc966a57a28d39b46174b1`.
+  The smoke executes real DuckDB extension installation/loading, queries
+  `duckdb_extensions()`, and requires `duckdb_extension_catalog_live=passed`,
+  `l12_extensions_installed=2`, `l12_extensions_loaded=2`, and
+  `l12_duckdb_extensions_catalog_queried=true`. The claim is bounded to that
+  pinned DuckDB extension-catalog path: `pg_duckdb_runtime_exercised=false`,
+  `motherduck_session_exercised=false`, `object_store_io_attempted=false`, and
+  `extension_repository_mirror_verified=false` are required. It is not evidence
+  for pg_duckdb inside PostgreSQL, MotherDuck cloud sessions, object-store reads,
+  warehouse federation, or an internally mirrored DuckDB extension repository.
+  `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, `FEATURE: L6`, and
+  `FEATURE: L13` remain alpha.
 - Agentmemory checkpointing for this slice used the scaleable-database-infra
   service at `http://127.0.0.1:3911` and did not edit or erase the backing
   memory file directly.

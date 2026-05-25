@@ -27,9 +27,11 @@ Current implemented surface:
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-logical-mirror-materialization-from-stdin`
+- `cargo run -p ai_blaise_citus_sidecar_analytical -- run-duckdb-extension-catalog-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- serve`
 - `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
+- `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
 
 These contracts cover `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 `FEATURE: L4`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`,
@@ -59,10 +61,19 @@ requires `logical_mirror_live=passed`, `l8_test_decoding_slot_consumed=true`,
 `l8_materialized_rows=3`, `l8_materialized_total=6000`, and
 `l8_datafusion_mirror_query_executed=true`.
 
-`FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L12`,
-and `FEATURE: L13` remain alpha. The L8 mirror path remains explicitly bounded:
+`FEATURE: L12` has separate bounded production evidence:
+`sidecar-analytical-duckdb-extension-live-smoke.sh` runs the canonical DuckDB
+extension allow-list against a pinned real DuckDB container and requires
+`duckdb_extension_catalog_live=passed`, `l12_extensions_installed=2`,
+`l12_extensions_loaded=2`, and `l12_duckdb_extensions_catalog_queried=true`.
+
+`FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, `FEATURE: L6`, and `FEATURE: L13`
+remain alpha. The L8 mirror path remains explicitly bounded:
 `object_store_io_attempted=false`, `long_running_slot_tailing=false`,
 `checkpoint_persistence_exercised=false`, and `kubernetes_traffic_exercised=false`.
-It is not production evidence for pg_lake, DuckDB, MotherDuck, Iceberg commits,
+The L12 DuckDB path is also bounded: `pg_duckdb_runtime_exercised=false`,
+`motherduck_session_exercised=false`, `object_store_io_attempted=false`, and
+`extension_repository_mirror_verified=false`. These are not production evidence
+for pg_lake, pg_duckdb inside PostgreSQL, MotherDuck, Iceberg commits,
 object-store IO, Kubernetes traffic, Citus planner integration, or a long-running
 logical-replication mirror daemon.

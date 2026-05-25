@@ -783,6 +783,47 @@ pub fn canonical_analytical_runtime_report(
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DuckDbExtensionCatalogRuntimeReport {
+    pub feature_id: &'static str,
+    pub allowed_extensions: Vec<String>,
+    pub allowed_extension_count: u64,
+    pub install_sql: Vec<String>,
+    pub load_sql: Vec<String>,
+    pub external_io_attempted: bool,
+    pub pg_duckdb_runtime_exercised: bool,
+    pub motherduck_session_exercised: bool,
+    pub evidence_boundary: &'static str,
+}
+
+pub fn canonical_duckdb_extension_catalog_report(
+) -> Result<DuckDbExtensionCatalogRuntimeReport, AnalyticalSidecarError> {
+    let catalog = canonical_analytical_plan().duckdb_extensions;
+    catalog.validate()?;
+    let install_sql = catalog
+        .allowed_extensions
+        .iter()
+        .map(|extension| format!("INSTALL {extension}"))
+        .collect::<Vec<_>>();
+    let load_sql = catalog
+        .allowed_extensions
+        .iter()
+        .map(|extension| format!("LOAD {extension}"))
+        .collect::<Vec<_>>();
+
+    Ok(DuckDbExtensionCatalogRuntimeReport {
+        feature_id: "L12",
+        allowed_extension_count: catalog.allowed_extensions.len() as u64,
+        allowed_extensions: catalog.allowed_extensions,
+        install_sql,
+        load_sql,
+        external_io_attempted: false,
+        pg_duckdb_runtime_exercised: false,
+        motherduck_session_exercised: false,
+        evidence_boundary: "live-duckdb-container-extension-load-only",
+    })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct LogicalMirrorRow {
     pub tenant_id: i32,
     pub order_id: i32,
@@ -1102,6 +1143,24 @@ mod tests {
     #[test]
     fn analytical_sidecar_plan_validates_lakehouse_and_federation() {
         assert_eq!(canonical_analytical_plan().validate(), Ok(()));
+    }
+
+    #[test]
+    fn duckdb_extension_catalog_report_renders_install_and_load_sql() {
+        let report = canonical_duckdb_extension_catalog_report().expect("duckdb catalog report");
+
+        assert_eq!(report.feature_id, "L12");
+        assert_eq!(report.allowed_extensions, ["httpfs", "iceberg"]);
+        assert_eq!(report.allowed_extension_count, 2);
+        assert_eq!(report.install_sql, ["INSTALL httpfs", "INSTALL iceberg"]);
+        assert_eq!(report.load_sql, ["LOAD httpfs", "LOAD iceberg"]);
+        assert!(!report.external_io_attempted);
+        assert!(!report.pg_duckdb_runtime_exercised);
+        assert!(!report.motherduck_session_exercised);
+        assert_eq!(
+            report.evidence_boundary,
+            "live-duckdb-container-extension-load-only"
+        );
     }
 
     #[test]
