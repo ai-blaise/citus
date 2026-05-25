@@ -709,13 +709,17 @@ more production-ready than the artifacts justified.
   permissions, verifies runtime timeout requests return HTTP 504, rejects
   excessive runtime stdout, and dispatches scheduled plus CDC trigger events
   through `/triggers/scheduled` and `/triggers/cdc` into live Deno functions.
-  `edge-functions-db-callback-uds-smoke.sh` is the EF4 production data-plane
+  `edge-functions-bun-live-smoke.sh` is the EF2 production Bun proof: it runs the
+  same sidecar with `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1` and `AI_BLAISE_BUN_BIN`,
+  executes inline Bun user code, verifies `runtime_env_cleared=true`, timeout and
+  stdout guards, and dispatches scheduled plus CDC trigger events into live Bun
+  functions. `edge-functions-db-callback-uds-smoke.sh` is the EF4 production data-plane
   proof: it runs a real `postgres:17`
   container with a mounted `.s.PGSQL.5432` socket, enables
   `AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1`, registers a callback-enabled
   function, proves disabled execution and unsafe multi-statement SQL fail
   closed, executes one insert through the PostgreSQL Unix socket, and verifies
-  the inserted row plus `db_callback_rows=1`. Bun user-code execution,
+  the inserted row plus `db_callback_rows=1`. Bun DB-callback integration,
   user-code initiated callback RPC, queue/broker delivery, live CDC slot
   tailing, distributed trigger fan-out, durable retry/DLQ, package
   installation, non-inline source fetching, and Kubernetes deployment remain

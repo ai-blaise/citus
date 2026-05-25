@@ -145,6 +145,8 @@ jobs:
         run: bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh
       - name: Run edge-functions live Deno smoke
         run: bash ci/ai-blaise/edge-functions-deno-live-smoke.sh
+      - name: Run edge-functions live Bun smoke
+        run: bash ci/ai-blaise/edge-functions-bun-live-smoke.sh
       - name: Run edge-functions database callback UDS smoke
         run: bash ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh
 

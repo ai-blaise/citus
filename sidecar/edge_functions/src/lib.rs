@@ -30,6 +30,7 @@ const MAX_RUNTIME_STDOUT_BYTES: usize = 65_536;
 pub const EDGE_DB_CALLBACK_EXECUTION_ENV: &str = "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION";
 pub const EDGE_RUNTIME_EXECUTION_ENV: &str = "AI_BLAISE_EDGE_RUNTIME_EXECUTION";
 pub const EDGE_DENO_BIN_ENV: &str = "AI_BLAISE_DENO_BIN";
+pub const EDGE_BUN_BIN_ENV: &str = "AI_BLAISE_BUN_BIN";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EdgeFunctionPlan {
@@ -824,6 +825,7 @@ fn deterministic_response_bytes(payload_bytes: u64) -> u64 {
 #[derive(Debug)]
 pub struct ExternalRuntimeExecutor {
     deno_bin: PathBuf,
+    bun_bin: PathBuf,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -837,8 +839,10 @@ impl ExternalRuntimeExecutor {
             return Ok(None);
         }
         let deno_bin = env::var(EDGE_DENO_BIN_ENV).unwrap_or_else(|_| "deno".to_string());
+        let bun_bin = env::var(EDGE_BUN_BIN_ENV).unwrap_or_else(|_| "bun".to_string());
         Ok(Some(Self {
             deno_bin: PathBuf::from(deno_bin),
+            bun_bin: PathBuf::from(bun_bin),
         }))
     }
 
@@ -849,9 +853,6 @@ impl ExternalRuntimeExecutor {
         payload: &Value,
     ) -> Result<ExternalRuntimeResult, EdgeFunctionError> {
         plan.validate()?;
-        if plan.runtime != EdgeFunctionRuntime::Deno {
-            return Err(EdgeFunctionError::UnsupportedExecutionMode);
-        }
         let FunctionSource::Inline { code } = &plan.source else {
             return Err(EdgeFunctionError::UnsupportedRuntimeSource);
         };
@@ -860,7 +861,10 @@ impl ExternalRuntimeExecutor {
         }
 
         let workdir = create_runtime_workdir(&plan.name)?;
-        let result = self.execute_deno_inline(&workdir, code, request, payload);
+        let result = match plan.runtime {
+            EdgeFunctionRuntime::Deno => self.execute_deno_inline(&workdir, code, request, payload),
+            EdgeFunctionRuntime::Bun => self.execute_bun_inline(&workdir, code, request, payload),
+        };
         let _ = fs::remove_dir_all(&workdir);
         result
     }
@@ -952,6 +956,94 @@ impl ExternalRuntimeExecutor {
         }
         Ok(ExternalRuntimeResult { response_json })
     }
+
+    fn execute_bun_inline(
+        &self,
+        workdir: &Path,
+        code: &str,
+        request: &InvocationRequest,
+        payload: &Value,
+    ) -> Result<ExternalRuntimeResult, EdgeFunctionError> {
+        let inline_path = workdir.join("inline.ts");
+        let runner_path = workdir.join("runner.ts");
+        fs::write(&inline_path, code)?;
+        fs::write(&runner_path, bun_runner_source())?;
+
+        let input = serde_json::json!({
+            "function_name": request.function_name,
+            "tenant_id": request.tenant_id,
+            "payload_bytes": request.payload_bytes,
+            "timeout_ms": request.timeout_ms,
+            "payload": payload,
+        })
+        .to_string();
+
+        let mut command = Command::new(&self.bun_bin);
+        command
+            .arg(&runner_path)
+            .current_dir(workdir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env_clear();
+        let mut child = command.spawn()?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| EdgeFunctionError::Runtime("Bun stdout pipe missing".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| EdgeFunctionError::Runtime("Bun stderr pipe missing".to_string()))?;
+        let stdout_reader = spawn_bounded_output_reader(stdout, MAX_RUNTIME_STDOUT_BYTES + 1);
+        let stderr_reader = spawn_bounded_output_reader(stderr, 4096);
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(input.as_bytes())?;
+        }
+        drop(child.stdin.take());
+
+        let deadline = Instant::now() + Duration::from_millis(u64::from(request.timeout_ms));
+        loop {
+            if child.try_wait()?.is_some() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(EdgeFunctionError::RuntimeTimedOut {
+                    timeout_ms: request.timeout_ms,
+                });
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let status = child.wait()?;
+        let stdout = join_output_reader(stdout_reader)?;
+        let stderr = join_output_reader(stderr_reader)?;
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr.bytes);
+            return Err(EdgeFunctionError::Runtime(format!(
+                "Bun runtime exited with {}: {}",
+                status,
+                sanitize_runtime_stderr(&stderr)
+            )));
+        }
+        if stdout.total_bytes > MAX_RUNTIME_STDOUT_BYTES {
+            return Err(EdgeFunctionError::RuntimeOutputTooLarge {
+                bytes: stdout.total_bytes,
+                max_bytes: MAX_RUNTIME_STDOUT_BYTES,
+            });
+        }
+        let response_json = String::from_utf8_lossy(&stdout.bytes).trim().to_string();
+        if response_json.is_empty() || serde_json::from_str::<Value>(&response_json).is_err() {
+            return Err(EdgeFunctionError::Runtime(
+                "Bun runtime must write one JSON value to stdout".to_string(),
+            ));
+        }
+        Ok(ExternalRuntimeResult { response_json })
+    }
 }
 
 #[derive(Debug)]
@@ -1032,6 +1124,24 @@ for (const chunk of chunks) {
   offset += chunk.length;
 }
 const input = JSON.parse(decoder.decode(bytes));
+const result = await handler(input);
+if (result instanceof Response) {
+  const body = await result.text();
+  console.log(JSON.stringify({status: result.status, body}));
+} else {
+  console.log(JSON.stringify(result ?? null));
+}
+"#
+}
+
+fn bun_runner_source() -> &'static str {
+    r#"import handler from "./inline.ts";
+
+const chunks = [];
+for await (const chunk of process.stdin) {
+  chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+}
+const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
 const result = await handler(input);
 if (result instanceof Response) {
   const body = await result.text();

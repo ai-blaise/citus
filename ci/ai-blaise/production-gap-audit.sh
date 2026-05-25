@@ -49,6 +49,7 @@ GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime
 GRAPHQL_PGGRAPHQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/graphql-pggraphql-live-smoke.sh"
 POSTGREST_LIVE_DATA_PLANE_SMOKE = ROOT / "ci/ai-blaise/postgrest-live-data-plane-smoke.sh"
 EDGE_DENO_LIVE_SMOKE = ROOT / "ci/ai-blaise/edge-functions-deno-live-smoke.sh"
+EDGE_BUN_LIVE_SMOKE = ROOT / "ci/ai-blaise/edge-functions-bun-live-smoke.sh"
 EDGE_DB_CALLBACK_UDS_SMOKE = ROOT / "ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
@@ -1244,8 +1245,8 @@ if status_by_id.get("EF4") != "production-ready":
     fail("EF4 database callback over UDS must be production-ready after live PostgreSQL UDS smoke evidence")
 if status_by_id.get("EF5") != "production-ready":
     fail("EF5 trigger dispatch must be production-ready after live scheduled/CDC Deno dispatch evidence")
-if status_by_id.get("EF2") != "alpha":
-    fail("EF2 must remain alpha until Bun runtime execution is live-proven")
+if status_by_id.get("EF2") != "production-ready":
+    fail("EF2 Bun runtime must be production-ready after live Bun process smoke evidence")
 edge_deno_live_smoke = read(EDGE_DENO_LIVE_SMOKE)
 for required in (
     "FEATURE: EF1",
@@ -1270,6 +1271,51 @@ for path, required in (
 ):
     if required not in read(path):
         fail(f"EF1 live Deno smoke is not wired into {path}: {required}")
+edge_bun_live_smoke = read(EDGE_BUN_LIVE_SMOKE)
+for required in (
+    "FEATURE: EF2",
+    "AI_BLAISE_EDGE_RUNTIME_EXECUTION",
+    "AI_BLAISE_BUN_BIN",
+    "edge_bun_live=passed",
+    "bun_version=",
+    "user_code_executed=true",
+    "runtime_response_contains=bun-live",
+    "runtime_env_cleared=true",
+    "live_mode_without_executor_rejected=true",
+    "live_timeout_rejected=true",
+    "live_stdout_cap_rejected=true",
+    "trigger_dispatch_scheduled_live=true",
+    "trigger_dispatch_cdc_live=true",
+):
+    if required not in edge_bun_live_smoke:
+        fail(f"EF2 live Bun smoke lost production assertion: {required}")
+for path, required in (
+    (MAKEFILE, "edge-functions-bun-live-smoke"),
+    (SIDECAR_WORKFLOW, "edge-functions-bun-live-smoke.sh"),
+):
+    if required not in read(path):
+        fail(f"EF2 live Bun smoke is not wired into {path}: {required}")
+ef2_body = compact(entry_by_id["EF2"]["body"])
+for phrase in (
+    "production evidence",
+    "edge-functions-bun-live-smoke.sh",
+    "AI_BLAISE_EDGE_RUNTIME_EXECUTION=1",
+    "AI_BLAISE_BUN_BIN",
+    "status=executed",
+    "execution_mode=live",
+    "user_code_executed=true",
+    "runtime_response_json",
+    "child environment is cleared",
+    "HTTP 504",
+    "runtime stdout cap",
+    "scheduled and CDC trigger dispatch",
+    "explicit opt-in inline Bun execution",
+    "package installation",
+    "bundle URI/Git source fetch",
+    "Kubernetes deployment",
+):
+    if compact(phrase) not in ef2_body:
+        fail(f"EF2 docs lost live Bun evidence phrase: {phrase}")
 ef1_body = compact(entry_by_id["EF1"]["body"])
 for phrase in (
     "production evidence",
@@ -1336,8 +1382,8 @@ for phrase in (
     "db_callback_statement_executed=true",
     "db_callback_rows=1",
     "sidecar-owned PostgreSQL UDS callback executor",
-    "Bun user-code execution",
-    "separate EF1 production boundary",
+    "Bun DB-callback integration",
+    "separate EF1/EF2 production boundaries",
     "explicit opt-in inline Deno execution",
     "EF5 covers sidecar-owned trigger dispatch",
     "Kubernetes deployment",
@@ -1356,7 +1402,8 @@ for phrase in (
     "edge-functions-db-callback-uds-smoke.sh",
     "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
     "db_callback_rows=1",
-    "Bun user-code execution",
+    "edge-functions-bun-live-smoke.sh",
+    "runtime_env_cleared=true",
     "live CDC slot tailing",
 ):
     if compact(phrase) not in audit_body:

@@ -4600,10 +4600,10 @@ verifies disabled live mode fails closed, `execution_mode=live` returns
 permissions, and an over-timeout function returns HTTP 504. This production
 claim is limited to explicit opt-in inline Deno execution owned by the sidecar:
 bundle URI/Git source fetch, package installation, custom permission grants,
-secret injection into user code, user-code initiated database callbacks, Bun
-execution, queue/broker delivery, durable retries, and Kubernetes deployment
-remain alpha. Scheduled and CDC trigger dispatch have their own EF5 production
-boundary.
+secret injection into user code, user-code initiated database callbacks,
+queue/broker delivery, durable retries, and Kubernetes deployment remain outside
+EF1. Bun execution is covered by the separate EF2 production boundary. Scheduled
+and CDC trigger dispatch have their own EF5 production boundary.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -4626,14 +4626,32 @@ runtime.
 ### EF2: Bun Runtime Alternative
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `bun`
 
-**Summary**: Adds Bun runtime launch planning for edge-function bundles.
+**Summary**: Adds Bun runtime launch planning plus a bounded live inline-Bun
+execution path for edge-function bundles.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies Bun launch-command planning through `run-bun-runtime-canonical`. EF2 remains alpha because this does not install packages, spawn Bun, or execute Bun user code in an isolated worker; the EF1 live Deno smoke is a separate Deno-only production boundary.
+Production evidence: VM proof run
+`bash ci/ai-blaise/edge-functions-bun-live-smoke.sh` builds the real
+`ai_blaise_citus_sidecar_edge_functions` binary, installs or discovers a pinned
+Bun binary, boots the live HTTP sidecar, verifies disabled live mode fails closed,
+then executes inline Bun user code with `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1` and
+`AI_BLAISE_BUN_BIN`. The smoke verifies `status=executed`,
+`execution_mode=live`, `user_code_executed=true`, and a JSON
+`runtime_response_json`; it also verifies the Bun child environment is cleared,
+timeout requests return HTTP 504, the runtime stdout cap rejects oversized user
+output, and scheduled and CDC trigger dispatch both execute inline Bun functions.
+`bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` keeps the plan-only
+Bun launch-command contract covered through `run-bun-runtime-canonical`.
+
+This production claim is limited to explicit opt-in inline Bun execution owned
+by the sidecar. Package installation, bundle URI/Git source fetch, npm registry
+access, secret injection into user code, user-code initiated database callbacks,
+queue/broker delivery, durable retries, and Kubernetes deployment remain outside
+this proof.
 
 **Motivation**: Some workloads prefer Bun startup and package compatibility;
 the sidecar needs runtime selection without changing the CRD shape.
@@ -4648,6 +4666,7 @@ the sidecar needs runtime selection without changing the CRD shape.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
+- CI: `ci/ai-blaise/edge-functions-bun-live-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF3: Function CRD
@@ -4712,10 +4731,12 @@ executes one insert through the UDS callback path, reports
 `db_callback_statement_executed=true` and `db_callback_rows=1`, and verifies the
 inserted row in PostgreSQL. The bounded production surface is the sidecar-owned
 PostgreSQL UDS callback executor and HTTP registration/invocation contract.
-Bun user-code execution, user-code initiated callback RPC, queue delivery, and
-Kubernetes deployment remain out of scope for EF4. The separate EF1 production
-boundary covers only explicit opt-in inline Deno execution without database
-callbacks, and EF5 covers sidecar-owned trigger dispatch.
+Bun DB-callback integration, user-code initiated callback RPC, queue delivery,
+and Kubernetes deployment remain out of scope for EF4. The separate EF1
+production boundary covers explicit opt-in inline Deno execution, the EF2
+production boundary covers explicit opt-in inline Bun execution, both without
+database callbacks. These remain separate EF1/EF2 production boundaries, and EF5
+covers sidecar-owned trigger dispatch.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4754,12 +4775,14 @@ and a CDC-event-only function, posts `POST /triggers/scheduled` with
 `epoch_seconds=0`, posts `POST /triggers/cdc` for `public.edge_orders insert`,
 and verifies both dispatch responses report `matched=1`, `dispatched=1`,
 `execution_mode=live`, `user_code_executed=true`, and a function-specific
-`runtime_response_json`. `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
-keeps the plan-only registry and fail-closed trigger-request boundary covered.
-This production claim is limited to sidecar-owned trigger ingress and dispatch
-into already-registered inline Deno functions. Queue/broker integration,
-long-running CDC slot tailing, distributed trigger fan-out, durable retry/DLQ,
-Kubernetes deployment, and Bun-trigger execution remain alpha.
+`runtime_response_json`. `bash ci/ai-blaise/edge-functions-bun-live-smoke.sh`
+exercises the same trigger ingress and dispatch path with inline Bun functions.
+`bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` keeps the plan-only
+registry and fail-closed trigger-request boundary covered. This production claim
+is limited to sidecar-owned trigger ingress and dispatch into already-registered
+inline Deno and Bun functions. Queue/broker integration, long-running CDC slot
+tailing, distributed trigger fan-out, durable retry/DLQ, package installation,
+non-inline source fetching, and Kubernetes deployment remain outside this proof.
 
 **Motivation**: Cron and event-driven functions need the same validation path
 as HTTP functions before queue integration is wired in.
