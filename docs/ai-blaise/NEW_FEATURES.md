@@ -8510,18 +8510,32 @@ row movement or regional traffic enforcement.
 
 ### MR6: Closed-Timestamp Time Travel
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `sidecar/hlc`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Records timestamp and maximum-staleness inputs for a
-closed-timestamp read contract.
+**Summary**: Provides the bounded closed-timestamp time-travel gate used by
+follower reads: timestamp/staleness intent validation, live HLC peer observation,
+closed-timestamp publication, and fail-closed `AS OF` serve/reject decisions.
 
-**Current boundary**: The planner contract is covered by deterministic tests;
-MVCC timestamp routing, replica freshness, and stale-read execution remain
-alpha.
+Production evidence: `ci/ai-blaise/sidecar-hlc-smoke.sh` starts the real
+`ai_blaise_citus_sidecar_hlc serve` process with a three-replica shard group,
+waits for `/readyz`, verifies `/closed_ts`, advances the local clock through
+`/clock/tick`, merges peer timestamp evidence through `/clock/observe`, confirms
+the peer appears in the published closed timestamp, proves `/follower_read`
+serves an `AS OF` exactly at the closed timestamp, proves an `AS OF` newer than
+the closed timestamp is rejected with HTTP 409, and verifies unknown peers fail
+closed. The smoke emits `closed_timestamp_time_travel_gate=passed`,
+`follower_read_as_of_closed_served=true`,
+`follower_read_newer_than_closed_rejected=true`, and
+`closed_ts_peer_exchange_observed=true`.
+
+The production-ready boundary is the closed-timestamp time-travel gate only. It
+does not claim MVCC snapshot execution, replica query routing, stale-read SQL
+syntax, planner integration, cross-region clock discipline, or Kubernetes
+reconciliation.
 
 **Citus comparison**: Vanilla Citus does not expose bounded-staleness time
 travel.
@@ -8530,8 +8544,11 @@ travel.
 
 - In-source: `FEATURE: MR6` in `companion/src/advanced_planner.rs`
 - In-source: `FEATURE: MR6` in `sidecar/hlc/src/runtime.rs`
+- In-source: `FEATURE: MR6` in `sidecar/hlc/src/main.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_hlc -- serve`
+- CI: `ci/ai-blaise/sidecar-hlc-smoke.sh`
 - CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 
 ### MR9: Region Survival Runbook

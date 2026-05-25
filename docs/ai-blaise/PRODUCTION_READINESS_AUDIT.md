@@ -645,6 +645,17 @@ more production-ready than the artifacts justified.
   claim MVCC snapshot execution, replica query routing, planner integration,
   stale-read SQL syntax, cross-region clock discipline, or Kubernetes
   reconciliation.
+- MR6 closed-timestamp time-travel gate is production-ready for the same bounded
+  live HLC data plane: timestamp/staleness intent validation, `/closed_ts`
+  publication, `/clock/tick` local advancement, `/clock/observe` peer evidence,
+  exact-closed `AS OF` follower-read serving, newer-than-closed HTTP 409
+  rejection, and unknown-peer fail-closed behavior. The smoke emits
+  `closed_timestamp_time_travel_gate=passed`,
+  `follower_read_as_of_closed_served=true`,
+  `follower_read_newer_than_closed_rejected=true`, and
+  `closed_ts_peer_exchange_observed=true`. This does not claim MVCC snapshot
+  execution, replica query routing, stale-read SQL syntax, planner integration,
+  cross-region clock discipline, or Kubernetes reconciliation.
 - T5 parallel commit transaction status is production-ready for the bounded
   networked transaction-status sidecar API and SQL contract.
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
@@ -668,9 +679,10 @@ more production-ready than the artifacts justified.
   runtime evidence without overclaiming full distributed-database integration:
   `topology-consensus-smoke.sh` proves S4 coordinator-less pool admission, S5
   fail-closed placement/member validation, and S9/MR6 closed-timestamp
-  follower-read serve/reject gates. S4 and MR6 remain alpha for the broader
+  follower-read serve/reject gates. S4 remains alpha for broader coordinator-less
   behavior until pool routing, planner integration, and Kubernetes operator
-  reconciliation are live-gated.
+  reconciliation are live-gated; MR6 is promoted only for the live
+  closed-timestamp time-travel gate and not for SQL/MVCC execution.
 - The schema-job sidecar now has an explicit runtime-boundary smoke for the
   narrow C10/M2 sidecar surface. `schema-txn-runtime-smoke.sh` runs the real
   binary canonical worker output, controller advance/wait/rollback output,

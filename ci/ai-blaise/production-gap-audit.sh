@@ -709,6 +709,69 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S9 boundary phrase: {phrase}")
 
+if status_by_id.get("MR6") != "production-ready":
+    fail("MR6 must be Status: production-ready once live HLC time-travel gate evidence is wired")
+section_mr6 = feature_section(docs, "MR6")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/sidecar-hlc-smoke.sh",
+    "`ai_blaise_citus_sidecar_hlc serve`",
+    "/clock/tick",
+    "/clock/observe",
+    "/closed_ts",
+    "/follower_read",
+    "HTTP 409",
+    "unknown peers fail closed",
+    "closed_timestamp_time_travel_gate=passed",
+    "follower_read_as_of_closed_served=true",
+    "follower_read_newer_than_closed_rejected=true",
+    "closed_ts_peer_exchange_observed=true",
+    "MVCC snapshot execution",
+    "replica query routing",
+    "stale-read SQL syntax",
+    "planner integration",
+    "Kubernetes reconciliation",
+):
+    if compact(phrase) not in compact(section_mr6):
+        fail(f"MR6 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: S9/MR6",
+    "hlc_live_gate=passed",
+    "closed_timestamp_time_travel_gate=passed",
+    "follower_read_as_of_closed_served=true",
+    "follower_read_newer_than_closed_rejected=true",
+    "unknown_peer_rejected=true",
+    "closed_ts_peer_exchange_observed=true",
+    "/clock/tick",
+    "/clock/observe",
+    "/closed_ts",
+    "/follower_read",
+    "reject_not_closed",
+    "unknown HLC peer",
+):
+    if phrase not in sidecar_hlc_smoke:
+        fail(f"sidecar-hlc-smoke.sh missing live MR6 assertion: {phrase}")
+for phrase in (
+    "MR6 closed-timestamp time-travel gate is production-ready",
+    "/closed_ts",
+    "/clock/tick",
+    "/clock/observe",
+    "exact-closed `AS OF` follower-read serving",
+    "newer-than-closed HTTP 409 rejection",
+    "unknown-peer fail-closed behavior",
+    "closed_timestamp_time_travel_gate=passed",
+    "follower_read_as_of_closed_served=true",
+    "follower_read_newer_than_closed_rejected=true",
+    "closed_ts_peer_exchange_observed=true",
+    "MVCC snapshot execution",
+    "replica query routing",
+    "stale-read SQL syntax",
+    "planner integration",
+    "SQL/MVCC execution",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing MR6 boundary phrase: {phrase}")
+
 if status_by_id.get("T5") != "production-ready":
     fail("T5 must be Status: production-ready once networked txn-status Raft evidence is wired")
 section_t5 = feature_section(docs, "T5")

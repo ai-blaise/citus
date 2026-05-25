@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live HLC sidecar smoke for FEATURE: S9.
+# Live HLC sidecar smoke for FEATURE: S9/MR6.
 #
 # Starts the real HLC sidecar HTTP server, advances its local clock, merges a
 # peer clock exchange, verifies closed timestamp advancement, and proves
@@ -142,6 +142,11 @@ assert status == 409, (status, unknown)
 assert "unknown HLC peer" in unknown["error"], unknown
 
 print("hlc_live_gate=passed")
+print("closed_timestamp_time_travel_gate=passed")
+print("follower_read_as_of_closed_served=true")
+print("follower_read_newer_than_closed_rejected=true")
+print("unknown_peer_rejected=true")
+print("closed_ts_peer_exchange_observed=true")
 PY
 
 echo "==> sidecar-hlc-smoke: cargo test"
