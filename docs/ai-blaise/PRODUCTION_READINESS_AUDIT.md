@@ -497,6 +497,16 @@ more production-ready than the artifacts justified.
   calls, GPU inference, production-scale queue throughput, tenant billing
   integration, Kubernetes admission/webhook enforcement for every provider
   model, or broad semantic-search correctness.
+- O14 trace-context propagation is now production-ready for the bounded
+  pool-to-PostgreSQL-to-companion SQL path and sidecar HTTP ingress visibility.
+  `otel-trace-propagation-smoke.sh` installs `ai_blaise_citus` in a real
+  PostgreSQL container, routes libpq traffic through the pool, verifies
+  `trace.parent`, `companion.current_traceparent`,
+  `companion.project_traceparent_from_application_name(...)`, pool tap metrics,
+  absent-trace counters, and the live shared sidecar `/tracez` endpoint. The
+  optional kind/Jaeger mode remains a synthetic correlation harness; this does
+  not claim automatic OTLP span export from every component or dashboard/SLO
+  certification.
 - D9 canary upgrade runbook is now production-ready for the local companion SQL
   extension upgrade/rollback path. `canary-upgrade-rollback-smoke.sh` starts a
   real PostgreSQL container, installs `ai_blaise_citus` at `0.1.0`, upgrades to

@@ -488,6 +488,9 @@ done
 
 grep -Fq "CREATE TABLE companion_internal.extension_upgrade_events" "${image_dir}/extensions/ai_blaise_citus--0.1.0--0.1.1.sql"
 grep -Fq "DROP TABLE IF EXISTS companion_internal.extension_upgrade_events" "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.0.sql"
+grep -Fq "CREATE OR REPLACE FUNCTION companion.current_traceparent()" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE OR REPLACE FUNCTION companion.project_traceparent_from_application_name" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
+grep -Fq "CREATE OR REPLACE FUNCTION companion.current_traceparent()" "${image_dir}/extensions/ai_blaise_citus--0.1.0--0.1.1.sql"
 grep -Fq "CREATE FUNCTION companion_feature_status()" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_distribute_hypertable_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION distribute_hypertable" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"

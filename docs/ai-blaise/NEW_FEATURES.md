@@ -6792,62 +6792,62 @@ operations TUI.
 
 ### O14: W3C Trace-Context Propagation
 
-**Overlay**: `sidecar/shared/src/otel.rs`, `pool/src/trace_tap.rs`,
-`companion/src/trace_context.rs`
-**Status**: alpha
+**Overlay**: `sidecar/shared/src/otel.rs`, `sidecar/shared/src/runtime.rs`,
+`pool/src/trace_tap.rs`, `companion/src/trace_context.rs`, and
+`images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Threads a W3C `traceparent` end-to-end from pool to companion
-to sidecars. The shared `otel` module exposes a `TraceContext` extract /
-inject trait with three carriers — `HeaderMap` (HTTP), `MetadataMap` (gRPC),
-and `SetLocalBuilder` (PostgreSQL `SET LOCAL`). The pool proxy taps the
-PostgreSQL startup envelope for an embedded traceparent in three places
-(custom `traceparent` startup parameter, `options=-c trace.parent=`, and a
-backwards-compatible `application_name` wire format) and records counters
+**Summary**: Threads a W3C `traceparent` end-to-end from pool to PostgreSQL,
+companion SQL, and sidecar HTTP ingress. The shared `otel` module exposes a
+`TraceContext` extract / inject trait with three carriers — `HeaderMap` (HTTP),
+`MetadataMap` (gRPC), and `SetLocalBuilder` (PostgreSQL `SET LOCAL`). The pool
+proxy taps the PostgreSQL startup envelope for an embedded traceparent in three
+places (custom `traceparent` startup parameter, `options=-c trace.parent=`, and
+a backwards-compatible raw `application_name` startup field) and records counters
 for tapped versus absent connections without modifying the byte stream.
-Companion's `trace_context` plan documents the canonical pgrx functions
-`companion.current_traceparent`, `companion.current_tracestate`, and
-`companion.project_traceparent_from_application_name`, which let
-companion-side spans chain to the inbound trace via the
-`current_setting('trace.parent', true)` GUC.
 
-**Motivation**: Distributed-database observability needs a single
-trace-id that survives the libpq wire so per-sidecar spans, companion
-spans, and operator spans can be correlated in Jaeger or Tempo without
-sampling drift.
+Production evidence: VM proof run
+`REQUIRE_DOCKER=1 bash ci/ai-blaise/otel-trace-propagation-smoke.sh` starts a
+real `postgres:17` container with `ai_blaise_citus` installed, runs the pool
+proxy against it, sends a traceparent via libpq `PGOPTIONS`, and verifies
+PostgreSQL `current_setting('trace.parent')`, `companion.current_traceparent`,
+`companion.current_tracestate`, and
+`companion.project_traceparent_from_application_name(...)` all preserve the
+trace context and fail closed for an invalid traceparent. The same smoke asserts
+the pool `trace_tap=present` log line, `traceparent_tapped_total`, and
+`traceparent_absent_total`, then starts the real shared sidecar HTTP server and
+verifies `/tracez` returns the incoming `traceparent`/`tracestate` and reports
+`valid=false` when headers are absent. Focused Rust tests cover HTTP, gRPC, and
+PostgreSQL carriers, startup-parameter priority, corrupt traceparent rejection,
+and the `/tracez` parser. With `REQUIRE_KIND=1`, the smoke additionally boots a
+3-node kind cluster with Jaeger, sends a synthetic OTLP span keyed to the trace
+ID accepted by the pool tap, and queries Jaeger's `/api/traces/<trace_id>`
+endpoint for `pool.trace_tap`. This production-ready boundary is trace-context
+extraction, propagation, SQL projection, sidecar ingress visibility, and Jaeger
+correlation harness evidence; it is not automatic OTLP span export from every
+component, not a production dashboard/SLO certification, and not a claim that
+every business endpoint emits child spans.
 
-**Citus comparison**: Vanilla Citus does not propagate W3C trace-context
-through libpq.
+**Motivation**: Distributed-database observability needs a single trace ID that
+survives the libpq wire so per-sidecar spans, companion spans, and operator
+spans can be correlated in Jaeger or Tempo without sampling drift.
 
-
-Evidence boundary: `ci/ai-blaise/otel-trace-propagation-smoke.sh` boots a
-
-real `postgres:17` container, runs the pool proxy against it, sends a
-traceparent via libpq `PGOPTIONS`, and asserts that the pool's `trace_tap`
-log line reports the exact traceparent and that
-`ai_blaise_citus_pool_traceparent_tapped_total` increments. A follow-up
-connection without a traceparent increments
-`ai_blaise_citus_pool_traceparent_absent_total`. Focused Rust tests also prove
-HTTP header carrier injection/extraction, gRPC metadata carrier
-injection/extraction, PostgreSQL `SET LOCAL` GUC rendering/extraction, startup
-parameter priority (`traceparent` over `options` over `application_name`), and
-fail-closed handling for corrupt startup traceparents. With `REQUIRE_KIND=1`
-the smoke additionally boots a 3-node kind cluster with Jaeger, sends a
-synthetic OTLP span keyed to the trace ID accepted by the pool tap, and queries
-Jaeger's `/api/traces/<trace_id>` endpoint for `pool.trace_tap`. This proves the
-Jaeger correlation harness, not automatic pool/companion/sidecar span export.
-O14 remains alpha until sidecar/companion propagation and release dashboard
-correlation are measured end to end and the feature status is promoted.
+**Citus comparison**: Vanilla Citus does not propagate W3C trace-context through
+libpq.
 
 **References**:
 
 - Design: `docs/ai-blaise/OBSERVABILITY.md`
 - In-source: `FEATURE: O14` in `sidecar/shared/src/otel.rs`
+- In-source: `FEATURE: O14` in `sidecar/shared/src/runtime.rs`
 - In-source: `FEATURE: O14` in `pool/src/proxy.rs`
 - In-source: `FEATURE: O14` in `pool/src/trace_tap.rs`
 - In-source: `FEATURE: O14` in `companion/src/trace_context.rs`
+- SQL runtime: `FEATURE: O14` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - CI: `ci/ai-blaise/otel-trace-propagation-smoke.sh`
 
 ### O15: Per-Sidecar Structured-Log Schema

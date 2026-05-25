@@ -3,14 +3,15 @@ set -euo pipefail
 
 # ci/ai-blaise/otel-trace-propagation-smoke.sh
 #
-# Verifies that a W3C traceparent embedded in the libpq `application_name`
-# startup parameter survives the pool proxy and shows up in the proxy's
-# observability surface. Runs in two modes:
+# Verifies that a W3C traceparent embedded in libpq startup parameters survives
+# the pool proxy, PostgreSQL, companion SQL, and shared sidecar HTTP ingress.
+# Runs in two modes:
 #
 #   * Default mode (docker available, kind not required): starts a real
-#     PostgreSQL container, runs the pool proxy against it, connects with a
-#     traceparent-bearing application_name through psql, then asserts the
-#     pool's stderr log line and Prometheus counters reflect the tap.
+#     PostgreSQL container with ai_blaise_citus installed, runs the pool proxy
+#     against it, connects with traceparent-bearing PGOPTIONS through psql,
+#     asserts the pool's stderr log line and Prometheus counters reflect the
+#     tap, verifies companion SQL projection, and checks sidecar `/tracez`.
 #
 #   * Optional KIND mode (REQUIRE_KIND=1 plus a kind binary on PATH): in
 #     addition to the default mode, launches a 3-node kind cluster with a
@@ -20,14 +21,20 @@ set -euo pipefail
 #     a correlation-harness proof, not automatic pool/companion/sidecar span
 #     export.
 #
-# Both modes degrade gracefully when their prerequisites are absent so the CI
-# matrix can include this script unconditionally.
+# Outside release mode the default smoke skips when Docker is unavailable so
+# lightweight CI can include it unconditionally. Release mode and
+# REQUIRE_DOCKER=1 fail closed.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
-postgres_image="${OTEL_SMOKE_POSTGRES_IMAGE:-postgres:17}"
-require_docker="${REQUIRE_DOCKER:-0}"
+pg_major="${OTEL_SMOKE_PG_MAJOR:-17}"
+postgres_image="${OTEL_SMOKE_POSTGRES_IMAGE:-postgres:${pg_major}}"
+extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
+control_file="${extension_dir}/ai_blaise_citus.control"
+sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
+release_mode="${AI_BLAISE_RELEASE_MODE:-0}"
+require_docker="${REQUIRE_DOCKER:-${release_mode}}"
 require_kind="${REQUIRE_KIND:-0}"
 
 trace_id="${OTEL_SMOKE_TRACE_ID:-4bf92f3577b34da6a3ce929d0e0e4736}"
@@ -53,6 +60,13 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+for file in "${control_file}" "${sql_file}"; do
+  if [[ ! -s "${file}" ]]; then
+    echo "missing otel trace propagation artifact: ${file}" >&2
+    exit 1
+  fi
+done
+
 choose_port() {
   python3 - <<'PY'
 import socket
@@ -66,17 +80,25 @@ PY
 postgres_port="$(choose_port)"
 pool_port="$(choose_port)"
 admin_port="$(choose_port)"
+shared_port="$(choose_port)"
 container="ai-blaise-otel-smoke-${RANDOM}-$$"
 pool_log="$(mktemp -t ai-blaise-otel-smoke.XXXXXX.log)"
+shared_log="$(mktemp -t ai-blaise-otel-shared.XXXXXX.log)"
+trace_sql_output="$(mktemp -t ai-blaise-otel-sql.XXXXXX.tsv)"
 pool_pid=""
+shared_pid=""
 
 cleanup() {
+  if [[ -n "${shared_pid}" ]] && kill -0 "${shared_pid}" >/dev/null 2>&1; then
+    kill "${shared_pid}" >/dev/null 2>&1 || true
+    wait "${shared_pid}" >/dev/null 2>&1 || true
+  fi
   if [[ -n "${pool_pid}" ]] && kill -0 "${pool_pid}" >/dev/null 2>&1; then
     kill "${pool_pid}" >/dev/null 2>&1 || true
     wait "${pool_pid}" >/dev/null 2>&1 || true
   fi
   docker rm -f "${container}" >/dev/null 2>&1 || true
-  rm -f "${pool_log}"
+  rm -f "${pool_log}" "${shared_log}" "${trace_sql_output}"
 }
 trap cleanup EXIT
 
@@ -85,6 +107,8 @@ docker run \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_HOST_AUTH_METHOD=trust \
   -p "127.0.0.1:${postgres_port}:5432" \
+  -v "${control_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus.control:ro" \
+  -v "${sql_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0.sql:ro" \
   -d "${postgres_image}" >/dev/null
 
 postgres_init_complete=0
@@ -116,6 +140,10 @@ if [[ "${postgres_ready}" != "1" ]]; then
   echo "postgres container did not become ready" >&2
   exit 1
 fi
+
+docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL' >/dev/null
+CREATE EXTENSION ai_blaise_citus;
+SQL
 
 AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
   AI_BLAISE_POOL_ADMIN_ADDR="127.0.0.1:${admin_port}" \
@@ -153,16 +181,35 @@ if ! docker run --rm \
   -e PGOPTIONS="${libpq_options}" \
   -e PGSSLMODE=disable \
   "${postgres_image}" \
-  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 <<SQL >/dev/null
-SELECT current_setting('trace.parent', true);
-SELECT current_setting('trace.state', true);
-SELECT current_setting('application_name');
+  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 >"${trace_sql_output}" <<SQL
+SELECT 'postgres_traceparent' || E'\t' || current_setting('trace.parent', true);
+SELECT 'postgres_tracestate' || E'\t' || current_setting('trace.state', true);
+SELECT 'postgres_application_name' || E'\t' || current_setting('application_name');
+SELECT 'companion_current_traceparent' || E'\t' || companion.current_traceparent();
+SELECT 'companion_current_tracestate' || E'\t' || companion.current_tracestate();
+BEGIN;
+SELECT 'companion_projected' || E'\t' || (companion.project_traceparent_from_application_name('application=companion-sql;traceparent=${traceparent};tracestate=vendor=companion')->>'projected');
+SELECT 'companion_projected_traceparent' || E'\t' || companion.current_traceparent();
+SELECT 'companion_projected_tracestate' || E'\t' || companion.current_tracestate();
+COMMIT;
+BEGIN;
+SELECT 'companion_invalid_projected' || E'\t' || (companion.project_traceparent_from_application_name('application=companion-sql;traceparent=not-a-traceparent')->>'projected');
+COMMIT;
 SQL
 then
   cat "${pool_log}" >&2
   echo "psql traceparent-bearing application_name connection failed" >&2
   exit 1
 fi
+
+grep -Fq $'postgres_traceparent\t'"${traceparent}" "${trace_sql_output}"
+grep -Fq $'postgres_tracestate\t'"${tracestate}" "${trace_sql_output}"
+grep -Fq $'companion_current_traceparent\t'"${traceparent}" "${trace_sql_output}"
+grep -Fq $'companion_current_tracestate\t'"${tracestate}" "${trace_sql_output}"
+grep -Fq $'companion_projected\ttrue' "${trace_sql_output}"
+grep -Fq $'companion_projected_traceparent\t'"${traceparent}" "${trace_sql_output}"
+grep -Fq $'companion_projected_tracestate\tvendor=companion' "${trace_sql_output}"
+grep -Fq $'companion_invalid_projected\tfalse' "${trace_sql_output}"
 
 # 1) The pool's stderr log must record the traceparent that was tapped.
 if ! grep -Fq "trace_tap=present" "${pool_log}"; then
@@ -203,7 +250,7 @@ if ! docker run --rm \
   -e PGPASSWORD=postgres \
   -e PGSSLMODE=disable \
   "${postgres_image}" \
-  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 <<SQL >/dev/null
+  psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 >"${trace_sql_output}" <<SQL
 SELECT 1;
 SQL
 then
@@ -220,6 +267,52 @@ if [[ -z "${absent_before:-}" || -z "${absent_after:-}" || "${absent_after}" -le
   cat "${pool_log}" >&2
   echo "pool metrics did not increment traceparent_absent_total for the no-traceparent connection" >&2
   printf 'before=%s after=%s\n' "${absent_before}" "${absent_after}" >&2
+  exit 1
+fi
+
+
+AI_BLAISE_LISTEN_ADDR="127.0.0.1:${shared_port}" \
+  cargo run -q -p ai_blaise_citus_sidecar_shared -- serve >"${shared_log}" 2>&1 &
+shared_pid="$!"
+
+shared_ready=0
+for _ in $(seq 1 120); do
+  if ! kill -0 "${shared_pid}" >/dev/null 2>&1; then
+    cat "${shared_log}" >&2
+    echo "shared sidecar exited before readiness" >&2
+    exit 1
+  fi
+  if curl -fsS "http://127.0.0.1:${shared_port}/readyz" >/dev/null 2>&1; then
+    shared_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "${shared_ready}" != "1" ]]; then
+  cat "${shared_log}" >&2
+  echo "shared sidecar did not become ready" >&2
+  exit 1
+fi
+
+sidecar_trace="$(curl -fsS \
+  -H "traceparent: ${traceparent}" \
+  -H "tracestate: ${tracestate}" \
+  "http://127.0.0.1:${shared_port}/tracez")"
+if ! grep -Fq '"valid":true' <<<"${sidecar_trace}" || \
+   ! grep -Fq '"traceparent":"'"${traceparent}"'"' <<<"${sidecar_trace}" || \
+   ! grep -Fq '"tracestate":"'"${tracestate}"'"' <<<"${sidecar_trace}"; then
+  cat "${shared_log}" >&2
+  echo "shared sidecar did not project trace headers through /tracez" >&2
+  printf '%s\n' "${sidecar_trace}" >&2
+  exit 1
+fi
+
+sidecar_absent="$(curl -fsS "http://127.0.0.1:${shared_port}/tracez")"
+if ! grep -Fq '"valid":false' <<<"${sidecar_absent}" || \
+   ! grep -Fq '"traceparent":null' <<<"${sidecar_absent}"; then
+  cat "${shared_log}" >&2
+  echo "shared sidecar did not report absent trace headers through /tracez" >&2
+  printf '%s\n' "${sidecar_absent}" >&2
   exit 1
 fi
 

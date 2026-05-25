@@ -1,4 +1,5 @@
 // FEATURE: O4
+// FEATURE: O14
 
 use crate::{ComponentState, DrainState, HealthReport};
 use std::error::Error;
@@ -90,6 +91,7 @@ impl SidecarRuntime {
             (HttpMethod::Get, "/metrics") => {
                 HttpProbeResponse::new(200, "text/plain; version=0.0.4", self.prometheus_metrics())
             }
+            (HttpMethod::Get, "/tracez") => self.trace_response(request),
             (HttpMethod::Other(_), _) => HttpProbeResponse::new(
                 405,
                 "application/json",
@@ -131,6 +133,10 @@ impl SidecarRuntime {
         HttpProbeResponse::new(status_code, "application/json", self.drain_json())
     }
 
+    fn trace_response(&self, request: &HttpProbeRequest) -> HttpProbeResponse {
+        HttpProbeResponse::new(200, "application/json", self.trace_json(request))
+    }
+
     fn health_json(&self, report: &HealthReport) -> String {
         format!(
             "{{\"component\":\"{}\",\"state\":\"{}\",\"ready\":{},\"accepting_new_work\":{},\"in_flight_work\":{},\"uptime_seconds\":{},\"detail\":{}}}\n",
@@ -152,6 +158,21 @@ impl SidecarRuntime {
             self.drain.in_flight_work,
             self.drain.is_drained(),
         )
+    }
+
+    fn trace_json(&self, request: &HttpProbeRequest) -> String {
+        match request.extract_trace_context() {
+            Some((traceparent, tracestate)) => format!(
+                "{{\"component\":\"{}\",\"traceparent\":\"{}\",\"tracestate\":{},\"valid\":true}}\n",
+                escape_json(&self.component),
+                traceparent.to_header_value(),
+                json_optional(Some(tracestate.as_str())),
+            ),
+            None => format!(
+                "{{\"component\":\"{}\",\"traceparent\":null,\"tracestate\":null,\"valid\":false}}\n",
+                escape_json(&self.component),
+            ),
+        }
     }
 
     fn prometheus_metrics(&self) -> String {
@@ -396,7 +417,10 @@ pub fn serve_unix_once<P: AsRef<std::path::Path>>(
 }
 
 fn is_known_path(path: &str) -> bool {
-    matches!(path, "/healthz" | "/readyz" | "/drain" | "/metrics")
+    matches!(
+        path,
+        "/healthz" | "/readyz" | "/drain" | "/metrics" | "/tracez"
+    )
 }
 
 fn component_state(state: ComponentState) -> &'static str {
@@ -508,6 +532,25 @@ mod tests {
             .to_http_string()
             .starts_with("HTTP/1.1 503 Service Unavailable"));
         assert!(response.body.contains("queue lag budget exceeded"));
+    }
+
+    #[test]
+    fn tracez_response_reports_trace_context() {
+        let mut runtime = SidecarRuntime::ready("sidecar-shared");
+        let raw = concat!(
+            "GET /tracez HTTP/1.1\r\n",
+            "Host: local\r\n",
+            "traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\r\n",
+            "tracestate: vendor=opaque\r\n",
+            "\r\n",
+        );
+        let response = runtime.handle_http_bytes(raw.as_bytes()).unwrap();
+        assert_eq!(response.status_code, 200);
+        assert!(response.body.contains("\"valid\":true"));
+        assert!(response
+            .body
+            .contains("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"));
+        assert!(response.body.contains("vendor=opaque"));
     }
 
     #[test]

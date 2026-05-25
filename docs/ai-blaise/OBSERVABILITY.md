@@ -70,20 +70,24 @@ pgrx wiring follows on the server side:
 | ------------------------------------------------------- | --------------------------------------------------------------- |
 | `companion.current_traceparent()`                       | Returns the active session traceparent, or NULL when absent.    |
 | `companion.current_tracestate()`                        | Returns the active session tracestate, or NULL when absent.     |
-| `companion.project_traceparent_from_application_name()` | Re-parses `application_name`, emits `SET LOCAL trace.parent`.   |
+| `companion.project_traceparent_from_application_name(text)` | Re-parses a raw startup `application_name` string, emits `SET LOCAL trace.parent`. |
 
-The session GUCs we read from are `trace.parent` and `trace.state`. Spans
-emitted from inside a PostgreSQL backend chain to the inbound traceparent
-via the OpenTelemetry SDK's `WithSpanContext` constructor — see the smoke
-script for the end-to-end assertion.
+The session GUCs we read from are `trace.parent` and `trace.state`. The
+production path sets those GUCs through libpq `PGOPTIONS`; PostgreSQL truncates
+server-side `application_name`, so the projection helper accepts an explicit raw
+startup string when callers need to recover the legacy application-name wire
+format. Spans emitted from inside a PostgreSQL backend can chain to the inbound
+traceparent via the OpenTelemetry SDK's `WithSpanContext` constructor.
 
 ### Sidecars
 
 Sidecar HTTP probe requests (`HttpProbeRequest`) carry a parsed `HeaderMap`
 so any axum, hyper, or tonic handler that wraps its inbound request in
 `HttpProbeRequest::with_headers` can call `extract_trace_context()` to
-recover a `(TraceParent, TraceState)` pair. The same helper is mirrored on
-`MetadataMap` for gRPC handlers.
+recover a `(TraceParent, TraceState)` pair. The shared runtime also exposes
+`GET /tracez`, which returns the parsed inbound `traceparent`/`tracestate` for
+live probe verification. The same helper is mirrored on `MetadataMap` for gRPC
+handlers.
 
 When a sidecar makes outbound calls (HTTP via reqwest, gRPC via tonic, or
 PostgreSQL via libpq) it constructs the appropriate carrier, calls
@@ -95,9 +99,15 @@ according to its native encoding.
 `ci/ai-blaise/otel-trace-propagation-smoke.sh` verifies:
 
 - The traceparent embedded via libpq `options` is recovered by the pool tap.
+- PostgreSQL and `companion.current_traceparent()` observe the same
+  `trace.parent` value.
+- `companion.project_traceparent_from_application_name(text)` projects a raw
+  startup string and fails closed for an invalid traceparent.
 - The pool's `traceparent_tapped_total` counter increments by one.
 - A follow-up connection without a traceparent increments
   `traceparent_absent_total`.
+- The live shared sidecar `GET /tracez` endpoint returns the inbound HTTP
+  trace headers and reports `valid=false` when they are absent.
 - When `REQUIRE_KIND=1`, a kind-cluster scenario boots Jaeger, verifies the
   in-cluster PostgreSQL `trace.parent` GUC path, sends a synthetic OTLP span
   keyed to the accepted trace ID, and asserts that trace is queryable from

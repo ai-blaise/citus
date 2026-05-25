@@ -1375,10 +1375,23 @@ for required in (
     if required not in structured_log_smoke:
         fail(f"structured-log ingestion smoke lost O15 runtime proof: {required}")
 
-if status_by_id.get("O14") != "alpha":
-    fail("O14 must remain alpha until full trace propagation and dashboard correlation are measured")
+if status_by_id.get("O14") != "production-ready":
+    fail("O14 trace-context propagation must be production-ready after pool, SQL, sidecar, and Jaeger evidence")
 otel_trace_smoke = read(ROOT / "ci/ai-blaise/otel-trace-propagation-smoke.sh")
 for phrase in (
+    "CREATE EXTENSION ai_blaise_citus;",
+    "companion_current_traceparent",
+    "companion_current_tracestate",
+    "companion_projected",
+    "companion_projected_traceparent",
+    "companion_projected_tracestate",
+    "companion_invalid_projected",
+    "ai_blaise_citus_sidecar_shared -- serve",
+    "/tracez",
+    "shared sidecar did not project trace headers through /tracez",
+    "shared sidecar did not report absent trace headers through /tracez",
+    "AI_BLAISE_RELEASE_MODE",
+    "REQUIRE_DOCKER=1 fail closed",
     "resourceSpans",
     "http://jaeger:4318/v1/traces",
     "http://jaeger:16686/api/traces/${trace_id}",
@@ -1387,9 +1400,74 @@ for phrase in (
     "automatic pool/companion/sidecar span",
 ):
     if phrase not in otel_trace_smoke:
-        fail(f"O14 KIND Jaeger correlation smoke lost required phrase: {phrase}")
-if "Jaeger correlation harness, not automatic pool/companion/sidecar span export" not in entry_by_id["O14"]["body"]:
-    fail("O14 docs must keep the Jaeger correlation proof boundary explicit")
+        fail(f"O14 trace propagation smoke lost required phrase: {phrase}")
+o14_body = compact(entry_by_id["O14"]["body"])
+for phrase in (
+    "production evidence",
+    "companion.current_traceparent",
+    "companion.current_tracestate",
+    "companion.project_traceparent_from_application_name",
+    "/tracez",
+    "trace-context extraction, propagation, SQL projection, sidecar ingress visibility, and Jaeger correlation harness evidence",
+    "not automatic OTLP span export",
+    "not a production dashboard/SLO certification",
+    "not a claim that every business endpoint emits child spans",
+):
+    if compact(phrase) not in o14_body:
+        fail(f"O14 docs lost production evidence or boundary phrase: {phrase}")
+install_sql = read(SQL_EXTENSION)
+transition_sql = read(ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql")
+for label, sql in (("install", install_sql), ("upgrade", transition_sql)):
+    for phrase in (
+        "FUNCTION companion.current_traceparent()",
+        "FUNCTION companion.current_tracestate()",
+        "FUNCTION companion.project_traceparent_from_application_name",
+        "FUNCTION companion_current_traceparent()",
+        "FUNCTION companion_current_tracestate()",
+    ):
+        if phrase not in sql:
+            fail(f"O14 {label} SQL lost trace propagation function: {phrase}")
+sql_extension_smoke_o14 = read(SQL_EXTENSION_SMOKE)
+for phrase in (
+    "O14 companion.current_traceparent",
+    "companion.project_traceparent_from_application_name",
+    "O14 invalid traceparent projection did not fail closed",
+):
+    if phrase not in sql_extension_smoke_o14:
+        fail(f"O14 SQL extension smoke lost companion projection proof: {phrase}")
+shared_runtime = read(ROOT / "sidecar/shared/src/runtime.rs")
+for phrase in (
+    "FEATURE: O14",
+    '"/tracez"',
+    "fn trace_response",
+    "fn trace_json",
+    "tracez_response_reports_trace_context",
+):
+    if phrase not in shared_runtime:
+        fail(f"O14 shared sidecar runtime lost /tracez evidence: {phrase}")
+image_check = read(IMAGE_CHECK)
+for phrase in (
+    "companion.current_traceparent()",
+    "companion.project_traceparent_from_application_name",
+    "ai_blaise_citus--0.1.0--0.1.1.sql",
+):
+    if phrase not in image_check:
+        fail(f"O14 image packaging check lost trace SQL guard: {phrase}")
+makefile_o14 = read(MAKEFILE)
+if (
+    "otel-trace-propagation-smoke:" not in makefile_o14
+    or "gate-close:" not in makefile_o14
+    or "otel-trace-propagation-smoke" not in makefile_o14.split("gate-close:", 1)[1]
+):
+    fail("gate-close must run otel-trace-propagation-smoke")
+observability_workflow_o14 = read(OBSERVABILITY_WORKFLOW)
+for phrase in (
+    "Smoke trace propagation",
+    'REQUIRE_DOCKER: "1"',
+    "otel-trace-propagation-smoke.sh",
+):
+    if phrase not in observability_workflow_o14:
+        fail(f"observability workflow lost O14 runtime proof: {phrase}")
 if status_by_id.get("O15") != "production-ready":
     fail("O15 structured-log schema must be production-ready after PostgreSQL ingestion smoke evidence")
 o15_body = compact(entry_by_id["O15"]["body"])

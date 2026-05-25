@@ -161,6 +161,42 @@ BEGIN
   END IF;
 END;
 $$;
+DO $$
+DECLARE
+  traceparent text := '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+  tracestate text := 'vendor=ai-blaise';
+  projection jsonb;
+BEGIN
+  PERFORM set_config('trace.parent', traceparent, false);
+  PERFORM set_config('trace.state', tracestate, false);
+  IF companion.current_traceparent() <> traceparent THEN
+    RAISE EXCEPTION 'O14 companion.current_traceparent did not return active traceparent';
+  END IF;
+  IF companion.current_tracestate() <> tracestate THEN
+    RAISE EXCEPTION 'O14 companion.current_tracestate did not return active tracestate';
+  END IF;
+
+  projection := companion.project_traceparent_from_application_name(
+    'application=companion-sql;traceparent=' || traceparent || ';tracestate=vendor=companion'
+  );
+  IF projection->>'projected' <> 'true' THEN
+    RAISE EXCEPTION 'O14 companion projection did not project traceparent: %', projection;
+  END IF;
+  IF companion.current_traceparent() <> traceparent THEN
+    RAISE EXCEPTION 'O14 companion projection did not set trace.parent';
+  END IF;
+  IF companion.current_tracestate() <> 'vendor=companion' THEN
+    RAISE EXCEPTION 'O14 companion projection did not set trace.state';
+  END IF;
+
+  projection := companion.project_traceparent_from_application_name(
+    'application=companion-sql;traceparent=not-a-traceparent'
+  );
+  IF projection->>'projected' <> 'false' THEN
+    RAISE EXCEPTION 'O14 invalid traceparent projection did not fail closed: %', projection;
+  END IF;
+END;
+$$;
 CREATE TABLE timescale_smoke_metrics (
   metric_time timestamptz NOT NULL,
   value double precision NOT NULL

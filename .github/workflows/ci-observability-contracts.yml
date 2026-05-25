@@ -18,5 +18,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Smoke custom component observability contracts
         run: bash ci/ai-blaise/observability-contracts-check.sh
+      - name: Smoke trace propagation
+        env:
+          REQUIRE_DOCKER: "1"
+        run: bash ci/ai-blaise/otel-trace-propagation-smoke.sh
       - name: Smoke structured-log ingestion through PostgreSQL views
         run: bash ci/ai-blaise/structured-log-ingestion-smoke.sh
