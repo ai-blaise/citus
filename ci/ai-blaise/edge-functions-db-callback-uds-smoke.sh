@@ -8,6 +8,10 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
+if [[ -f "${HOME}/.cargo/env" ]]; then
+  # shellcheck disable=SC1091
+  source "${HOME}/.cargo/env"
+fi
 
 python3 <<'PY'
 import http.client
@@ -146,6 +150,33 @@ def docker_exec(container, *args, timeout=120):
     return run(["docker", "exec", container, *args], timeout=timeout)
 
 
+def docker_exec_retry(container, *args, attempts=90, delay=1.0, timeout=120):
+    last_stdout = ""
+    last_stderr = ""
+    last_code = None
+    for attempt in range(attempts):
+        result = subprocess.run(
+            ["docker", "exec", container, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0:
+            return result.stdout
+        last_stdout = result.stdout
+        last_stderr = result.stderr
+        last_code = result.returncode
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+    sys.stderr.write(last_stdout)
+    sys.stderr.write(last_stderr)
+    fail(
+        f"command failed with exit {last_code} after {attempts} attempts: "
+        f"docker exec {container} {' '.join(args)}"
+    )
+
+
 run(["cargo", "build", "-q", "-p", PACKAGE], timeout=300)
 if not os.path.isfile(BINARY) or not os.access(BINARY, os.X_OK):
     fail(f"built edge-functions binary missing or not executable: {BINARY}")
@@ -193,9 +224,27 @@ try:
     else:
         fail("postgres:17 did not become ready on Unix socket")
 
-    docker_exec(container, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-c", "CREATE ROLE edge_runtime LOGIN")
-    docker_exec(container, "psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-c", "CREATE DATABASE app OWNER edge_runtime")
-    docker_exec(
+    docker_exec_retry(
+        container,
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "postgres",
+        "-c",
+        "CREATE ROLE edge_runtime LOGIN",
+    )
+    docker_exec_retry(
+        container,
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        "postgres",
+        "-c",
+        "CREATE DATABASE app OWNER edge_runtime",
+    )
+    docker_exec_retry(
         container,
         "psql",
         "-v",
