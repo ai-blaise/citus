@@ -223,13 +223,22 @@ more production-ready than the artifacts justified.
   rejects regressions that leave a promoted runtime smoke out of those gates.
 - The API trio sidecars now have runtime front doors instead of canonical-only
   binaries: PostgREST renders config/OpenAPI and can spawn the configured child
-  process, GraphQL renders the `graphql.resolve(...)` pg_graphql boundary and
+  process, GraphQL can execute `graphql.resolve(...)` against live
+  `pg_graphql` when `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1` is set and still
   registers subscription transport state, and edge-functions exposes registry,
-  trigger, invocation, and UDS-callback runtime surfaces. The new
+  trigger, invocation, and UDS-callback runtime surfaces. The
   `ci/ai-blaise/api-trio-runtime-smoke.sh` boots all three services and verifies
-  live TCP readiness plus API-specific behavior. These features remain alpha
-  where the docs still require a live Postgres/PostgREST/pg_graphql/Deno/Bun
-  deployment before production promotion.
+  live TCP readiness plus API-specific behavior. `graphql-pggraphql-live-smoke.sh`
+  is the API3 production data-plane proof: it runs a PostgreSQL image with
+  `pg_graphql`, creates an RLS-protected `public.account` table, starts the real
+  GraphQL sidecar in live execution mode, posts tenant-scoped `/graphql/v1`
+  queries, verifies `graphql.resolve(...)` returns only the caller tenant row,
+  verifies the opposite tenant row is hidden by PostgreSQL RLS, and checks
+  database URL/JWT secret material is not returned. Durable GraphQL
+  subscription fan-out, multi-worker GraphQL planning, external Deno/Bun
+  user-code execution, real PostgreSQL UDS callback execution, queue/broker
+  dispatch, live CDC tailing, and Kubernetes deployment remain outside this
+  proof unless covered by their own feature evidence.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is not production-ready as a whole. The PG17 source-build
   path has targeted live evidence for feasible PGDG-missing extensions, and the
@@ -654,12 +663,13 @@ more production-ready than the artifacts justified.
   `api.orders` view, launches the official PostgREST 12.2.12 binary through the
   sidecar `run-live-postgrest` supervisor, starts the sidecar proxy with
   `AI_BLAISE_POSTGREST_UPSTREAM`, and verifies authenticated GET/POST traffic plus
-  tenant RLS isolation and secret non-disclosure end to end. This promotes only
-  the PostgREST REST data-plane boundary; live `pg_graphql` execution, external
-  Deno/Bun user-code execution, real PostgreSQL UDS callback execution,
-  queue/broker dispatch, live CDC tailing, and Kubernetes deployment remain
-  alpha-scoped for API3, EF1, EF2, EF4, and EF5 until those live data-plane paths
-  are proven.
+  tenant RLS isolation and secret non-disclosure end to end.
+  `graphql-pggraphql-live-smoke.sh` is the matching production data-plane proof
+  for API3 live `pg_graphql` query execution and tenant RLS through the GraphQL
+  sidecar. External Deno/Bun user-code execution, real PostgreSQL UDS callback
+  execution, queue/broker dispatch, live CDC tailing, and Kubernetes deployment
+  remain alpha-scoped for EF1, EF2, EF4, and EF5 until those live data-plane
+  paths are proven.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

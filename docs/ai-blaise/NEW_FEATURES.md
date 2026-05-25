@@ -4311,7 +4311,7 @@ so requests route through Citus-aware helper views.
 ### API3: GraphQL Sidecar
 
 **Overlay**: `sidecar/graphql`, `companion/src/graph_bridge.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
@@ -4319,7 +4319,27 @@ so requests route through Citus-aware helper views.
 **Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
 tables for the GraphQL sidecar, plus a runnable canonical binding emitter.
 
-Runtime evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` builds and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML, POST `/graphql/v1` query handling with tenant JWT claims, missing-claim and introspection-denied error taxonomy, malformed body handling, `/graphql/ws` subscription registration, WebSocket-upgrade boundary errors, persistent `/drain` readiness, metrics, and fail-closed runtime dependency validation for database URL and JWT secret inputs. This is alpha runtime evidence for the Rust front-door contract; it does not prove live `pg_graphql` execution against PostgreSQL.
+Production evidence: VM proof runs
+`bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` and
+`bash ci/ai-blaise/graphql-pggraphql-live-smoke.sh`. The runtime smoke builds
+and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML,
+POST `/graphql/v1` query handling with tenant JWT claims, missing-claim and
+introspection-denied error taxonomy, malformed body handling, `/graphql/ws`
+subscription registration, WebSocket-upgrade boundary errors, persistent
+`/drain` readiness, metrics, and fail-closed runtime dependency validation for
+database URL and JWT secret inputs. The live data-plane smoke starts a
+PostgreSQL image containing `pg_graphql`, creates an RLS-protected
+`public.account` table with tenant A and tenant B rows, runs the real GraphQL
+sidecar in `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1` mode against that database,
+posts tenant-scoped queries through `/graphql/v1`, proves the sidecar executes
+`graphql.resolve(...)` and returns only the caller tenant's row, verifies the
+opposite tenant row is hidden by PostgreSQL RLS, and checks database URL/JWT
+secret material is absent from GraphQL responses. This production-ready
+boundary covers live query execution through `pg_graphql`, tenant-claim
+installation via `request.jwt.claims`, RLS-preserving HTTP query handling, and
+the existing subscription registration boundary; it does not claim durable
+GraphQL subscription fan-out, GraphQL query planning across multiple Citus
+workers (multi-worker GraphQL planning), or Kubernetes traffic.
 
 **Motivation**: GraphQL routing needs a typed endpoint and schema-binding
 contract before exposing pg_graphql to tenants.
@@ -4334,6 +4354,7 @@ contract before exposing pg_graphql to tenants.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 - CI: `ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
+- CI: `ci/ai-blaise/graphql-pggraphql-live-smoke.sh`
 
 ### API4: Distributed GraphQL Tables
 
@@ -4382,7 +4403,7 @@ for distributed tables.
 **Summary**: Requires RLS, JWT secret references, and tenant claims for
 auto-API routes.
 
-Production evidence: VM proof run `bash ci/ai-blaise/postgrest-live-data-plane-smoke.sh` signs HS256 JWTs with `role=web_user` and `tenant_id` claims, sends them through the PostgREST sidecar proxy to upstream PostgREST, and verifies PostgreSQL RLS enforces tenant isolation end to end: unauthenticated reads fail closed, tenant A and tenant B SELECTs only return their own rows, a tenant A INSERT for tenant A succeeds, and a tenant A cross-tenant INSERT for tenant B is rejected and leaves no row behind. The same smoke verifies database URI and JWT secret values stay out of `check-runtime-dependencies` output and `postgrest.conf`. The production-ready claim covers the PostgREST auto-REST data-plane path; live `pg_graphql` execution remains bounded by `FEATURE: API3` alpha status.
+Production evidence: VM proof run `bash ci/ai-blaise/postgrest-live-data-plane-smoke.sh` signs HS256 JWTs with `role=web_user` and `tenant_id` claims, sends them through the PostgREST sidecar proxy to upstream PostgREST, and verifies PostgreSQL RLS enforces tenant isolation end to end: unauthenticated reads fail closed, tenant A and tenant B SELECTs only return their own rows, a tenant A INSERT for tenant A succeeds, and a tenant A cross-tenant INSERT for tenant B is rejected and leaves no row behind. The same smoke verifies database URI and JWT secret values stay out of `check-runtime-dependencies` output and `postgrest.conf`. The production-ready claim covers the PostgREST auto-REST data-plane path; API3 has separate live `pg_graphql` execution evidence in `ci/ai-blaise/graphql-pggraphql-live-smoke.sh`.
 
 **Motivation**: Auto-generated APIs must preserve tenant isolation rather than
 exposing raw distributed tables.
@@ -4416,7 +4437,7 @@ PostgREST sidecar.
 
 Production evidence: VM proof run `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` builds the real `ai_blaise_citus_sidecar_postgrest` binary, starts `serve` on a loopback TCP listener, and fetches `/openapi.json` over HTTP. The smoke parses the response as JSON and verifies OpenAPI 3.0 metadata, title/version, canonical `/orders` GET/POST operations, `public.orders` tags, `x-ai-blaise` schemas, `rls_required=true`, `tenant_claim=tenant_id`, and absence of database URI or JWT secret material. The same smoke verifies health, readiness, metrics, drain behavior, fail-closed startup dependency validation, and generated `postgrest.conf` secret references.
 
-**Current boundary**: The API6 production-ready claim covers the deterministic OpenAPI document served by the Rust PostgREST sidecar front door. API1/API2/API5 have separate production evidence for the PostgREST REST data-plane path in `ci/ai-blaise/postgrest-live-data-plane-smoke.sh`; API6 itself does not claim live `pg_graphql` execution or GraphQL OpenAPI generation, and API3 remains alpha until that data-plane path is proven.
+**Current boundary**: The API6 production-ready claim covers the deterministic OpenAPI document served by the Rust PostgREST sidecar front door. API1/API2/API5 have separate production evidence for the PostgREST REST data-plane path in `ci/ai-blaise/postgrest-live-data-plane-smoke.sh`; API3 has separate live `pg_graphql` query execution evidence in `ci/ai-blaise/graphql-pggraphql-live-smoke.sh`; API6 itself does not claim GraphQL OpenAPI generation.
 
 **Motivation**: Client generation and API inspection need a predictable
 OpenAPI endpoint.

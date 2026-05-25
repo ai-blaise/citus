@@ -7,6 +7,7 @@
 use ai_blaise_citus_sidecar_shared::{
     listen_addr_from_env, HttpProbeResponse, SidecarRuntime, SidecarRuntimeError,
 };
+use postgres::{Client, NoTls};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -147,6 +148,19 @@ impl From<std::io::Error> for GraphqlSidecarError {
     }
 }
 
+impl From<postgres::Error> for GraphqlSidecarError {
+    fn from(error: postgres::Error) -> Self {
+        if let Some(db_error) = error.as_db_error() {
+            return Self::Runtime(format!(
+                "{}: {}",
+                db_error.code().code(),
+                db_error.message()
+            ));
+        }
+        Self::Runtime(error.to_string())
+    }
+}
+
 fn validate_required(field: &'static str, value: &str) -> Result<(), GraphqlSidecarError> {
     if value.trim().is_empty() {
         return Err(GraphqlSidecarError::MissingRequiredField(field));
@@ -230,6 +244,7 @@ pub fn canonical_graphql_execution_plan() -> Result<GraphqlSidecarPlan, GraphqlS
 
 pub const GRAPHQL_DATABASE_URL_ENV: &str = "AI_BLAISE_GRAPHQL_DATABASE_URL";
 pub const GRAPHQL_JWT_SECRET_ENV: &str = "AI_BLAISE_GRAPHQL_JWT_SECRET";
+pub const GRAPHQL_LIVE_EXECUTION_ENV: &str = "AI_BLAISE_GRAPHQL_LIVE_EXECUTION";
 const MIN_JWT_SECRET_BYTES: usize = 32;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -265,6 +280,60 @@ where
         endpoint_path: plan.endpoint_path.clone(),
         pg_graphql_extension_required: true,
     })
+}
+
+pub struct GraphqlLiveExecutor {
+    client: Client,
+}
+
+impl GraphqlLiveExecutor {
+    pub fn connect_from_env() -> Result<Option<Self>, GraphqlSidecarError> {
+        if !graphql_live_execution_enabled_from_env() {
+            return Ok(None);
+        }
+        let report = graphql_runtime_dependency_report_from_env()?;
+        Ok(Some(Self::connect_env(&report.database_url_env)?))
+    }
+
+    pub fn connect_env(database_url_env: &str) -> Result<Self, GraphqlSidecarError> {
+        let database_url = std::env::var(database_url_env)
+            .map_err(|_| GraphqlSidecarError::MissingRuntimeDependency(database_url_env.into()))?;
+        Self::connect(&database_url)
+    }
+
+    pub fn connect(database_url: &str) -> Result<Self, GraphqlSidecarError> {
+        validate_postgres_url(GRAPHQL_DATABASE_URL_ENV, database_url)?;
+        let mut client = Client::connect(database_url, NoTls)?;
+        let extension_exists: bool = client
+            .query_one(
+                "select exists (select 1 from pg_extension where extname = 'pg_graphql')",
+                &[],
+            )?
+            .get(0);
+        if !extension_exists {
+            return Err(GraphqlSidecarError::MissingRuntimeDependency(
+                "pg_graphql extension".to_string(),
+            ));
+        }
+        Ok(Self { client })
+    }
+
+    pub fn execute(&mut self, request: &GraphqlRequest) -> Result<String, GraphqlSidecarError> {
+        let mut transaction = self.client.transaction()?;
+        if let Some(claims_json) = request.jwt_claims_json.as_deref() {
+            transaction.simple_query(&render_set_claims_sql(claims_json))?;
+        }
+        let row = transaction.query_one(&format!("{}::text", render_resolve_sql(request)), &[])?;
+        let response_json: String = row.get(0);
+        transaction.commit()?;
+        Ok(response_json)
+    }
+}
+
+pub fn graphql_live_execution_enabled_from_env() -> bool {
+    std::env::var(GRAPHQL_LIVE_EXECUTION_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 fn require_runtime_env<F>(lookup: &F, name: &str) -> Result<String, GraphqlSidecarError>
@@ -564,9 +633,7 @@ fn render_resolve_sql(request: &GraphqlRequest) -> String {
         .as_deref()
         .map(|name| format!("'{}'", name.replace('\'', "''")))
         .unwrap_or_else(|| "null".to_string());
-    format!(
-        "select graphql.resolve(query := '{escaped_query}', variables := '{variables_json}'::jsonb, operation_name := {operation})"
-    )
+    format!("select graphql.resolve('{escaped_query}', '{variables_json}'::jsonb, {operation})")
 }
 
 fn render_variables_json(variables: &BTreeMap<String, String>) -> String {
@@ -682,12 +749,13 @@ pub fn handle_graphql_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let mut runtime = SidecarRuntime::ready("graphql");
-    handle_graphql_sidecar_http_request(request, &mut runtime)
+    handle_graphql_sidecar_http_request(request, &mut runtime, None)
 }
 
 fn handle_graphql_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
+    live_executor: Option<&mut GraphqlLiveExecutor>,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let request =
         std::str::from_utf8(request).map_err(|_| GraphqlSidecarError::MalformedHttpRequest)?;
@@ -712,7 +780,7 @@ fn handle_graphql_sidecar_http_request(
                 render_graphiql(&plan.endpoint_path),
             ));
         }
-        return handle_graphql_post(&plan, body);
+        return handle_graphql_post(&plan, body, live_executor);
     }
 
     Ok(runtime.handle_http_bytes(request.as_bytes())?)
@@ -760,6 +828,7 @@ fn handle_graphql_subscription_post(
 fn handle_graphql_post(
     plan: &GraphqlSidecarPlan,
     body: &str,
+    live_executor: Option<&mut GraphqlLiveExecutor>,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let body = body.trim();
     if body.is_empty() {
@@ -783,6 +852,34 @@ fn handle_graphql_post(
     }
 
     let mut handler = GraphqlHandler::new(plan.clone())?;
+    if let Some(executor) = live_executor {
+        if let Err(error) = handler.resolve(&request) {
+            return Ok(HttpProbeResponse::new(
+                400,
+                "application/json",
+                format!(
+                    "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
+                    escape_json(&error.to_string())
+                ),
+            ));
+        }
+        return match executor.execute(&request) {
+            Ok(response_json) => Ok(HttpProbeResponse::new(
+                200,
+                "application/json",
+                format!("{response_json}\n"),
+            )),
+            Err(error) => Ok(HttpProbeResponse::new(
+                502,
+                "application/json",
+                format!(
+                    "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
+                    escape_json(&error.to_string())
+                ),
+            )),
+        };
+    }
+
     match handler.resolve(&request) {
         Ok(response) => Ok(HttpProbeResponse::new(
             200,
@@ -806,6 +903,7 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
 
     canonical_graphql_execution_plan()?;
     let mut runtime = SidecarRuntime::ready("graphql");
+    let mut live_executor = GraphqlLiveExecutor::connect_from_env()?;
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise graphql sidecar listening on {listen_addr}");
@@ -814,16 +912,17 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
         let response =
-            handle_graphql_sidecar_http_request(&request, &mut runtime).unwrap_or_else(|error| {
-                HttpProbeResponse::new(
-                    400,
-                    "application/json",
-                    format!(
-                        "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                        escape_json(&error.to_string())
-                    ),
-                )
-            });
+            handle_graphql_sidecar_http_request(&request, &mut runtime, live_executor.as_mut())
+                .unwrap_or_else(|error| {
+                    HttpProbeResponse::new(
+                        400,
+                        "application/json",
+                        format!(
+                            "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
+                            escape_json(&error.to_string())
+                        ),
+                    )
+                });
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())

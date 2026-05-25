@@ -7,3 +7,4 @@ repository.workspace = true
 
 [dependencies]
 ai_blaise_citus_sidecar_shared = { path = "../shared" }
+postgres = "0.19"

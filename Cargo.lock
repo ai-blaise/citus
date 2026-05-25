@@ -167,6 +167,7 @@ name = "ai_blaise_citus_sidecar_graphql"
 version = "0.1.0"
 dependencies = [
  "ai_blaise_citus_sidecar_shared",
+ "postgres",
 ]
 
 [[package]]

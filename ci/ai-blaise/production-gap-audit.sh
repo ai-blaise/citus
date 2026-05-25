@@ -46,6 +46,7 @@ SIDECAR_CDC_MODIFICATION = ROOT / "sidecar/cdc/MODIFICATION.md"
 OPERATOR_RECONCILERS_BATCH_C_SMOKE = ROOT / "ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh"
 COMPANION_RUNTIME_DEPTH_A_SMOKE = ROOT / "ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
+GRAPHQL_PGGRAPHQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/graphql-pggraphql-live-smoke.sh"
 POSTGREST_LIVE_DATA_PLANE_SMOKE = ROOT / "ci/ai-blaise/postgrest-live-data-plane-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
@@ -1133,6 +1134,7 @@ for phrase in (
         fail(f"production audit lost O5 live apply boundary phrase: {phrase}")
 
 graphql_postgrest_smoke = read(GRAPHQL_POSTGREST_RUNTIME_SMOKE)
+graphql_pggraphql_live_smoke = read(GRAPHQL_PGGRAPHQL_LIVE_SMOKE)
 for required in (
     "json.loads(body)",
     'openapi["openapi"] == "3.0.0"',
@@ -1164,11 +1166,41 @@ for required in (
     if required not in postgrest_live_smoke:
         fail(f"live PostgREST data-plane smoke lost required assertion: {required}")
 
-for feature_id in ("API1", "API2", "API5", "API6"):
+for feature_id in ("API1", "API2", "API3", "API5", "API6"):
     if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready after live PostgREST REST data-plane evidence")
-if status_by_id.get("API3") != "alpha":
-    fail("API3 must remain alpha until live pg_graphql execution is proven")
+        fail(f"{feature_id} must be production-ready after live API data-plane evidence")
+for required in (
+    "graphql_pggraphql_live=passed",
+    "AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1",
+    "pg_graphql",
+    "public.account",
+    "account_tenant",
+    "graphql.resolve",
+    "tenant_a_rows=1",
+    "tenant_b_rows=1",
+    "rls_cross_tenant_hidden=true",
+    "graphql_resolve_executed=true",
+    "database_url not in raw",
+    "jwt_secret not in raw",
+):
+    if required not in graphql_pggraphql_live_smoke:
+        fail(f"live pg_graphql smoke lost API3 assertion: {required}")
+api3_body = compact(entry_by_id["API3"]["body"])
+for phrase in (
+    "production evidence",
+    "graphql-pggraphql-live-smoke.sh",
+    "AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1",
+    "pg_graphql",
+    "public.account",
+    "graphql.resolve",
+    "PostgreSQL RLS",
+    "database URL/JWT secret material is absent",
+    "durable GraphQL subscription fan-out",
+    "multi-worker GraphQL planning",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in api3_body:
+        fail(f"API3 docs lost live pg_graphql data-plane phrase: {phrase}")
 api_rest_body = compact(
     entry_by_id["API1"]["body"]
     + entry_by_id["API2"]["body"]
@@ -1183,7 +1215,7 @@ for phrase in (
     "pg_dist_partition",
     "security-invoker `api.orders` view",
     "tenant A cross-tenant INSERT for tenant B is rejected",
-    "live `pg_graphql` execution remains bounded by `FEATURE: API3` alpha status",
+    "API3 has separate live `pg_graphql` execution evidence",
 ):
     if compact(phrase) not in api_rest_body:
         fail(f"API1/API2/API5 docs lost live PostgREST data-plane phrase: {phrase}")
@@ -1195,7 +1227,8 @@ for phrase in (
     "openapi 3.0 metadata",
     "absence of database uri or jwt secret material",
     "API1/API2/API5 have separate production evidence",
-    "API3 remains alpha",
+    "API3 has separate live `pg_graphql` query execution evidence",
+    "does not claim GraphQL OpenAPI generation",
 ):
     if compact(phrase) not in api6_body:
         fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
