@@ -40,8 +40,13 @@ guarded apply plan: create the extension, validate
 cohabitation precondition, then run the ordered TS1/TS2/TS3/TS4/TS5 SQL.
 `ci/ai-blaise/timescale-cohabitation-smoke.sh` provides the current live
 cohabitation proof for the integrated TS6 hook-chain source and the TS18
-installable bridge-state SQL. TS1/TS2/TS3/TS4/TS5/TS12 are now production-ready for the bounded live SQL apply/catalog-state surface under the pinned cohabitation image. Multi-worker fanout,
-rebalance, background policy completion, continuous aggregate refresh correctness, planner pushdown, and operator reconciliation remain outside that claim.
+installable bridge-state SQL. TS1/TS2/TS3/TS4/TS5/TS12 are production-ready for
+the bounded live SQL apply/catalog-state surface under the pinned cohabitation
+image, and `ci/ai-blaise/operator-hypertable-live-smoke.sh` proves TS7
+Kubernetes controller/status reconciliation for that same bounded bridge
+surface. Multi-worker fanout, rebalance, background policy completion,
+continuous aggregate refresh correctness, and planner pushdown remain outside
+that claim.
 
 ## Architecture Decision Records
 

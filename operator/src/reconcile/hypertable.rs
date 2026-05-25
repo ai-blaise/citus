@@ -104,13 +104,112 @@ impl HypertableReconcilePlan {
                 cohabitation_guard_sql(),
                 true,
             ),
+            HypertableApplyStep::new(
+                "apply_distributed_hypertable",
+                "TS1",
+                format!(
+                    "SELECT apply_distribute_hypertable({}, {}, {}, {}, {});",
+                    sql_literal(&self.distributed_hypertable.table),
+                    sql_literal(&self.distributed_hypertable.distribution_column),
+                    sql_literal(&self.time_range_pruner.time_column),
+                    sql_literal(&self.distributed_hypertable.chunk_time_interval),
+                    self.distributed_hypertable.num_shards,
+                ),
+                false,
+            )
+            .with_bridge_state_key("TS1", self.distributed_hypertable.table.clone()),
         ];
 
-        steps.extend(
-            self.sql_plans
-                .iter()
-                .enumerate()
-                .map(|(index, sql_plan)| HypertableApplyStep::from_companion_plan(index, sql_plan)),
+        for policy in &self.policies {
+            match &policy.policy {
+                AddPolicyDistributed::Compression {
+                    older_than,
+                    segment_by,
+                    order_by,
+                } => steps.push(
+                    HypertableApplyStep::new(
+                        "apply_compression_policy_distributed",
+                        "TS2",
+                        format!(
+                            "SELECT apply_compression_policy_distributed({}, {}, {}, {});",
+                            sql_literal(&policy.table),
+                            sql_literal(older_than),
+                            sql_literal(&segment_by.join(",")),
+                            sql_literal(&order_by.join(",")),
+                        ),
+                        false,
+                    )
+                    .with_bridge_state_key("TS2", policy.table.clone()),
+                ),
+                AddPolicyDistributed::Retention { drop_after } => steps.push(
+                    HypertableApplyStep::new(
+                        "apply_retention_policy_distributed",
+                        "TS4",
+                        format!(
+                            "SELECT apply_retention_policy_distributed({}, {});",
+                            sql_literal(&policy.table),
+                            sql_literal(drop_after),
+                        ),
+                        false,
+                    )
+                    .with_bridge_state_key("TS4", policy.table.clone()),
+                ),
+                AddPolicyDistributed::Reorder { index_name } => steps.push(
+                    HypertableApplyStep::new(
+                        "apply_reorder_policy_distributed",
+                        "TS12",
+                        format!(
+                            "SELECT apply_reorder_policy_distributed({}, {});",
+                            sql_literal(&policy.table),
+                            sql_literal(index_name),
+                        ),
+                        false,
+                    )
+                    .with_bridge_state_key("TS12", policy.table.clone()),
+                ),
+            }
+        }
+
+        for continuous_aggregate in &self.continuous_aggregates {
+            let refresh_start = continuous_aggregate
+                .refresh_start
+                .as_deref()
+                .unwrap_or("7 days");
+            let refresh_end = continuous_aggregate
+                .refresh_end
+                .as_deref()
+                .unwrap_or("1 hour");
+            let schedule = continuous_aggregate.schedule.as_deref().unwrap_or("1 hour");
+            steps.push(
+                HypertableApplyStep::new(
+                    "apply_continuous_aggregate_distributed",
+                    "TS3",
+                    format!(
+                        "SELECT apply_continuous_aggregate_distributed({}, {}, {}, {}, {});",
+                        sql_literal(&continuous_aggregate.name),
+                        sql_literal(&continuous_aggregate.query),
+                        sql_literal(refresh_start),
+                        sql_literal(refresh_end),
+                        sql_literal(schedule),
+                    ),
+                    false,
+                )
+                .with_bridge_state_key("TS3", continuous_aggregate.name.clone()),
+            );
+        }
+
+        steps.push(
+            HypertableApplyStep::new(
+                "apply_time_range_shard_pruner",
+                "TS5",
+                format!(
+                    "SELECT apply_time_range_shard_pruner({}, {});",
+                    sql_literal(&self.time_range_pruner.distributed_table),
+                    sql_literal(&self.time_range_pruner.time_column),
+                ),
+                false,
+            )
+            .with_bridge_state_key("TS5", self.time_range_pruner.distributed_table.clone()),
         );
 
         HypertableApplyPlan { steps }
@@ -137,11 +236,18 @@ impl HypertableApplyPlan {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HypertableApplyBridgeStateKey {
+    pub feature_id: String,
+    pub object_name: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HypertableApplyStep {
     pub name: String,
     pub feature_id: String,
     pub sql: String,
     pub idempotent: bool,
+    pub bridge_state_key: Option<HypertableApplyBridgeStateKey>,
 }
 
 impl HypertableApplyStep {
@@ -156,20 +262,20 @@ impl HypertableApplyStep {
             feature_id: feature_id.into(),
             sql: sql.into(),
             idempotent,
+            bridge_state_key: None,
         }
     }
 
-    fn from_companion_plan(index: usize, sql_plan: &CompanionSqlPlan) -> Self {
-        Self::new(
-            format!(
-                "apply_companion_sql_{:02}_{}",
-                index + 1,
-                sql_plan.feature_id.to_ascii_lowercase()
-            ),
-            sql_plan.feature_id,
-            sql_plan.script(),
-            false,
-        )
+    fn with_bridge_state_key(
+        mut self,
+        feature_id: impl Into<String>,
+        object_name: impl Into<String>,
+    ) -> Self {
+        self.bridge_state_key = Some(HypertableApplyBridgeStateKey {
+            feature_id: feature_id.into(),
+            object_name: object_name.into(),
+        });
+        self
     }
 }
 
@@ -380,8 +486,18 @@ mod tests {
         assert!(apply_sql.contains("VALUES ('TS1'), ('TS2'), ('TS4'), ('TS3'), ('TS5')"));
         assert!(apply_sql.contains("citus.cohabit_extensions"));
         assert!(apply_sql.contains("timescaledb"));
-        assert!(apply_sql.contains("create_distributed_table"));
-        assert!(apply_sql.contains("enable_time_range_shard_pruner"));
+        assert!(apply_sql.contains("apply_distribute_hypertable"));
+        assert!(apply_sql.contains("apply_compression_policy_distributed"));
+        assert!(apply_sql.contains("apply_retention_policy_distributed"));
+        assert!(apply_sql.contains("apply_continuous_aggregate_distributed"));
+        assert!(apply_sql.contains("apply_time_range_shard_pruner"));
+        assert_eq!(
+            apply_plan.steps[3]
+                .bridge_state_key
+                .as_ref()
+                .map(|key| (key.feature_id.as_str(), key.object_name.as_str())),
+            Some(("TS1", "metrics"))
+        );
     }
 
     #[test]

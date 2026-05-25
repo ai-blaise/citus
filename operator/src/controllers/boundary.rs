@@ -91,6 +91,14 @@ impl BoundaryOperation {
         }
     }
 
+    pub fn implemented(name: impl Into<String>, kind: BoundaryOperationKind) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+            implemented: true,
+        }
+    }
+
     pub fn alpha(name: impl Into<String>, kind: BoundaryOperationKind) -> Self {
         Self {
             name: name.into(),

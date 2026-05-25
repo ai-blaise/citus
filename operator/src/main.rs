@@ -36,6 +36,7 @@ use ai_blaise_citus_operator::controllers::boundary::{
     execution_mode_from_env, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
     ExecutionMode,
 };
+use ai_blaise_citus_operator::controllers::hypertable::Hypertable;
 use ai_blaise_citus_operator::controllers::sidecar::Sidecar;
 use ai_blaise_citus_operator::{
     canonical_operator_security_report, canonical_security_supply_chain_report,
@@ -107,6 +108,7 @@ fn main() {
             run_security_supply_chain_canonical()
         }
         [command] if command == "print-sidecar-crd" => print_sidecar_crd(),
+        [command] if command == "print-hypertable-crd" => print_hypertable_crd(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -143,12 +145,20 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-sidecar-crd]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-sidecar-crd|print-hypertable-crd]");
 }
 
 fn print_sidecar_crd() {
     let crd = serde_yaml::to_string(&Sidecar::crd()).unwrap_or_else(|error| {
         eprintln!("operator: sidecar CRD render failed: {error}");
+        process::exit(1);
+    });
+    print!("{crd}");
+}
+
+fn print_hypertable_crd() {
+    let crd = serde_yaml::to_string(&Hypertable::crd()).unwrap_or_else(|error| {
+        eprintln!("operator: hypertable CRD render failed: {error}");
         process::exit(1);
     });
     print!("{crd}");
@@ -787,11 +797,11 @@ fn canonical_controller_boundary_plans_for_mode(
             mode,
             vec![
                 BoundaryOperation::render_plan("render_hypertable_apply_plan"),
-                BoundaryOperation::alpha(
+                BoundaryOperation::implemented(
                     "execute_hypertable_sql",
                     BoundaryOperationKind::DirectSql,
                 ),
-                BoundaryOperation::alpha(
+                BoundaryOperation::implemented(
                     "patch_hypertable_status",
                     BoundaryOperationKind::StatusMutation,
                 ),
@@ -1416,7 +1426,7 @@ mod tests {
             rows,
             vec![
                 "CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
-                "Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations	none	30".to_string(),
                 "Migration	users-display-name	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
                 "Tenant	tenant-a	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
             ]

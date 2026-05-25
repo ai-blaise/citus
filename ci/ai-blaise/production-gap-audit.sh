@@ -76,6 +76,7 @@ DEPLOY_README = ROOT / "deploy/README.md"
 DR_RESTORE_DEPTH_CHECK = ROOT / "ci/ai-blaise/dr-restore-depth-check.sh"
 TIMESCALE_BRIDGE_SMOKE = ROOT / "ci/ai-blaise/timescale-bridge-smoke.sh"
 TIMESCALE_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/timescale-cohabitation-smoke.sh"
+OPERATOR_HYPERTABLE_LIVE_SMOKE = ROOT / "ci/ai-blaise/operator-hypertable-live-smoke.sh"
 TIMESCALE_COHABITATION_DOCKERFILE = ROOT / "images/citus-timescale-cohabitation/Dockerfile"
 PG_CRON_COHABITATION_SMOKE = ROOT / "ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 TS_VERSION_MATRIX_SMOKE = ROOT / "ci/ai-blaise/ts-version-matrix-smoke.sh"
@@ -1421,8 +1422,22 @@ for feature_id, function_name in (
     ):
         if compact(phrase) not in body:
             fail(f"{feature_id} docs lost bounded Timescale production evidence phrase: {phrase}")
-if status_by_id.get("TS7") != "alpha":
-    fail("TS7 must remain alpha until Kubernetes Hypertable controller SQL execution and status reconciliation are live-proven")
+if status_by_id.get("TS7") != "production-ready":
+    fail("TS7 must be production-ready after live Kubernetes Hypertable controller SQL execution and status reconciliation evidence")
+ts7_truth = compact(docs + "\n" + audit + "\n" + read(OPERATOR_HYPERTABLE_LIVE_SMOKE))
+for phrase in (
+    "operator-hypertable-live-smoke.sh",
+    "AI_BLAISE_OPERATOR_EXECUTION_MODE=apply",
+    "status.phase=Applied",
+    "observedGeneration",
+    "skippedStepCount >= 5",
+    "timeColumn=metric_time",
+    "distributionColumn=tenant_id",
+    "no duplicate bridge-state rows",
+    "does not claim multi-worker fanout",
+):
+    if compact(phrase) not in ts7_truth:
+        fail(f"TS7 live controller evidence boundary must preserve phrase: {phrase}")
 
 if "pg-cron-cohabitation-smoke.sh" not in read(CI_IMAGE_WORKFLOW):
     fail("ci-image workflow must run pg-cron-cohabitation-smoke for TS19 production evidence")

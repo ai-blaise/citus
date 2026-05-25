@@ -67,12 +67,21 @@ pub enum ControllerError {
 /// conditions).
 pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     let ctx = Context::new(client)?;
-    if sidecar_only_controller_selection() {
+    if single_controller_selection("sidecar") {
         info!(
             mode = ctx.execution_mode.as_str(),
             "operator serving Sidecar controller only"
         );
         sidecar::run(ctx).await?;
+        return Ok(());
+    }
+
+    if single_controller_selection("hypertable") {
+        info!(
+            mode = ctx.execution_mode.as_str(),
+            "operator serving Hypertable controller only"
+        );
+        hypertable::run(ctx).await?;
         return Ok(());
     }
 
@@ -115,15 +124,16 @@ pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
     Ok(())
 }
 
-fn sidecar_only_controller_selection() -> bool {
+fn single_controller_selection(controller: &str) -> bool {
     env::var("AI_BLAISE_OPERATOR_CONTROLLERS")
         .map(|value| {
             let selected = value
                 .split(',')
                 .map(str::trim)
                 .filter(|entry| !entry.is_empty())
+                .map(|entry| entry.to_ascii_lowercase())
                 .collect::<Vec<_>>();
-            selected == ["sidecar"]
+            selected == [controller]
         })
         .unwrap_or(false)
 }

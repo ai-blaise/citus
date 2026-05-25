@@ -5740,11 +5740,39 @@ RETURNS void
 LANGUAGE plpgsql
 VOLATILE
 AS $$
+BEGIN
+    PERFORM apply_distribute_hypertable(
+        table_name,
+        dist_col,
+        dist_col,
+        chunk_time_interval,
+        num_shards
+    );
+END;
+$$;
+
+CREATE FUNCTION apply_distribute_hypertable(
+    table_name text,
+    dist_col text,
+    time_col text,
+    chunk_time_interval text,
+    num_shards integer DEFAULT 32
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+AS $$
 DECLARE
     table_regclass regclass := table_name::regclass;
 BEGIN
     IF num_shards <= 0 THEN
         RAISE EXCEPTION 'num_shards must be greater than zero';
+    END IF;
+    IF btrim(dist_col) = '' THEN
+        RAISE EXCEPTION 'dist_col must not be empty';
+    END IF;
+    IF btrim(time_col) = '' THEN
+        RAISE EXCEPTION 'time_col must not be empty';
     END IF;
 
     PERFORM companion_internal.require_visible_function(
@@ -5759,7 +5787,7 @@ BEGIN
     EXECUTE format(
         'SELECT create_hypertable(%L::regclass, %L, chunk_time_interval => %L::interval, if_not_exists => true)',
         table_regclass::text,
-        dist_col,
+        time_col,
         chunk_time_interval
     );
     EXECUTE format(

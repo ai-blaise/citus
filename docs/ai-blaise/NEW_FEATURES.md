@@ -891,16 +891,16 @@ is published and all `unknown` hook rows are measured.
 
 ### TS7: Hypertable CRD Reconciler
 
-**Overlay**: `operator/src/crds/hypertable.rs`
-**Status**: alpha
+**Overlay**: `operator/src/controllers/hypertable.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `timescaledb`
 
-**Summary**: Defines the Kubernetes `Hypertable` spec and typed guarded apply
-plan that drive distributed hypertable creation, compression, retention,
-continuous aggregate, and time-range shard-pruner reconciliation through
-ordered companion SQL steps.
+**Summary**: Provides the Kubernetes `Hypertable` CRD controller for the
+bounded Timescale/Citus bridge surface: the controller renders the guarded
+apply plan, executes ordered SQL against a live Postgres target, patches the
+status subresource, and skips already-applied bridge-state steps on requeue.
 
 **Motivation**: The TimescaleDB bridge needs a declarative operator surface so
 cluster state can be reconciled repeatedly instead of hand-applied.
@@ -908,17 +908,34 @@ cluster state can be reconciled repeatedly instead of hand-applied.
 **Citus comparison**: Vanilla Citus does not ship a Kubernetes CRD for
 Timescale-aware distributed hypertables.
 
+Production evidence: VM proof run
+`ci/ai-blaise/operator-hypertable-live-smoke.sh` builds the real operator image
+and the current Timescale/Citus cohabitation image, creates a kind cluster,
+loads the generated `Hypertable` CRD with status subresource, runs the operator
+in-cluster with `AI_BLAISE_OPERATOR_EXECUTION_MODE=apply`, initializes a live
+PostgreSQL pod with `timescaledb,citus` and `citus.cohabit_extensions=timescaledb`,
+then applies a `Hypertable` CR for `operator_metrics` with separate
+`timeColumn=metric_time` and `distributionColumn=tenant_id`. The smoke requires
+`.status.phase=Applied`, a stable SQL hash, real `_timescaledb_catalog.hypertable`
+and `pg_dist_partition` rows, a continuous aggregate, five bridge-state feature
+ids, recorded `observedGeneration`, and an immediate annotate-triggered
+re-reconcile with `skippedStepCount >= 5` and no duplicate bridge-state rows.
+This production-ready claim covers the Kubernetes CRD/status reconciliation and
+live SQL apply path for the same bounded bridge surface as TS1/TS2/TS3/TS4/TS5;
+it does not claim multi-worker fanout correctness, Timescale background job
+completion, CAGG refresh accuracy, rebalance behavior, or full TimescaleDB
+functionality.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: TS7` in `operator/src/crds/hypertable.rs`
+- In-source: `FEATURE: TS7` in `operator/src/controllers/hypertable.rs`
 - In-source: `FEATURE: TS7` in `operator/src/reconcile/hypertable.rs`
-  (`HypertableApplyPlan` creates `ai_blaise_citus`, checks
-  `companion_feature_status()`, validates the configured Timescale/Citus
-  cohabitation precondition, then applies ordered companion SQL)
 - Acceptance: `FEATURE: TS7` in `e2e/src/timescale_on_citus.rs`
   and canonical SQL emitter `e2e/src/bin/timescale_apply_plan.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Live smoke: `ci/ai-blaise/operator-hypertable-live-smoke.sh`
 
 ### TS8: LSP Rules For Hypertable Invariants
 
@@ -1066,8 +1083,8 @@ expected PG/Timescale minor when configured by the version matrix, requiring
 real `create_distributed_table` rows in `pg_dist_partition`, and executing the
 TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live cohabiting server
 without defining any Citus stub. Those six feature entries are production-ready
-for the same bounded SQL apply/catalog-state surface, while TS7 remains alpha
-until Kubernetes controller execution and status reconciliation are live-proven.
+for the same bounded SQL apply/catalog-state surface. TS7 separately proves the
+Kubernetes controller execution and status reconciliation path for that surface.
 
 The TS18 production-ready boundary is intentionally narrow: it proves SQL
 apply functions invoke the expected TimescaleDB/Citus entrypoints, create the

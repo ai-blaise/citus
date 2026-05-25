@@ -368,10 +368,12 @@ more production-ready than the artifacts justified.
   versions, and executes TS1/TS2/TS3/TS4/TS5/TS12 apply functions without
   defining a Citus stub. The evidence is explicitly scoped as
   `entrypoints-and-catalog-state-only`: TS6 and TS18 are therefore
-  production-ready narrow startup/load/apply guard surfaces, while the broader
-  distributed Timescale feature entries remain alpha until multi-worker fanout,
-  background policy execution, continuous aggregate refresh, rebalance, and
-  operator reconciliation are proven end to end.
+  production-ready narrow startup/load/apply guard surfaces. TS7 now has live
+  Kubernetes controller/status reconciliation evidence through
+  `ci/ai-blaise/operator-hypertable-live-smoke.sh` for that same bounded bridge
+  surface. The broader distributed Timescale feature entries remain alpha until
+  multi-worker fanout, background policy execution, continuous aggregate
+  refresh, and rebalance behavior are proven end to end.
 - The Helm image helper now supports digest-pinned images, and the default
   `values.yaml` profile and `values-prod.yaml` both set
   `global.requireImageDigest: true` so production rendering fails unless the
