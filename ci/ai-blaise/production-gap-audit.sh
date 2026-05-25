@@ -64,6 +64,7 @@ SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
 POOL_GEOIP_LIVE_SMOKE = ROOT / "ci/ai-blaise/pool-geoip-live-smoke.sh"
 BULK_DISTSQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/bulk-distsql-live-smoke.sh"
+TIMESCALE_ADVANCED_LIVE_SMOKE = ROOT / "ci/ai-blaise/timescale-advanced-live-smoke.sh"
 PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
 SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-external-secrets-tls-live-smoke.sh"
@@ -2154,6 +2155,91 @@ for phrase in (
 ):
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing T10/T11 boundary phrase: {phrase}")
+
+
+timescale_advanced_live_smoke = read(TIMESCALE_ADVANCED_LIVE_SMOKE)
+for feature_id in ("TS10", "TS11"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready once live Timescale advanced evidence is wired")
+section_ts10 = feature_section(docs, "TS10")
+section_ts11 = feature_section(docs, "TS11")
+timescale_advanced_truth = compact(
+    section_ts10
+    + "\n"
+    + section_ts11
+    + "\n"
+    + audit
+    + "\n"
+    + timescale_advanced_live_smoke
+    + "\n"
+    + read(ROOT / "companion/src/timescale_advanced.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+)
+for phrase in (
+    "**Status**: production-ready",
+    "ci/ai-blaise/timescale-advanced-live-smoke.sh",
+    "refresh_continuous_aggregate",
+    "hierarchical_cagg_count=2",
+    "hierarchical_cagg_daily_rows=4",
+    "automated refresh scheduling",
+    "multi-worker fanout",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_ts10):
+        fail(f"TS10 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "**Status**: production-ready",
+    "timescaledb.compress_segmentby",
+    "compression_segmentby_columns=2",
+    "segmentby_bloom_rows=16",
+    "segmentby_bloom_bit_count=2048",
+    "native Timescale bloom filters",
+    "planner integration",
+    "compressed-chunk scan pruning",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_ts11):
+        fail(f"TS11 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: TS10",
+    "FEATURE: TS11",
+    "TimescaleAdvancedPlan",
+    "run-timescale-advanced-canonical",
+    "run-timescale-advanced-sql-canonical",
+    "timescale_advanced_live=passed",
+    "hierarchical_cagg_count=2",
+    "hierarchical_cagg_daily_rows=4",
+    "compression_segmentby_columns=2",
+    "compression_segmentby_detail=tenant_id,device_id",
+    "segmentby_bloom_rows=16",
+    "segmentby_bloom_bit_count=2048",
+    "segmentby_bloom_hash_count=3",
+    "native_timescale_bloom_filter=false",
+    "planner_integration_exercised=false",
+    "compressed_chunk_scan_pruning_exercised=false",
+    "multi_worker_fanout_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "timescale-advanced-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in timescale_advanced_truth:
+        fail(f"TS10/TS11 live Timescale advanced production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "TS10` and",
+    "TS11` now have bounded live Citus+Timescale",
+    "hierarchical_cagg_count=2",
+    "segmentby_bloom_rows=16",
+    "native Timescale bloom filters",
+    "planner integration",
+    "compressed-chunk scan pruning",
+    "multi-worker fanout",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing TS10/TS11 boundary phrase: {phrase}")
 
 pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
 pool_geoip_live_smoke = read(POOL_GEOIP_LIVE_SMOKE)

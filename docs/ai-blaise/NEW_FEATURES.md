@@ -9382,49 +9382,100 @@ the bounded distributed-table path.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-sql-canonical`
 - Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/transaction-state-live-smoke.sh`
 
+
 ### TS10: Hierarchical CAGGs Distributed
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/timescale_advanced.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: `timescaledb`
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: `timescaledb`, Citus distributed table execution
 
-**Summary**: Captures source and target continuous aggregate inputs for
-hierarchical CAGG fanout.
+**Summary**: Verifies a bounded two-level Timescale continuous aggregate
+hierarchy over a live Citus-distributed hypertable.
 
-**Current boundary**: The planner contract validates required inputs; real
-hierarchical refresh planning and worker fanout remain alpha.
+**Current production-ready boundary**: TS10 is production-ready for the bounded
+live Citus+Timescale hierarchy guard only. `TimescaleAdvancedPlan` renders a
+source hourly CAGG, a target daily CAGG over that source, and explicit
+`refresh_continuous_aggregate` calls. `ci/ai-blaise/timescale-advanced-live-smoke.sh`
+proves `hierarchical_cagg_count=2` and `hierarchical_cagg_daily_rows=4` against
+the real cohabitation image. It does not claim automated refresh scheduling,
+continuous aggregate invalidation tuning, multi-worker fanout, production
+retention/compression lifecycle management, or Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus does not fan out hierarchical CAGGs across
-workers.
+Production evidence:
+
+- In-source: `FEATURE: TS10` in `companion/src/advanced_planner.rs` and
+  `companion/src/timescale_advanced.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion timescale_advanced -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-advanced-live-smoke.sh`
+- Evidence markers: `timescale_advanced_live=passed`,
+  `hierarchical_cagg_count=2`, `hierarchical_cagg_daily_rows=4`,
+  `multi_worker_fanout_exercised=false`, and `kubernetes_traffic_exercised=false`
+
+**Citus comparison**: Citus can cohabit with TimescaleDB in this fork; this
+overlay adds a deterministic live guard that the bounded hierarchical CAGG
+shape works against the cohabitation image.
 
 **References**:
 
 - In-source: `FEATURE: TS10` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: TS10` in `companion/src/timescale_advanced.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-canonical`
+- CI: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
+- CI: `ci/ai-blaise/timescale-advanced-live-smoke.sh`
+
 
 ### TS11: Bloom Filters On segmentby
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/timescale_advanced.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: `timescaledb`
+**Bundled extension dep**: `timescaledb`, Citus distributed table execution
 
-**Summary**: Defines table and `segmentby` inputs for a bloom-filter fanout
-contract.
+**Summary**: Materializes bounded companion SQL bloom-filter rows for Timescale
+compression `segmentby` keys over a live Citus-distributed hypertable.
 
-**Current boundary**: Contract execution validates the surface; bloom filter
-construction, refresh integration, and Timescale worker fanout remain alpha.
+**Current production-ready boundary**: TS11 is production-ready for the bounded
+companion SQL bloom-materialization guard only. The live smoke sets
+`timescaledb.compress_segmentby='tenant_id,device_id'`, proves
+`compression_segmentby_columns=2` with `compression_segmentby_detail=tenant_id,device_id`,
+and materializes `segmentby_bloom_rows=16` rows into
+`public.ts11_segmentby_bloom_filters` with `segmentby_bloom_bit_count=2048` and
+`segmentby_bloom_hash_count=3`. It does not claim native Timescale bloom
+filters, planner integration, compressed-chunk scan pruning, multi-worker
+fanout, false-positive-rate calibration, or Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus does not define Timescale segmentby bloom
-fanout.
+Production evidence:
+
+- In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs` and
+  `companion/src/timescale_advanced.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion timescale_advanced -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-advanced-live-smoke.sh`
+- Evidence markers: `compression_segmentby_columns=2`,
+  `segmentby_bloom_rows=16`, `segmentby_bloom_bit_count=2048`,
+  `segmentby_bloom_hash_count=3`, `native_timescale_bloom_filter=false`,
+  `planner_integration_exercised=false`, and
+  `compressed_chunk_scan_pruning_exercised=false`
+
+**Citus comparison**: Vanilla Citus does not define segmentby bloom materialized
+metadata; this overlay adds a deterministic companion SQL guard without claiming
+native Timescale or planner-level bloom integration.
 
 **References**:
 
 - In-source: `FEATURE: TS11` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: TS11` in `companion/src/timescale_advanced.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-canonical`
+- CI: `ci/ai-blaise/timescale-cohabitation-smoke.sh`
+- CI: `ci/ai-blaise/timescale-advanced-live-smoke.sh`
 
 
 ## Bundled-Extension Microbenchmarks (MB1-MB26)

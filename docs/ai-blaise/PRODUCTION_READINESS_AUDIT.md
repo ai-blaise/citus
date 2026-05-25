@@ -844,6 +844,16 @@ more production-ready than the artifacts justified.
   backpressure, an optimizer rewrite engine, worker-plan injection,
   multi-worker fanout, distributed cursor/savepoint cleanup, or Kubernetes
   traffic.
+- `FEATURE: TS10` and `FEATURE: TS11` now have bounded live Citus+Timescale
+  evidence in `ci/ai-blaise/timescale-advanced-live-smoke.sh`: the real
+  cohabitation image creates a Citus-distributed hypertable, builds and
+  refreshes a two-level continuous aggregate hierarchy, observes
+  `hierarchical_cagg_count=2` and `hierarchical_cagg_daily_rows=4`, sets
+  `compression_segmentby_columns=2`, and materializes
+  `segmentby_bloom_rows=16` companion bloom rows with bit/hash parameters
+  `2048:3`. This is not evidence for native Timescale bloom filters, planner
+  integration, compressed-chunk scan pruning, multi-worker fanout, automated
+  refresh scheduling, false-positive-rate calibration, or Kubernetes traffic.
 - The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
   plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
   set names, and promotion policy thresholds, and PM4 evaluates latency/cost

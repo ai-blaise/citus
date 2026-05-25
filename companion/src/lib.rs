@@ -31,6 +31,7 @@ pub mod schema_jobs;
 pub mod search_bridge;
 pub mod shard_temperature;
 pub mod tenants;
+pub mod timescale_advanced;
 pub mod toolkit_distributed;
 pub mod trace_context;
 pub mod transaction_state;
@@ -183,6 +184,11 @@ pub use shard_temperature::{
 pub use tenants::{
     TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan,
     TenantRegionAffinityPlan, TenantSqlPlan,
+};
+pub use timescale_advanced::{
+    canonical_timescale_advanced_report, canonical_timescale_advanced_sql_plan,
+    TimescaleAdvancedError, TimescaleAdvancedPlan, TimescaleAdvancedReport,
+    TimescaleAdvancedSqlPlan,
 };
 pub use toolkit_distributed::{
     ToolkitAggregateKind, ToolkitDistributedError, ToolkitDistributedPlan, ToolkitSqlPlan,

@@ -52,6 +52,7 @@ use ai_blaise_citus_companion::{
     canonical_regional_placement_sql_plan, canonical_release_hardening_report,
     canonical_schema_drift_report, canonical_schema_drift_sql_plan,
     canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
+    canonical_timescale_advanced_report, canonical_timescale_advanced_sql_plan,
     canonical_transaction_state_report, canonical_transaction_state_sql_plan, render_all_views,
 };
 use std::env;
@@ -125,6 +126,12 @@ fn main() {
         }
         [command] if command == "run-bulk-distsql-sql-canonical" => {
             run_bulk_distsql_sql_canonical();
+        }
+        [command] if command == "run-timescale-advanced-canonical" => {
+            run_timescale_advanced_canonical();
+        }
+        [command] if command == "run-timescale-advanced-sql-canonical" => {
+            run_timescale_advanced_sql_canonical();
         }
         [command] if command == "run-log-view-sql-canonical" => {
             run_log_view_sql_canonical();
@@ -506,6 +513,43 @@ fn run_bulk_distsql_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_timescale_advanced_canonical() {
+    let report = canonical_timescale_advanced_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: Timescale advanced report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_ids	base_table	source_cagg	target_cagg	bloom_table	statements	hierarchical_cagg_refresh_required	compression_segmentby_required	bloom_filter_materialized	bloom_bit_count	bloom_hash_count	fail_closed_checks	native_timescale_bloom_filter_claimed	planner_integration_exercised	multi_worker_fanout_exercised"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.feature_ids.join(","),
+        report.base_table,
+        report.source_cagg,
+        report.target_cagg,
+        report.bloom_table,
+        report.statement_count,
+        report.hierarchical_cagg_refresh_required,
+        report.compression_segmentby_required,
+        report.bloom_filter_materialized,
+        report.bloom_bit_count,
+        report.bloom_hash_count,
+        report.fail_closed_checks,
+        report.native_timescale_bloom_filter_claimed,
+        report.planner_integration_exercised,
+        report.multi_worker_fanout_exercised,
+    );
+}
+
+fn run_timescale_advanced_sql_canonical() {
+    let sql_plan = canonical_timescale_advanced_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: Timescale advanced SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_log_view_sql_canonical() {
     let sql = render_all_views().unwrap_or_else(|error| {
         eprintln!("companion-contracts: log-view SQL render failed: {error}");
@@ -516,7 +560,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }
