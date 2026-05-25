@@ -30,6 +30,8 @@ jobs:
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh
       - name: Run analytical DuckDB extension live smoke
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh
+      - name: Run analytical federation catalog live smoke
+        run: bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh
 
   shared:
     runs-on: ubuntu-latest

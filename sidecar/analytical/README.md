@@ -28,10 +28,12 @@ Current implemented surface:
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-logical-mirror-materialization-from-stdin`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-duckdb-extension-catalog-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_analytical -- run-federation-catalog-publication-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- serve`
 - `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
+- `bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh`
 
 These contracts cover `FEATURE: L1`, `FEATURE: L2`, `FEATURE: L3`,
 `FEATURE: L4`, `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`,
@@ -67,13 +69,30 @@ extension allow-list against a pinned real DuckDB container and requires
 `duckdb_extension_catalog_live=passed`, `l12_extensions_installed=2`,
 `l12_extensions_loaded=2`, and `l12_duckdb_extensions_catalog_queried=true`.
 
-`FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, `FEATURE: L6`, and `FEATURE: L13`
+`FEATURE: L6` has separate bounded production evidence:
+`sidecar-analytical-federation-catalog-live-smoke.sh` runs
+`run-federation-catalog-publication-canonical`, writes the v1 JSON federation
+catalog for Databricks, Snowflake, Trino, and Spark, validates the JSON, serves it
+over loopback HTTP, fetches it with `curl`, and byte-compares the fetched payload
+with the generated artifact. The smoke requires
+`federation_catalog_publication_live=passed`, `l6_catalog_version=v1`,
+`l6_catalog_count=4`,
+`l6_federation_targets=databricks,snowflake,trino,spark`,
+`l6_local_catalog_artifact_created=true`, `l6_local_http_catalog_served=true`,
+and `evidence_boundary=local-federation-catalog-artifact-http-only`.
+
+`FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, and `FEATURE: L13`
 remain alpha. The L8 mirror path remains explicitly bounded:
 `object_store_io_attempted=false`, `long_running_slot_tailing=false`,
 `checkpoint_persistence_exercised=false`, and `kubernetes_traffic_exercised=false`.
 The L12 DuckDB path is also bounded: `pg_duckdb_runtime_exercised=false`,
 `motherduck_session_exercised=false`, `object_store_io_attempted=false`, and
-`extension_repository_mirror_verified=false`. These are not production evidence
-for pg_lake, pg_duckdb inside PostgreSQL, MotherDuck, Iceberg commits,
-object-store IO, Kubernetes traffic, Citus planner integration, or a long-running
-logical-replication mirror daemon.
+`extension_repository_mirror_verified=false`. The L6 federation catalog path is
+bounded to local artifact publication and loopback HTTP serving:
+`external_warehouse_connections_attempted=false`, `object_store_io_attempted=false`,
+and `catalog_auth_exercised=false`. These are not production evidence for
+pg_lake, pg_duckdb inside PostgreSQL, MotherDuck, Iceberg commits, live Snowflake,
+live Trino, live Spark, live Databricks, warehouse connections, catalog
+authentication, object-store catalog reads, F3 warehouse federation, Kubernetes
+traffic, Citus planner integration, or a long-running logical-replication mirror
+daemon.

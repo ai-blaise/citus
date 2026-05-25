@@ -3313,7 +3313,7 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L13"}
+analytical_alpha_ids = {"L1", "L3", "L5", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
@@ -3328,6 +3328,8 @@ if entry_status.get("L8") != "production-ready":
     fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
 if entry_status.get("L12") != "production-ready":
     fail("L12 must be production-ready once live DuckDB extension load evidence is wired")
+if entry_status.get("L6") != "production-ready":
+    fail("L6 must be production-ready once local federation catalog publication evidence is wired")
 analytical_truth = compact(
     docs
     + "\n"
@@ -3346,6 +3348,8 @@ analytical_truth = compact(
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh")
 )
 for phrase in (
     "**Status**: production-ready",
@@ -3442,6 +3446,37 @@ for phrase in ("sidecar-analytical-duckdb-extension-live-smoke", "ci/ai-blaise/s
         fail(f"Makefile.ai-blaise must wire the DuckDB extension live smoke: {phrase}")
 if "sidecar-analytical-duckdb-extension-live-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-analytical-duckdb-extension-live-smoke.sh")
+
+for phrase in (
+    "run-federation-catalog-publication-canonical",
+    "sidecar-analytical-federation-catalog-live-smoke.sh",
+    "federation_catalog_publication_live=passed",
+    "l6_catalog_version=v1",
+    "l6_catalog_count=4",
+    "l6_federation_targets=databricks,snowflake,trino,spark",
+    "l6_local_catalog_artifact_created=true",
+    "l6_local_http_catalog_served=true",
+    "local-federation-catalog-artifact-http-only",
+    "external_warehouse_connections_attempted=false",
+    "object_store_io_attempted=false",
+    "catalog_auth_exercised=false",
+    "live Snowflake",
+    "live Trino",
+    "live Spark",
+    "live Databricks",
+    "warehouse connections",
+    "catalog authentication",
+    "object-store catalog reads",
+    "F3 warehouse federation",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical L6 production boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-federation-catalog-live-smoke", "ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the federation catalog live smoke: {phrase}")
+if "sidecar-analytical-federation-catalog-live-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-federation-catalog-live-smoke.sh")
 
 print(
     "production_gap_audit\t"

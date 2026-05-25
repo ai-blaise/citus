@@ -11,7 +11,8 @@
 use ai_blaise_citus_sidecar_analytical::{
     canonical_analytical_execution_plan, canonical_analytical_runtime_report,
     canonical_duckdb_extension_catalog_report, materialize_test_decoding_mirror_to_local_artifact,
-    AnalyticalEngine, FederationTarget, LakehouseFormat,
+    publish_canonical_federation_catalog_artifact, AnalyticalEngine, FederationTarget,
+    LakehouseFormat,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
@@ -42,6 +43,11 @@ fn main() {
 
     if args == ["run-duckdb-extension-catalog-canonical"] {
         run_duckdb_extension_catalog_canonical();
+        return;
+    }
+
+    if args == ["run-federation-catalog-publication-canonical"] {
+        run_federation_catalog_publication_canonical();
         return;
     }
 
@@ -181,6 +187,36 @@ fn run_runtime_canonical() {
     println!("{}", row.join("\t"));
 }
 
+fn run_federation_catalog_publication_canonical() {
+    let artifact_path = env::var("AI_BLAISE_FEDERATION_CATALOG_ARTIFACT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/ai-blaise-l6-federation-catalog.json"));
+    let report =
+        publish_canonical_federation_catalog_artifact(&artifact_path).unwrap_or_else(|error| {
+            eprintln!("analytical: federation catalog publication failed: {error}");
+            process::exit(1);
+        });
+
+    println!(
+        "feature_id\tversion\tcatalog_names\tfederation_targets\tcatalog_count\tartifact_path\tartifact_bytes\tlocal_catalog_artifact_created\texternal_warehouse_connections_attempted\tobject_store_io_attempted\tcatalog_auth_exercised\tevidence_boundary"
+    );
+    let row = vec![
+        report.feature_id.to_string(),
+        report.version.to_string(),
+        report.catalog_names.join(","),
+        report.federation_targets.join(","),
+        report.catalog_count.to_string(),
+        report.artifact_path,
+        report.artifact_bytes.to_string(),
+        report.local_catalog_artifact_created.to_string(),
+        report.external_warehouse_connections_attempted.to_string(),
+        report.object_store_io_attempted.to_string(),
+        report.catalog_auth_exercised.to_string(),
+        report.evidence_boundary.to_string(),
+    ];
+    println!("{}", row.join("\t"));
+}
+
 fn run_duckdb_extension_catalog_canonical() {
     let report = canonical_duckdb_extension_catalog_report().unwrap_or_else(|error| {
         eprintln!("analytical: DuckDB extension catalog report failed: {error}");
@@ -249,7 +285,7 @@ fn run_logical_mirror_materialization_from_stdin() {
 }
 
 fn print_usage() {
-    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical|run-federation-catalog-publication-canonical]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
 }
 

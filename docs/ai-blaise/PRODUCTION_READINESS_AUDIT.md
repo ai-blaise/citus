@@ -1123,8 +1123,23 @@ Rule 10 completion for this branch requires local and VM verification of:
   `extension_repository_mirror_verified=false` are required. It is not evidence
   for pg_duckdb inside PostgreSQL, MotherDuck cloud sessions, object-store reads,
   warehouse federation, or an internally mirrored DuckDB extension repository.
-  `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, `FEATURE: L6`, and
-  `FEATURE: L13` remain alpha.
+- `FEATURE: L6` now has separate bounded local federation-catalog publication
+  evidence. `ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh`
+  runs `run-federation-catalog-publication-canonical`, writes the v1 JSON
+  catalog artifact for Databricks, Snowflake, Trino, and Spark, validates it via
+  `json.load`, serves it over loopback HTTP, fetches it with `curl`, and requires
+  byte equality with the generated artifact. The smoke requires
+  `federation_catalog_publication_live=passed`, `l6_catalog_version=v1`,
+  `l6_catalog_count=4`,
+  `l6_federation_targets=databricks,snowflake,trino,spark`,
+  `l6_local_catalog_artifact_created=true`, `l6_local_http_catalog_served=true`,
+  and `local-federation-catalog-artifact-http-only`. The claim is not evidence
+  for live Snowflake, live Trino, live Spark, live Databricks, warehouse
+  connections, catalog authentication, object-store catalog reads, F3 warehouse
+  federation, or Kubernetes traffic; the report requires
+  `external_warehouse_connections_attempted=false`,
+  `object_store_io_attempted=false`, and `catalog_auth_exercised=false`.
+  `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, and `FEATURE: L13` remain alpha.
 - Agentmemory checkpointing for this slice used the scaleable-database-infra
   service at `http://127.0.0.1:3911` and did not edit or erase the backing
   memory file directly.

@@ -15,6 +15,7 @@ use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::prelude::{CsvReadOptions, SessionContext};
+use serde::Serialize;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -745,11 +746,28 @@ pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
             prepare_lsn: "16/B374D848".to_string(),
             manifest_uri: "s3://lake/warehouse/orders/metadata/manifest.avro".to_string(),
         }),
-        federated_catalogs: vec![FederatedCatalog {
-            name: "databricks".to_string(),
-            target: FederationTarget::Databricks,
-            iceberg_catalog_uri: "s3://lake/catalog".to_string(),
-        }],
+        federated_catalogs: vec![
+            FederatedCatalog {
+                name: "databricks".to_string(),
+                target: FederationTarget::Databricks,
+                iceberg_catalog_uri: "s3://lake/catalog/databricks".to_string(),
+            },
+            FederatedCatalog {
+                name: "snowflake".to_string(),
+                target: FederationTarget::Snowflake,
+                iceberg_catalog_uri: "s3://lake/catalog/snowflake".to_string(),
+            },
+            FederatedCatalog {
+                name: "trino".to_string(),
+                target: FederationTarget::Trino,
+                iceberg_catalog_uri: "s3://lake/catalog/trino".to_string(),
+            },
+            FederatedCatalog {
+                name: "spark".to_string(),
+                target: FederationTarget::Spark,
+                iceberg_catalog_uri: "s3://lake/catalog/spark".to_string(),
+            },
+        ],
         duckdb_extensions: DuckDbExtensionCatalog {
             allowed_extensions: vec!["httpfs".to_string(), "iceberg".to_string()],
         },
@@ -821,6 +839,131 @@ pub fn canonical_duckdb_extension_catalog_report(
         motherduck_session_exercised: false,
         evidence_boundary: "live-duckdb-container-extension-load-only",
     })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct FederationCatalogPublicationReport {
+    pub feature_id: &'static str,
+    pub version: &'static str,
+    pub catalog_names: Vec<String>,
+    pub federation_targets: Vec<String>,
+    pub catalog_count: u64,
+    pub artifact_path: String,
+    pub artifact_bytes: u64,
+    pub local_catalog_artifact_created: bool,
+    pub external_warehouse_connections_attempted: bool,
+    pub object_store_io_attempted: bool,
+    pub catalog_auth_exercised: bool,
+    pub evidence_boundary: &'static str,
+}
+
+pub fn publish_canonical_federation_catalog_artifact(
+    artifact_path: &Path,
+) -> Result<FederationCatalogPublicationReport, AnalyticalSidecarError> {
+    let plan = canonical_analytical_execution_plan()?;
+    let artifact = render_federation_catalog_json(&plan.federated_catalogs)?;
+    if let Some(parent) = artifact_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                AnalyticalSidecarError::QueryEngineExecution(format!(
+                    "create catalog artifact directory {} failed: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+    }
+    fs::write(artifact_path, artifact).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "write federation catalog artifact {} failed: {error}",
+            artifact_path.display()
+        ))
+    })?;
+    let artifact_bytes = fs::metadata(artifact_path)
+        .map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "metadata federation catalog artifact {} failed: {error}",
+                artifact_path.display()
+            ))
+        })?
+        .len();
+    let catalog_names = plan
+        .federated_catalogs
+        .iter()
+        .map(|catalog| catalog.name.clone())
+        .collect::<Vec<_>>();
+    let federation_targets = plan
+        .federated_catalogs
+        .iter()
+        .map(|catalog| federation_target_label(catalog.target).to_string())
+        .collect::<Vec<_>>();
+
+    Ok(FederationCatalogPublicationReport {
+        feature_id: "L6",
+        version: "v1",
+        catalog_count: catalog_names.len() as u64,
+        catalog_names,
+        federation_targets,
+        artifact_path: artifact_path.display().to_string(),
+        artifact_bytes,
+        local_catalog_artifact_created: artifact_bytes > 0,
+        external_warehouse_connections_attempted: false,
+        object_store_io_attempted: false,
+        catalog_auth_exercised: false,
+        evidence_boundary: "local-federation-catalog-artifact-http-only",
+    })
+}
+
+#[derive(Debug, Serialize)]
+struct FederationCatalogArtifact<'a> {
+    feature_id: &'static str,
+    version: &'static str,
+    catalogs: Vec<FederationCatalogArtifactEntry<'a>>,
+    external_warehouse_connections_attempted: bool,
+    object_store_io_attempted: bool,
+    catalog_auth_exercised: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct FederationCatalogArtifactEntry<'a> {
+    name: &'a str,
+    target: &'static str,
+    iceberg_catalog_uri: &'a str,
+}
+
+fn render_federation_catalog_json(
+    catalogs: &[FederatedCatalog],
+) -> Result<String, AnalyticalSidecarError> {
+    let artifact = FederationCatalogArtifact {
+        feature_id: "L6",
+        version: "v1",
+        catalogs: catalogs
+            .iter()
+            .map(|catalog| FederationCatalogArtifactEntry {
+                name: &catalog.name,
+                target: federation_target_label(catalog.target),
+                iceberg_catalog_uri: &catalog.iceberg_catalog_uri,
+            })
+            .collect(),
+        external_warehouse_connections_attempted: false,
+        object_store_io_attempted: false,
+        catalog_auth_exercised: false,
+    };
+    let mut json = serde_json::to_string_pretty(&artifact).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "serialize federation catalog artifact failed: {error}"
+        ))
+    })?;
+    json.push('\n');
+    Ok(json)
+}
+
+fn federation_target_label(target: FederationTarget) -> &'static str {
+    match target {
+        FederationTarget::Snowflake => "snowflake",
+        FederationTarget::Trino => "trino",
+        FederationTarget::Spark => "spark",
+        FederationTarget::Databricks => "databricks",
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1146,6 +1289,39 @@ mod tests {
     }
 
     #[test]
+    fn federation_catalog_publication_writes_versioned_artifact() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "ai-blaise-l6-federation-{}.json",
+            std::process::id()
+        ));
+        let report = publish_canonical_federation_catalog_artifact(&temp_path)
+            .expect("federation catalog publication");
+
+        assert_eq!(report.feature_id, "L6");
+        assert_eq!(report.version, "v1");
+        assert_eq!(report.catalog_count, 4);
+        assert_eq!(
+            report.catalog_names,
+            ["databricks", "snowflake", "trino", "spark"]
+        );
+        assert_eq!(
+            report.federation_targets,
+            ["databricks", "snowflake", "trino", "spark"]
+        );
+        assert!(report.local_catalog_artifact_created);
+        assert!(!report.external_warehouse_connections_attempted);
+        assert!(!report.object_store_io_attempted);
+        assert!(!report.catalog_auth_exercised);
+        let artifact = std::fs::read_to_string(&temp_path).expect("catalog artifact");
+        assert!(artifact.contains("\"feature_id\": \"L6\""));
+        assert!(artifact.contains("\"target\": \"snowflake\""));
+        assert!(artifact.contains("\"target\": \"trino\""));
+        assert!(artifact.contains("\"target\": \"spark\""));
+        assert!(artifact.contains("\"target\": \"databricks\""));
+        let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
     fn duckdb_extension_catalog_report_renders_install_and_load_sql() {
         let report = canonical_duckdb_extension_catalog_report().expect("duckdb catalog report");
 
@@ -1170,6 +1346,10 @@ mod tests {
         assert_eq!(plan.mirror.mirror_name, "orders_mirror");
         assert_eq!(plan.pushdown.plan_id, "orders-scan");
         assert_eq!(plan.federated_catalogs[0].name, "databricks");
+        assert_eq!(plan.federated_catalogs.len(), 4);
+        assert_eq!(plan.federated_catalogs[1].name, "snowflake");
+        assert_eq!(plan.federated_catalogs[2].name, "trino");
+        assert_eq!(plan.federated_catalogs[3].name, "spark");
     }
 
     #[test]
@@ -1191,6 +1371,7 @@ mod tests {
             Some("snapshot-1")
         );
         assert_eq!(report.federated_catalogs[0].catalog, "databricks");
+        assert_eq!(report.federated_catalogs.len(), 4);
         assert_eq!(report.duckdb_extensions, ["httpfs", "iceberg"]);
         assert_eq!(report.motherduck_database.as_deref(), Some("analytics"));
         assert_eq!(report.state.lakehouse_reads, 1);
@@ -1199,7 +1380,7 @@ mod tests {
         assert_eq!(report.state.query_engine_executions, 1);
         assert_eq!(report.state.query_engine_output_rows, 2);
         assert_eq!(report.state.snapshot_commits, 1);
-        assert_eq!(report.state.federated_catalog_publications, 1);
+        assert_eq!(report.state.federated_catalog_publications, 4);
         assert_eq!(report.state.duckdb_extension_loads, 2);
         assert_eq!(report.state.motherduck_sessions, 1);
     }

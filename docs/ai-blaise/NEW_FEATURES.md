@@ -4219,14 +4219,36 @@ transaction boundaries.
 ### L6: Lakehouse Federation Catalogs
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines external Iceberg catalog publication targets for
-Snowflake, Trino, Spark, and Databricks, and reports canonical publication
-counts.
+**Summary**: Publishes a bounded, versioned local federation-catalog artifact for
+Databricks, Snowflake, Trino, and Spark Iceberg catalog targets, then proves that
+artifact can be served and consumed over local HTTP without touching external
+warehouses or object storage.
+
+Production evidence: VM proof run
+`bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh` invokes
+`run-federation-catalog-publication-canonical`, writes the v1 JSON catalog
+artifact for the four canonical targets, parses it with Python `json.load`,
+serves the artifact with a loopback `python3 -m http.server`, fetches it through
+`curl`, and byte-compares the fetched payload with the generated artifact. The
+smoke requires `federation_catalog_publication_live=passed`,
+`l6_catalog_version=v1`, `l6_catalog_count=4`,
+`l6_federation_targets=databricks,snowflake,trino,spark`,
+`l6_local_catalog_artifact_created=true`,
+`l6_local_http_catalog_served=true`, and
+`evidence_boundary=local-federation-catalog-artifact-http-only`.
+
+The production-ready claim is intentionally bounded to local federation catalog
+artifact publication and loopback HTTP serving. The smoke and report require
+`external_warehouse_connections_attempted=false`,
+`object_store_io_attempted=false`, and `catalog_auth_exercised=false`. It is not
+evidence for live Snowflake, live Trino, live Spark, or live Databricks
+warehouse connections, catalog authentication, object-store catalog reads, F3
+warehouse federation, or Kubernetes traffic.
 
 **Motivation**: External analytical readers need a versioned federation contract
 without learning Citus shard placement directly.
@@ -4238,8 +4260,8 @@ external engines.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L6` in `sidecar/analytical/src/lib.rs`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
-- CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-federation-catalog-publication-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh`
 
 ### L8: Mooncake-Style Logical-Replication Mirror
 
