@@ -1786,13 +1786,28 @@ not ship ai-blaise's pool/operator topology mode.
 ### S5: Raft Per Shard Group
 
 **Overlay**: `sidecar/raft`, `operator/`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Uses a sidecar Raft group per shard group to coordinate placement,
-leases, and failover intent.
+**Summary**: Provides the bounded Raft sidecar runtime for per-shard-group
+coordination: deterministic elections, AppendEntries replication, quorum
+commit, durable log/snapshot replay, live HTTP transport between sidecar
+processes, and fail-closed placement/failover validation.
+
+Production evidence: `ci/ai-blaise/sidecar-raft-smoke.sh` runs the canonical
+three-node round trip, verifies durable log replay and snapshot watermarking,
+then starts three separate `ai_blaise_citus_sidecar_raft serve` OS processes on
+loopback ports. The live transport proof elects `worker-a` through
+`/raft/campaign`, commits `networked-placement-intent` through
+`/raft/propose`, verifies `/raft/status` on every voter reports the same
+leader, term, commit index, last-log index, and committed payload, and verifies
+follower proposals plus malformed `/raft/message` bodies fail closed. The
+production-ready boundary is this sidecar consensus/transport component only;
+operator-driven membership changes, CNPG failover execution, Citus placement
+synchronization, WAN latency/partition behavior, and Kubernetes reconciliation
+remain alpha.
 
 **Motivation**: The fork needs sub-five-second failover targets without baking
 consensus logic into Postgres backends.
@@ -1807,15 +1822,9 @@ consensus logic into Postgres backends.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- run-durable-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_raft -- serve`
 - CI: `ci/ai-blaise/sidecar-raft-smoke.sh`
 - CI: `ci/ai-blaise/topology-consensus-smoke.sh`
-- Current boundary: the sidecar now has deterministic election, quorum commit,
-  AppendEntries replication, durable log, snapshot-boundary evidence, and
-  fail-closed placement admission for duplicate members, unknown leader/lease
-  and placement references, non-voting leaders, stale placement generations,
-  unknown live-node reports, and missing voter quorum. Real multi-process
-  network transport, operator-driven membership changes, CNPG failover
-  execution, and Citus placement synchronization remain alpha.
 
 ### S6: Per-Shard Placement Generation
 

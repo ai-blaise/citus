@@ -580,22 +580,32 @@ more production-ready than the artifacts justified.
   unopened-document failure. This is not evidence for editor transport,
   workspace indexing, automatic file rewrites, live metadata refresh, or full
   PostgreSQL grammar coverage.
-- The Raft/HLC/transaction-status triad now has executable sidecar runtime
-  evidence: `sidecar-raft-smoke.sh` proves deterministic election,
-  AppendEntries replication, quorum commit, durable log replay, and snapshot
-  watermarking; `topology-consensus-smoke.sh` proves S4 coordinator-less pool
-  admission, S5 fail-closed placement/member validation, and S9/MR6 closed
-  timestamp follower-read serve/reject gates; HLC runtime canonical output
-  proves peer clock exchange and closed-timestamp derivation;
-  `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
-  step count; `schema-txn-runtime-smoke.sh` drives the real txn-status HTTP
-  server through stage -> wait -> ack -> commit with malformed/unknown-field
-  rejection; and `sql-extension-smoke.sh` installs `companion.txn_stage`/
-  `companion.txn_finalize` into real PostgreSQL. S4, S5, S9, MR6, and T5
-  remain alpha for the broader distributed-database behavior until networked
-  multi-process Raft, MVCC follower-read execution, PostgreSQL-core patch
-  integration, Citus executor integration, pool routing, and Kubernetes
-  operator reconciliation are live-gated.
+- S5 Raft per shard group is production-ready for the bounded sidecar
+  consensus/transport component. `sidecar-raft-smoke.sh` proves deterministic
+  election, AppendEntries replication, quorum commit, durable log replay,
+  snapshot watermarking, and live multi-process HTTP transport by starting
+  three separate `ai_blaise_citus_sidecar_raft serve` OS processes on loopback
+  ports, electing `worker-a` through `/raft/campaign`, committing
+  `networked-placement-intent` through `/raft/propose`, verifying all voters
+  report the same leader/term/commit index/last-log index/payload through
+  `/raft/status`, and proving follower proposals plus malformed
+  `/raft/message` bodies fail closed. This does not claim operator-driven
+  membership changes, CNPG failover execution, Citus placement synchronization,
+  WAN latency/partition behavior, or Kubernetes reconciliation.
+- The broader Raft/HLC/transaction-status triad still has executable sidecar
+  runtime evidence without overclaiming full distributed-database integration:
+  `topology-consensus-smoke.sh` proves S4 coordinator-less pool admission, S5
+  fail-closed placement/member validation, and S9/MR6 closed-timestamp
+  follower-read serve/reject gates; HLC runtime canonical output proves peer
+  clock exchange and closed-timestamp derivation; `parallel-commits-smoke.sh`
+  proves staging, finalize, and modeled fast-path step count;
+  `schema-txn-runtime-smoke.sh` drives the real txn-status HTTP server through
+  stage -> wait -> ack -> commit with malformed/unknown-field rejection; and
+  `sql-extension-smoke.sh` installs `companion.txn_stage`/
+  `companion.txn_finalize` into real PostgreSQL. S4, S9, MR6, and T5 remain
+  alpha for the broader behavior until MVCC follower-read execution,
+  PostgreSQL-core patch integration, Citus executor integration, pool routing,
+  and Kubernetes operator reconciliation are live-gated.
 - The schema-job sidecar now has an explicit runtime-boundary smoke for the
   narrow C10/M2 sidecar surface. `schema-txn-runtime-smoke.sh` runs the real
   binary canonical worker output, controller advance/wait/rollback output,

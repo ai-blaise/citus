@@ -91,6 +91,7 @@ CITUSCTL_TIME_TRAVEL_INTENT_SMOKE = ROOT / "ci/ai-blaise/citusctl-time-travel-in
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 FDW_CREDENTIAL_ROTATION_SMOKE = ROOT / "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh"
 SCHEMA_DRIFT_LIVE_SMOKE = ROOT / "ci/ai-blaise/schema-drift-live-smoke.sh"
+SIDECAR_RAFT_SMOKE = ROOT / "ci/ai-blaise/sidecar-raft-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
@@ -593,8 +594,57 @@ ci_image_workflow = read(CI_IMAGE_WORKFLOW)
 makefile = read(MAKEFILE)
 fdw_smoke = read(FDW_CREDENTIAL_ROTATION_SMOKE)
 schema_drift_smoke = read(SCHEMA_DRIFT_LIVE_SMOKE)
+sidecar_raft_smoke = read(SIDECAR_RAFT_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
+
+if status_by_id.get("S5") != "production-ready":
+    fail("S5 must be Status: production-ready once live multi-process Raft transport evidence is wired")
+section_s5 = feature_section(docs, "S5")
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/sidecar-raft-smoke.sh",
+    "three separate `ai_blaise_citus_sidecar_raft serve` OS processes",
+    "/raft/campaign",
+    "/raft/propose",
+    "/raft/message",
+    "/raft/status",
+    "networked-placement-intent",
+    "follower proposals",
+    "operator-driven membership changes",
+    "Citus placement synchronization",
+):
+    if compact(phrase) not in compact(section_s5):
+        fail(f"S5 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "networked_raft_transport=passed",
+    "start_raft_node worker-a",
+    "start_raft_node worker-b",
+    "start_raft_node worker-c",
+    "/raft/campaign",
+    "/raft/propose",
+    "/raft/message",
+    "/raft/status",
+    "networked-placement-intent",
+    "follower-should-not-commit",
+    "not-a-valid-wire-message",
+):
+    if phrase not in sidecar_raft_smoke:
+        fail(f"sidecar-raft-smoke.sh missing live network transport assertion: {phrase}")
+if "sidecar-raft-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-raft-smoke.sh for S5 production evidence")
+for phrase in (
+    "S5 Raft per shard group is production-ready",
+    "live multi-process HTTP transport",
+    "three separate `ai_blaise_citus_sidecar_raft serve` OS processes",
+    "networked-placement-intent",
+    "follower proposals",
+    "malformed",
+    "operator-driven membership changes",
+    "Citus placement synchronization",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing S5 boundary phrase: {phrase}")
 
 if status_by_id.get("F4") != "production-ready":
     fail("F4 must be Status: production-ready once live postgres_fdw rotation evidence is wired")
