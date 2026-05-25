@@ -3,8 +3,9 @@ set -euo pipefail
 
 # FEATURE: EF1 EF2 EF4 EF5
 # Bounded runtime-boundary smoke for the edge-functions sidecar. This proves the
-# Rust sidecar/server contract and fail-closed request boundary, not external
-# Deno/Bun user-code execution.
+# Rust sidecar/server contract and fail-closed request boundary, not live Deno
+# execution. The inline Deno process path is covered by
+# edge-functions-deno-live-smoke.sh.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -168,7 +169,7 @@ try:
     live = '{"tenant_id":"tenant-a","payload_bytes":64,"timeout_ms":250,"execution_mode":"live"}'
     status, body = request(port, "POST", "/functions/order_created", body=live)
     assert status == 501, body
-    assert "external Deno/Bun user-code execution" in body, body
+    assert "AI_BLAISE_EDGE_RUNTIME_EXECUTION" in body, body
 
     oversized_payload = '{"tenant_id":"tenant-a","payload_bytes":1048577,"timeout_ms":250}'
     status, body = request(port, "POST", "/functions/order_created", body=oversized_payload)

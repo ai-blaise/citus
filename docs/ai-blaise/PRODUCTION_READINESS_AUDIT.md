@@ -234,12 +234,13 @@ more production-ready than the artifacts justified.
   GraphQL sidecar in live execution mode, posts tenant-scoped `/graphql/v1`
   queries, verifies `graphql.resolve(...)` returns only the caller tenant row,
   verifies the opposite tenant row is hidden by PostgreSQL RLS, and checks
-  database URL/JWT secret material is not returned. EF4 has separate live
-  PostgreSQL UDS callback evidence through
+  database URL/JWT secret material is not returned. EF1 has separate live
+  inline-Deno process evidence through `edge-functions-deno-live-smoke.sh`, and
+  EF4 has separate live PostgreSQL UDS callback evidence through
   `edge-functions-db-callback-uds-smoke.sh`. Durable GraphQL subscription
-  fan-out, multi-worker GraphQL planning, external Deno/Bun user-code
-  execution, queue/broker dispatch, live CDC tailing, and Kubernetes deployment
-  remain outside this proof unless covered by their own feature evidence.
+  fan-out, multi-worker GraphQL planning, Bun user-code execution,
+  queue/broker dispatch, live CDC tailing, and Kubernetes deployment remain
+  outside this proof unless covered by their own feature evidence.
 - The bundled-extension docs and operand-image README now explicitly state that
   `FEATURE: Bundle1` is not production-ready as a whole. The PG17 source-build
   path has targeted live evidence for feasible PGDG-missing extensions, and the
@@ -678,16 +679,24 @@ more production-ready than the artifacts justified.
   tenant RLS isolation and secret non-disclosure end to end.
   `graphql-pggraphql-live-smoke.sh` is the matching production data-plane proof
   for API3 live `pg_graphql` query execution and tenant RLS through the GraphQL
-  sidecar. `edge-functions-db-callback-uds-smoke.sh` is the EF4 production
-  data-plane proof: it runs a real `postgres:17` container with a mounted
-  `.s.PGSQL.5432` socket, enables
+  sidecar. `edge-functions-deno-live-smoke.sh` is the EF1 production proof for
+  explicit opt-in inline Deno execution: it boots the real sidecar, verifies
+  live mode fails closed unless `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1` and
+  `AI_BLAISE_DENO_BIN` are supplied, executes inline user code in a real Deno
+  process, checks `status=executed`, `execution_mode=live`,
+  `user_code_executed=true`, and `runtime_response_json`, proves default
+  environment access is denied by Deno permissions, and verifies runtime
+  timeout requests return HTTP 504. `edge-functions-db-callback-uds-smoke.sh`
+  is the EF4 production data-plane proof: it runs a real `postgres:17`
+  container with a mounted `.s.PGSQL.5432` socket, enables
   `AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1`, registers a callback-enabled
   function, proves disabled execution and unsafe multi-statement SQL fail
   closed, executes one insert through the PostgreSQL Unix socket, and verifies
-  the inserted row plus `db_callback_rows=1`. External Deno/Bun user-code
-  execution, user-code initiated callback RPC, queue/broker dispatch, live CDC
-  tailing, and Kubernetes deployment remain alpha-scoped for EF1, EF2, and EF5
-  until those live data-plane paths are proven.
+  the inserted row plus `db_callback_rows=1`. Bun user-code execution,
+  user-code initiated callback RPC, queue/broker dispatch, live CDC tailing,
+  scheduled trigger dispatch, package installation, non-inline source fetching,
+  and Kubernetes deployment remain alpha-scoped for EF2 and EF5 until those live
+  data-plane paths are proven.
 - The SQL extension now installs `FEATURE: Sec1` RLS helper predicates:
   `companion_tenant_id_matches(...)` and `companion_require_tenant_id()`. The
   PostgreSQL extension smoke creates a real row-level security policy over a

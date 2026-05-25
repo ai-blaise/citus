@@ -48,6 +48,7 @@ COMPANION_RUNTIME_DEPTH_A_SMOKE = ROOT / "ci/ai-blaise/companion-runtime-depth-a
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 GRAPHQL_PGGRAPHQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/graphql-pggraphql-live-smoke.sh"
 POSTGREST_LIVE_DATA_PLANE_SMOKE = ROOT / "ci/ai-blaise/postgrest-live-data-plane-smoke.sh"
+EDGE_DENO_LIVE_SMOKE = ROOT / "ci/ai-blaise/edge-functions-deno-live-smoke.sh"
 EDGE_DB_CALLBACK_UDS_SMOKE = ROOT / "ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh"
 STRUCTURED_LOG_INGESTION_SMOKE = ROOT / "ci/ai-blaise/structured-log-ingestion-smoke.sh"
 OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.yml"
@@ -1235,11 +1236,53 @@ for phrase in (
     if compact(phrase) not in api6_body:
         fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
 
+if status_by_id.get("EF1") != "production-ready":
+    fail("EF1 inline Deno runtime must be production-ready after live Deno process smoke evidence")
 if status_by_id.get("EF4") != "production-ready":
     fail("EF4 database callback over UDS must be production-ready after live PostgreSQL UDS smoke evidence")
-for feature_id in ("EF1", "EF2", "EF5"):
+for feature_id in ("EF2", "EF5"):
     if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} must remain alpha until external runtime and trigger dispatch paths are live-proven")
+        fail(f"{feature_id} must remain alpha until Bun runtime or trigger dispatch paths are live-proven")
+edge_deno_live_smoke = read(EDGE_DENO_LIVE_SMOKE)
+for required in (
+    "FEATURE: EF1",
+    "AI_BLAISE_EDGE_RUNTIME_EXECUTION",
+    "AI_BLAISE_DENO_BIN",
+    "edge_deno_live=passed",
+    "user_code_executed=true",
+    "runtime_response_contains=deno-live",
+    "runtime_default_env_permission=permission_denied",
+    "live_mode_without_executor_rejected=true",
+    "live_timeout_rejected=true",
+    "live_stdout_cap_rejected=true",
+):
+    if required not in edge_deno_live_smoke:
+        fail(f"EF1 live Deno smoke lost production assertion: {required}")
+for path, required in (
+    (MAKEFILE, "edge-functions-deno-live-smoke"),
+    (SIDECAR_WORKFLOW, "edge-functions-deno-live-smoke.sh"),
+):
+    if required not in read(path):
+        fail(f"EF1 live Deno smoke is not wired into {path}: {required}")
+ef1_body = compact(entry_by_id["EF1"]["body"])
+for phrase in (
+    "production evidence",
+    "edge-functions-deno-live-smoke.sh",
+    "AI_BLAISE_EDGE_RUNTIME_EXECUTION=1",
+    "AI_BLAISE_DENO_BIN",
+    "status=executed",
+    "execution_mode=live",
+    "user_code_executed=true",
+    "runtime_response_json",
+    "environment access is denied",
+    "HTTP 504",
+    "explicit opt-in inline Deno execution",
+    "Bun execution",
+    "scheduled/CDC trigger dispatch",
+    "Kubernetes deployment",
+):
+    if compact(phrase) not in ef1_body:
+        fail(f"EF1 docs lost live Deno evidence phrase: {phrase}")
 edge_db_callback_smoke = read(EDGE_DB_CALLBACK_UDS_SMOKE)
 for required in (
     "FEATURE: EF4",
@@ -1267,7 +1310,9 @@ for phrase in (
     "db_callback_statement_executed=true",
     "db_callback_rows=1",
     "sidecar-owned PostgreSQL UDS callback executor",
-    "External Deno/Bun user-code execution",
+    "Bun user-code execution",
+    "separate EF1 production boundary",
+    "explicit opt-in inline Deno execution",
     "triggered dispatch",
     "Kubernetes deployment",
 ):
@@ -1275,11 +1320,16 @@ for phrase in (
         fail(f"EF4 docs lost live UDS callback evidence phrase: {phrase}")
 audit_body = compact(read(AUDIT))
 for phrase in (
+    "edge-functions-deno-live-smoke.sh",
+    "AI_BLAISE_EDGE_RUNTIME_EXECUTION=1",
+    "user_code_executed=true",
+    "runtime_response_json",
+    "HTTP 504",
     "edge-functions-db-callback-uds-smoke.sh",
     "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
     "db_callback_rows=1",
-    "External Deno/Bun user-code execution",
-    "EF1, EF2, and EF5",
+    "Bun user-code execution",
+    "EF2 and EF5",
 ):
     if compact(phrase) not in audit_body:
         fail(f"production audit lost EF4 UDS callback boundary phrase: {phrase}")

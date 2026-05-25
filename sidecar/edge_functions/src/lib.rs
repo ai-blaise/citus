@@ -11,8 +11,12 @@ use serde_json::Value;
 use std::env;
 use std::error::Error;
 use std::fmt;
+use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_INLINE_SOURCE_BYTES: usize = 262_144;
 const MAX_ENTRYPOINT_BYTES: usize = 256;
@@ -21,8 +25,11 @@ const MAX_SECRET_REFS: usize = 32;
 const MAX_INVOCATION_PAYLOAD_BYTES: u64 = 1_048_576;
 const MAX_INVOCATION_TIMEOUT_MS: u32 = 30_000;
 const MAX_UDS_PATH_BYTES: usize = 107;
+const MAX_RUNTIME_STDOUT_BYTES: usize = 65_536;
 
 pub const EDGE_DB_CALLBACK_EXECUTION_ENV: &str = "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION";
+pub const EDGE_RUNTIME_EXECUTION_ENV: &str = "AI_BLAISE_EDGE_RUNTIME_EXECUTION";
+pub const EDGE_DENO_BIN_ENV: &str = "AI_BLAISE_DENO_BIN";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EdgeFunctionPlan {
@@ -228,6 +235,7 @@ pub struct RuntimeSandboxPlan {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RuntimeExecutionMode {
     PlanOnly,
+    Live,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -315,6 +323,15 @@ pub enum EdgeFunctionError {
     },
     TriggerNotAllowed,
     UnsafeDbCallbackStatement,
+    RuntimeExecutionDisabled,
+    RuntimeOutputTooLarge {
+        bytes: usize,
+        max_bytes: usize,
+    },
+    RuntimeTimedOut {
+        timeout_ms: u32,
+    },
+    UnsupportedRuntimeSource,
     UnsupportedExecutionMode,
 }
 
@@ -400,6 +417,24 @@ impl fmt::Display for EdgeFunctionError {
             Self::UnsafeDbCallbackStatement => write!(
                 formatter,
                 "database callback statement must be a single safe DML/SELECT/CALL statement"
+            ),
+            Self::RuntimeExecutionDisabled => write!(
+                formatter,
+                "external Deno user-code execution requires AI_BLAISE_EDGE_RUNTIME_EXECUTION=1"
+            ),
+            Self::RuntimeOutputTooLarge { bytes, max_bytes } => write!(
+                formatter,
+                "runtime stdout bytes {bytes} exceeds max runtime bound {max_bytes}"
+            ),
+            Self::RuntimeTimedOut { timeout_ms } => {
+                write!(
+                    formatter,
+                    "runtime execution exceeded timeout_ms {timeout_ms}"
+                )
+            }
+            Self::UnsupportedRuntimeSource => write!(
+                formatter,
+                "live runtime execution currently requires an inline Deno source"
             ),
             Self::UnsupportedExecutionMode => write!(
                 formatter,
@@ -566,6 +601,7 @@ pub struct EdgeFunctionCanonicalReport {
 pub enum InvocationStatus {
     Planned,
     DbCallbackExecuted,
+    Executed,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -580,6 +616,8 @@ pub struct EdgeFunctionExecution {
     pub db_callback_used: bool,
     pub db_callback_statement_executed: bool,
     pub db_callback_rows: Option<u64>,
+    pub user_code_executed: bool,
+    pub runtime_response_json: Option<String>,
     pub status: InvocationStatus,
     pub execution_mode: RuntimeExecutionMode,
 }
@@ -640,7 +678,11 @@ impl EdgeFunctionRuntimeHost {
             db_callback_used,
             false,
             None,
+            false,
+            None,
+            None,
             InvocationStatus::Planned,
+            RuntimeExecutionMode::PlanOnly,
         ))
     }
 
@@ -674,16 +716,39 @@ impl EdgeFunctionRuntimeHost {
             db_callback_used,
             db_callback_statement_executed,
             db_callback_rows,
+            false,
+            None,
+            None,
             status,
+            RuntimeExecutionMode::PlanOnly,
         ))
     }
 
     pub fn invoke_external_runtime(
         &mut self,
         request: &InvocationRequest,
+        payload: &Value,
+        runtime_executor: Option<&mut ExternalRuntimeExecutor>,
     ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
-        request.validate()?;
-        Err(EdgeFunctionError::UnsupportedExecutionMode)
+        let db_callback_used = self.validate_invocation(request)?;
+        let executor = runtime_executor.ok_or(EdgeFunctionError::RuntimeExecutionDisabled)?;
+        if db_callback_used {
+            return Err(EdgeFunctionError::UnsupportedRuntimeSource);
+        }
+        let result = executor.execute(&self.plan, request, payload)?;
+        let response_bytes = result.response_json.len() as u64;
+        self.record_invocation(false);
+        Ok(self.render_invocation_execution(
+            request,
+            false,
+            false,
+            None,
+            true,
+            Some(result.response_json),
+            Some(response_bytes),
+            InvocationStatus::Executed,
+            RuntimeExecutionMode::Live,
+        ))
     }
 
     fn validate_invocation(&self, request: &InvocationRequest) -> Result<bool, EdgeFunctionError> {
@@ -723,7 +788,11 @@ impl EdgeFunctionRuntimeHost {
         db_callback_used: bool,
         db_callback_statement_executed: bool,
         db_callback_rows: Option<u64>,
+        user_code_executed: bool,
+        runtime_response_json: Option<String>,
+        response_bytes: Option<u64>,
         status: InvocationStatus,
+        execution_mode: RuntimeExecutionMode,
     ) -> EdgeFunctionExecution {
         let mut command = vec![self.launch.executable.clone()];
         command.extend(self.launch.args.clone());
@@ -735,18 +804,253 @@ impl EdgeFunctionRuntimeHost {
             trigger: request.trigger.clone(),
             tenant_id: request.tenant_id.clone(),
             payload_bytes: request.payload_bytes,
-            response_bytes: deterministic_response_bytes(request.payload_bytes),
+            response_bytes: response_bytes
+                .unwrap_or_else(|| deterministic_response_bytes(request.payload_bytes)),
             db_callback_used,
             db_callback_statement_executed,
             db_callback_rows,
+            user_code_executed,
+            runtime_response_json,
             status,
-            execution_mode: RuntimeExecutionMode::PlanOnly,
+            execution_mode,
         }
     }
 }
 
 fn deterministic_response_bytes(payload_bytes: u64) -> u64 {
     (payload_bytes / 2) + 64
+}
+
+#[derive(Debug)]
+pub struct ExternalRuntimeExecutor {
+    deno_bin: PathBuf,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ExternalRuntimeResult {
+    pub response_json: String,
+}
+
+impl ExternalRuntimeExecutor {
+    pub fn connect_from_env() -> Result<Option<Self>, EdgeFunctionError> {
+        if !runtime_execution_enabled_from_env() {
+            return Ok(None);
+        }
+        let deno_bin = env::var(EDGE_DENO_BIN_ENV).unwrap_or_else(|_| "deno".to_string());
+        Ok(Some(Self {
+            deno_bin: PathBuf::from(deno_bin),
+        }))
+    }
+
+    pub fn execute(
+        &mut self,
+        plan: &EdgeFunctionPlan,
+        request: &InvocationRequest,
+        payload: &Value,
+    ) -> Result<ExternalRuntimeResult, EdgeFunctionError> {
+        plan.validate()?;
+        if plan.runtime != EdgeFunctionRuntime::Deno {
+            return Err(EdgeFunctionError::UnsupportedExecutionMode);
+        }
+        let FunctionSource::Inline { code } = &plan.source else {
+            return Err(EdgeFunctionError::UnsupportedRuntimeSource);
+        };
+        if plan.db_callback.is_some() {
+            return Err(EdgeFunctionError::UnsupportedRuntimeSource);
+        }
+
+        let workdir = create_runtime_workdir(&plan.name)?;
+        let result = self.execute_deno_inline(&workdir, code, request, payload);
+        let _ = fs::remove_dir_all(&workdir);
+        result
+    }
+
+    fn execute_deno_inline(
+        &self,
+        workdir: &Path,
+        code: &str,
+        request: &InvocationRequest,
+        payload: &Value,
+    ) -> Result<ExternalRuntimeResult, EdgeFunctionError> {
+        let inline_path = workdir.join("inline.ts");
+        let runner_path = workdir.join("runner.ts");
+        fs::write(&inline_path, code)?;
+        fs::write(&runner_path, deno_runner_source())?;
+
+        let input = serde_json::json!({
+            "function_name": request.function_name,
+            "tenant_id": request.tenant_id,
+            "payload_bytes": request.payload_bytes,
+            "timeout_ms": request.timeout_ms,
+            "payload": payload,
+        })
+        .to_string();
+
+        let mut child = Command::new(&self.deno_bin)
+            .arg("run")
+            .arg("--no-prompt")
+            .arg(&runner_path)
+            .current_dir(workdir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| EdgeFunctionError::Runtime("Deno stdout pipe missing".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| EdgeFunctionError::Runtime("Deno stderr pipe missing".to_string()))?;
+        let stdout_reader = spawn_bounded_output_reader(stdout, MAX_RUNTIME_STDOUT_BYTES + 1);
+        let stderr_reader = spawn_bounded_output_reader(stderr, 4096);
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(input.as_bytes())?;
+        }
+        drop(child.stdin.take());
+
+        let deadline = Instant::now() + Duration::from_millis(u64::from(request.timeout_ms));
+        loop {
+            if child.try_wait()?.is_some() {
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(EdgeFunctionError::RuntimeTimedOut {
+                    timeout_ms: request.timeout_ms,
+                });
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let status = child.wait()?;
+        let stdout = join_output_reader(stdout_reader)?;
+        let stderr = join_output_reader(stderr_reader)?;
+        if !status.success() {
+            let stderr = String::from_utf8_lossy(&stderr.bytes);
+            return Err(EdgeFunctionError::Runtime(format!(
+                "Deno runtime exited with {}: {}",
+                status,
+                sanitize_runtime_stderr(&stderr)
+            )));
+        }
+        if stdout.total_bytes > MAX_RUNTIME_STDOUT_BYTES {
+            return Err(EdgeFunctionError::RuntimeOutputTooLarge {
+                bytes: stdout.total_bytes,
+                max_bytes: MAX_RUNTIME_STDOUT_BYTES,
+            });
+        }
+        let response_json = String::from_utf8_lossy(&stdout.bytes).trim().to_string();
+        if response_json.is_empty() || serde_json::from_str::<Value>(&response_json).is_err() {
+            return Err(EdgeFunctionError::Runtime(
+                "Deno runtime must write one JSON value to stdout".to_string(),
+            ));
+        }
+        Ok(ExternalRuntimeResult { response_json })
+    }
+}
+
+#[derive(Debug)]
+struct BoundedOutput {
+    bytes: Vec<u8>,
+    total_bytes: usize,
+}
+
+fn spawn_bounded_output_reader<R>(
+    mut reader: R,
+    max_stored_bytes: usize,
+) -> thread::JoinHandle<std::io::Result<BoundedOutput>>
+where
+    R: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let mut total_bytes = 0usize;
+        let mut buffer = [0u8; 8192];
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            total_bytes = total_bytes.saturating_add(read);
+            if bytes.len() < max_stored_bytes {
+                let remaining = max_stored_bytes - bytes.len();
+                bytes.extend_from_slice(&buffer[..read.min(remaining)]);
+            }
+        }
+        Ok(BoundedOutput { bytes, total_bytes })
+    })
+}
+
+fn join_output_reader(
+    reader: thread::JoinHandle<std::io::Result<BoundedOutput>>,
+) -> Result<BoundedOutput, EdgeFunctionError> {
+    reader
+        .join()
+        .map_err(|_| EdgeFunctionError::Runtime("runtime output reader panicked".to_string()))?
+        .map_err(EdgeFunctionError::from)
+}
+
+fn runtime_execution_enabled_from_env() -> bool {
+    env::var(EDGE_RUNTIME_EXECUTION_ENV)
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn create_runtime_workdir(function_name: &str) -> Result<PathBuf, EdgeFunctionError> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| EdgeFunctionError::Runtime(error.to_string()))?
+        .as_nanos();
+    let dir = env::temp_dir().join(format!(
+        "ai-blaise-edge-runtime-{}-{}-{now}",
+        std::process::id(),
+        function_name
+    ));
+    fs::create_dir(&dir)?;
+    Ok(dir)
+}
+
+fn deno_runner_source() -> &'static str {
+    r#"import handler from "./inline.ts";
+
+const decoder = new TextDecoder();
+const chunks = [];
+for await (const chunk of Deno.stdin.readable) {
+  chunks.push(chunk);
+}
+let total = 0;
+for (const chunk of chunks) total += chunk.length;
+const bytes = new Uint8Array(total);
+let offset = 0;
+for (const chunk of chunks) {
+  bytes.set(chunk, offset);
+  offset += chunk.length;
+}
+const input = JSON.parse(decoder.decode(bytes));
+const result = await handler(input);
+if (result instanceof Response) {
+  const body = await result.text();
+  console.log(JSON.stringify({status: result.status, body}));
+} else {
+  console.log(JSON.stringify(result ?? null));
+}
+"#
+}
+
+fn sanitize_runtime_stderr(stderr: &str) -> String {
+    stderr
+        .lines()
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(512)
+        .collect()
 }
 
 #[derive(Debug)]
@@ -1027,6 +1331,21 @@ impl EdgeFunctionRegistry {
         Ok(execution)
     }
 
+    pub fn invoke_external_runtime(
+        &mut self,
+        request: &InvocationRequest,
+        payload: &Value,
+        runtime_executor: Option<&mut ExternalRuntimeExecutor>,
+    ) -> Result<EdgeFunctionExecution, EdgeFunctionError> {
+        let host = self
+            .functions
+            .get_mut(&request.function_name)
+            .ok_or(EdgeFunctionError::FunctionNotFound)?;
+        let execution = host.invoke_external_runtime(request, payload, runtime_executor)?;
+        self.invocations += 1;
+        Ok(execution)
+    }
+
     pub fn snapshot(&self) -> EdgeFunctionRegistrySnapshot {
         EdgeFunctionRegistrySnapshot {
             functions: self.list(),
@@ -1253,7 +1572,7 @@ pub fn handle_edge_functions_sidecar_http_bytes(
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let mut runtime = SidecarRuntime::ready("edge-functions");
     let mut registry = canonical_edge_function_registry()?;
-    handle_edge_functions_sidecar_http_request(request, &mut runtime, &mut registry, None)
+    handle_edge_functions_sidecar_http_request(request, &mut runtime, &mut registry, None, None)
 }
 
 fn handle_edge_functions_sidecar_http_request(
@@ -1261,6 +1580,7 @@ fn handle_edge_functions_sidecar_http_request(
     runtime: &mut SidecarRuntime,
     registry: &mut EdgeFunctionRegistry,
     db_executor: Option<&mut DbCallbackExecutor>,
+    runtime_executor: Option<&mut ExternalRuntimeExecutor>,
 ) -> Result<HttpProbeResponse, EdgeFunctionError> {
     let request =
         std::str::from_utf8(request).map_err(|_| EdgeFunctionError::MalformedHttpRequest)?;
@@ -1289,16 +1609,30 @@ fn handle_edge_functions_sidecar_http_request(
     }
     if method == "POST" && path.starts_with("/functions/") {
         let name = path.trim_start_matches("/functions/");
-        let invocation = match canonical_invocation_for_registered(registry, name, body) {
-            Ok(invocation) => invocation,
+        let envelope = match invocation_envelope_for_registered(registry, name, body) {
+            Ok(envelope) => envelope,
             Err(error) => return Ok(error_response(error)),
         };
+        if envelope.execution_mode == RuntimeExecutionMode::Live {
+            return match registry.invoke_external_runtime(
+                &envelope.request,
+                &envelope.payload,
+                runtime_executor,
+            ) {
+                Ok(execution) => Ok(HttpProbeResponse::new(
+                    200,
+                    "application/json",
+                    render_execution(&execution),
+                )),
+                Err(error) => Ok(error_response(error)),
+            };
+        }
         let db_statement = match db_statement_from_body(body) {
             Ok(statement) => statement,
             Err(error) => return Ok(error_response(error)),
         };
         return match registry.invoke_with_db_callback(
-            &invocation,
+            &envelope.request,
             db_statement.as_deref(),
             db_executor,
         ) {
@@ -1387,8 +1721,13 @@ fn render_execution(execution: &EdgeFunctionExecution) -> String {
         .db_callback_rows
         .map(|rows| rows.to_string())
         .unwrap_or_else(|| "null".to_string());
+    let runtime_response_json = execution
+        .runtime_response_json
+        .as_deref()
+        .map(|value| format!("\"{}\"", escape_json(value)))
+        .unwrap_or_else(|| "null".to_string());
     format!(
-        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"db_callback_statement_executed\":{},\"db_callback_rows\":{},\"status\":\"{}\",\"execution_mode\":\"{}\"}}\n",
+        "{{\"function\":\"{}\",\"runtime\":\"{}\",\"trigger\":\"{}\",\"tenant_id\":\"{}\",\"payload_bytes\":{},\"response_bytes\":{},\"db_callback_used\":{},\"db_callback_statement_executed\":{},\"db_callback_rows\":{},\"user_code_executed\":{},\"runtime_response_json\":{},\"status\":\"{}\",\"execution_mode\":\"{}\"}}\n",
         execution.function_name,
         match execution.runtime {
             EdgeFunctionRuntime::Deno => "deno",
@@ -1415,12 +1754,16 @@ fn render_execution(execution: &EdgeFunctionExecution) -> String {
         execution.db_callback_used,
         execution.db_callback_statement_executed,
         db_callback_rows,
+        execution.user_code_executed,
+        runtime_response_json,
         match execution.status {
             InvocationStatus::Planned => "planned",
             InvocationStatus::DbCallbackExecuted => "db_callback_executed",
+            InvocationStatus::Executed => "executed",
         },
         match execution.execution_mode {
             RuntimeExecutionMode::PlanOnly => "plan_only",
+            RuntimeExecutionMode::Live => "live",
         },
     )
 }
@@ -1466,11 +1809,18 @@ fn register_plan_from_body(body: &str) -> Result<EdgeFunctionPlan, EdgeFunctionE
     Ok(plan)
 }
 
-fn canonical_invocation_for_registered(
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct InvocationEnvelope {
+    request: InvocationRequest,
+    execution_mode: RuntimeExecutionMode,
+    payload: Value,
+}
+
+fn invocation_envelope_for_registered(
     registry: &EdgeFunctionRegistry,
     name: &str,
     body: &str,
-) -> Result<InvocationRequest, EdgeFunctionError> {
+) -> Result<InvocationEnvelope, EdgeFunctionError> {
     let host = registry
         .functions
         .get(name)
@@ -1484,20 +1834,28 @@ fn canonical_invocation_for_registered(
         .ok_or(EdgeFunctionError::TriggerNotAllowed)?
         .clone();
     let json = parse_json_body(body)?;
-    if let Some(mode) = json_string_field(&json, "execution_mode") {
-        if mode != "plan_only" {
-            return Err(EdgeFunctionError::UnsupportedExecutionMode);
-        }
-    }
+    let execution_mode = match json_string_field(&json, "execution_mode")
+        .unwrap_or_else(|| "plan_only".to_string())
+        .as_str()
+    {
+        "plan_only" => RuntimeExecutionMode::PlanOnly,
+        "live" => RuntimeExecutionMode::Live,
+        _ => return Err(EdgeFunctionError::UnsupportedExecutionMode),
+    };
     let tenant_id = json_string_field(&json, "tenant_id").unwrap_or_else(|| "tenant-a".to_string());
     let payload_bytes = json_u64_field(&json, "payload_bytes")?.unwrap_or(64);
     let timeout_ms = json_u32_field(&json, "timeout_ms")?.unwrap_or(500);
-    Ok(InvocationRequest {
-        function_name: name.to_string(),
-        tenant_id,
-        trigger,
-        payload_bytes,
-        timeout_ms,
+    let payload = json.get("payload").cloned().unwrap_or(Value::Null);
+    Ok(InvocationEnvelope {
+        request: InvocationRequest {
+            function_name: name.to_string(),
+            tenant_id,
+            trigger,
+            payload_bytes,
+            timeout_ms,
+        },
+        execution_mode,
+        payload,
     })
 }
 
@@ -1565,6 +1923,9 @@ fn http_status_for_error(error: &EdgeFunctionError) -> u16 {
     match error {
         EdgeFunctionError::DbCallbackExecutionDisabled => 501,
         EdgeFunctionError::FunctionNotFound => 404,
+        EdgeFunctionError::RuntimeExecutionDisabled => 501,
+        EdgeFunctionError::RuntimeTimedOut { .. } => 504,
+        EdgeFunctionError::UnsupportedRuntimeSource => 501,
         EdgeFunctionError::UnsupportedExecutionMode => 501,
         _ => 400,
     }
@@ -1573,12 +1934,12 @@ fn http_status_for_error(error: &EdgeFunctionError) -> u16 {
 pub fn serve_edge_functions_sidecar_http_forever(
     default_addr: &str,
 ) -> Result<(), EdgeFunctionError> {
-    use std::io::Write;
     use std::net::TcpListener;
 
     let mut registry = canonical_edge_function_registry()?;
     let mut runtime = SidecarRuntime::ready("edge-functions");
     let mut db_executor = DbCallbackExecutor::connect_from_env()?;
+    let mut runtime_executor = ExternalRuntimeExecutor::connect_from_env()?;
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
     eprintln!("ai-blaise edge-functions sidecar listening on {listen_addr}");
@@ -1591,6 +1952,7 @@ pub fn serve_edge_functions_sidecar_http_forever(
             &mut runtime,
             &mut registry,
             db_executor.as_mut(),
+            runtime_executor.as_mut(),
         )
         .unwrap_or_else(|error| {
             HttpProbeResponse::new(
@@ -2116,8 +2478,8 @@ mod tests {
         let mut runtime =
             EdgeFunctionRuntimeHost::new(canonical_edge_function_plan()).expect("runtime");
         assert_eq!(
-            runtime.invoke_external_runtime(&canonical_invocation_request()),
-            Err(EdgeFunctionError::UnsupportedExecutionMode)
+            runtime.invoke_external_runtime(&canonical_invocation_request(), &Value::Null, None),
+            Err(EdgeFunctionError::RuntimeExecutionDisabled)
         );
     }
 
@@ -2136,9 +2498,7 @@ content-length: {}
         let response =
             handle_edge_functions_sidecar_http_bytes(request.as_bytes()).expect("invoke");
         assert_eq!(response.status_code, 501);
-        assert!(response
-            .body
-            .contains("external Deno/Bun user-code execution"));
+        assert!(response.body.contains("AI_BLAISE_EDGE_RUNTIME_EXECUTION"));
     }
 
     #[test]

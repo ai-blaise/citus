@@ -4578,15 +4578,31 @@ Current boundary: The production-ready claim is limited to the single-node raw W
 ### EF1: Deno Runtime Sidecar
 
 **Overlay**: `sidecar/edge_functions`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `deno`
 
 **Summary**: Defines Deno runtime launch plans for HTTP, scheduled, and
-CDC-triggered edge functions, plus a runnable canonical launch emitter.
+CDC-triggered edge functions, plus a bounded live inline-Deno execution path.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` builds the real Rust `ai_blaise_citus_sidecar_edge_functions` binary, verifies Deno launch-command planning with `--no-prompt`, boots the live HTTP sidecar, invokes registered functions as `planned`/`plan_only`, and verifies fail-closed malformed JSON, path, payload-size, timeout, unknown-function, and unsupported `execution_mode=live` requests. EF1 remains alpha because this does not spawn an external Deno process, execute user code, or enforce a production isolate.
+Production evidence: VM proof runs
+`bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` and
+`bash ci/ai-blaise/edge-functions-deno-live-smoke.sh` build the real Rust
+`ai_blaise_citus_sidecar_edge_functions` binary, verify Deno launch-command
+planning with `--no-prompt`, boot the live HTTP sidecar, prove malformed JSON,
+path, payload-size, timeout, and unknown-function requests fail closed, then
+execute inline user code through a real Deno process with
+`AI_BLAISE_EDGE_RUNTIME_EXECUTION=1` and `AI_BLAISE_DENO_BIN`. The live smoke
+verifies disabled live mode fails closed, `execution_mode=live` returns
+`status=executed`, `user_code_executed=true`, and a JSON
+`runtime_response_json`, default environment access is denied by Deno
+permissions, and an over-timeout function returns HTTP 504. This production
+claim is limited to explicit opt-in inline Deno execution owned by the sidecar:
+bundle URI/Git source fetch, package installation, custom permission grants,
+secret injection into user code, user-code initiated database callbacks, Bun
+execution, scheduled/CDC trigger dispatch, queue delivery, durable retries, and
+Kubernetes deployment remain alpha.
 
 **Motivation**: Edge functions need a typed runtime contract before the
 sidecar starts executing user code.
@@ -4603,6 +4619,7 @@ runtime.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
+- CI: `ci/ai-blaise/edge-functions-deno-live-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
 ### EF2: Bun Runtime Alternative
@@ -4615,7 +4632,7 @@ runtime.
 
 **Summary**: Adds Bun runtime launch planning for edge-function bundles.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies Bun launch-command planning through `run-bun-runtime-canonical` and confirms the live Rust sidecar keeps all invocations in `plan_only` mode. EF2 remains alpha because this does not install packages, spawn Bun, or execute user code in an isolated worker.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies Bun launch-command planning through `run-bun-runtime-canonical`. EF2 remains alpha because this does not install packages, spawn Bun, or execute Bun user code in an isolated worker; the EF1 live Deno smoke is a separate Deno-only production boundary.
 
 **Motivation**: Some workloads prefer Bun startup and package compatibility;
 the sidecar needs runtime selection without changing the CRD shape.
@@ -4694,9 +4711,10 @@ executes one insert through the UDS callback path, reports
 `db_callback_statement_executed=true` and `db_callback_rows=1`, and verifies the
 inserted row in PostgreSQL. The bounded production surface is the sidecar-owned
 PostgreSQL UDS callback executor and HTTP registration/invocation contract.
-External Deno/Bun user-code execution, user-code initiated callback RPC,
-triggered dispatch, queue delivery, and Kubernetes deployment remain out of
-scope for EF4 and stay covered by EF1/EF2/EF5 alpha boundaries.
+Bun user-code execution, user-code initiated callback RPC, triggered dispatch,
+queue delivery, and Kubernetes deployment remain out of scope for EF4. The
+separate EF1 production boundary covers only explicit opt-in inline Deno
+execution without database callbacks.
 
 **Motivation**: Function runtimes need a local, explicit Postgres callback
 contract rather than ad hoc TCP credentials in user code.
@@ -4712,6 +4730,7 @@ callback path.
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-bun-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_edge_functions -- run-registry-canonical`
 - CI: `ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh`
+- CI: `ci/ai-blaise/edge-functions-deno-live-smoke.sh`
 - CI: `ci/ai-blaise/edge-functions-db-callback-uds-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-api-runtime-smoke.sh`
 
@@ -4726,7 +4745,7 @@ callback path.
 **Summary**: Defines scheduled and CDC-event invocation contracts for edge
 functions.
 
-Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the live Rust HTTP sidecar lists CDC-triggered functions, registers an inline function with validated env-secret refs, invokes registered/canonical functions as `planned`, and fail-closes unsafe runtime requests. EF5 remains alpha because queue/broker integration, live CDC tailing, scheduled dispatch, and external user-code execution are not live-smoked.
+Evidence boundary: VM proof run `bash ci/ai-blaise/sidecar-edge-functions-runtime-smoke.sh` verifies the live Rust HTTP sidecar lists CDC-triggered functions, registers an inline function with validated env-secret refs, invokes registered/canonical functions as `planned`, and fail-closes unsafe trigger requests. EF5 remains alpha because queue/broker integration, live CDC tailing, scheduled dispatch, and triggered user-code execution are not live-smoked.
 
 **Motivation**: Cron and event-driven functions need the same validation path
 as HTTP functions before queue integration is wired in.

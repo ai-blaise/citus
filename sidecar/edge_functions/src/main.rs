@@ -209,11 +209,13 @@ fn status_name(status: &InvocationStatus) -> &'static str {
     match status {
         InvocationStatus::Planned => "planned",
         InvocationStatus::DbCallbackExecuted => "db_callback_executed",
+        InvocationStatus::Executed => "executed",
     }
 }
 
 fn execution_mode_name(mode: &RuntimeExecutionMode) -> &'static str {
     match mode {
         RuntimeExecutionMode::PlanOnly => "plan_only",
+        RuntimeExecutionMode::Live => "live",
     }
 }
