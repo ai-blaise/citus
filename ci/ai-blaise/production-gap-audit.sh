@@ -113,6 +113,11 @@ COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 COLUMNAR_TIERING_LIVE_SMOKE = ROOT / "ci/ai-blaise/columnar-tiering-live-smoke.sh"
 CROSS_TIER_QUERY_LIVE_SMOKE = ROOT / "ci/ai-blaise/cross-tier-query-live-smoke.sh"
+POSTGRES_CORE_PATCHES_LIVE_SMOKE = ROOT / "ci/ai-blaise/postgres-core-patches-live-smoke.sh"
+PGCORE_PATCHES_DOCKERFILE = ROOT / "images/citus-pg-overlay/Dockerfile.pgcore-patches"
+PGC_PROBE_C = ROOT / "ci/ai-blaise/pgc_probe/ai_blaise_pgc_probe.c"
+PGC_PROBE_SQL = ROOT / "ci/ai-blaise/pgc_probe/ai_blaise_pgc_probe--0.1.0.sql"
+POSTGRES_PATCH_SERIES = ROOT / "patches/postgres/series"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 REGIONAL_ROW_PLACEMENT = ROOT / "companion/src/regional_row_placement.rs"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
@@ -253,6 +258,63 @@ if status_by_id.get("MR3") != "production-ready":
     fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
 if status_by_id.get("MR9") != "alpha":
     fail("MR9 must remain alpha until live multi-region failover/runtime evidence exists")
+for feature_id in ("PGC1", "PGC2"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready once patched PG17+Citus runtime evidence is wired")
+
+pgc_truth = "\n".join(
+    read(path)
+    for path in (
+        POSTGRES_CORE_PATCHES_LIVE_SMOKE,
+        PGCORE_PATCHES_DOCKERFILE,
+        PGC_PROBE_C,
+        PGC_PROBE_SQL,
+        MAKEFILE,
+        DOCS,
+        AUDIT,
+        PG_OVERLAY_README,
+        POSTGRES_PATCH_SERIES,
+    )
+)
+for phrase in (
+    "Dockerfile.pgcore-patches",
+    "REL_17_10",
+    "patches/postgres/series",
+    "while IFS= read -r patch_name",
+    "git apply \"/patches/postgres/${patch_name}\"",
+    "0001-logical-commit-clock.patch",
+    "0002-per-subtrans-commit-ts.patch",
+    "SubTransactionIdSetCommitTsData",
+    "XLogSetLastTransactionStopTimestamp",
+    "CREATE EXTENSION citus",
+    "CREATE EXTENSION ai_blaise_pgc_probe",
+    "pg_xact_commit_timestamp",
+    "pg_waldump",
+    "SUBTRANS_TS",
+    "pgc_citus_built_against_patched_pg=true",
+    "pgc_logical_clock_hook_executed=true",
+    "pgc_subtrans_commit_ts_override_executed=true",
+    "pgc_pgactive_traffic_exercised=false",
+    "pgc_spock_apply_traffic_exercised=false",
+    "pgc_pg18_exercised=false",
+    "postgres-core-patches-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in compact(pgc_truth):
+        fail(f"PGC1/PGC2 patched-core runtime boundary missing truth phrase: {phrase}")
+for feature_id in ("PGC1", "PGC2"):
+    section = feature_section(docs, feature_id)
+    for phrase in (
+        "Production evidence:",
+        "postgres-core-patches-live-smoke.sh",
+        "Citus build-against-patched-`pg_config`",
+        "PG18",
+        "full Bundle1 operand image",
+    ):
+        if compact(phrase) not in compact(section):
+            fail(f"{feature_id} docs lost patched-core production boundary phrase: {phrase}")
+    if compact("alpha-with-placeholder") in compact(section):
+        fail(f"{feature_id} docs still claim alpha placeholder status")
 
 audit_compact = compact(audit)
 

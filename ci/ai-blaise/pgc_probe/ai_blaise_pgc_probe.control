@@ -1,0 +1,4 @@
+comment = ai-blaise PostgreSQL core patch runtime probe
+default_version = 0.1.0
+module_pathname = /ai_blaise_pgc_probe
+relocatable = true

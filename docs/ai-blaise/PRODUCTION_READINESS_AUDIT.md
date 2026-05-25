@@ -1263,6 +1263,8 @@ This does not claim CSI `VolumeSnapshot` creation, PVC cloning, full branch
 suspend/resume reconciliation, Service/DNS retargeting, traffic cut-over, or
 branch promotion.
 
+PGC1/PGC2 production evidence from 2026-05-25 promotes only the bounded PostgreSQL 17 patched-core runtime path. `REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh` builds `images/citus-pg-overlay/Dockerfile.pgcore-patches`, clones PostgreSQL `REL_17_10`, applies `patches/postgres/series`, compiles Citus against the patched `pg_config`, installs the smoke-only `ai_blaise_pgc_probe` extension, runs `initdb`, starts PostgreSQL with `shared_preload_libraries=citus` and `track_commit_timestamp=on`, creates both `citus` and `ai_blaise_pgc_probe`, verifies `pgc_logical_clock_hook_executed=true`, verifies a `SubTransactionIdSetCommitTsData` override through `pg_xact_commit_timestamp`, and verifies `pg_waldump` identifies `SUBTRANS_TS`. This does not claim live pgactive traffic, live Spock apply traffic, multi-node active-active conflict replay, PG18, or the full Bundle1 operand image.
+
 Branch lifecycle evidence for `C6`, `C7`, and `C8` is intentionally alpha. The
 VM smoke `ci/ai-blaise/operator-branch-lifecycle-smoke.sh` and focused operator
 unit tests verify only deterministic local contracts: branch source/target

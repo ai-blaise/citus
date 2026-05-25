@@ -1,0 +1,82 @@
+# syntax=docker/dockerfile:1
+# FEATURE: PGC1 PGC2
+
+ARG POSTGRES_CORE_REF=REL_17_10
+ARG POSTGRES_CORE_PREFIX=/usr/local/pgsql
+ARG AI_BLAISE_SOURCE_GIT_SHA=unknown
+ARG AI_BLAISE_SOURCE_TREE_STATE=unknown
+
+FROM debian:bookworm-slim AS pgcore-patches-runtime
+ARG POSTGRES_CORE_REF
+ARG POSTGRES_CORE_PREFIX
+ARG AI_BLAISE_SOURCE_GIT_SHA
+ARG AI_BLAISE_SOURCE_TREE_STATE
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="${POSTGRES_CORE_PREFIX}/bin:${PATH}"
+LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
+      org.opencontainers.image.title="ai-blaise/citus patched PostgreSQL core" \
+      org.opencontainers.image.description="PostgreSQL 17 runtime with PGC1/PGC2 core patches and Citus built against that pg_config" \
+      ai-blaise.citus.source-git-sha="${AI_BLAISE_SOURCE_GIT_SHA}" \
+      ai-blaise.citus.source-tree-state="${AI_BLAISE_SOURCE_TREE_STATE}" \
+      ai-blaise.citus.pg-core-ref="${POSTGRES_CORE_REF}" \
+      ai-blaise.citus.pg-core-patch-series="patches/postgres/series" \
+      ai-blaise.citus.pg-core-patch-features="PGC1,PGC2" \
+      ai-blaise.citus.pg-core-runtime-smoke="ci/ai-blaise/postgres-core-patches-live-smoke.sh"
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      bison \
+      build-essential \
+      ca-certificates \
+      flex \
+      git \
+      libcurl4-openssl-dev \
+      libicu-dev \
+      libkrb5-dev \
+      liblz4-dev \
+      libreadline-dev \
+      libssl-dev \
+      libxml2-dev \
+      libxslt1-dev \
+      libzstd-dev \
+      pkg-config \
+      python3 \
+      uuid-dev \
+      zlib1g-dev; \
+    rm -rf /var/lib/apt/lists/*; \
+    useradd --create-home --home-dir /home/postgres --shell /bin/bash postgres
+WORKDIR /src
+RUN set -eux; \
+    git clone --branch "${POSTGRES_CORE_REF}" --depth 1 https://github.com/postgres/postgres.git postgres
+COPY patches/postgres /patches/postgres
+RUN set -eux; \
+    cd /src/postgres; \
+    while IFS= read -r patch_name; do \
+      case "${patch_name}" in ""|\#*) continue ;; esac; \
+      git apply "/patches/postgres/${patch_name}"; \
+    done </patches/postgres/series; \
+    ./configure \
+      --prefix="${POSTGRES_CORE_PREFIX}" \
+      --with-icu \
+      --with-libxml \
+      --with-libxslt \
+      --with-openssl; \
+    make -j"$(nproc)"; \
+    make install; \
+    "${POSTGRES_CORE_PREFIX}/bin/pg_config" --version
+COPY ci/ai-blaise/pgc_probe /tmp/ai_blaise_pgc_probe
+RUN set -eux; \
+    make -C /tmp/ai_blaise_pgc_probe PG_CONFIG="${POSTGRES_CORE_PREFIX}/bin/pg_config"; \
+    make -C /tmp/ai_blaise_pgc_probe PG_CONFIG="${POSTGRES_CORE_PREFIX}/bin/pg_config" install
+WORKDIR /src/citus
+COPY configure configure.ac Makefile.global.in Makefile aclocal.m4 autogen.sh prep_buildtree /src/citus/
+COPY src /src/citus/src
+COPY config /src/citus/config
+COPY vendor /src/citus/vendor
+RUN set -eux; \
+    ./configure PG_CONFIG="${POSTGRES_CORE_PREFIX}/bin/pg_config" --without-pg-version-check; \
+    make -j2; \
+    make install; \
+    install -d -o postgres -g postgres /var/lib/postgresql
+USER postgres
+WORKDIR /home/postgres

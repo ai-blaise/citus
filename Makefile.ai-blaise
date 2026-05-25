@@ -16,6 +16,7 @@
 .PHONY: run-companion-columnar-tiering-canonical run-companion-columnar-tiering-sql-canonical columnar-tiering-live-smoke
 .PHONY: run-companion-cross-tier-query-canonical run-companion-cross-tier-query-sql-canonical cross-tier-query-live-smoke
 .PHONY: run-companion-timescale-advanced-canonical run-companion-timescale-advanced-sql-canonical timescale-advanced-live-smoke
+.PHONY: build-image-pgcore-patches-pg17 postgres-core-patches-live-smoke
 .PHONY: run-companion-shard-split-canonical run-companion-shard-split-sql-canonical shard-split-live-smoke
 .PHONY: sidecar-analytical-federation-catalog-live-smoke
 .NOTPARALLEL: gate-close
@@ -740,6 +741,18 @@ build-image-bundle1-full-pg17:
 	  -t ai-blaise-citus-overlay:bundle1-full-pg17 \
 	  .
 
+build-image-pgcore-patches-pg17:
+	@docker build \
+	  -f images/citus-pg-overlay/Dockerfile.pgcore-patches \
+	  --build-arg POSTGRES_CORE_REF=REL_17_10 \
+	  --build-arg AI_BLAISE_SOURCE_GIT_SHA=$$(git rev-parse HEAD) \
+	  --build-arg AI_BLAISE_SOURCE_TREE_STATE=$$(test -z "$$(git status --porcelain)" && echo clean || echo dirty) \
+	  -t ai-blaise-postgres-core-patches:pg17-REL_17_10 \
+	  .
+
+postgres-core-patches-live-smoke:
+	@REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh
+
 build-image-matrix: build-image-pg17 build-image-pg18
 
 features-doc-check:
@@ -918,6 +931,7 @@ gate-close: pool-geoip-live-smoke
 gate-close: shard-temperature-ranking-live-smoke
 gate-close: columnar-tiering-live-smoke
 gate-close: cross-tier-query-live-smoke
+gate-close: postgres-core-patches-live-smoke
 gate-close: regional-placement-live-smoke
 gate-close: bulk-distsql-live-smoke
 gate-close: timescale-advanced-live-smoke

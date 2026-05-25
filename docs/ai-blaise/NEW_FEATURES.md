@@ -2466,7 +2466,7 @@ replication apply worker.
 ### PGC1: PostgreSQL Logical Commit Clock
 
 **Overlay**: `patches/postgres/0001-logical-commit-clock.patch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2489,6 +2489,22 @@ backend but does not enforce monotonic increase across the cluster; vanilla
 Citus inherits that behaviour. The patch is the canonical pgEdge/Spock
 contribution to pgsql-hackers, rebased to PostgreSQL 17.
 
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh`
+builds the `images/citus-pg-overlay/Dockerfile.pgcore-patches` runtime from
+PostgreSQL `REL_17_10`, applies `patches/postgres/series`, compiles Citus
+against the patched `pg_config`, installs the smoke-only
+`ai_blaise_pgc_probe` extension, starts the patched server with
+`shared_preload_libraries=citus` and `track_commit_timestamp=on`, creates
+both `citus` and `ai_blaise_pgc_probe`, and verifies the PGC1 logical-clock
+hook changes a subsequent local commit timestamp after the probe advances the
+shared `XLogCtl` clock.
+
+**Current production-ready boundary**: PGC1 is production-ready for the PG17
+patched-source build, Citus build-against-patched-`pg_config`, initdb/start,
+and local logical-clock hook execution path. It does not claim live pgactive or
+Spock apply traffic, multi-node active-active conflict replay, PG18, or the
+full Bundle1 operand image.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -2497,15 +2513,17 @@ contribution to pgsql-hackers, rebased to PostgreSQL 17.
 - In-source: `FEATURE: PGC1` in
   `patches/postgres/0001-logical-commit-clock.patch`
 - In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- In-source: `FEATURE: PGC1 PGC2` in
+  `images/citus-pg-overlay/Dockerfile.pgcore-patches`
+- In-source: `FEATURE: PGC1 PGC2` in `ci/ai-blaise/pgc_probe`
 - Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
-  format and FEATURE markers. Runtime activation requires the custom-PG-compile
-  pipeline; the patch stays alpha-with-placeholder until that ships, where
-  alpha means not production-ready.
+  format and FEATURE markers.
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh`
 
 ### PGC2: PostgreSQL Per-Subtransaction Commit Timestamps
 
 **Overlay**: `patches/postgres/0002-per-subtrans-commit-ts.patch`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2527,6 +2545,19 @@ FEATURE: C5 reuses it to attribute forced updates to the originating node.
 xid; vanilla Citus does not extend that. The patch is the canonical
 pgEdge/Spock contribution to pgsql-hackers, rebased to PostgreSQL 17.
 
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh`
+uses the same patched PostgreSQL 17 + Citus runtime as PGC1, then calls the
+patch-only `SubTransactionIdSetCommitTsData` path through
+`ai_blaise_pgc_probe`. The smoke commits a row whose xid has an override
+timestamp, verifies `pg_xact_commit_timestamp(xid)` equals that override, and
+stops the server before `pg_waldump` verifies the `SUBTRANS_TS` record name.
+
+**Current production-ready boundary**: PGC2 is production-ready for the PG17
+patched-source build, Citus build-against-patched-`pg_config`, initdb/start,
+local commit timestamp override, and WAL identity proof. It does not claim live
+pgactive or Spock delta-apply traffic, multi-node active-active conflict replay,
+PG18, or the full Bundle1 operand image.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
@@ -2535,10 +2566,12 @@ pgEdge/Spock contribution to pgsql-hackers, rebased to PostgreSQL 17.
 - In-source: `FEATURE: PGC2` in
   `patches/postgres/0002-per-subtrans-commit-ts.patch`
 - In-source: `FEATURE: PGC1 PGC2` in `images/citus-pg-overlay/Dockerfile`
+- In-source: `FEATURE: PGC1 PGC2` in
+  `images/citus-pg-overlay/Dockerfile.pgcore-patches`
+- In-source: `FEATURE: PGC1 PGC2` in `ci/ai-blaise/pgc_probe`
 - Executable: `make -f Makefile.ai-blaise patches-check` validates the diff
-  format and FEATURE markers. Runtime activation requires the custom-PG-compile
-  pipeline; the patch stays alpha-with-placeholder until that ships, where
-  alpha means not production-ready.
+  format and FEATURE markers.
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh`
 
 ### C6: CSI Snapshot Branching
 

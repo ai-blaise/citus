@@ -39,6 +39,11 @@ worker execution; it is not full Bundle1 production evidence.
   pgrx-compatible Timescale-on-Citus plan helpers, including the TS5
   time-range shard-pruner helper, before the compiled pgrx library is present.
 - `Dockerfile` exposes a fast default `bundle1-contract` target plus explicit `bundle1-final-light` and `bundle1-final-full` PG17 source-build targets.
+- `Dockerfile.pgcore-patches` builds PostgreSQL `REL_17_10` from source, applies
+  `patches/postgres/series`, builds Citus against the patched `pg_config`, and
+  installs the smoke-only `ai_blaise_pgc_probe` extension used by
+  `ci/ai-blaise/postgres-core-patches-live-smoke.sh` for PGC1/PGC2 runtime
+  evidence.
 - `bin/pgsodium_getkey` is installed at pgsodium's default `pgsodium_getkey`
   path and fails closed unless `PGSODIUM_KEY` is set or
   `PGSODIUM_KEY_FILE` points at a readable 64-hex-character secret.

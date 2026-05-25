@@ -124,10 +124,11 @@ under the same FEATURE id.
 ## Pending pgsql-hackers PRs (`postgres/postgres`, via pgEdge/Spock contribution path)
 
 These patches target PostgreSQL core, not Citus. They are applied at the
-PG-build layer (see `images/citus-pg-overlay/Dockerfile` and its
-`ai-blaise.citus.pg-core-patches` label) before Citus is compiled. They live
-in their own series file (`patches/postgres/series`) so the citus quilt and
-the postgres-core quilt rebase independently.
+PG-build layer (see `images/citus-pg-overlay/Dockerfile` for the operand
+contract label and `images/citus-pg-overlay/Dockerfile.pgcore-patches` for the
+VM-verified patched PostgreSQL + Citus runtime) before Citus is compiled. They
+live in their own series file (`patches/postgres/series`) so the citus quilt
+and the postgres-core quilt rebase independently.
 
 The upstream contributor in both cases is pgEdge via the Spock multi-master
 replication extension. The diffs shipped here are the canonical pgEdge/Spock
@@ -138,15 +139,17 @@ them by the Spock patch identifier in the upstream column below.
 
 | # | Patch | Spock upstream | pgsql-hackers thread | Status | Our fork PR |
 |---|---|---|---|---|---|
-| PG-0001 | `patches/postgres/0001-logical-commit-clock.patch` | pgEdge/spock `patches/17/pg17-025-logical_commit_clock.diff` | tracked via Spock's `XLogReserveInsertHook` proposal trail on pgsql-hackers (search `XLogReserveInsertHook logical commit clock`) | landed in fork PR48; alpha runtime gate (runtime flips once custom-PG-compile pipeline lands) | PR48 |
-| PG-0002 | `patches/postgres/0002-per-subtrans-commit-ts.patch` | pgEdge/spock `patches/17/pg17-030-per-subtrans-commit-ts.diff` | tracked via Spock's `SubTransactionCommitTsEntry` proposal trail on pgsql-hackers | landed in fork PR48; alpha runtime gate (same custom-PG pipeline dependency) | PR48 |
+| PG-0001 | `patches/postgres/0001-logical-commit-clock.patch` | pgEdge/spock `patches/17/pg17-025-logical_commit_clock.diff` | tracked via Spock's `XLogReserveInsertHook` proposal trail on pgsql-hackers (search `XLogReserveInsertHook logical commit clock`) | landed in fork PR48; runtime gate live: patched PostgreSQL 17 builds, starts, and runs Citus plus probe smoke | PR48 |
+| PG-0002 | `patches/postgres/0002-per-subtrans-commit-ts.patch` | pgEdge/spock `patches/17/pg17-030-per-subtrans-commit-ts.diff` | tracked via Spock's `SubTransactionCommitTsEntry` proposal trail on pgsql-hackers | landed in fork PR48; runtime gate live: commit-ts override and WAL SUBTRANS_TS proof smoke | PR48 |
 
-Both PG-core diffs ship today as alpha because the custom-PG-compile pipeline
-that links them into the runtime image is not yet wired into
-`images/citus-pg-overlay/Dockerfile`. The runtime gate for FEATURE: PGC1 and
-FEATURE: PGC2 stays alpha until that pipeline lands and a real
-PostgreSQL+patches build records its image identity in
-`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+Both PG-core diffs now have bounded runtime evidence from
+`REQUIRE_DOCKER=1 bash ci/ai-blaise/postgres-core-patches-live-smoke.sh`. The
+smoke builds PostgreSQL `REL_17_10` from source, applies
+`patches/postgres/series`, builds Citus against the patched `pg_config`, starts
+that runtime, and verifies PGC1/PGC2 behavior through the smoke-only
+`ai_blaise_pgc_probe` extension. The gate is intentionally PG17-only; pgactive
+or Spock apply traffic, multi-node active-active conflict replay, PG18, and the
+full Bundle1 operand image remain outside this evidence boundary.
 
 References:
 
