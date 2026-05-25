@@ -531,7 +531,57 @@ for phrase in (
             f"PRODUCTION_READINESS_AUDIT.md must preserve guardrail phrase: {phrase}"
         )
 
-branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh"))
+branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh")
+branch_scale_live_smoke = read(ROOT / "ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh")
+r2_truth = compact(
+    feature_section(docs, "R2")
+    + "\n"
+    + audit
+    + "\n"
+    + branch_lifecycle_smoke
+    + "\n"
+    + branch_scale_live_smoke
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(OPERATOR_WORKFLOW)
+)
+if status_by_id.get("R2") != "production-ready":
+    fail("R2 scale-to-zero compute must be production-ready after live Kubernetes scale-down evidence")
+for phrase in (
+    "operator-branch-lifecycle-smoke.sh",
+    "operator-branch-scale-to-zero-live-smoke.sh",
+    "run-branch-lifecycle-canonical",
+    "ScaleTargetComputeToZero",
+    "branch_scale_to_zero_live=passed",
+    "kubernetes_deployment_scaled_to_zero=true",
+    "spec_replicas_after_scale=0",
+    "observed_replicas_after_scale=0",
+    "active_sessions_fail_closed=true",
+    "pending_migrations_fail_closed=true",
+    "REQUIRE_DOCKER=1",
+    "kubectl scale deployment/branch-review --replicas=0",
+    "CSI `VolumeSnapshot` creation",
+    "PVC cloning",
+    "traffic cut-over",
+    "branch promotion",
+):
+    if compact(phrase) not in r2_truth:
+        fail(f"R2 scale-to-zero production boundary missing truth phrase: {phrase}")
+branch_lifecycle_makefile = read(MAKEFILE)
+for phrase in (
+    "operator-branch-lifecycle-smoke:",
+    "operator-branch-scale-to-zero-live-smoke:",
+    "REQUIRE_DOCKER=1 bash ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh",
+    "gate-close:",
+    "operator-branch-scale-to-zero-live-smoke",
+):
+    if phrase not in branch_lifecycle_makefile:
+        fail(f"Makefile.ai-blaise must wire R2 branch scale smoke: {phrase}")
+if "operator-branch-lifecycle-smoke.sh" not in read(OPERATOR_WORKFLOW):
+    fail("ci-operator workflow must run operator-branch-lifecycle-smoke.sh")
+
+branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + branch_lifecycle_smoke)
 for phrase in (
     "ci/ai-blaise/operator-branch-lifecycle-smoke.sh",
     "conservative admission guards",

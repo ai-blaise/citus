@@ -1069,6 +1069,20 @@ traffic are not promoted by this evidence. External managed broker operations
 client operation) remain alpha unless covered by their own feature entry.
 
 Worker CDC-Sinks production evidence from 2026-05-24 adds `C14` and `C15` to the narrow production-ready set. The evidenced boundary is strict local NATS subject/server URL and Pub/Sub project/topic validation, deterministic NATS `PUB` and Pub/Sub `messages.publish` frame encoding, serve-runtime/canonical stdout exposure, and DLQ retry accounting for live NATS dispatch failures under `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` and `ci/ai-blaise/sidecar-cdc-smoke.sh`. Managed NATS auth/TLS/JetStream and live GCP Pub/Sub auth/IAM/topic operations remain alpha.
+R2 scale-to-zero compute is production-ready for the bounded Kubernetes
+Deployment compute scale-down primitive. `operator-branch-lifecycle-smoke.sh`
+proves the operator suspend plan moves `ready` to `suspended` in six steps and
+includes `ScaleTargetComputeToZero`;
+`REQUIRE_DOCKER=1 ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh`
+creates a real kind cluster, applies a one-replica `branch-review` Deployment,
+executes `kubectl scale deployment/branch-review --replicas=0`, and verifies
+`branch_scale_to_zero_live=passed`, `kubernetes_deployment_scaled_to_zero=true`,
+`spec_replicas_after_scale=0`, `observed_replicas_after_scale=0`,
+`active_sessions_fail_closed=true`, and `pending_migrations_fail_closed=true`.
+This does not claim CSI `VolumeSnapshot` creation, PVC cloning, full branch
+suspend/resume reconciliation, Service/DNS retargeting, traffic cut-over, or
+branch promotion.
+
 Branch lifecycle evidence for `C6`, `C7`, and `C8` is intentionally alpha. The
 VM smoke `ci/ai-blaise/operator-branch-lifecycle-smoke.sh` and focused operator
 unit tests verify only deterministic local contracts: branch source/target

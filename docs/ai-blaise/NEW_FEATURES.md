@@ -2110,13 +2110,27 @@ tier.
 ### R2: Scale-To-Zero Compute
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Adds branch-level suspend intent so short-lived compute branches
 can scale to zero while retaining their storage declaration.
+
+Production evidence: VM proof runs `ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
+and `REQUIRE_DOCKER=1 ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh`. The
+live smoke creates a real kind Kubernetes cluster, applies a `branch-review` Deployment with one
+available replica, validates the operator `run-branch-lifecycle-canonical` suspend plan
+(`ready` to `suspended`, six steps, including `ScaleTargetComputeToZero`), executes
+`kubectl scale deployment/branch-review --replicas=0`, and verifies
+`branch_scale_to_zero_live=passed`, `kubernetes_deployment_scaled_to_zero=true`,
+`spec_replicas_after_scale=0`, `observed_replicas_after_scale=0`,
+`active_sessions_fail_closed=true`, and `pending_migrations_fail_closed=true`. The
+production-ready boundary is the bounded Kubernetes compute scale-down primitive plus
+operator fail-closed suspend admission. CSI `VolumeSnapshot` creation, PVC cloning, full branch
+suspend/resume reconciliation, Service/DNS retargeting, traffic cut-over, and branch promotion
+remain alpha under C6/C7/C8.
 
 **Motivation**: Development, analytics, and point-in-time investigation
 branches should not burn compute while idle.
@@ -2129,6 +2143,9 @@ scale-to-zero semantics.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: R2` in `operator/src/crds/branch.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- run-branch-lifecycle-canonical`
+- CI: `ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
+- CI: `ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh`
 
 ### R4: Idle-In-Transaction Detector
 
