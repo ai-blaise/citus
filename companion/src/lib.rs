@@ -2,6 +2,7 @@
 
 pub mod advanced_planner;
 pub mod auth;
+pub mod bulk_distsql;
 pub mod citus_timescale;
 pub mod db_doctor;
 pub mod domain_contracts;
@@ -45,6 +46,10 @@ pub use advanced_planner::{
     PlannerSurface, PlannerSurfaceKind,
 };
 pub use auth::{AuthError, JwtVerificationPlan, SessionClaims, TenantRlsPolicyPlan};
+pub use bulk_distsql::{
+    canonical_bulk_distsql_report, canonical_bulk_distsql_sql_plan, BulkDistSqlError,
+    BulkDistSqlPlan, BulkDistSqlReport, BulkDistSqlSqlPlan,
+};
 pub use citus_timescale::{
     distribute_hypertable_plan, enable_timescale_bridge_if_cohabiting,
     AddContinuousAggregateDistributedPlan, AddPolicyDistributed, AddPolicyDistributedPlan,

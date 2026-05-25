@@ -44,6 +44,7 @@
 
 use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
+    canonical_bulk_distsql_report, canonical_bulk_distsql_sql_plan,
     canonical_cohabit_detection_report, canonical_domain_contracts_report,
     canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
     canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
@@ -118,6 +119,12 @@ fn main() {
         }
         [command] if command == "run-transaction-state-sql-canonical" => {
             run_transaction_state_sql_canonical();
+        }
+        [command] if command == "run-bulk-distsql-canonical" => {
+            run_bulk_distsql_canonical();
+        }
+        [command] if command == "run-bulk-distsql-sql-canonical" => {
+            run_bulk_distsql_sql_canonical();
         }
         [command] if command == "run-log-view-sql-canonical" => {
             run_log_view_sql_canonical();
@@ -464,6 +471,41 @@ fn run_transaction_state_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_bulk_distsql_canonical() {
+    let report = canonical_bulk_distsql_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: bulk/DistSQL report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_ids	table	statements	cursor_declared	bulk_fetch_budget_enforced	distsql_explain_required	max_batch_rows	worker_task_budget	fail_closed_checks	wire_protocol_implementation_exercised	backpressure_scheduler_exercised	physical_plan_rewrite_exercised	multi_worker_fanout_exercised"
+    );
+    println!(
+        "{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}	{}",
+        report.feature_ids.join(","),
+        report.table_name,
+        report.statement_count,
+        report.cursor_declared,
+        report.bulk_fetch_budget_enforced,
+        report.distsql_explain_required,
+        report.max_batch_rows,
+        report.worker_task_budget,
+        report.fail_closed_checks,
+        report.wire_protocol_implementation_exercised,
+        report.backpressure_scheduler_exercised,
+        report.physical_plan_rewrite_exercised,
+        report.multi_worker_fanout_exercised,
+    );
+}
+
+fn run_bulk_distsql_sql_canonical() {
+    let sql_plan = canonical_bulk_distsql_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: bulk/DistSQL SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_log_view_sql_canonical() {
     let sql = render_all_views().unwrap_or_else(|error| {
         eprintln!("companion-contracts: log-view SQL render failed: {error}");
@@ -474,7 +516,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

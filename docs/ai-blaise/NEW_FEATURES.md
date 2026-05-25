@@ -9200,53 +9200,99 @@ surfaces until they have equivalent raw-wire data-plane evidence.
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 
+
 ### T10: Bulk Protocol Fetch Path
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/bulk_distsql.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: Citus distributed table execution
 
-**Summary**: Defines the maximum batch-row contract for bulk protocol fetches.
+**Summary**: Verifies a bounded bulk-fetch SQL path over a live Citus
+distributed table with the canonical 4096-row batch budget.
 
-**Current boundary**: The advanced-planner runner and runtime smoke validate
-the configured budget, fail-closed invalid batch rows, and explicitly record
-that protocol implementation, backpressure, and cross-worker fetch tests remain
-alpha.
+**Current production-ready boundary**: T10 is production-ready for the
+companion-rendered SQL cursor fetch budget only. `BulkDistSqlPlan` renders a
+`NO SCROLL` cursor and `FETCH 4096`, and
+`ci/ai-blaise/bulk-distsql-live-smoke.sh` proves a live Citus distributed-table
+query returns exactly `bulk_fetch_rows_returned=4096` ordered rows. It does not
+implement a custom PostgreSQL wire-protocol fetch layer, adaptive backpressure,
+client flow control, cross-worker streaming fanout, or Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus has no ai-blaise bulk-fetch contract.
+Production evidence:
+
+- In-source: `FEATURE: T10` in `companion/src/advanced_planner.rs` and
+  `companion/src/bulk_distsql.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion bulk_distsql -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/bulk-distsql-live-smoke.sh`
+- Evidence markers: `bulk_distsql_live=passed`,
+  `bulk_fetch_rows_requested=4096`, `bulk_fetch_rows_returned=4096`,
+  `wire_protocol_implementation=false`, and
+  `backpressure_scheduler_exercised=false`
+
+**Citus comparison**: Citus executes cursor-backed distributed queries for
+supported SQL; this overlay adds a deterministic batch-budget guard around the
+bounded 4096-row fetch path.
 
 **References**:
 
 - In-source: `FEATURE: T10` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: T10` in `companion/src/bulk_distsql.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-canonical`
 - CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
+- CI: `ci/ai-blaise/bulk-distsql-live-smoke.sh`
+
 
 ### T11: DistSQL Physical Pushdown
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/bulk_distsql.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: Citus distributed table execution
 
-**Summary**: Records the worker-task budget for a DistSQL physical pushdown
-contract.
+**Summary**: Verifies bounded Citus physical-pushdown evidence for a distributed
+aggregate/filter query and enforces the canonical worker-task budget.
 
-**Current boundary**: The planner contract and runtime smoke are executable,
-cover worker-task budget validation, and reject live-execution overclaims;
-physical plan rewrites and worker execution remain alpha.
+**Current production-ready boundary**: T11 is production-ready for the bounded
+live Citus EXPLAIN guard only. `BulkDistSqlPlan` renders an `EXPLAIN (COSTS
+OFF)` aggregate over a distributed table, and
+`ci/ai-blaise/bulk-distsql-live-smoke.sh` proves the real plan contains
+`Custom Scan (Citus Adaptive)`, observes `citus_task_count_observed=1`, and
+keeps that inside `worker_task_budget=16`. It does not implement a physical plan
+rewrite engine, worker-plan injection, multi-worker fanout, custom executor
+nodes, or Kubernetes traffic.
 
-**Citus comparison**: Vanilla Citus does not expose this DistSQL contract.
+Production evidence:
+
+- In-source: `FEATURE: T11` in `companion/src/advanced_planner.rs` and
+  `companion/src/bulk_distsql.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion bulk_distsql -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/bulk-distsql-live-smoke.sh`
+- Evidence markers: `distsql_physical_pushdown_explain=true`,
+  `citus_adaptive_plan_observed=true`, `citus_task_count_observed=1`,
+  `worker_task_budget=16`, `worker_task_budget_exceeded=false`,
+  `physical_plan_rewrite_exercised=false`, and
+  `multi_worker_fanout_exercised=false`
+
+**Citus comparison**: Citus already pushes supported distributed SQL into worker
+tasks; this overlay adds a deterministic guard that the bounded DistSQL contract
+maps to real Citus adaptive-plan evidence without overclaiming a new optimizer.
 
 **References**:
 
 - In-source: `FEATURE: T11` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: T11` in `companion/src/bulk_distsql.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-bulk-distsql-canonical`
 - CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
+- CI: `ci/ai-blaise/bulk-distsql-live-smoke.sh`
 
 ### T13: Distributed Cursors
 

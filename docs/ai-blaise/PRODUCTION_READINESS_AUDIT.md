@@ -829,15 +829,21 @@ more production-ready than the artifacts justified.
   locality probing, and local planner-hot-path measurement; broad multi-region
   coordinator-less serving and fleet planner latency remain separate release
   performance work.
-- The companion advanced-planner runtime smoke now expands `FEATURE: T4`,
-  `FEATURE: T10`, `FEATURE: T11`, `FEATURE: T13`, `FEATURE: T14`, and the
-  adjacent advanced-planner contract set into deterministic runtime-boundary
-  scenarios. It verifies duplicate-feature rejection, unknown-scenario
-  rejection, invalid budget rejection, and live-distributed-execution overclaim
-  rejection through `ci/ai-blaise/companion-advanced-planner-smoke.sh`. This is
-  contract/runtime-boundary evidence only; protocol execution, Citus physical
-  pushdown, distributed cursor/savepoint cleanup, and live multi-worker planner
-  measurements remain alpha until separately measured.
+- The companion advanced-planner runtime smoke expands `FEATURE: T4`, the
+  adjacent advanced-planner contract set, and the T10/T11/T13/T14 contract
+  budgets into deterministic runtime-boundary scenarios. It still verifies
+  duplicate-feature rejection, unknown-scenario rejection, invalid budget
+  rejection, and live-distributed-execution overclaim rejection through
+  `ci/ai-blaise/companion-advanced-planner-smoke.sh`. `FEATURE: T10` and
+  `FEATURE: T11` now also have bounded live Citus SQL evidence in
+  `ci/ai-blaise/bulk-distsql-live-smoke.sh`: a real distributed table, the
+  companion-rendered `FETCH 4096`, `bulk_fetch_rows_returned=4096`,
+  `Custom Scan (Citus Adaptive)`, `citus_adaptive_plan_observed=true`,
+  `citus_task_count_observed=1`, and `worker_task_budget=16`. This is not
+  evidence for a custom PostgreSQL wire-protocol implementation, adaptive
+  backpressure, an optimizer rewrite engine, worker-plan injection,
+  multi-worker fanout, distributed cursor/savepoint cleanup, or Kubernetes
+  traffic.
 - The SQL extension now installs narrow `FEATURE: PM3` and `FEATURE: PM4`
   plan-management runtimes. PM3 persists frozen query hashes, plan XML, hint
   set names, and promotion policy thresholds, and PM4 evaluates latency/cost

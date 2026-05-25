@@ -63,6 +63,7 @@ POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
 POOL_GEOIP_LIVE_SMOKE = ROOT / "ci/ai-blaise/pool-geoip-live-smoke.sh"
+BULK_DISTSQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/bulk-distsql-live-smoke.sh"
 PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
 SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-external-secrets-tls-live-smoke.sh"
@@ -2069,6 +2070,90 @@ if "### T7: Pipelined Client Protocol In Pool" in docs:
     ):
         if required not in t7_section:
             fail(f"T7 production boundary lost required docs phrase: {required}")
+
+
+bulk_distsql_live_smoke = read(BULK_DISTSQL_LIVE_SMOKE)
+for feature_id in ("T10", "T11"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready once live bulk/DistSQL evidence is wired")
+section_t10 = feature_section(docs, "T10")
+section_t11 = feature_section(docs, "T11")
+bulk_distsql_truth = compact(
+    section_t10
+    + "\n"
+    + section_t11
+    + "\n"
+    + audit
+    + "\n"
+    + bulk_distsql_live_smoke
+    + "\n"
+    + read(ROOT / "companion/src/bulk_distsql.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+)
+for phrase in (
+    "**Status**: production-ready",
+    "ci/ai-blaise/bulk-distsql-live-smoke.sh",
+    "FETCH 4096",
+    "bulk_fetch_rows_returned=4096",
+    "custom PostgreSQL wire-protocol",
+    "backpressure",
+    "cross-worker streaming fanout",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_t10):
+        fail(f"T10 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "**Status**: production-ready",
+    "Custom Scan (Citus Adaptive)",
+    "citus_task_count_observed=1",
+    "worker_task_budget=16",
+    "physical plan rewrite engine",
+    "multi-worker fanout",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_t11):
+        fail(f"T11 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: T10",
+    "FEATURE: T11",
+    "BulkDistSqlPlan",
+    "run-bulk-distsql-canonical",
+    "run-bulk-distsql-sql-canonical",
+    "bulk_distsql_live=passed",
+    "bulk_fetch_rows_requested=4096",
+    "bulk_fetch_rows_returned=4096",
+    "distsql_physical_pushdown_explain=true",
+    "citus_adaptive_plan_observed=true",
+    "citus_task_count_observed=1",
+    "worker_task_budget=16",
+    "worker_task_budget_exceeded=false",
+    "wire_protocol_implementation=false",
+    "backpressure_scheduler_exercised=false",
+    "physical_plan_rewrite_exercised=false",
+    "multi_worker_fanout_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "bulk-distsql-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in bulk_distsql_truth:
+        fail(f"T10/T11 live bulk/DistSQL production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "T10` and",
+    "T11` now also have bounded live Citus SQL evidence",
+    "bulk_fetch_rows_returned=4096",
+    "citus_adaptive_plan_observed=true",
+    "worker_task_budget=16",
+    "wire-protocol implementation",
+    "adaptive backpressure",
+    "optimizer rewrite engine",
+    "multi-worker fanout",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing T10/T11 boundary phrase: {phrase}")
 
 pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
 pool_geoip_live_smoke = read(POOL_GEOIP_LIVE_SMOKE)
