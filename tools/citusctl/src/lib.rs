@@ -12,6 +12,9 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const K8S_MANIFEST_EVIDENCE_BOUNDARY: &str = "live-kubernetes-manifest-apply";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CitusCtlRequest {
@@ -723,6 +726,437 @@ pub fn render_dev_lifecycle_cli_report_from_args(
     Ok(Some(report.render(options.format)))
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct K8sManifestRuntime {
+    manifest_path: PathBuf,
+    namespace: String,
+    state_dir: PathBuf,
+    kubectl: String,
+    context: Option<String>,
+}
+
+impl K8sManifestRuntime {
+    pub fn new(
+        manifest_path: impl Into<PathBuf>,
+        namespace: impl Into<String>,
+        state_dir: impl Into<PathBuf>,
+    ) -> Result<Self, CitusCtlError> {
+        let namespace = namespace.into();
+        validate_k8s_namespace(&namespace)?;
+        let state_dir = state_dir.into();
+        validate_state_dir(&state_dir)?;
+        Ok(Self {
+            manifest_path: manifest_path.into(),
+            namespace,
+            state_dir,
+            kubectl: "kubectl".to_string(),
+            context: None,
+        })
+    }
+
+    fn with_kubectl(mut self, kubectl: impl Into<String>) -> Result<Self, CitusCtlError> {
+        let kubectl = kubectl.into();
+        validate_required("kubectl", &kubectl)?;
+        self.kubectl = kubectl;
+        Ok(self)
+    }
+
+    fn with_context(mut self, context: Option<String>) -> Result<Self, CitusCtlError> {
+        if let Some(context) = &context {
+            validate_required("context", context)?;
+        }
+        self.context = context;
+        Ok(self)
+    }
+
+    pub fn audit_path(&self) -> PathBuf {
+        self.state_dir.join("k8s-manifest-apply.audit.tsv")
+    }
+
+    pub fn plan(&self) -> Result<K8sManifestPlan, CitusCtlError> {
+        let manifest = K8sManifest::load(&self.manifest_path)?;
+        let plan_id = k8s_manifest_plan_id(&manifest, &self.namespace);
+        let resources = self.kubectl_apply_server_dry_run()?;
+        Ok(K8sManifestPlan {
+            plan_id,
+            manifest_path: self.manifest_path.to_string_lossy().to_string(),
+            manifest_hash: manifest.content_hash,
+            namespace: self.namespace.clone(),
+            dry_run: true,
+            resources,
+            steps: vec![
+                K8sManifestStep::ValidateManifest,
+                K8sManifestStep::RenderPlan,
+                K8sManifestStep::RunServerDryRun,
+            ],
+            evidence_boundary: K8S_MANIFEST_EVIDENCE_BOUNDARY,
+        })
+    }
+
+    pub fn apply(&self, plan_id: impl Into<String>) -> Result<K8sManifestReport, CitusCtlError> {
+        let plan_id = plan_id.into();
+        validate_plan_id(&plan_id)?;
+        let plan = self.plan()?;
+        if plan.plan_id != plan_id {
+            return Err(CitusCtlError::PlanIdMismatch);
+        }
+
+        let apply_output = self.kubectl_apply_live()?;
+        let resources = self.kubectl_get_manifest()?;
+        let changed = apply_output.lines().any(|line| {
+            line.ends_with(" created")
+                || line.ends_with(" configured")
+                || line.ends_with(" patched")
+        });
+        fs::create_dir_all(&self.state_dir)?;
+        append_k8s_manifest_audit_record(&self.audit_path(), &plan, changed, &resources)?;
+
+        Ok(K8sManifestReport {
+            plan: K8sManifestPlan { resources, ..plan },
+            changed,
+            applied: true,
+            audit_record_written: true,
+            evidence_boundary: K8S_MANIFEST_EVIDENCE_BOUNDARY,
+        })
+    }
+
+    fn kubectl_apply_server_dry_run(&self) -> Result<Vec<String>, CitusCtlError> {
+        let output = self.run_kubectl(&[
+            "apply".to_string(),
+            "-f".to_string(),
+            self.manifest_path.to_string_lossy().to_string(),
+            "-n".to_string(),
+            self.namespace.clone(),
+            "--dry-run=server".to_string(),
+            "-o".to_string(),
+            "name".to_string(),
+        ])?;
+        parse_kubectl_resources(&output)
+    }
+
+    fn kubectl_apply_live(&self) -> Result<String, CitusCtlError> {
+        self.run_kubectl(&[
+            "apply".to_string(),
+            "-f".to_string(),
+            self.manifest_path.to_string_lossy().to_string(),
+            "-n".to_string(),
+            self.namespace.clone(),
+        ])
+    }
+
+    fn kubectl_get_manifest(&self) -> Result<Vec<String>, CitusCtlError> {
+        let output = self.run_kubectl(&[
+            "get".to_string(),
+            "-f".to_string(),
+            self.manifest_path.to_string_lossy().to_string(),
+            "-n".to_string(),
+            self.namespace.clone(),
+            "-o".to_string(),
+            "name".to_string(),
+        ])?;
+        parse_kubectl_resources(&output)
+    }
+
+    fn run_kubectl(&self, arguments: &[String]) -> Result<String, CitusCtlError> {
+        let mut command = Command::new(&self.kubectl);
+        if let Some(context) = &self.context {
+            command.arg("--context").arg(context);
+        }
+        let output = command.args(arguments).output().map_err(|error| {
+            CitusCtlError::KubernetesCommand(format!(
+                "kubectl {} spawn failed: {}",
+                arguments.join(" "),
+                error
+            ))
+        })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(CitusCtlError::KubernetesCommand(format!(
+                "kubectl {} failed: {}",
+                arguments.join(" "),
+                stderr
+            )));
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct K8sManifestPlan {
+    pub plan_id: String,
+    pub manifest_path: String,
+    pub manifest_hash: String,
+    pub namespace: String,
+    pub dry_run: bool,
+    pub resources: Vec<String>,
+    pub steps: Vec<K8sManifestStep>,
+    pub evidence_boundary: &'static str,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct K8sManifestReport {
+    pub plan: K8sManifestPlan,
+    pub changed: bool,
+    pub applied: bool,
+    pub audit_record_written: bool,
+    pub evidence_boundary: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum K8sManifestStep {
+    ValidateManifest,
+    RenderPlan,
+    RunServerDryRun,
+    ExecuteKubectlApply,
+    VerifyResources,
+    WriteAuditRecord,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum K8sManifestOutputFormat {
+    Tsv,
+    Json,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct K8sManifestCliOptions {
+    namespace: Option<String>,
+    state_dir: Option<PathBuf>,
+    format: K8sManifestOutputFormat,
+    kubectl: String,
+    context: Option<String>,
+}
+
+impl K8sManifestCliOptions {
+    fn parse(args: &[String]) -> Result<Self, CitusCtlError> {
+        let mut namespace = None;
+        let mut state_dir = None;
+        let mut format = K8sManifestOutputFormat::Tsv;
+        let mut kubectl = "kubectl".to_string();
+        let mut context = None;
+        let mut index = 0;
+
+        while index < args.len() {
+            match args[index].as_str() {
+                "--namespace" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("namespace"));
+                    };
+                    validate_k8s_namespace(value)?;
+                    namespace = Some(value.clone());
+                    index += 2;
+                }
+                "--state-dir" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("state_dir"));
+                    };
+                    state_dir = Some(PathBuf::from(value));
+                    index += 2;
+                }
+                "--format" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("format"));
+                    };
+                    format = match value.as_str() {
+                        "tsv" => K8sManifestOutputFormat::Tsv,
+                        "json" => K8sManifestOutputFormat::Json,
+                        other => {
+                            return Err(CitusCtlError::UnknownValue {
+                                field: "format",
+                                value: other.to_string(),
+                            })
+                        }
+                    };
+                    index += 2;
+                }
+                "--kubectl" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("kubectl"));
+                    };
+                    validate_required("kubectl", value)?;
+                    kubectl = value.clone();
+                    index += 2;
+                }
+                "--context" => {
+                    let Some(value) = args.get(index + 1) else {
+                        return Err(CitusCtlError::MissingRequiredField("context"));
+                    };
+                    validate_required("context", value)?;
+                    context = Some(value.clone());
+                    index += 2;
+                }
+                value if value.starts_with("--") => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "k8s_manifest_option",
+                        value: value.to_string(),
+                    })
+                }
+                value => {
+                    return Err(CitusCtlError::UnknownValue {
+                        field: "argument",
+                        value: value.to_string(),
+                    })
+                }
+            }
+        }
+
+        Ok(Self {
+            namespace,
+            state_dir,
+            format,
+            kubectl,
+            context,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct K8sManifestCliReport {
+    mode: &'static str,
+    plan_id: String,
+    manifest_path: String,
+    manifest_hash: String,
+    namespace: String,
+    dry_run: bool,
+    changed: bool,
+    applied: bool,
+    audit_record_written: bool,
+    resources: Vec<String>,
+    steps: usize,
+    evidence_boundary: &'static str,
+}
+
+impl K8sManifestCliReport {
+    fn from_plan(plan: K8sManifestPlan) -> Self {
+        Self {
+            mode: "plan",
+            plan_id: plan.plan_id,
+            manifest_path: plan.manifest_path,
+            manifest_hash: plan.manifest_hash,
+            namespace: plan.namespace,
+            dry_run: plan.dry_run,
+            changed: false,
+            applied: false,
+            audit_record_written: false,
+            resources: plan.resources,
+            steps: plan.steps.len(),
+            evidence_boundary: plan.evidence_boundary,
+        }
+    }
+
+    fn from_apply(report: K8sManifestReport) -> Self {
+        Self {
+            mode: "apply",
+            plan_id: report.plan.plan_id,
+            manifest_path: report.plan.manifest_path,
+            manifest_hash: report.plan.manifest_hash,
+            namespace: report.plan.namespace,
+            dry_run: false,
+            changed: report.changed,
+            applied: report.applied,
+            audit_record_written: report.audit_record_written,
+            resources: report.plan.resources,
+            steps: 6,
+            evidence_boundary: report.evidence_boundary,
+        }
+    }
+
+    fn tsv_header() -> &'static str {
+        "mode\tplan_id\tmanifest_path\tmanifest_hash\tnamespace\tdry_run\tchanged\tapplied\taudit_record_written\tresources\tsteps\tevidence_boundary"
+    }
+
+    fn to_tsv(&self) -> String {
+        format!(
+            "{}\n{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            Self::tsv_header(),
+            self.mode,
+            self.plan_id,
+            self.manifest_path,
+            self.manifest_hash,
+            self.namespace,
+            self.dry_run,
+            self.changed,
+            self.applied,
+            self.audit_record_written,
+            self.resources.join(","),
+            self.steps,
+            self.evidence_boundary,
+        )
+    }
+
+    fn to_json(&self) -> String {
+        format!(
+            "{{\"applied\":{},\"audit_record_written\":{},\"changed\":{},\"dry_run\":{},\"evidence_boundary\":\"{}\",\"manifest_hash\":\"{}\",\"manifest_path\":\"{}\",\"mode\":\"{}\",\"namespace\":\"{}\",\"plan_id\":\"{}\",\"resources\":{},\"steps\":{}}}",
+            self.applied,
+            self.audit_record_written,
+            self.changed,
+            self.dry_run,
+            self.evidence_boundary,
+            json_escape(&self.manifest_hash),
+            json_escape(&self.manifest_path),
+            self.mode,
+            json_escape(&self.namespace),
+            json_escape(&self.plan_id),
+            json_string_array(&self.resources),
+            self.steps,
+        )
+    }
+
+    fn render(&self, format: K8sManifestOutputFormat) -> String {
+        match format {
+            K8sManifestOutputFormat::Tsv => self.to_tsv(),
+            K8sManifestOutputFormat::Json => self.to_json(),
+        }
+    }
+}
+
+pub fn render_k8s_manifest_cli_report_from_args(
+    args: &[String],
+) -> Result<Option<String>, CitusCtlError> {
+    let Some(first) = args.first() else {
+        return Ok(None);
+    };
+    let (apply_plan_id, rest) = match first.as_str() {
+        "plan" => (None, &args[1..]),
+        "apply" => {
+            let Some(plan_id) = args.get(1) else {
+                return Ok(None);
+            };
+            (Some(plan_id.clone()), &args[2..])
+        }
+        _ => return Ok(None),
+    };
+
+    if rest.first().map(String::as_str) != Some("apply") {
+        return Ok(None);
+    }
+    let Some(manifest_path) = rest.get(1) else {
+        return Ok(None);
+    };
+    let option_args = &rest[2..];
+    if !option_args.iter().any(|arg| arg.starts_with("--")) {
+        return Ok(None);
+    }
+
+    let options = K8sManifestCliOptions::parse(option_args)?;
+    let namespace = options
+        .namespace
+        .ok_or(CitusCtlError::MissingRequiredField("namespace"))?;
+    let state_dir = options
+        .state_dir
+        .ok_or(CitusCtlError::MissingRequiredField("state_dir"))?;
+    let runtime = K8sManifestRuntime::new(manifest_path, namespace, state_dir)?
+        .with_kubectl(options.kubectl)?
+        .with_context(options.context)?;
+
+    let report = match apply_plan_id {
+        None => K8sManifestCliReport::from_plan(runtime.plan()?),
+        Some(plan_id) => K8sManifestCliReport::from_apply(runtime.apply(plan_id)?),
+    };
+
+    Ok(Some(report.render(options.format)))
+}
+
 pub fn canonical_dev_lifecycle_report() -> Result<DevLifecycleCanonicalReport, CitusCtlError> {
     let state_dir = std::env::temp_dir().join(format!(
         "ai-blaise-citusctl-dev-lifecycle-{}",
@@ -773,8 +1207,11 @@ pub enum CitusCtlError {
     CorruptState(String),
     InvalidFeatureId,
     InvalidPlanId,
+    InvalidManifest(String),
     InvalidTimestamp,
     MissingRequiredField(&'static str),
+    KubernetesCommand(String),
+    PlanIdMismatch,
     StateIo(String),
     UnknownCommand(String),
     UnknownIntent(String),
@@ -790,10 +1227,22 @@ impl fmt::Display for CitusCtlError {
             }
             Self::InvalidFeatureId => write!(formatter, "feature_id must be a stable feature id"),
             Self::InvalidPlanId => write!(formatter, "plan_id must be stable ascii and non-empty"),
+            Self::InvalidManifest(detail) => {
+                write!(formatter, "invalid Kubernetes manifest: {detail}")
+            }
             Self::InvalidTimestamp => {
                 write!(formatter, "target_time must be an RFC3339 UTC timestamp")
             }
+            Self::KubernetesCommand(detail) => {
+                write!(formatter, "Kubernetes command failed: {detail}")
+            }
             Self::MissingRequiredField(field) => write!(formatter, "{field} must not be empty"),
+            Self::PlanIdMismatch => {
+                write!(
+                    formatter,
+                    "plan_id does not match current Kubernetes manifest plan"
+                )
+            }
             Self::StateIo(error) => write!(formatter, "dev lifecycle state io failed: {error}"),
             Self::UnknownCommand(command) => write!(formatter, "unknown command: {command}"),
             Self::UnknownIntent(intent) => write!(formatter, "unknown intent: {intent}"),
@@ -1082,6 +1531,29 @@ fn validate_state_dir(path: &Path) -> Result<(), CitusCtlError> {
     Ok(())
 }
 
+fn validate_k8s_namespace(value: &str) -> Result<(), CitusCtlError> {
+    validate_required("namespace", value)?;
+    let bytes = value.as_bytes();
+    let valid = bytes.len() <= 63
+        && bytes
+            .first()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes
+            .last()
+            .is_some_and(|byte| byte.is_ascii_alphanumeric())
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-');
+    if valid {
+        Ok(())
+    } else {
+        Err(CitusCtlError::UnknownValue {
+            field: "namespace",
+            value: value.to_string(),
+        })
+    }
+}
+
 fn validate_plan_id(value: &str) -> Result<(), CitusCtlError> {
     validate_required("plan_id", value)?;
     if value.chars().all(|character| {
@@ -1205,6 +1677,94 @@ last_plan_id={}
             state.generation,
             last_plan_id
         ),
+    )?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct K8sManifest {
+    content_hash: String,
+}
+
+impl K8sManifest {
+    fn load(path: &Path) -> Result<Self, CitusCtlError> {
+        validate_required("manifest_path", &path.to_string_lossy())?;
+        let content = fs::read_to_string(path).map_err(|error| {
+            CitusCtlError::InvalidManifest(format!("{}: {}", path.to_string_lossy(), error))
+        })?;
+        validate_k8s_manifest_text(&content)?;
+        Ok(Self {
+            content_hash: format!("fnv1a64:{:016x}", fnv1a64(content.as_bytes())),
+        })
+    }
+}
+
+fn validate_k8s_manifest_text(content: &str) -> Result<(), CitusCtlError> {
+    if content.trim().is_empty() {
+        return Err(CitusCtlError::InvalidManifest(
+            "manifest is empty".to_string(),
+        ));
+    }
+    for required in ["apiVersion:", "kind:", "metadata:", "name:"] {
+        if !content
+            .lines()
+            .any(|line| line.trim_start().starts_with(required))
+        {
+            return Err(CitusCtlError::InvalidManifest(format!(
+                "missing required YAML field {required}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn k8s_manifest_plan_id(manifest: &K8sManifest, namespace: &str) -> String {
+    let mut material = Vec::new();
+    material.extend_from_slice(manifest.content_hash.as_bytes());
+    material.push(0);
+    material.extend_from_slice(namespace.as_bytes());
+    format!("k8s-apply-{:016x}", fnv1a64(&material))
+}
+
+fn parse_kubectl_resources(output: &str) -> Result<Vec<String>, CitusCtlError> {
+    let resources: Vec<String> = output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect();
+    if resources.is_empty() {
+        return Err(CitusCtlError::KubernetesCommand(
+            "kubectl returned no resource names".to_string(),
+        ));
+    }
+    Ok(resources)
+}
+
+fn append_k8s_manifest_audit_record(
+    path: &Path,
+    plan: &K8sManifestPlan,
+    changed: bool,
+    resources: &[String],
+) -> Result<(), CitusCtlError> {
+    let write_header = !path.exists();
+    let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+    if write_header {
+        writeln!(
+            file,
+            "plan_id\tnamespace\tmanifest_path\tmanifest_hash\tchanged\tresources\tevidence_boundary"
+        )?;
+    }
+    writeln!(
+        file,
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        plan.plan_id,
+        plan.namespace,
+        plan.manifest_path,
+        plan.manifest_hash,
+        changed,
+        resources.join(","),
+        K8S_MANIFEST_EVIDENCE_BOUNDARY
     )?;
     Ok(())
 }
@@ -1516,6 +2076,26 @@ fn json_escape(value: &str) -> String {
         .collect()
 }
 
+fn json_string_array(values: &[String]) -> String {
+    let mut rendered = String::from("[");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            rendered.push(',');
+        }
+        rendered.push('"');
+        rendered.push_str(&json_escape(value));
+        rendered.push('"');
+    }
+    rendered.push(']');
+    rendered
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
 fn args(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| value.to_string()).collect()
 }
@@ -1808,6 +2388,152 @@ mod tests {
     }
 
     #[test]
+    fn k8s_manifest_cli_reports_live_boundary_with_fake_kubectl() {
+        let dir = temp_state_dir("k8s-apply");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("state dir");
+        let manifest_path = dir.join("manifest.yaml");
+        fs::write(
+            &manifest_path,
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ai-blaise-citusctl-live\ndata:\n  feature: M8\n",
+        )
+        .expect("manifest");
+        let kubectl = fake_kubectl(&dir);
+        let state_dir = dir.join("state");
+        let manifest = manifest_path.to_str().expect("manifest path");
+        let kubectl_path = kubectl.to_str().expect("kubectl path");
+        let state = state_dir.to_str().expect("state dir");
+
+        let plan_json = render_k8s_manifest_cli_report_from_args(&args(&[
+            "plan",
+            "apply",
+            manifest,
+            "--namespace",
+            "ai-blaise-m8",
+            "--state-dir",
+            state,
+            "--kubectl",
+            kubectl_path,
+            "--format",
+            "json",
+        ]))
+        .expect("plan json")
+        .expect("k8s plan output");
+        assert!(plan_json.contains("\"mode\":\"plan\""));
+        assert!(plan_json.contains("\"dry_run\":true"));
+        assert!(plan_json.contains("\"audit_record_written\":false"));
+        assert!(plan_json.contains("\"resources\":[\"configmap/ai-blaise-citusctl-live\"]"));
+        assert!(plan_json.contains(K8S_MANIFEST_EVIDENCE_BOUNDARY));
+
+        let runtime = K8sManifestRuntime::new(manifest, "ai-blaise-m8", state)
+            .expect("runtime")
+            .with_kubectl(kubectl_path)
+            .expect("kubectl");
+        let plan = runtime.plan().expect("computed plan");
+        let apply_tsv = render_k8s_manifest_cli_report_from_args(&args(&[
+            "apply",
+            &plan.plan_id,
+            "apply",
+            manifest,
+            "--namespace",
+            "ai-blaise-m8",
+            "--state-dir",
+            state,
+            "--kubectl",
+            kubectl_path,
+            "--format",
+            "tsv",
+        ]))
+        .expect("apply tsv")
+        .expect("k8s apply output");
+        assert!(apply_tsv.starts_with(K8sManifestCliReport::tsv_header()));
+        assert!(
+            apply_tsv.contains("\tfalse\ttrue\ttrue\ttrue\tconfigmap/ai-blaise-citusctl-live\t6\t")
+        );
+        assert!(runtime.audit_path().exists());
+        let audit = fs::read_to_string(runtime.audit_path()).expect("audit");
+        assert_eq!(audit.lines().count(), 2);
+        assert!(audit.contains(K8S_MANIFEST_EVIDENCE_BOUNDARY));
+        let log = fs::read_to_string(dir.join("kubectl.log")).expect("kubectl log");
+        assert!(log.contains("apply -f"));
+        assert!(log.contains("--dry-run=server"));
+        assert!(log.contains("get -f"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn k8s_manifest_apply_rejects_mismatched_plan_id() {
+        let dir = temp_state_dir("k8s-bad-plan");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("state dir");
+        let manifest_path = dir.join("manifest.yaml");
+        fs::write(
+            &manifest_path,
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: ai-blaise-citusctl-live\ndata:\n  feature: M8\n",
+        )
+        .expect("manifest");
+        let kubectl = fake_kubectl(&dir);
+
+        let error = render_k8s_manifest_cli_report_from_args(&args(&[
+            "apply",
+            "wrong-plan-id",
+            "apply",
+            manifest_path.to_str().expect("manifest path"),
+            "--namespace",
+            "ai-blaise-m8",
+            "--state-dir",
+            dir.join("state").to_str().expect("state dir"),
+            "--kubectl",
+            kubectl.to_str().expect("kubectl path"),
+            "--format",
+            "json",
+        ]))
+        .expect_err("mismatched plan id");
+        assert_eq!(error, CitusCtlError::PlanIdMismatch);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn k8s_manifest_rejects_missing_metadata_name() {
+        let dir = temp_state_dir("k8s-bad-manifest");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("state dir");
+        let manifest_path = dir.join("manifest.yaml");
+        fs::write(
+            &manifest_path,
+            "apiVersion: v1\nkind: ConfigMap\nmetadata:\n",
+        )
+        .expect("manifest");
+        let runtime = K8sManifestRuntime::new(&manifest_path, "ai-blaise-m8", dir.join("state"))
+            .expect("runtime")
+            .with_kubectl(fake_kubectl(&dir).to_str().expect("kubectl path"))
+            .expect("kubectl");
+
+        assert_eq!(
+            runtime.plan(),
+            Err(CitusCtlError::InvalidManifest(
+                "missing required YAML field name:".to_string()
+            ))
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn k8s_manifest_rejects_invalid_namespace() {
+        let error = K8sManifestRuntime::new("manifest.yaml", "Not_A_Namespace", "/tmp/m8-state")
+            .expect_err("invalid namespace");
+
+        assert_eq!(
+            error,
+            CitusCtlError::UnknownValue {
+                field: "namespace",
+                value: "Not_A_Namespace".to_string(),
+            }
+        );
+    }
+
+    #[test]
     fn canonical_report_covers_cli_contract_examples() {
         let report = canonical_citusctl_report().expect("canonical report");
 
@@ -1838,5 +2564,39 @@ mod tests {
             "ai-blaise-citusctl-test-{suffix}-{}",
             std::process::id()
         ))
+    }
+
+    fn fake_kubectl(dir: &Path) -> PathBuf {
+        let path = dir.join("kubectl");
+        let log_path = dir.join("kubectl.log");
+        let script = format!(
+            "#!/usr/bin/env sh\n\
+printf '%s\\n' \"$*\" >> '{}'\n\
+case \"$1\" in\n\
+  apply)\n\
+    case \" $* \" in\n\
+      *' --dry-run=server '*) printf '%s\\n' 'configmap/ai-blaise-citusctl-live' ;;\n\
+      *) printf '%s\\n' 'configmap/ai-blaise-citusctl-live created' ;;\n\
+    esac\n\
+    ;;\n\
+  get)\n\
+    printf '%s\\n' 'configmap/ai-blaise-citusctl-live'\n\
+    ;;\n\
+  *)\n\
+    printf '%s\\n' \"unexpected kubectl command: $*\" >&2\n\
+    exit 1\n\
+    ;;\n\
+esac\n",
+            log_path.to_string_lossy()
+        );
+        fs::write(&path, script).expect("fake kubectl");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&path, permissions).expect("permissions");
+        }
+        path
     }
 }

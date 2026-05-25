@@ -86,6 +86,7 @@ CI_IMAGE_WORKFLOW = ROOT / ".github/workflows/ci-image.yml"
 TOOLS_WORKFLOW = ROOT / ".github/workflows/ci-tools.yml"
 CITUSCTL_SMOKE = ROOT / "ci/ai-blaise/citusctl-smoke.sh"
 CITUSCTL_DEV_LIFECYCLE_SMOKE = ROOT / "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh"
+CITUSCTL_K8S_APPLY_LIVE_SMOKE = ROOT / "ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh"
 CITUSCTL_LIB = ROOT / "tools/citusctl/src/lib.rs"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
@@ -267,12 +268,17 @@ for phrase in (
     if compact(phrase) not in compact(d1_section):
         fail(f"D1 citusctl dev lifecycle production boundary missing phrase: {phrase}")
 for phrase in (
-    "**Status**: alpha",
-    "M8 is not production-ready as a whole",
-    "bounded D1 local dev lifecycle subpath",
+    "**Status**: production-ready",
+    "M8 is production-ready for two real binary paths",
+    "citusctl plan/apply apply <manifest>",
+    "kubectl apply --dry-run=server",
+    "deterministic `k8s-apply-*` plan id",
+    "requires apply to match that rendered plan id",
+    "k8s-manifest-apply.audit.tsv",
+    "live-kubernetes-manifest-apply",
+    "does not claim Docker/kind lifecycle orchestration",
     "deterministic JSON/TSV output",
     "local audit append",
-    "does not execute manifests against Kubernetes",
 ):
     if compact(phrase) not in compact(m8_section):
         fail(f"M8 citusctl plan/apply boundary missing phrase: {phrase}")
@@ -280,7 +286,12 @@ for phrase in (
     "explicit `--state-dir` invocations",
     "deterministic JSON/TSV output",
     "local audit append",
-    "M8 remains alpha outside that bounded D1 subpath",
+    "M8 Kubernetes manifest path",
+    "server-side dry-run",
+    "apply-time plan-id match guard",
+    "real `kubectl apply`",
+    "kubectl get -f",
+    "k8s-manifest-apply.audit.tsv",
     "production cluster lifecycle management",
 ):
     if compact(phrase) not in compact(audit):
@@ -293,6 +304,11 @@ for phrase in (
     "append_dev_audit_record",
     "DevLifecycleCliReport",
     "state-file-only-no-recursive-delete",
+    "render_k8s_manifest_cli_report_from_args",
+    "append_k8s_manifest_audit_record",
+    "live-kubernetes-manifest-apply",
+    "kubectl_apply_server_dry_run",
+    "PlanIdMismatch",
 ):
     if phrase not in citusctl_lib:
         fail(f"tools/citusctl runtime lost production D1/M8 contract code: {phrase}")
@@ -320,15 +336,32 @@ for phrase in (
     if phrase not in citusctl_dev_smoke:
         fail(f"citusctl-dev-lifecycle-smoke.sh lost required D1/M8 assertion: {phrase}")
 
+citusctl_k8s_smoke = read(CITUSCTL_K8S_APPLY_LIVE_SMOKE)
+for phrase in (
+    "FEATURE: M8",
+    "kind create cluster",
+    "run_citusctl plan apply",
+    "run_citusctl apply wrong-plan-id apply",
+    "plan_id does not match current Kubernetes manifest plan",
+    "kubectl -n \"${namespace}\" get configmap ai-blaise-citusctl-live",
+    "k8s-manifest-apply.audit.tsv",
+    "live-kubernetes-manifest-apply",
+):
+    if phrase not in citusctl_k8s_smoke:
+        fail(f"citusctl-k8s-apply-live-smoke.sh lost required M8 live assertion: {phrase}")
+
 makefile_text = read(MAKEFILE)
 for phrase in (
     "citusctl-dev-lifecycle-smoke:",
     "ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh",
+    "citusctl-k8s-apply-live-smoke:",
+    "ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh",
     "gate-close:",
     "citusctl-dev-lifecycle-smoke",
+    "citusctl-k8s-apply-live-smoke",
 ):
     if phrase not in makefile_text:
-        fail(f"Makefile.ai-blaise must wire citusctl dev lifecycle smoke: {phrase}")
+        fail(f"Makefile.ai-blaise must wire citusctl smoke: {phrase}")
 
 tools_workflow = read(TOOLS_WORKFLOW)
 if "citusctl-dev-lifecycle-smoke.sh" not in tools_workflow:

@@ -2961,7 +2961,7 @@ does not provide this controlled cohabitation preflight.
 ### M8: citusctl Plan / Apply
 
 **Overlay**: `tools/citusctl`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -2969,13 +2969,29 @@ does not provide this controlled cohabitation preflight.
 **Summary**: Defines the CLI plan/apply execution contract, including
 rendered diffs, preflight checks, apply execution, and audit-record steps.
 
-**Current boundary**: M8 is not production-ready as a whole. The bounded D1
-local dev lifecycle subpath is production-ready only for the real
-`citusctl plan/apply dev ... --state-dir ... --format json|tsv` binary path:
-dry-run plan rendering, fail-closed stable plan-id validation, deterministic
-JSON/TSV output, idempotent up/down state transitions, local audit append, and
-state-file-only cleanup guardrails. It does not execute manifests against
-Kubernetes, run Docker/kind, or mutate a Citus data plane.
+**Current production-ready boundary**: M8 is production-ready for two real
+binary paths. The D1 dev lifecycle path remains bounded to
+`citusctl plan/apply dev ... --state-dir ... --format json|tsv`: dry-run plan
+rendering, fail-closed stable plan-id validation, deterministic JSON/TSV
+output, idempotent up/down state transitions, local audit append, and
+state-file-only cleanup guardrails. The Kubernetes manifest path is now live:
+`citusctl plan/apply apply <manifest> --namespace <namespace> --state-dir
+<dir> --format json|tsv` validates the YAML manifest, performs a real
+`kubectl apply --dry-run=server`, emits a deterministic `k8s-apply-*` plan id,
+requires apply to match that rendered plan id, runs real `kubectl apply`,
+verifies resources with `kubectl get -f`, and writes a local
+`k8s-manifest-apply.audit.tsv` log with `live-kubernetes-manifest-apply`
+evidence. It does not claim Docker/kind lifecycle orchestration, migrations,
+backups, PITR, WAL replay, multi-step Citus data-plane rollout semantics, or
+production cluster lifecycle management beyond applying the supplied manifest.
+
+Production evidence: `ci/ai-blaise/citusctl-smoke.sh`,
+`ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh`, and
+`ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh` exercise the real CLI binary.
+The live smoke creates a kind cluster, runs `citusctl plan apply` through
+server-side dry-run, rejects a mismatched apply plan id, applies a ConfigMap to
+Kubernetes, verifies it with `kubectl get`, proves idempotent reapply, rejects
+a malformed manifest, and checks `k8s-manifest-apply.audit.tsv`.
 
 **Motivation**: Operator actions need a Terraform-style preview before
 mutating clusters, tenants, branches, migrations, backups, or extension state.
@@ -2989,6 +3005,7 @@ two-step plan/apply semantics.
 - In-source: `FEATURE: M8` in `tools/citusctl/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citusctl -- run-dev-lifecycle-canonical`
+- CI: `ci/ai-blaise/citusctl-k8s-apply-live-smoke.sh`
 - CI: `ci/ai-blaise/citusctl-dev-lifecycle-smoke.sh`
 
 ### M9: Schema Visualization Output

@@ -550,9 +550,16 @@ more production-ready than the artifacts justified.
   runtime behavior through explicit `--state-dir` real-binary invocations:
   dry-run plan rendering, deterministic JSON/TSV output, stable plan-id apply
   validation, idempotent up/down state handling, local audit append, and
-  state-file-only cleanup guardrails. This is not evidence for mutating
-  Kubernetes apply execution, manifest reconciliation, migrations, backups,
-  PITR, WAL replay, Docker/kind startup, or a live Citus data plane.
+  state-file-only cleanup guardrails. `citusctl-k8s-apply-live-smoke.sh` now
+  proves the M8 Kubernetes manifest plan/apply path against a live kind
+  cluster: real `kubectl apply --dry-run=server`, deterministic `k8s-apply-*`
+  plan id, apply-time plan-id match rejection, real `kubectl apply`, resource
+  verification with `kubectl get -f`, idempotent reapply evidence, malformed
+  manifest rejection, and `k8s-manifest-apply.audit.tsv` append evidence. This
+  is not evidence for Docker/kind lifecycle orchestration by the CLI,
+  migrations, backups, PITR, WAL replay, multi-step Citus data-plane rollout
+  semantics, or production cluster lifecycle management beyond applying the
+  supplied manifest.
 - The `citus-lsp` CLI now has direct executable smokes for the narrow
   `FEATURE: D4`, `FEATURE: M5`, and `FEATURE: TS8` file-backed diagnostic
   surface. The smoke runs `citus-lsp analyze --metadata <metadata.tsv> --sql
@@ -814,14 +821,19 @@ Rule 10 completion for this branch requires local and VM verification of:
   external ledger backends, external secret resolution, key rotation,
   hardware-backed signing, accounting workflow authorization, or
   migration/operator integration.
-- D1/M8 dev lifecycle evidence is limited to the real `citusctl` CLI local
-  state-file runtime behind explicit `--state-dir` invocations: dry-run plan
-  rendering, stable plan-id validation, deterministic JSON/TSV output,
-  idempotent up/down state transitions, local audit append, and
-  state-file-only cleanup. M8 remains alpha outside that bounded D1 subpath.
-  This evidence must not be cited for Docker/kind startup, Kubernetes
-  deployment, Postgres/Citus data-plane health, extension-service
-  orchestration, or production cluster lifecycle management.
+- D1/M8 evidence now has two production-ready real-binary paths. The D1 dev
+  lifecycle path is limited to local state-file runtime behind explicit
+  `--state-dir` invocations: dry-run plan rendering, stable plan-id validation,
+  deterministic JSON/TSV output, idempotent up/down state transitions, local
+  audit append, and state-file-only cleanup. The M8 Kubernetes manifest path is
+  limited to `citusctl plan/apply apply <manifest> --namespace ... --state-dir
+  ... --format json|tsv`: server-side dry-run, deterministic plan id,
+  apply-time plan-id match guard, real `kubectl apply`, `kubectl get -f`
+  verification, and `k8s-manifest-apply.audit.tsv` append evidence. This
+  evidence must not be cited for Docker/kind startup performed by the CLI,
+  migrations, backups, PITR, WAL replay, Postgres/Citus data-plane health,
+  extension-service orchestration, or production cluster lifecycle management
+  beyond applying the supplied manifest.
 - D2 production evidence is limited to the real `citusctl` CLI apply-mode
   plan-id guard and command-summary smoke. It must not be cited as evidence for
   full mutating apply execution, manifest reconciliation, migrations, backups,
