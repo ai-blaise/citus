@@ -1137,6 +1137,23 @@ not claim telemetry collection. It does not claim automatic tier movement, does
 not claim cold-tier artifact moves, does not claim Citus placement changes, and
 does not claim distributed planner integration.
 
+S8/S12 regional placement primitives are production-ready only for a bounded
+read-only Citus/PostgreSQL catalog guard.
+`REQUIRE_DOCKER=1 ci/ai-blaise/regional-placement-live-smoke.sh` starts the
+local Citus+Timescale cohabitation image, creates real PostgreSQL tablespaces,
+creates `public.locality_orders` and `public.locality_orders_eu` in those
+tablespaces, distributes both tables with Citus on `locality_key`, and executes
+the companion-rendered catalog query. The smoke verifies
+`regional_placement_live=passed`, `locality_prefixed_pk_valid=true`,
+`citus_distribution_present=true`, `region_tablespace_mappings_valid=true`,
+`region_tablespace_count=2`, `automatic_rebalance_executed=false`,
+`shard_movement_executed=false`, `worker_placement_enforced=false`, and
+`multi_region_failover_exercised=false`. This does not claim key rewrites. It
+does not claim foreign-key compatibility migration, does not claim production
+tablespace creation, does not claim operator reconciliation, does not claim
+worker-level shard placement enforcement, does not claim automatic rebalance,
+does not claim shard movement, and does not claim multi-region failover.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

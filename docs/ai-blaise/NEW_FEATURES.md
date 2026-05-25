@@ -8813,47 +8813,87 @@ alpha.
 
 ### S8: Locality-Prefixed PKs
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/regional_placement.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: Citus catalog (`pg_dist_partition`)
 
-**Summary**: Defines region and tenant ID inputs for locality-prefixed primary
-key policy.
+**Summary**: Validates that a regional table uses a locality key followed by the
+tenant key as the primary-key prefix, and that Citus has a distributed-table
+catalog row for the locality-key distribution column.
 
-**Current boundary**: The contract runner validates the planner surface; live
-key migration, foreign-key compatibility, and enforcement remain alpha.
+**Current production-ready boundary**: S8 is production-ready for the bounded
+read-only catalog guard only. The companion-rendered SQL checks `pg_index`,
+`pg_attribute`, and `pg_dist_partition` against a live Citus table and fails
+closed when the primary-key prefix or distribution catalog evidence is missing.
+It does not rewrite keys, migrate existing data, enforce foreign-key
+compatibility, move shards, rebalance workers, or prove multi-region request
+routing.
 
-**Citus comparison**: Vanilla Citus does not define region-prefixed key
-policy.
+Production evidence:
+
+- In-source: `FEATURE: S8` in `companion/src/regional_placement.rs` and
+  `companion/src/advanced_planner.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion regional_placement -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/regional-placement-live-smoke.sh`
+- Evidence markers: `regional_placement_live=passed`,
+  `locality_prefixed_pk_valid=true`, `citus_distribution_present=true`,
+  `automatic_rebalance_executed=false`, and `shard_movement_executed=false`
+
+**Citus comparison**: Vanilla Citus can distribute by a chosen column, but it
+does not define this overlay locality-prefix admission guard.
 
 **References**:
 
-- In-source: `FEATURE: S8` in `companion/src/advanced_planner.rs`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- In-source: `FEATURE: S8` in `companion/src/regional_placement.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/regional-placement-live-smoke.sh`
 
 ### S12: Tablespaces By Region
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/regional_placement.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: PostgreSQL tablespace catalog
 
-**Summary**: Records region and tablespace inputs for regional placement
-policy.
+**Summary**: Validates explicit region-to-table/tablespace mappings against
+live PostgreSQL catalog rows so regional placement policy has a concrete storage
+boundary before higher-level reconciliation is enabled.
 
-**Current boundary**: Contract validation is complete; tablespace creation,
-operator reconciliation, and placement enforcement remain alpha.
+**Current production-ready boundary**: S12 is production-ready for the bounded
+read-only catalog guard only. The live smoke creates real PostgreSQL
+tablespaces, creates regional tables in those tablespaces, and the
+companion-rendered SQL verifies the mappings through `pg_class` and
+`pg_tablespace`. It does not create tablespaces in production clusters,
+reconcile Kubernetes or operator state, enforce worker-level shard placement,
+move shards, rebalance workers, or prove multi-region failover.
 
-**Citus comparison**: Vanilla Citus does not reconcile region tablespace
-intent.
+Production evidence:
+
+- In-source: `FEATURE: S12` in `companion/src/regional_placement.rs` and
+  `companion/src/advanced_planner.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion regional_placement -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/regional-placement-live-smoke.sh`
+- Evidence markers: `region_tablespace_mappings_valid=true`,
+  `region_tablespace_count=2`, `worker_placement_enforced=false`, and
+  `multi_region_failover_exercised=false`
+
+**Citus comparison**: Vanilla Citus does not reconcile this overlay
+region-to-tablespace intent.
 
 **References**:
 
-- In-source: `FEATURE: S12` in `companion/src/advanced_planner.rs`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- In-source: `FEATURE: S12` in `companion/src/regional_placement.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/regional-placement-live-smoke.sh`
 
 ### Sec7: External Secrets Integration
 

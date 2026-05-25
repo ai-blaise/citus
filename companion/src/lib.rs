@@ -21,6 +21,7 @@ pub mod ops_contracts;
 pub mod plan_freeze;
 pub mod plan_runtime;
 pub mod queue;
+pub mod regional_placement;
 pub mod replication_conflict;
 pub mod router_assist;
 pub mod runtime_depth_a;
@@ -123,6 +124,12 @@ pub use queue::{
     canonical_queue_runtime_report, DurableQueueRuntime, QueueAckOutcome, QueueEnqueueOutcome,
     QueueLeaseBatch, QueueMessage, QueueMessageState, QueueRetryOutcome, QueueRuntimeConfig,
     QueueRuntimeError, QueueRuntimeReport, QueueRuntimeSnapshot, QueueSqlPlan,
+};
+pub use regional_placement::{
+    canonical_regional_placement_fail_closed_checks, canonical_regional_placement_plan,
+    canonical_regional_placement_report, canonical_regional_placement_sql_plan,
+    LocalityPrefixedPrimaryKey, RegionTablespaceMapping, RegionalPlacementError,
+    RegionalPlacementPlan, RegionalPlacementReport, RegionalPlacementSqlPlan,
 };
 pub use replication_conflict::{
     canonical_conflict_cases, canonical_conflict_policy, canonical_replication_conflict_report,

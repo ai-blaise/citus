@@ -107,6 +107,7 @@ TXN_STATUS_NETWORKED_RAFT_SMOKE = ROOT / "ci/ai-blaise/txn-status-networked-raft
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
+REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -616,6 +617,58 @@ for phrase in (
 ):
     if compact(phrase) not in r12_truth:
         fail(f"R12 temperature ranking production boundary missing truth phrase: {phrase}")
+
+regional_section = feature_section(docs, "S8") + "\n" + feature_section(docs, "S12")
+regional_smoke = read(REGIONAL_PLACEMENT_LIVE_SMOKE)
+regional_truth = compact(
+    regional_section
+    + "\n"
+    + audit
+    + "\n"
+    + regional_smoke
+    + "\n"
+    + read(ROOT / "companion/src/regional_placement.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(COMPANION_WORKFLOW)
+)
+for feature_id in ("S8", "S12"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} regional placement catalog guard must be production-ready after live Citus/PostgreSQL evidence")
+for phrase in (
+    "companion/src/regional_placement.rs",
+    "run-regional-placement-canonical",
+    "run-regional-placement-sql-canonical",
+    "regional-placement-live-smoke.sh",
+    "CREATE TABLESPACE ai_blaise_us_east_1",
+    "CREATE TABLESPACE ai_blaise_eu_west_1",
+    "create_distributed_table('public.locality_orders', 'locality_key')",
+    "FROM pg_index i",
+    "FROM pg_dist_partition",
+    "JOIN pg_tablespace spc",
+    "regional_placement_live=passed",
+    "locality_prefixed_pk_valid=true",
+    "citus_distribution_present=true",
+    "region_tablespace_mappings_valid=true",
+    "region_tablespace_count=2",
+    "automatic_rebalance_executed=false",
+    "shard_movement_executed=false",
+    "worker_placement_enforced=false",
+    "multi_region_failover_exercised=false",
+    "does not claim key rewrites",
+    "does not claim foreign-key compatibility migration",
+    "does not claim production tablespace creation",
+    "does not claim operator reconciliation",
+    "does not claim worker-level shard placement enforcement",
+    "does not claim automatic rebalance",
+    "does not claim shard movement",
+    "does not claim multi-region failover",
+):
+    if compact(phrase) not in regional_truth:
+        fail(f"S8/S12 regional placement production boundary missing truth phrase: {phrase}")
 
 branch_lifecycle_makefile = read(MAKEFILE)
 for phrase in (
