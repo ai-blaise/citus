@@ -46,6 +46,7 @@ use ai_blaise_citus_companion::{
     canonical_advanced_planner_execution_report, canonical_advanced_planner_runtime_report,
     canonical_bulk_distsql_report, canonical_bulk_distsql_sql_plan, canonical_clone_node_report,
     canonical_clone_node_sql_plan, canonical_cohabit_detection_report,
+    canonical_columnar_tiering_report, canonical_columnar_tiering_sql_plan,
     canonical_domain_contracts_report, canonical_extension_catalog_execution_report,
     canonical_fdw_credential_rotation_report, canonical_fdw_credential_rotation_sql_plan,
     canonical_operations_readiness_report, canonical_plan_runtime_report,
@@ -74,6 +75,12 @@ fn main() {
         }
         [command] if command == "run-advanced-planner-runtime-canonical" => {
             run_advanced_planner_runtime_canonical();
+        }
+        [command] if command == "run-columnar-tiering-canonical" => {
+            run_columnar_tiering_canonical();
+        }
+        [command] if command == "run-columnar-tiering-sql-canonical" => {
+            run_columnar_tiering_sql_canonical();
         }
         [command] if command == "run-fdw-credential-rotation-canonical" => {
             run_fdw_credential_rotation_canonical();
@@ -213,6 +220,46 @@ fn run_advanced_planner_runtime_canonical() {
         report.deterministic_boundaries,
         report.research_guard_boundaries,
     );
+}
+
+fn run_columnar_tiering_canonical() {
+    let report = canonical_columnar_tiering_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: columnar tiering report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_ids\thot_table\tcolumnar_table\tdistribution_column\tshard_count\texpected_rows\texpected_total\tmin_worker_placements\tstatements\tjoins_citus_catalog\tchecks_columnar_access_method\tchecks_non_hypertable\tmutating_sql\tfail_closed_checks\tcost_model_selection_exercised\tautomatic_tier_movement_executed\tworkload_routing_exercised\tkubernetes_traffic_exercised"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_ids.join(","),
+        report.hot_table,
+        report.columnar_table,
+        report.distribution_column,
+        report.shard_count,
+        report.expected_rows,
+        report.expected_total,
+        report.min_worker_placements,
+        report.statement_count,
+        report.joins_citus_catalog,
+        report.checks_columnar_access_method,
+        report.checks_non_hypertable,
+        report.mutating_sql,
+        report.fail_closed_checks,
+        report.cost_model_selection_exercised,
+        report.automatic_tier_movement_executed,
+        report.workload_routing_exercised,
+        report.kubernetes_traffic_exercised,
+    );
+}
+
+fn run_columnar_tiering_sql_canonical() {
+    let sql_plan = canonical_columnar_tiering_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: columnar tiering SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
 }
 
 fn run_fdw_credential_rotation_canonical() {
@@ -707,7 +754,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-regional-row-placement-canonical|run-regional-row-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-clone-node-canonical|run-clone-node-setup-sql-canonical|run-clone-node-promote-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-columnar-tiering-canonical|run-columnar-tiering-sql-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-regional-row-placement-canonical|run-regional-row-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-clone-node-canonical|run-clone-node-setup-sql-canonical|run-clone-node-promote-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

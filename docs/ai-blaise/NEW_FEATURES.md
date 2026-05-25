@@ -8586,25 +8586,47 @@ rendered plan uses a psql secret variable with `plan_secret_literals=false`.
 
 ### L7: Citus Columnar Analytical Path
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/columnar_tiering.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
-**Bundled extension dep**: none
+**Bundled extension dep**: `citus_columnar`
 
-**Summary**: Captures the table and columnar-policy inputs for routing
-analytical work toward columnar storage.
+**Summary**: Provides a bounded live Citus columnar analytical path: the
+companion renders a read-only catalog verification plan, and the VM smoke proves
+a distributed `USING columnar` table executes through Citus with a `ColumnarScan`.
 
-**Current boundary**: The contract runner validates planner intent only; live
-columnar conversion, cost model selection, and workload routing remain alpha.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/columnar-tiering-live-smoke.sh`
+starts a real Citus coordinator and worker from the cohabitation image, installs
+`citus` and `citus_columnar` on both nodes, creates `public.columnar_orders`
+with `USING columnar`, calls `create_distributed_table('public.columnar_orders',
+'tenant_id', shard_count => 4)`, inserts 12 rows, and executes the
+companion-rendered SQL from `run-columnar-tiering-sql-canonical`. The smoke
+requires `l7_columnar_access_method=true`,
+`l7_distributed_columnar_table=true`, `l7_columnar_query_rows=12`,
+`l7_columnar_query_total=3024`, `l7_citus_custom_scan_executed=true`, and
+`l7_columnar_scan_executed=true` from a real `EXPLAIN` containing Citus adaptive
+execution and `ColumnarScan`.
 
-**Citus comparison**: Vanilla Citus has columnar storage but not this overlay
-tiering contract.
+**Current production-ready boundary**: L7 is production-ready only for this
+bounded live Citus columnar read path: creating a distributed columnar table,
+verifying Citus catalog placement, preserving row results, and executing an
+aggregate through `ColumnarScan`. Cost-model tier selection,
+automatic hot/warm/cold movement, workload-routing rewrites, cross-tier planner
+rewrites, background schedulers, object-store cold reads, and Kubernetes traffic
+remain outside this evidence boundary.
+
+**Citus comparison**: Vanilla Citus has columnar storage; this overlay adds a
+machine-checked production boundary for the ai-blaise tiering contract.
 
 **References**:
 
 - In-source: `FEATURE: L7` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: L7` in `companion/src/columnar_tiering.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-sql-canonical`
+- CI: `ci/ai-blaise/columnar-tiering-live-smoke.sh`
 
 ### L10: Cross-Tier Query Planner
 
@@ -8799,45 +8821,79 @@ restore, or client traffic recovery.
 
 ### R3: Columnstore-On-Worker Policy
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/columnar_tiering.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
-**Bundled extension dep**: none
+**Bundled extension dep**: `citus_columnar`
 
-**Summary**: Defines table and age-threshold inputs for worker-local
-columnstore policy.
+**Summary**: Verifies that the columnstore policy reaches a live Citus worker:
+worker-local access method and row preservation are checked directly against the
+worker after distributed columnar writes.
 
-**Current boundary**: Contract execution proves the policy shape; worker
-storage transitions and read-path verification remain alpha.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/columnar-tiering-live-smoke.sh`
+starts a real Citus coordinator plus worker, creates a distributed
+`public.columnar_orders` table with `USING columnar`, and then connects directly
+to the worker container. The worker checks require
+`r3_worker_columnstore_policy_live=true`, `r3_worker_access_method=columnar`, and
+`r3_worker_columnar_rows_preserved=true` with details `rows=12 total=3024`.
 
-**Citus comparison**: Vanilla Citus does not define this worker tiering policy.
+**Current production-ready boundary**: R3 is production-ready only for bounded
+worker-local verification that a Citus distributed columnar table is visible on
+the worker with the `columnar` access method and preserved rows. Automatic
+policy scheduling, age-threshold telemetry collection, tier movement,
+rebalancing, cost-based placement, and Kubernetes/operator orchestration remain
+outside this evidence boundary.
+
+**Citus comparison**: Vanilla Citus exposes columnar storage, but it does not
+define this ai-blaise worker tiering policy or its fail-closed evidence markers.
 
 **References**:
 
 - In-source: `FEATURE: R3` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: R3` in `companion/src/columnar_tiering.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-sql-canonical`
+- CI: `ci/ai-blaise/columnar-tiering-live-smoke.sh`
 
 ### R8: Non-Hypertable Cold Columnar Path
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/columnar_tiering.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: partial
-**Bundled extension dep**: none
+**Bundled extension dep**: `citus_columnar`
 
-**Summary**: Captures the table and tier inputs for cold columnar policy on
-non-hypertable relations.
+**Summary**: Proves the cold columnar path for ordinary non-hypertable
+relations by checking a live Citus columnar table is not registered as a
+Timescale hypertable.
 
-**Current boundary**: The contract runner validates intent; live cold-tier
-movement and query-path proof remain alpha.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/columnar-tiering-live-smoke.sh`
+creates the same live distributed `public.columnar_orders` table and executes
+`run-columnar-tiering-sql-canonical`, whose SQL checks `pg_am`, Citus
+`pg_dist_*` catalogs, and `_timescaledb_catalog.hypertable` when that catalog is
+present. The smoke requires `r8_non_hypertable_cold_columnar_path=true` while
+also requiring the columnar table query to preserve 12 rows and total 3024.
 
-**Citus comparison**: Vanilla Citus does not define this cold-tier policy.
+**Current production-ready boundary**: R8 is production-ready only for bounded
+live verification that a normal, non-hypertable Citus table can use the
+`columnar` access method and remain queryable through the distributed read path.
+Live cold-tier movement, background archival, object-store handoff, automatic
+hot-to-cold migration, hypertable conversion, and Kubernetes traffic remain
+outside this evidence boundary.
+
+**Citus comparison**: Vanilla Citus has columnar storage, but it does not define
+this non-hypertable cold-tier policy boundary.
 
 **References**:
 
 - In-source: `FEATURE: R8` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: R8` in `companion/src/columnar_tiering.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-sql-canonical`
+- CI: `ci/ai-blaise/columnar-tiering-live-smoke.sh`
 
 ### R12: Per-Shard Temperature Ranking
 

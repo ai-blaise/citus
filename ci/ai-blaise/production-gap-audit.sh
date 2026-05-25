@@ -111,6 +111,7 @@ TXN_STATUS_NETWORKED_RAFT_SMOKE = ROOT / "ci/ai-blaise/txn-status-networked-raft
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
+COLUMNAR_TIERING_LIVE_SMOKE = ROOT / "ci/ai-blaise/columnar-tiering-live-smoke.sh"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 REGIONAL_ROW_PLACEMENT = ROOT / "companion/src/regional_row_placement.rs"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
@@ -626,6 +627,71 @@ for phrase in (
 ):
     if compact(phrase) not in r12_truth:
         fail(f"R12 temperature ranking production boundary missing truth phrase: {phrase}")
+
+columnar_tiering_truth = compact(
+    feature_section(docs, "L7")
+    + "\n"
+    + feature_section(docs, "R3")
+    + "\n"
+    + feature_section(docs, "R8")
+    + "\n"
+    + audit
+    + "\n"
+    + read(ROOT / "companion/src/columnar_tiering.rs")
+    + "\n"
+    + read(COLUMNAR_TIERING_LIVE_SMOKE)
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(COMPANION_WORKFLOW)
+)
+for feature_id in ("L7", "R3", "R8"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready after live Citus columnar tiering evidence")
+if status_by_id.get("L10") != "alpha":
+    fail("L10 must remain alpha until cross-tier query rewrite/routing execution is live-proven")
+for phrase in (
+    "companion/src/columnar_tiering.rs",
+    "run-columnar-tiering-canonical",
+    "run-columnar-tiering-sql-canonical",
+    "columnar-tiering-live-smoke.sh",
+    "CREATE EXTENSION IF NOT EXISTS citus_columnar",
+    "USING columnar",
+    "create_distributed_table('public.columnar_orders', 'tenant_id', shard_count => 4)",
+    "pg_dist_partition",
+    "pg_dist_shard",
+    "pg_dist_placement",
+    "pg_am",
+    "_timescaledb_catalog.hypertable",
+    "Custom Scan (Citus",
+    "ColumnarScan",
+    "columnar_tiering_live=passed",
+    "l7_distributed_columnar_table=true",
+    "l7_columnar_access_method=true",
+    "l7_columnar_query_rows=12",
+    "l7_columnar_query_total=3024",
+    "l7_citus_custom_scan_executed=true",
+    "l7_columnar_scan_executed=true",
+    "r3_worker_columnstore_policy_live=true",
+    "r3_worker_access_method=columnar",
+    "r8_non_hypertable_cold_columnar_path=true",
+    "cost_model_selection_exercised=false",
+    "automatic_tier_movement_executed=false",
+    "workload_routing_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "cost-model tier selection",
+    "automatic tier movement",
+    "workload-routing rewrites",
+    "object-store cold reads",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in columnar_tiering_truth:
+        fail(f"columnar tiering production boundary missing truth phrase: {phrase}")
+for phrase in ("columnar-tiering-live-smoke", "ci/ai-blaise/columnar-tiering-live-smoke.sh"):
+    if phrase not in read(MAKEFILE):
+        fail(f"Makefile.ai-blaise must wire the columnar tiering live smoke: {phrase}")
 
 regional_section = feature_section(docs, "S8") + "\n" + feature_section(docs, "S12")
 regional_smoke = read(REGIONAL_PLACEMENT_LIVE_SMOKE)

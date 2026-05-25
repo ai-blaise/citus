@@ -1092,6 +1092,30 @@ Rule 10 completion for this branch requires local and VM verification of:
   production evidence for pg_lake, object-store IO, Iceberg/Parquet/Delta file
   reads, Iceberg commits, DuckDB, MotherDuck, Citus planner integration,
   Kubernetes traffic, or benchmarked analytical performance.
+- `FEATURE: L7`, `FEATURE: R3`, and `FEATURE: R8` now have bounded live
+  Citus columnar evidence. `ci/ai-blaise/columnar-tiering-live-smoke.sh` starts
+  a real Citus coordinator and worker, installs `citus_columnar`, creates
+  `public.columnar_orders` with `USING columnar`, distributes it with
+  `create_distributed_table('public.columnar_orders', 'tenant_id', shard_count => 4)`,
+  inserts 12 rows totaling 3024, and executes the companion-rendered
+  `run-columnar-tiering-sql-canonical` guard. The smoke also checks a real
+  `EXPLAIN` for Citus adaptive execution plus `ColumnarScan` and connects
+  directly to the worker to require `r3_worker_access_method=columnar` and
+  preserved worker rows. The required live markers are
+  `columnar_tiering_live=passed`, `l7_distributed_columnar_table=true`,
+  `l7_columnar_access_method=true`, `l7_columnar_query_rows=12`,
+  `l7_columnar_query_total=3024`, `l7_citus_custom_scan_executed=true`,
+  `l7_columnar_scan_executed=true`, `r3_worker_columnstore_policy_live=true`,
+  `r3_worker_access_method=columnar`, and
+  `r8_non_hypertable_cold_columnar_path=true`. The claim is bounded to live
+  Citus columnar table creation, distributed read execution, worker-local
+  columnar verification, and non-hypertable catalog checks. It is not evidence
+  for cost-model tier selection, automatic tier movement, workload-routing
+  rewrites, background schedulers, object-store cold reads, hypertable
+  conversion, or Kubernetes traffic; the smoke requires
+  `cost_model_selection_exercised=false`,
+  `automatic_tier_movement_executed=false`, `workload_routing_exercised=false`,
+  and `kubernetes_traffic_exercised=false`.
 - `FEATURE: L8` now has separate bounded live logical-replication mirror
   materialization evidence. `ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
   starts PostgreSQL 17 with `wal_level=logical`, creates a `test_decoding` slot,
