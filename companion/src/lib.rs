@@ -24,6 +24,7 @@ pub mod plan_freeze;
 pub mod plan_runtime;
 pub mod queue;
 pub mod regional_placement;
+pub mod regional_row_placement;
 pub mod replication_conflict;
 pub mod router_assist;
 pub mod runtime_depth_a;
@@ -144,6 +145,12 @@ pub use regional_placement::{
     canonical_regional_placement_report, canonical_regional_placement_sql_plan,
     LocalityPrefixedPrimaryKey, RegionTablespaceMapping, RegionalPlacementError,
     RegionalPlacementPlan, RegionalPlacementReport, RegionalPlacementSqlPlan,
+};
+pub use regional_row_placement::{
+    canonical_regional_row_placement_fail_closed_checks, canonical_regional_row_placement_plan,
+    canonical_regional_row_placement_report, canonical_regional_row_placement_sql_plan,
+    RegionalRowPlacementError, RegionalRowPlacementKey, RegionalRowPlacementPlan,
+    RegionalRowPlacementReport, RegionalRowPlacementSqlPlan,
 };
 pub use replication_conflict::{
     canonical_conflict_cases, canonical_conflict_policy, canonical_replication_conflict_report,

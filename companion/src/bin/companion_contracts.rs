@@ -50,6 +50,7 @@ use ai_blaise_citus_companion::{
     canonical_fdw_credential_rotation_report, canonical_fdw_credential_rotation_sql_plan,
     canonical_operations_readiness_report, canonical_plan_runtime_report,
     canonical_regional_placement_report, canonical_regional_placement_sql_plan,
+    canonical_regional_row_placement_report, canonical_regional_row_placement_sql_plan,
     canonical_release_hardening_report, canonical_schema_drift_report,
     canonical_schema_drift_sql_plan, canonical_shard_split_report, canonical_shard_split_sql_plan,
     canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
@@ -109,6 +110,12 @@ fn main() {
         }
         [command] if command == "run-regional-placement-sql-canonical" => {
             run_regional_placement_sql_canonical();
+        }
+        [command] if command == "run-regional-row-placement-canonical" => {
+            run_regional_row_placement_canonical();
+        }
+        [command] if command == "run-regional-row-placement-sql-canonical" => {
+            run_regional_row_placement_sql_canonical();
         }
         [command] if command == "run-shard-temperature-ranking-canonical" => {
             run_shard_temperature_ranking_canonical();
@@ -429,6 +436,44 @@ fn run_regional_placement_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_regional_row_placement_canonical() {
+    let report = canonical_regional_row_placement_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: regional row placement report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\ttable_name\tlocality_column\tregional_keys\tstatements\tuses_isolate_tenant_to_new_shard\tuses_citus_move_shard_placement\trecords_row_preservation\trecords_worker_placement\trequires_worker_psql_variables\tfail_closed_checks\tautomatic_repartition_scheduler_exercised\tkubernetes_operator_reconciliation_exercised\tregional_traffic_router_exercised\tmulti_region_network_exercised\tregional_failover_exercised"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.table_name,
+        report.locality_column,
+        report.regional_key_count,
+        report.statement_count,
+        report.uses_isolate_tenant_to_new_shard,
+        report.uses_citus_move_shard_placement,
+        report.records_row_preservation,
+        report.records_worker_placement,
+        report.requires_worker_psql_variables,
+        report.fail_closed_checks,
+        report.automatic_repartition_scheduler_exercised,
+        report.kubernetes_operator_reconciliation_exercised,
+        report.regional_traffic_router_exercised,
+        report.multi_region_network_exercised,
+        report.regional_failover_exercised,
+    );
+}
+
+fn run_regional_row_placement_sql_canonical() {
+    let sql_plan = canonical_regional_row_placement_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: regional row placement SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_shard_temperature_ranking_canonical() {
     let report = canonical_shard_temperature_ranking_report().unwrap_or_else(|error| {
         eprintln!("companion-contracts: shard temperature report failed: {error}");
@@ -662,7 +707,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-clone-node-canonical|run-clone-node-setup-sql-canonical|run-clone-node-promote-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-regional-row-placement-canonical|run-regional-row-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-shard-split-canonical|run-shard-split-sql-canonical|run-clone-node-canonical|run-clone-node-setup-sql-canonical|run-clone-node-promote-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-bulk-distsql-canonical|run-bulk-distsql-sql-canonical|run-timescale-advanced-canonical|run-timescale-advanced-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

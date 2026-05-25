@@ -8603,36 +8603,56 @@ drift.
 
 ### MR3: Regional Row Placement
 
-**Overlay**: `companion/src/advanced_planner.rs`, `operator/src/crds/region.rs`,
+**Overlay**: `companion/src/advanced_planner.rs`,
+`companion/src/regional_row_placement.rs`, `operator/src/crds/region.rs`,
 `operator/src/reconcile/region.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines region-prefix and distribution-key inputs for regional row
-placement policy.
+placement policy, plus a bounded live multi-worker Citus execution path for
+explicit regional locality keys.
 
-**Current boundary**: Contract validation is executable; row placement
-enforcement, repartitioning, and regional admission control remain alpha. VM
-proof run `bash ci/ai-blaise/operator-multiregion-contracts-smoke.sh` exercises
-`RegionalRowPlacementPlan` against deterministic Region and ShardGroup inventory,
-requiring declared regions, distinct allowed regions, matching table and
-distribution key, sufficient replication factor, and
-`topology.kubernetes.io/region` spread with `max_skew=1`. The canonical output
-sets `live_k8s_exercised=false`; this is admission-plan evidence only, not live
-row movement or regional traffic enforcement.
+Production evidence: VM proof run
+`REQUIRE_DOCKER=1 bash ci/ai-blaise/regional-placement-live-smoke.sh` now runs
+two phases. The first phase preserves the S8/S12 locality-key and tablespace
+catalog proof. The MR3 phase starts a real Citus coordinator with two workers,
+creates `public.mr3_orders`, registers only the `us-east-1` worker before table
+creation, inserts `us-east-1:tenant-a` and `eu-west-1:tenant-b` rows, registers
+the `eu-west-1` worker, and executes companion-rendered SQL from
+`run-regional-row-placement-sql-canonical`. That SQL calls
+`isolate_tenant_to_new_shard` for both regional locality keys, calls
+`citus_move_shard_placement` to move the EU shard to the EU worker, and verifies
+`mr3_shards_isolated=true`, `mr3_citus_move_shard_placement_executed=true`,
+`mr3_worker_placement_enforced=true`, `mr3_matched_region_count=2`, and
+`mr3_rows_preserved=true` with row details `us-east-1:8:36` and
+`eu-west-1:8:360`.
+
+**Current production-ready boundary**: MR3 is production-ready only for bounded
+explicit-key regional row placement in a live multi-worker Citus deployment:
+locality-key shard isolation, shard placement movement to declared region
+workers, and row-preservation/catalog verification. It does not claim
+WAN/multi-region network execution, Kubernetes operator reconciliation,
+automatic repartition scheduling, regional admission control in Kubernetes,
+regional traffic routing, GeoIP routing, or regional failover. MR9 remains alpha
+for region survival and failover drills.
 
 **Citus comparison**: Vanilla Citus does not encode region in key policy.
 
 **References**:
 
 - In-source: `FEATURE: MR3` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: MR3` in `companion/src/regional_row_placement.rs`
 - In-source: `FEATURE: MR3` in `operator/src/crds/region.rs`
 - In-source: `FEATURE: MR3` in `operator/src/reconcile/region.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-row-placement-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-row-placement-sql-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI: `ci/ai-blaise/regional-placement-live-smoke.sh`
 
 ### MR6: Closed-Timestamp Time Travel
 

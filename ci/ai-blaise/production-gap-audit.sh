@@ -112,6 +112,7 @@ COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
+REGIONAL_ROW_PLACEMENT = ROOT / "companion/src/regional_row_placement.rs"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
 SHARD_SPLIT_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-split-live-smoke.sh"
 CLONE_NODE_LIVE_SMOKE = ROOT / "ci/ai-blaise/clone-node-live-smoke.sh"
@@ -246,9 +247,10 @@ entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in ("C6", "C7", "C8"):
     if status_by_id.get(feature_id) != "alpha":
         fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
-for feature_id in ("MR3", "MR9"):
-    if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} must remain alpha until live multi-region runtime evidence exists")
+if status_by_id.get("MR3") != "production-ready":
+    fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
+if status_by_id.get("MR9") != "alpha":
+    fail("MR9 must remain alpha until live multi-region failover/runtime evidence exists")
 
 audit_compact = compact(audit)
 
@@ -677,6 +679,48 @@ for phrase in (
     if compact(phrase) not in regional_truth:
         fail(f"S8/S12 regional placement production boundary missing truth phrase: {phrase}")
 
+mr3_truth = compact(
+    feature_section(docs, "MR3")
+    + "\n"
+    + audit
+    + "\n"
+    + regional_smoke
+    + "\n"
+    + read(REGIONAL_ROW_PLACEMENT)
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+)
+for phrase in (
+    "**Status**: production-ready",
+    "companion/src/regional_row_placement.rs",
+    "run-regional-row-placement-canonical",
+    "run-regional-row-placement-sql-canonical",
+    "regional-placement-live-smoke.sh",
+    "isolate_tenant_to_new_shard",
+    "citus_move_shard_placement",
+    "regional_row_placement_live=passed",
+    "mr3_live_multi_worker_citus=true",
+    "mr3_shards_isolated=true",
+    "mr3_citus_move_shard_placement_executed=true",
+    "mr3_worker_placement_enforced=true",
+    "mr3_matched_region_count=2",
+    "mr3_rows_preserved=true",
+    "mr3_multi_region_network_exercised=false",
+    "mr3_kubernetes_operator_reconciliation_exercised=false",
+    "WAN/multi-region network execution",
+    "Kubernetes operator reconciliation",
+    "automatic repartition scheduling",
+    "regional traffic routing",
+    "regional failover",
+    "MR9 remains alpha",
+    "gate-close:",
+    "regional-placement-live-smoke",
+):
+    if compact(phrase) not in mr3_truth:
+        fail(f"MR3 regional row-placement production boundary missing truth phrase: {phrase}")
+
 transaction_state_section = feature_section(docs, "T13") + "\n" + feature_section(docs, "T14")
 transaction_state_smoke = read(TRANSACTION_STATE_LIVE_SMOKE)
 transaction_state_truth = compact(
@@ -764,7 +808,7 @@ for phrase in (
     "live_k8s_exercised=false",
     "GeoIP pool routing",
     "regional failover",
-    "remain alpha",
+    "MR9 remains alpha",
 ):
     if compact(phrase) not in multiregion_truth:
         fail(f"Multi-region docs must preserve alpha evidence boundary: {phrase}")

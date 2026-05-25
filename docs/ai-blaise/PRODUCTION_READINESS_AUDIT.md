@@ -706,6 +706,19 @@ more production-ready than the artifacts justified.
   This does not claim Kubernetes clone orchestration, CSI snapshot based
   cloning, automatic capacity policy, WAN/cross-region clone operation,
   service/DNS retargeting, or production traffic cutover.
+- MR3 regional row placement is production-ready for the bounded live
+  multi-worker Citus explicit-key placement path. `regional-placement-live-smoke.sh`
+  now preserves the S8/S12 catalog/tablespace phase and adds a second phase that
+  starts a real coordinator plus `us-east-1` and `eu-west-1` workers, creates
+  `public.mr3_orders`, isolates `us-east-1:tenant-a` and `eu-west-1:tenant-b`
+  with `isolate_tenant_to_new_shard`, moves the EU shard with
+  `citus_move_shard_placement`, and proves `mr3_shards_isolated=true`,
+  `mr3_citus_move_shard_placement_executed=true`,
+  `mr3_worker_placement_enforced=true`, `mr3_matched_region_count=2`, and
+  `mr3_rows_preserved=true`. This does not claim WAN/multi-region network
+  execution, Kubernetes operator reconciliation, automatic repartition
+  scheduling, regional traffic routing, GeoIP routing, or regional failover;
+  MR9 remains alpha for survival drills.
 - T5 parallel commit transaction status is production-ready for the bounded
   networked transaction-status sidecar API and SQL contract.
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
