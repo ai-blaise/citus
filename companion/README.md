@@ -11,7 +11,7 @@ Rust `pgrx` companion extension for SQL surfaces that coordinate Citus,
 TimescaleDB, bundled extensions, and sidecars.
 
 Initial critical modules: `advanced_planner`, `auth`, `citus_timescale`, `columnar_tiering`,
-`db_doctor`, `domain_contracts`, `extension_catalog`, `geo_distributed`,
+`cross_tier_query`, `db_doctor`, `domain_contracts`, `extension_catalog`, `geo_distributed`,
 `graph_bridge`, `index_advisor`, `jsonschema_bridge`, `ledger`,
 `lsp_metadata`, `migration`, `observability`, `ops_contracts`, `plan_freeze`,
 `queue`, `replication_conflict`, `router_assist`, `runtime_depth_a`,
@@ -104,6 +104,14 @@ and `webhooks`.
   `columnar` access method visibility, and records explicit nonclaims for
   cost-model tier selection, automatic tier movement, workload routing, and
   Kubernetes traffic.
+- `canonical_cross_tier_query_report` and
+  `canonical_cross_tier_query_sql_plan` cover `FEATURE: L10`. The live VM
+  smoke `ci/ai-blaise/cross-tier-query-live-smoke.sh` creates a real Citus
+  coordinator and worker, executes a companion-rendered hot row plus warm/cold
+  columnar query over distributed tables, verifies Citus adaptive execution
+  with `ColumnarScan`, and records explicit nonclaims for automatic workload
+  routing, automatic query rewrites, cost-model tier selection, object-store
+  cold reads, and Kubernetes traffic.
 - `OperationsReadinessContract` for Helm install, wrapper, runbook, MCP,
   security, realtime client, io_uring, and protocol pipeline gates, including
   `FEATURE: D7`, `FEATURE: D8`, `FEATURE: D9`, `FEATURE: D10`,

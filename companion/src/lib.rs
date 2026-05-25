@@ -6,6 +6,7 @@ pub mod bulk_distsql;
 pub mod citus_timescale;
 pub mod clone_node;
 pub mod columnar_tiering;
+pub mod cross_tier_query;
 pub mod db_doctor;
 pub mod domain_contracts;
 pub mod extension_catalog;
@@ -70,6 +71,11 @@ pub use columnar_tiering::{
     canonical_columnar_tiering_fail_closed_checks, canonical_columnar_tiering_plan,
     canonical_columnar_tiering_report, canonical_columnar_tiering_sql_plan, ColumnarTieringError,
     ColumnarTieringPlan, ColumnarTieringReport, ColumnarTieringSqlPlan,
+};
+pub use cross_tier_query::{
+    canonical_cross_tier_query_fail_closed_checks, canonical_cross_tier_query_plan,
+    canonical_cross_tier_query_report, canonical_cross_tier_query_sql_plan, CrossTierQueryError,
+    CrossTierQueryPlan, CrossTierQueryReport, CrossTierQuerySqlPlan,
 };
 pub use db_doctor::{
     CohabitPreflightPlan, DbDoctorError, DbDoctorPlan, DbDoctorReport, DbDoctorSqlPlan, DoctorRule,

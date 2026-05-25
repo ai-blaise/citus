@@ -1116,6 +1116,28 @@ Rule 10 completion for this branch requires local and VM verification of:
   `cost_model_selection_exercised=false`,
   `automatic_tier_movement_executed=false`, `workload_routing_exercised=false`,
   and `kubernetes_traffic_exercised=false`.
+- `FEATURE: L10` now has bounded live Citus cross-tier query evidence.
+  `ci/ai-blaise/cross-tier-query-live-smoke.sh` starts a real Citus
+  coordinator and worker, installs `citus_columnar`, creates one distributed hot
+  row table and two distributed columnar tables (`public.l10_warm_orders` and
+  `public.l10_cold_orders`), inserts deterministic rows, executes the
+  companion-rendered `run-cross-tier-query-sql-canonical` guard, and checks a
+  real `EXPLAIN` for Citus adaptive execution plus warm/cold `ColumnarScan`
+  nodes. Required markers include `cross_tier_query_live=passed`,
+  `l10_hot_tier_rows=4`, `l10_warm_tier_rows=4`, `l10_cold_tier_rows=4`,
+  `l10_cross_tier_rows=12`, `l10_cross_tier_total=6678`,
+  `l10_citus_custom_scan_executed=true`, and
+  `l10_columnar_scan_executed=true`. The production-ready claim is bounded to
+  companion-rendered read-only `UNION ALL` composition and rollup preservation
+  over live distributed row plus columnar tables. It is not evidence for
+  automatic workload routing, automatic arbitrary-SQL query rewrites,
+  cost-model tier selection, object-store cold reads, background tier movement,
+  or Kubernetes traffic; the smoke requires
+  `automatic_workload_routing_exercised=false`,
+  `automatic_query_rewrite_exercised=false`,
+  `cost_model_selection_exercised=false`,
+  `object_store_cold_read_exercised=false`, and
+  `kubernetes_traffic_exercised=false`.
 - `FEATURE: L8` now has separate bounded live logical-replication mirror
   materialization evidence. `ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
   starts PostgreSQL 17 with `wal_level=logical`, creates a `test_decoding` slot,

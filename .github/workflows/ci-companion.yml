@@ -28,6 +28,10 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-canonical
       - name: Run canonical columnar tiering SQL
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-columnar-tiering-sql-canonical
+      - name: Run canonical cross-tier query report
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-canonical
+      - name: Run canonical cross-tier query SQL
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-sql-canonical
       - name: Run canonical regional placement report
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-regional-placement-canonical
       - name: Run canonical regional placement SQL

@@ -112,6 +112,7 @@ COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 COLUMNAR_TIERING_LIVE_SMOKE = ROOT / "ci/ai-blaise/columnar-tiering-live-smoke.sh"
+CROSS_TIER_QUERY_LIVE_SMOKE = ROOT / "ci/ai-blaise/cross-tier-query-live-smoke.sh"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
 REGIONAL_ROW_PLACEMENT = ROOT / "companion/src/regional_row_placement.rs"
 TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
@@ -650,8 +651,6 @@ columnar_tiering_truth = compact(
 for feature_id in ("L7", "R3", "R8"):
     if status_by_id.get(feature_id) != "production-ready":
         fail(f"{feature_id} must be production-ready after live Citus columnar tiering evidence")
-if status_by_id.get("L10") != "alpha":
-    fail("L10 must remain alpha until cross-tier query rewrite/routing execution is live-proven")
 for phrase in (
     "companion/src/columnar_tiering.rs",
     "run-columnar-tiering-canonical",
@@ -692,6 +691,69 @@ for phrase in (
 for phrase in ("columnar-tiering-live-smoke", "ci/ai-blaise/columnar-tiering-live-smoke.sh"):
     if phrase not in read(MAKEFILE):
         fail(f"Makefile.ai-blaise must wire the columnar tiering live smoke: {phrase}")
+
+
+cross_tier_query_truth = compact(
+    feature_section(docs, "L10")
+    + "\n"
+    + audit
+    + "\n"
+    + read(ROOT / "companion/src/cross_tier_query.rs")
+    + "\n"
+    + read(CROSS_TIER_QUERY_LIVE_SMOKE)
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(COMPANION_WORKFLOW)
+)
+if status_by_id.get("L10") != "production-ready":
+    fail("L10 must be production-ready after live Citus cross-tier query execution evidence")
+for phrase in (
+    "companion/src/cross_tier_query.rs",
+    "run-cross-tier-query-canonical",
+    "run-cross-tier-query-sql-canonical",
+    "cross-tier-query-live-smoke.sh",
+    "CREATE EXTENSION IF NOT EXISTS citus_columnar",
+    "USING columnar",
+    "create_distributed_table('public.l10_hot_orders', 'tenant_id', shard_count => 4)",
+    "create_distributed_table('public.l10_warm_orders', 'tenant_id', shard_count => 4)",
+    "create_distributed_table('public.l10_cold_orders', 'tenant_id', shard_count => 4)",
+    "pg_dist_shard",
+    "pg_dist_placement",
+    "pg_am",
+    "UNION ALL",
+    "Custom Scan (Citus",
+    "ColumnarScan",
+    "cross_tier_query_live=passed",
+    "l10_hot_tier_rows=4",
+    "l10_warm_tier_rows=4",
+    "l10_cold_tier_rows=4",
+    "l10_cross_tier_rows=12",
+    "l10_cross_tier_total=6678",
+    "l10_citus_custom_scan_executed=true",
+    "l10_columnar_scan_executed=true",
+    "automatic_workload_routing_exercised=false",
+    "automatic_query_rewrite_exercised=false",
+    "cost_model_selection_exercised=false",
+    "object_store_cold_read_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "automatic workload routing",
+    "automatic query rewrites",
+    "cost-model tier selection",
+    "object-store cold reads",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in cross_tier_query_truth:
+        fail(f"L10 cross-tier query production boundary missing truth phrase: {phrase}")
+for phrase in ("cross-tier-query-live-smoke", "ci/ai-blaise/cross-tier-query-live-smoke.sh"):
+    if phrase not in read(MAKEFILE):
+        fail(f"Makefile.ai-blaise must wire the cross-tier query live smoke: {phrase}")
+if "run-cross-tier-query-canonical" not in read(COMPANION_WORKFLOW):
+    fail("ci-companion workflow must run the cross-tier query canonical report")
+if "run-cross-tier-query-sql-canonical" not in read(COMPANION_WORKFLOW):
+    fail("ci-companion workflow must run the cross-tier query SQL renderer")
 
 regional_section = feature_section(docs, "S8") + "\n" + feature_section(docs, "S12")
 regional_smoke = read(REGIONAL_PLACEMENT_LIVE_SMOKE)

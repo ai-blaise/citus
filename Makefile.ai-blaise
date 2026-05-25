@@ -14,6 +14,7 @@
 .PHONY: run-companion-transaction-state-canonical run-companion-transaction-state-sql-canonical transaction-state-live-smoke
 .PHONY: run-companion-bulk-distsql-canonical run-companion-bulk-distsql-sql-canonical bulk-distsql-live-smoke
 .PHONY: run-companion-columnar-tiering-canonical run-companion-columnar-tiering-sql-canonical columnar-tiering-live-smoke
+.PHONY: run-companion-cross-tier-query-canonical run-companion-cross-tier-query-sql-canonical cross-tier-query-live-smoke
 .PHONY: run-companion-timescale-advanced-canonical run-companion-timescale-advanced-sql-canonical timescale-advanced-live-smoke
 .PHONY: run-companion-shard-split-canonical run-companion-shard-split-sql-canonical shard-split-live-smoke
 .PHONY: sidecar-analytical-federation-catalog-live-smoke
@@ -88,6 +89,15 @@ run-companion-columnar-tiering-sql-canonical:
 
 columnar-tiering-live-smoke:
 	@REQUIRE_DOCKER=1 bash ci/ai-blaise/columnar-tiering-live-smoke.sh
+
+run-companion-cross-tier-query-canonical:
+	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-canonical
+
+run-companion-cross-tier-query-sql-canonical:
+	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-sql-canonical
+
+cross-tier-query-live-smoke:
+	@REQUIRE_DOCKER=1 bash ci/ai-blaise/cross-tier-query-live-smoke.sh
 
 run-companion-timescale-advanced-canonical:
 	cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-timescale-advanced-canonical
@@ -907,6 +917,7 @@ gate-close: coordinatorless-mx-live-smoke
 gate-close: pool-geoip-live-smoke
 gate-close: shard-temperature-ranking-live-smoke
 gate-close: columnar-tiering-live-smoke
+gate-close: cross-tier-query-live-smoke
 gate-close: regional-placement-live-smoke
 gate-close: bulk-distsql-live-smoke
 gate-close: timescale-advanced-live-smoke

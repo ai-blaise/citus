@@ -8630,25 +8630,51 @@ machine-checked production boundary for the ai-blaise tiering contract.
 
 ### L10: Cross-Tier Query Planner
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/advanced_planner.rs`, `companion/src/cross_tier_query.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `citus_columnar`
 
-**Summary**: Defines the hot, warm, and cold tier inputs expected by the HTAP
-planner contract.
+**Summary**: Executes a bounded hot/warm/cold query plan over live Citus tables:
+a hot row table plus warm and cold columnar tables, all distributed by the same
+tenant key.
 
-**Current boundary**: Deterministic contract execution proves the declared
-tiers; physical tier selection and query rewrites remain alpha.
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/cross-tier-query-live-smoke.sh`
+starts a real Citus coordinator and worker from the local cohabitation image,
+installs `citus` and `citus_columnar`, creates distributed `public.l10_hot_orders`,
+`public.l10_warm_orders`, and `public.l10_cold_orders`, inserts deterministic hot,
+warm, and cold rows, and executes the companion-rendered SQL from
+`run-cross-tier-query-sql-canonical`. The smoke requires
+`cross_tier_query_live=passed`, `l10_hot_tier_rows=4`, `l10_warm_tier_rows=4`,
+`l10_cold_tier_rows=4`, `l10_cross_tier_rows=12`, `l10_cross_tier_total=6678`,
+`l10_citus_custom_scan_executed=true`, and `l10_columnar_scan_executed=true`.
+The real `EXPLAIN` must contain Citus adaptive execution and two `ColumnarScan`
+entries for the warm and cold tiers.
 
-**Citus comparison**: Vanilla Citus does not combine hot, warm, and cold tiers
-through this overlay planner.
+**Current production-ready boundary**: L10 is production-ready only for this
+companion-rendered, read-only cross-tier SQL shape over live distributed Citus
+row plus columnar tables. It proves tier access-method validation, Citus shard
+placement catalog checks, `UNION ALL` tier composition, per-tier rollup
+preservation, and combined result preservation. It does not claim automatic
+workload routing, automatic query rewrites for arbitrary user SQL, cost-model
+tier selection, object-store cold reads, background tier movement, or Kubernetes
+traffic; the smoke requires `automatic_workload_routing_exercised=false`,
+`automatic_query_rewrite_exercised=false`, `cost_model_selection_exercised=false`,
+`object_store_cold_read_exercised=false`, and `kubernetes_traffic_exercised=false`.
+
+**Citus comparison**: Vanilla Citus does not provide this ai-blaise companion
+contract for combining declared hot, warm, and cold tiers with explicit evidence
+and nonclaim markers.
 
 **References**:
 
 - In-source: `FEATURE: L10` in `companion/src/advanced_planner.rs`
+- In-source: `FEATURE: L10` in `companion/src/cross_tier_query.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-canonical`
+- SQL: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-cross-tier-query-sql-canonical`
+- CI: `ci/ai-blaise/cross-tier-query-live-smoke.sh`
 
 ### M4: Schema Drift Detection
 
