@@ -23,6 +23,10 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
       - name: Run companion advanced planner smoke
         run: bash ci/ai-blaise/companion-advanced-planner-smoke.sh
+      - name: Run canonical shard temperature ranking report
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-canonical
+      - name: Run canonical shard temperature ranking SQL
+        run: cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-sql-canonical
       - name: Run FDW credential rotation live smoke
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/fdw-credential-rotation-live-smoke.sh
       - name: Run schema drift live smoke

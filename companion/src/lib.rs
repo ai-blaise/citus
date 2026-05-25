@@ -27,6 +27,7 @@ pub mod runtime_depth_a;
 pub mod schema_drift;
 pub mod schema_jobs;
 pub mod search_bridge;
+pub mod shard_temperature;
 pub mod tenants;
 pub mod toolkit_distributed;
 pub mod trace_context;
@@ -159,6 +160,12 @@ pub use schema_jobs::{
 pub use search_bridge::{
     HybridRankPlan, RerankerPlan, SearchBridgeError, SearchColumnPlan, SearchColumnRole,
     SearchIndexDistributedPlan, SearchSqlPlan,
+};
+pub use shard_temperature::{
+    canonical_shard_temperature_fail_closed_checks, canonical_shard_temperature_ranking_plan,
+    canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
+    ShardTemperatureError, ShardTemperatureRankingPlan, ShardTemperatureRankingReport,
+    ShardTemperatureSqlPlan,
 };
 pub use tenants::{
     TenantArchivePlan, TenantMovePlan, TenantOperationError, TenantQuotaPlan,

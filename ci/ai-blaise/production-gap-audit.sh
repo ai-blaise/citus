@@ -106,6 +106,7 @@ SIDECAR_HLC_SMOKE = ROOT / "ci/ai-blaise/sidecar-hlc-smoke.sh"
 TXN_STATUS_NETWORKED_RAFT_SMOKE = ROOT / "ci/ai-blaise/txn-status-networked-raft-smoke.sh"
 COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
+SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -568,6 +569,54 @@ for phrase in (
 ):
     if compact(phrase) not in r2_truth:
         fail(f"R2 scale-to-zero production boundary missing truth phrase: {phrase}")
+r12_section = feature_section(docs, "R12")
+r12_smoke = read(SHARD_TEMPERATURE_RANKING_LIVE_SMOKE)
+r12_truth = compact(
+    r12_section
+    + "\n"
+    + audit
+    + "\n"
+    + r12_smoke
+    + "\n"
+    + read(ROOT / "companion/src/shard_temperature.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(COMPANION_WORKFLOW)
+)
+if status_by_id.get("R12") != "production-ready":
+    fail("R12 per-shard temperature ranking must be production-ready after live Citus catalog ranking evidence")
+for phrase in (
+    "companion/src/shard_temperature.rs",
+    "run-shard-temperature-ranking-canonical",
+    "run-shard-temperature-ranking-sql-canonical",
+    "shard-temperature-ranking-live-smoke.sh",
+    "CREATE EXTENSION IF NOT EXISTS citus",
+    "create_distributed_table('public.temperature_orders', 'tenant_id')",
+    "FROM pg_dist_shard ds",
+    "JOIN pg_class c ON c.oid = ds.logicalrelid",
+    "JOIN pg_namespace n ON n.oid = c.relnamespace",
+    "DENSE_RANK() OVER",
+    "shard_temperature_ranking_live=passed",
+    "citus_pg_dist_shard_joined=true",
+    "temperature_scores_ranked=true",
+    "hot_shards=1",
+    "warm_shards=1",
+    "cold_shards=1",
+    "automatic_tier_movement=false",
+    "coldtier_moves_executed=false",
+    "does not collect production telemetry",
+    "does not claim telemetry collection",
+    "does not claim automatic tier movement",
+    "does not claim cold-tier artifact moves",
+    "does not claim Citus placement changes",
+    "does not claim distributed planner integration",
+):
+    if compact(phrase) not in r12_truth:
+        fail(f"R12 temperature ranking production boundary missing truth phrase: {phrase}")
+
 branch_lifecycle_makefile = read(MAKEFILE)
 for phrase in (
     "operator-branch-lifecycle-smoke:",

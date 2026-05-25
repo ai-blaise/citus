@@ -1122,6 +1122,21 @@ then fixes the table and proves `clean_schema_zero_drift=true`. This does not
 claim remediation planning, DDL execution, operator apply behavior,
 cross-database inventory fanout, or automatic migration generation.
 
+R12 per-shard temperature ranking is production-ready only for a bounded
+read-only Citus catalog ranking surface.
+`REQUIRE_DOCKER=1 ci/ai-blaise/shard-temperature-ranking-live-smoke.sh` starts
+the local Citus+Timescale cohabitation image with `shared_preload_libraries`,
+creates `public.temperature_orders`, distributes it with Citus, inserts three
+validated `public.ai_blaise_shard_temperature_samples` rows from real
+`pg_dist_shard` shard ids, and executes the companion-rendered query. The smoke
+verifies `shard_temperature_ranking_live=passed`,
+`citus_pg_dist_shard_joined=true`, `temperature_scores_ranked=true`,
+`hot_shards=1`, `warm_shards=1`, `cold_shards=1`,
+`automatic_tier_movement=false`, and `coldtier_moves_executed=false`. This does
+not claim telemetry collection. It does not claim automatic tier movement, does
+not claim cold-tier artifact moves, does not claim Citus placement changes, and
+does not claim distributed planner integration.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

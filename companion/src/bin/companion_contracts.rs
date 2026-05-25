@@ -48,7 +48,9 @@ use ai_blaise_citus_companion::{
     canonical_extension_catalog_execution_report, canonical_fdw_credential_rotation_report,
     canonical_fdw_credential_rotation_sql_plan, canonical_operations_readiness_report,
     canonical_plan_runtime_report, canonical_release_hardening_report,
-    canonical_schema_drift_report, canonical_schema_drift_sql_plan, render_all_views,
+    canonical_schema_drift_report, canonical_schema_drift_sql_plan,
+    canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
+    render_all_views,
 };
 use std::env;
 use std::process;
@@ -97,6 +99,12 @@ fn main() {
         }
         [command] if command == "run-plan-runtime-canonical" => {
             run_plan_runtime_canonical();
+        }
+        [command] if command == "run-shard-temperature-ranking-canonical" => {
+            run_shard_temperature_ranking_canonical();
+        }
+        [command] if command == "run-shard-temperature-ranking-sql-canonical" => {
+            run_shard_temperature_ranking_sql_canonical();
         }
         [command] if command == "run-log-view-sql-canonical" => {
             run_log_view_sql_canonical();
@@ -344,6 +352,37 @@ fn run_plan_runtime_canonical() {
     );
 }
 
+fn run_shard_temperature_ranking_canonical() {
+    let report = canonical_shard_temperature_ranking_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: shard temperature report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_id\tmetrics_table\tstatements\tjoins_citus_catalog\tranks_shards\ttarget_tiers\tfail_closed_checks\tautomatic_tier_movement\tcoldtier_moves_executed"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_id,
+        report.metrics_table,
+        report.statement_count,
+        report.joins_citus_catalog,
+        report.ranks_shards,
+        report.target_tiers.join(","),
+        report.fail_closed_checks,
+        report.automatic_tier_movement,
+        report.coldtier_moves_executed,
+    );
+}
+
+fn run_shard_temperature_ranking_sql_canonical() {
+    let sql_plan = canonical_shard_temperature_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: shard temperature SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_log_view_sql_canonical() {
     let sql = render_all_views().unwrap_or_else(|error| {
         eprintln!("companion-contracts: log-view SQL render failed: {error}");
@@ -354,7 +393,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

@@ -8675,25 +8675,47 @@ movement and query-path proof remain alpha.
 
 ### R12: Per-Shard Temperature Ranking
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/shard_temperature.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: Citus catalog (`pg_dist_shard`)
 
-**Summary**: Defines shard ID and temperature-score inputs for ranking data
-movement candidates.
+**Summary**: Ranks distributed table shards by live Citus shard catalog rows and
+a validated metrics table so operators can identify hot, warm, and cold movement
+candidates without mutating placement.
 
-**Current boundary**: The contract is deterministic; collection of real heat
-signals and automatic tier movement remain alpha.
+**Current production-ready boundary**: R12 is production-ready for the bounded
+read-only ranking query emitted by the companion. The query joins real
+`pg_dist_shard`, `pg_class`, and `pg_namespace` rows to
+`public.ai_blaise_shard_temperature_samples`, validates required identifiers and
+threshold ordering fail-closed, computes deterministic temperature scores, and
+labels `hot`, `warm`, and `cold` target tiers. It does not collect production
+telemetry, execute automatic tier movement, invoke cold-tier moves, change Citus
+placements, or integrate with the distributed planner.
 
-**Citus comparison**: Vanilla Citus does not maintain shard temperature scores
-for this overlay policy.
+Production evidence:
+
+- In-source: `FEATURE: R12` in `companion/src/shard_temperature.rs` and
+  `companion/src/advanced_planner.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion shard_temperature -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/shard-temperature-ranking-live-smoke.sh`
+- Evidence markers: `shard_temperature_ranking_live=passed`,
+  `citus_pg_dist_shard_joined=true`, `temperature_scores_ranked=true`,
+  `automatic_tier_movement=false`, and `coldtier_moves_executed=false`
+
+**Citus comparison**: Vanilla Citus exposes shard metadata in `pg_dist_shard`,
+but it does not maintain this overlay temperature-score table or rank shards
+into hot/warm/cold movement candidates.
 
 **References**:
 
-- In-source: `FEATURE: R12` in `companion/src/advanced_planner.rs`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
+- In-source: `FEATURE: R12` in `companion/src/shard_temperature.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-shard-temperature-ranking-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/shard-temperature-ranking-live-smoke.sh`
 
 ### RT5: Phoenix-Channel-Compatible Realtime Client
 
