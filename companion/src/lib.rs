@@ -32,6 +32,7 @@ pub mod shard_temperature;
 pub mod tenants;
 pub mod toolkit_distributed;
 pub mod trace_context;
+pub mod transaction_state;
 pub mod txn_coord;
 pub mod vector;
 pub mod webhooks;
@@ -183,6 +184,12 @@ pub use toolkit_distributed::{
 };
 pub use trace_context::{
     render_projection_sql, CompanionTraceContextError, CompanionTraceContextPlan,
+};
+pub use transaction_state::{
+    canonical_transaction_state_fail_closed_checks, canonical_transaction_state_plan,
+    canonical_transaction_state_report, canonical_transaction_state_sql_plan,
+    DistributedTransactionStatePlan, DistributedTransactionStateReport,
+    DistributedTransactionStateSqlPlan, TransactionStateError,
 };
 pub use txn_coord::{
     canonical_txn_coord_request, canonical_txn_coord_routing_plan, TxnCoordDecision, TxnCoordError,

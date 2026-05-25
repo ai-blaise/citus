@@ -108,6 +108,7 @@ COMPANION_CONTRACTS = ROOT / "companion/src/bin/companion_contracts.rs"
 COMPANION_WORKFLOW = ROOT / ".github/workflows/ci-companion.yml"
 SHARD_TEMPERATURE_RANKING_LIVE_SMOKE = ROOT / "ci/ai-blaise/shard-temperature-ranking-live-smoke.sh"
 REGIONAL_PLACEMENT_LIVE_SMOKE = ROOT / "ci/ai-blaise/regional-placement-live-smoke.sh"
+TRANSACTION_STATE_LIVE_SMOKE = ROOT / "ci/ai-blaise/transaction-state-live-smoke.sh"
 BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
@@ -669,6 +670,62 @@ for phrase in (
 ):
     if compact(phrase) not in regional_truth:
         fail(f"S8/S12 regional placement production boundary missing truth phrase: {phrase}")
+
+transaction_state_section = feature_section(docs, "T13") + "\n" + feature_section(docs, "T14")
+transaction_state_smoke = read(TRANSACTION_STATE_LIVE_SMOKE)
+transaction_state_truth = compact(
+    transaction_state_section
+    + "\n"
+    + audit
+    + "\n"
+    + transaction_state_smoke
+    + "\n"
+    + read(ROOT / "companion/src/transaction_state.rs")
+    + "\n"
+    + read(COMPANION_CONTRACTS)
+    + "\n"
+    + read(MAKEFILE)
+    + "\n"
+    + read(COMPANION_WORKFLOW)
+)
+for feature_id in ("T13", "T14"):
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} transaction-state smoke must be production-ready after live Citus transaction evidence")
+for phrase in (
+    "companion/src/transaction_state.rs",
+    "run-transaction-state-canonical",
+    "run-transaction-state-sql-canonical",
+    "transaction-state-live-smoke.sh",
+    "DECLARE",
+    "NO SCROLL CURSOR",
+    "FETCH 2 FROM",
+    "SAVEPOINT",
+    "ROLLBACK TO SAVEPOINT",
+    "create_distributed_table('public.txn_state_orders', 'tenant_id')",
+    "Custom Scan (Citus Adaptive)",
+    "Task Count: 1",
+    "transaction_state_live=passed",
+    "distributed_cursor_declared=true",
+    "cursor_fetch_batches=2",
+    "cursor_rows_fetched=5",
+    "savepoint_rollback_verified=true",
+    "count_after_insert=6",
+    "count_after_rollback=5",
+    "final_count=5",
+    "citus_adaptive_plan_observed=true",
+    "citus_task_count_observed=1",
+    "coordinator_failover_exercised=false",
+    "multi_worker_cleanup_exercised=false",
+    "wire_protocol_portal_exercised=false",
+    "does not claim PostgreSQL wire protocol portal implementation",
+    "does not claim multi-worker cursor cleanup",
+    "does not claim cursor holdability across transactions",
+    "does not claim coordinator restart recovery",
+    "does not claim distributed deadlock handling",
+    "does not claim Kubernetes transaction-drain behavior",
+):
+    if compact(phrase) not in transaction_state_truth:
+        fail(f"T13/T14 transaction-state production boundary missing truth phrase: {phrase}")
 
 branch_lifecycle_makefile = read(MAKEFILE)
 for phrase in (

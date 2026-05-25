@@ -1154,6 +1154,23 @@ tablespace creation, does not claim operator reconciliation, does not claim
 worker-level shard placement enforcement, does not claim automatic rebalance,
 does not claim shard movement, and does not claim multi-region failover.
 
+T13/T14 transaction-state primitives are production-ready only for a bounded
+single-node Citus distributed-table SQL transaction smoke.
+`REQUIRE_DOCKER=1 ci/ai-blaise/transaction-state-live-smoke.sh` starts the local
+Citus+Timescale cohabitation image, creates and distributes
+`public.txn_state_orders`, inserts five rows, executes the companion-rendered
+transaction SQL, and verifies `transaction_state_live=passed`,
+`distributed_cursor_declared=true`, `cursor_fetch_batches=2`,
+`cursor_rows_fetched=5`, `savepoint_rollback_verified=true`,
+`count_after_insert=6`, `count_after_rollback=5`, `final_count=5`,
+`citus_adaptive_plan_observed=true`, `citus_task_count_observed=1`,
+`coordinator_failover_exercised=false`, `multi_worker_cleanup_exercised=false`,
+and `wire_protocol_portal_exercised=false`. This does not claim PostgreSQL wire
+protocol portal implementation. It does not claim multi-worker cursor cleanup,
+does not claim cursor holdability across transactions, does not claim
+coordinator restart recovery, does not claim distributed deadlock handling, and
+does not claim Kubernetes transaction-drain behavior.
+
 
 The audit found three classes of non-closure that must remain visible until
 they are replaced by measured evidence:

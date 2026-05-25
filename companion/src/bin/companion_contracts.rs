@@ -51,7 +51,7 @@ use ai_blaise_citus_companion::{
     canonical_regional_placement_sql_plan, canonical_release_hardening_report,
     canonical_schema_drift_report, canonical_schema_drift_sql_plan,
     canonical_shard_temperature_ranking_report, canonical_shard_temperature_sql_plan,
-    render_all_views,
+    canonical_transaction_state_report, canonical_transaction_state_sql_plan, render_all_views,
 };
 use std::env;
 use std::process;
@@ -112,6 +112,12 @@ fn main() {
         }
         [command] if command == "run-shard-temperature-ranking-sql-canonical" => {
             run_shard_temperature_ranking_sql_canonical();
+        }
+        [command] if command == "run-transaction-state-canonical" => {
+            run_transaction_state_canonical();
+        }
+        [command] if command == "run-transaction-state-sql-canonical" => {
+            run_transaction_state_sql_canonical();
         }
         [command] if command == "run-log-view-sql-canonical" => {
             run_log_view_sql_canonical();
@@ -424,6 +430,40 @@ fn run_shard_temperature_ranking_sql_canonical() {
     println!("{}", sql_plan.render_psql_script());
 }
 
+fn run_transaction_state_canonical() {
+    let report = canonical_transaction_state_report().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: transaction state report failed: {error}");
+        process::exit(1);
+    });
+
+    println!(
+        "feature_ids\ttable\tstatements\tcursor_declared\tcursor_fetches\tsavepoint_declared\trollback_to_savepoint\tcitus_explain_required\tfetch_batch_rows\tfail_closed_checks\tcoordinator_failover_exercised\tmulti_worker_cleanup_exercised"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        report.feature_ids.join(","),
+        report.table_name,
+        report.statement_count,
+        report.cursor_declared,
+        report.cursor_fetches,
+        report.savepoint_declared,
+        report.rollback_to_savepoint,
+        report.citus_explain_required,
+        report.fetch_batch_rows,
+        report.fail_closed_checks,
+        report.coordinator_failover_exercised,
+        report.multi_worker_cleanup_exercised,
+    );
+}
+
+fn run_transaction_state_sql_canonical() {
+    let sql_plan = canonical_transaction_state_sql_plan().unwrap_or_else(|error| {
+        eprintln!("companion-contracts: transaction state SQL render failed: {error}");
+        process::exit(1);
+    });
+    println!("{}", sql_plan.render_psql_script());
+}
+
 fn run_log_view_sql_canonical() {
     let sql = render_all_views().unwrap_or_else(|error| {
         eprintln!("companion-contracts: log-view SQL render failed: {error}");
@@ -434,7 +474,7 @@ fn run_log_view_sql_canonical() {
 
 fn print_usage() {
     println!(
-        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-log-view-sql-canonical]"
+        "usage: companion_contracts [run-advanced-planner-canonical|run-advanced-planner-runtime-canonical|run-fdw-credential-rotation-canonical|run-fdw-credential-rotation-sql-canonical|run-schema-drift-canonical|run-schema-drift-sql-canonical|run-extension-catalog-canonical|run-cohabit-detection-canonical|run-domain-contracts-canonical|run-operations-canonical|run-release-hardening-canonical|run-plan-runtime-canonical|run-regional-placement-canonical|run-regional-placement-sql-canonical|run-shard-temperature-ranking-canonical|run-shard-temperature-ranking-sql-canonical|run-transaction-state-canonical|run-transaction-state-sql-canonical|run-log-view-sql-canonical]"
     );
     println!("runs deterministic canonical companion contract execution reports, SQL, and TSV");
 }

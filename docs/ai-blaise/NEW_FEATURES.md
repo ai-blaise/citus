@@ -9223,51 +9223,91 @@ physical plan rewrites and worker execution remain alpha.
 
 ### T13: Distributed Cursors
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/transaction_state.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: Citus distributed table execution
 
-**Summary**: Defines the open-shard budget for distributed cursor state.
+**Summary**: Verifies bounded cursor lifecycle behavior over a live Citus
+distributed table, including ordered batched fetches and Citus adaptive-plan
+evidence for the table being queried.
 
-**Current boundary**: Contract validation and the runtime-boundary smoke are
-deterministic; cursor lifecycle, worker cleanup, and error recovery remain
-alpha.
+**Current production-ready boundary**: T13 is production-ready for the bounded
+single-node Citus distributed-table cursor smoke only. The companion-rendered
+SQL declares a `NO SCROLL` cursor, fetches the result in two batches, verifies
+all five ordered rows are returned, and records that EXPLAIN uses `Custom Scan
+(Citus Adaptive)` with `Task Count: 1`. It does not implement a PostgreSQL wire
+protocol portal layer, multi-worker cursor cleanup, cursor failover, cursor
+holdability across transactions, or coordinator restart recovery.
 
-**Citus comparison**: Vanilla Citus does not coordinate multi-shard cursor
-state this way.
+Production evidence:
+
+- In-source: `FEATURE: T13` in `companion/src/transaction_state.rs` and
+  `companion/src/advanced_planner.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion transaction_state -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/transaction-state-live-smoke.sh`
+- Evidence markers: `transaction_state_live=passed`,
+  `distributed_cursor_declared=true`, `cursor_fetch_batches=2`,
+  `cursor_rows_fetched=5`, `citus_adaptive_plan_observed=true`, and
+  `wire_protocol_portal_exercised=false`
+
+**Citus comparison**: Citus supports cursor behavior for supported distributed
+queries; this overlay adds a deterministic live smoke and state-budget evidence
+for the bounded distributed-table path.
 
 **References**:
 
-- In-source: `FEATURE: T13` in `companion/src/advanced_planner.rs`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
-- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
+- In-source: `FEATURE: T13` in `companion/src/transaction_state.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/transaction-state-live-smoke.sh`
 
 ### T14: Distributed Savepoints
 
-**Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Overlay**: `companion/src/transaction_state.rs`
+**Status**: production-ready
 **Since**: unreleased
-**Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Upstream Citus equivalent**: partial
+**Bundled extension dep**: Citus distributed table execution
 
-**Summary**: Defines the open-shard budget for distributed savepoint state.
+**Summary**: Verifies bounded savepoint rollback behavior inside a live Citus
+distributed-table transaction, paired with cursor continuity after rollback.
 
-**Current boundary**: The contract runner and runtime-boundary smoke validate
-state shape and fail-closed live-execution claims; savepoint propagation,
-rollback, and worker cleanup remain alpha.
+**Current production-ready boundary**: T14 is production-ready for the bounded
+single-node Citus distributed-table savepoint smoke only. The
+companion-rendered SQL creates a savepoint, inserts a sentinel row, observes
+`count_after_insert=6`, rolls back to the savepoint, verifies
+`count_after_rollback=5` and `final_count=5`, and continues fetching from the
+open cursor. It does not prove multi-worker rollback cleanup, prepared
+transaction recovery, distributed deadlock handling, coordinator failover, or
+Kubernetes transaction-drain behavior.
 
-**Citus comparison**: Vanilla Citus does not coordinate savepoints through
-this contract.
+Production evidence:
+
+- In-source: `FEATURE: T14` in `companion/src/transaction_state.rs` and
+  `companion/src/advanced_planner.rs`
+- Executable: `cargo test -p ai_blaise_citus_companion transaction_state -- --nocapture`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/transaction-state-live-smoke.sh`
+- Evidence markers: `savepoint_rollback_verified=true`,
+  `count_after_insert=6`, `count_after_rollback=5`, `final_count=5`,
+  `coordinator_failover_exercised=false`, and
+  `multi_worker_cleanup_exercised=false`
+
+**Citus comparison**: Citus supports some transaction semantics; this overlay
+adds a deterministic live savepoint rollback smoke and state-budget evidence for
+the bounded distributed-table path.
 
 **References**:
 
-- In-source: `FEATURE: T14` in `companion/src/advanced_planner.rs`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-runtime-canonical`
-- CI: `ci/ai-blaise/companion-advanced-planner-smoke.sh`
+- In-source: `FEATURE: T14` in `companion/src/transaction_state.rs`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-canonical`
+- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-transaction-state-sql-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/transaction-state-live-smoke.sh`
 
 ### TS10: Hierarchical CAGGs Distributed
 
