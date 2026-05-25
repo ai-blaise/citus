@@ -67,7 +67,8 @@ impl V2OperatorCatalogAcceptance {
         Self {
             branch: BranchSpec {
                 source_cluster: "prod-us-east".to_string(),
-                branch_type: BranchType::CopyOnWrite,
+                target_cluster: "branch-review".to_string(),
+                branch_type: BranchType::Snapshot,
                 storage: BranchStorageSpec {
                     size: "256Gi".to_string(),
                     storage_class: Some("fast-ssd".to_string()),
@@ -138,11 +139,14 @@ impl V2OperatorCatalogAcceptance {
                     cpu_millis: 250,
                     memory_mib: 512,
                 },
+                image: Some(
+                    "ghcr.io/ai-blaise/citus-sidecar-realtime:unreleased".to_string(),
+                ),
                 config_yaml: Some("subscriptions:\n  max_per_tenant: 1000".to_string()),
             },
             migration: MigrationSpec {
                 migration_type: MigrationType::Pgroll,
-                yaml: "operations:\n  - add_column:\n      table: users".to_string(),
+                yaml: "twoVersionInvariantPrecheck: companion_internal.verify_two_version_invariant()\nrollback:\n  operation: companion_internal.schema_job_rollback_to\n  targetPhase: write_only\noperations:\n  - addColumn:\n      table: public.users\n      column: display_name\n      sqlType: text".to_string(),
                 on_conflict: MigrationConflictAction::ManualReview,
             },
             conflict_policy: ConflictPolicySpec {
@@ -380,6 +384,8 @@ mod tests {
             .expect("canonical operator catalog plan");
 
         assert_eq!(plan.branch.source_cluster, "prod-us-east");
+        assert_eq!(plan.branch.target_cluster, "branch-review");
+        assert_eq!(plan.branch.branch_type, BranchType::Snapshot);
         assert!(plan.branch.is_scale_to_zero_enabled());
         assert_eq!(plan.tenant.schema_name, "tenant_a");
         assert_eq!(plan.region.tablespace_name, "ts_us_east_1");
@@ -387,6 +393,10 @@ mod tests {
         assert_eq!(plan.backup.retention_days, 30);
         assert_eq!(plan.vectorizer.destination.dimensions, 3_072);
         assert_eq!(plan.sidecar.replicas, 2);
+        assert_eq!(
+            plan.sidecar.image.as_deref(),
+            Some("ghcr.io/ai-blaise/citus-sidecar-realtime:unreleased")
+        );
         assert_eq!(plan.migration.migration_type, MigrationType::Pgroll);
         assert_eq!(plan.conflict_policy.class, ConflictClass::UpdateUpdate);
         assert_eq!(plan.federation.name, "warehouse");

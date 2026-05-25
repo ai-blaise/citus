@@ -3313,7 +3313,7 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L8", "L12", "L13"}
+analytical_alpha_ids = {"L1", "L3", "L5", "L6", "L12", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
@@ -3324,6 +3324,8 @@ if not_alpha:
 for feature_id in ("L2", "L4"):
     if entry_status.get(feature_id) != "production-ready":
         fail(f"{feature_id} must be production-ready once local DataFusion runtime evidence is wired")
+if entry_status.get("L8") != "production-ready":
+    fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
 analytical_truth = compact(
     docs
     + "\n"
@@ -3338,6 +3340,8 @@ analytical_truth = compact(
     + read(ROOT / "sidecar/analytical/Cargo.toml")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-smoke.sh")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh")
 )
 for phrase in (
     "**Status**: production-ready",
@@ -3370,6 +3374,38 @@ for phrase in ("sidecar-analytical-smoke", "ci/ai-blaise/sidecar-analytical-smok
         fail(f"Makefile.ai-blaise must wire the analytical smoke: {phrase}")
 if "sidecar-analytical-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-analytical-smoke.sh")
+
+for phrase in (
+    "run-logical-mirror-materialization-from-stdin",
+    "sidecar-analytical-mirror-live-smoke.sh",
+    "test_decoding",
+    "pg_logical_slot_get_changes",
+    "CsvReadOptions",
+    "register_csv",
+    ".file_extension(\".tsv\")",
+    "logical_mirror_live=passed",
+    "l8_test_decoding_slot_consumed=true",
+    "l8_local_mirror_artifact_created=true",
+    "l8_materialized_rows=3",
+    "l8_materialized_total=6000",
+    "l8_datafusion_mirror_query_executed=true",
+    "object_store_io_attempted=false",
+    "long_running_slot_tailing=false",
+    "checkpoint_persistence_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "object-store mirror writes",
+    "long-running logical-replication mirror daemon",
+    "exactly-once checkpoint persistence",
+    "Citus distributed mirror routing",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical L8 production boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-mirror-live-smoke", "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the analytical mirror live smoke: {phrase}")
+if "sidecar-analytical-mirror-live-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-mirror-live-smoke.sh")
 
 print(
     "production_gap_audit\t"

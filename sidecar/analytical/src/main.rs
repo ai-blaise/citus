@@ -9,11 +9,14 @@
 // FEATURE: L13
 
 use ai_blaise_citus_sidecar_analytical::{
-    canonical_analytical_execution_plan, canonical_analytical_runtime_report, AnalyticalEngine,
-    FederationTarget, LakehouseFormat,
+    canonical_analytical_execution_plan, canonical_analytical_runtime_report,
+    materialize_test_decoding_mirror_to_local_artifact, AnalyticalEngine, FederationTarget,
+    LakehouseFormat,
 };
 use ai_blaise_citus_sidecar_shared::run_probe_server;
 use std::env;
+use std::io::{self, Read};
+use std::path::PathBuf;
 use std::process;
 
 fn main() {
@@ -29,6 +32,11 @@ fn main() {
 
     if args == ["run-runtime-canonical"] {
         run_runtime_canonical();
+        return;
+    }
+
+    if args == ["run-logical-mirror-materialization-from-stdin"] {
+        run_logical_mirror_materialization_from_stdin();
         return;
     }
 
@@ -168,8 +176,52 @@ fn run_runtime_canonical() {
     println!("{}", row.join("\t"));
 }
 
+fn run_logical_mirror_materialization_from_stdin() {
+    let artifact_path = env::var("AI_BLAISE_ANALYTICAL_MIRROR_ARTIFACT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/ai-blaise-l8-mirror.tsv"));
+    let mut decoded_changes = String::new();
+    io::stdin()
+        .read_to_string(&mut decoded_changes)
+        .unwrap_or_else(|error| {
+            eprintln!("analytical: failed to read decoded logical stream from stdin: {error}");
+            process::exit(1);
+        });
+
+    let report =
+        materialize_test_decoding_mirror_to_local_artifact(&decoded_changes, &artifact_path)
+            .unwrap_or_else(|error| {
+                eprintln!("analytical: logical mirror materialization failed: {error}");
+                process::exit(1);
+            });
+
+    println!(
+        "feature_id\tmirror\tsource_table\tsource_plugin\tdecoded_change_lines\tmaterialized_rows\tmaterialized_total\tartifact_path\tartifact_bytes\tdatafusion_query_executed\tdatafusion_output_rows\tdatafusion_output_total\tlocal_mirror_artifact_created\tobject_store_io_attempted\tlong_running_slot_tailing\tcheckpoint_persistence_exercised\tkubernetes_traffic_exercised"
+    );
+    let row = vec![
+        report.feature_id.to_string(),
+        report.mirror_name,
+        report.source_table,
+        report.source_plugin,
+        report.decoded_change_lines.to_string(),
+        report.materialized_rows.to_string(),
+        report.materialized_total.to_string(),
+        report.artifact_path,
+        report.artifact_bytes.to_string(),
+        report.datafusion_query_executed.to_string(),
+        report.datafusion_output_rows.to_string(),
+        report.datafusion_output_total.to_string(),
+        report.local_mirror_artifact_created.to_string(),
+        report.object_store_io_attempted.to_string(),
+        report.long_running_slot_tailing.to_string(),
+        report.checkpoint_persistence_exercised.to_string(),
+        report.kubernetes_traffic_exercised.to_string(),
+    ];
+    println!("{}", row.join("\t"));
+}
+
 fn print_usage() {
-    println!("usage: analytical [serve|run-canonical|run-runtime-canonical]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
 }
 

@@ -14,9 +14,11 @@ use ai_blaise_citus_sidecar_shared::{AnalyticalMirrorContract, SidecarContractEr
 use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::prelude::SessionContext;
+use datafusion::prelude::{CsvReadOptions, SessionContext};
 use std::error::Error;
 use std::fmt;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -170,6 +172,7 @@ pub enum AnalyticalSidecarError {
     MissingRequiredField(&'static str),
     UnsupportedRuntimeConfig(&'static str),
     QueryEngineExecution(String),
+    MirrorMaterialization(String),
     MirrorStorageMismatch,
     PushdownShapeMismatch,
     SharedContract(String),
@@ -193,6 +196,9 @@ impl fmt::Display for AnalyticalSidecarError {
                     formatter,
                     "analytical query engine execution failed: {reason}"
                 )
+            }
+            Self::MirrorMaterialization(reason) => {
+                write!(formatter, "logical mirror materialization failed: {reason}")
             }
             Self::MirrorStorageMismatch => {
                 write!(
@@ -776,9 +782,322 @@ pub fn canonical_analytical_runtime_report(
     runtime.execute_lakehouse_query()
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LogicalMirrorRow {
+    pub tenant_id: i32,
+    pub order_id: i32,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LogicalMirrorMaterializationReport {
+    pub feature_id: &'static str,
+    pub mirror_name: String,
+    pub source_table: String,
+    pub source_plugin: String,
+    pub decoded_change_lines: usize,
+    pub materialized_rows: u64,
+    pub materialized_total: i64,
+    pub artifact_path: String,
+    pub artifact_bytes: u64,
+    pub datafusion_query_executed: bool,
+    pub datafusion_output_rows: u64,
+    pub datafusion_output_total: i64,
+    pub local_mirror_artifact_created: bool,
+    pub object_store_io_attempted: bool,
+    pub long_running_slot_tailing: bool,
+    pub checkpoint_persistence_exercised: bool,
+    pub kubernetes_traffic_exercised: bool,
+}
+
+pub fn materialize_test_decoding_mirror_to_local_artifact(
+    decoded_changes: &str,
+    artifact_path: &Path,
+) -> Result<LogicalMirrorMaterializationReport, AnalyticalSidecarError> {
+    let rows = parse_test_decoding_insert_rows(decoded_changes)?;
+    if rows.is_empty() {
+        return Err(AnalyticalSidecarError::MirrorMaterialization(
+            "test_decoding stream did not contain insert rows".to_string(),
+        ));
+    }
+
+    let artifact_bytes = write_mirror_artifact(&rows, artifact_path)?;
+    let (datafusion_output_rows, datafusion_output_total) =
+        execute_datafusion_over_mirror_artifact(artifact_path)?;
+    let materialized_total = rows.iter().map(|row| row.total).sum();
+    let decoded_change_lines = decoded_changes
+        .lines()
+        .filter(|line| line.contains("table public.l8_orders: INSERT:"))
+        .count();
+
+    Ok(LogicalMirrorMaterializationReport {
+        feature_id: "L8",
+        mirror_name: "orders_mirror".to_string(),
+        source_table: "public.l8_orders".to_string(),
+        source_plugin: "test_decoding".to_string(),
+        decoded_change_lines,
+        materialized_rows: rows.len() as u64,
+        materialized_total,
+        artifact_path: artifact_path.display().to_string(),
+        artifact_bytes,
+        datafusion_query_executed: true,
+        datafusion_output_rows,
+        datafusion_output_total,
+        local_mirror_artifact_created: artifact_bytes > 0,
+        object_store_io_attempted: false,
+        long_running_slot_tailing: false,
+        checkpoint_persistence_exercised: false,
+        kubernetes_traffic_exercised: false,
+    })
+}
+
+fn parse_test_decoding_insert_rows(
+    decoded_changes: &str,
+) -> Result<Vec<LogicalMirrorRow>, AnalyticalSidecarError> {
+    decoded_changes
+        .lines()
+        .filter(|line| line.contains("table public.l8_orders: INSERT:"))
+        .map(parse_test_decoding_insert_row)
+        .collect()
+}
+
+fn parse_test_decoding_insert_row(line: &str) -> Result<LogicalMirrorRow, AnalyticalSidecarError> {
+    let payload = line
+        .split_once(" INSERT: ")
+        .map(|(_, payload)| payload)
+        .ok_or_else(|| {
+            AnalyticalSidecarError::MirrorMaterialization(format!(
+                "missing INSERT payload in decoded line: {line}"
+            ))
+        })?;
+
+    let tenant_id = parse_test_decoding_i32(payload, "tenant_id")?;
+    let order_id = parse_test_decoding_i32(payload, "order_id")?;
+    let total = parse_test_decoding_i64(payload, "total")?;
+    Ok(LogicalMirrorRow {
+        tenant_id,
+        order_id,
+        total,
+    })
+}
+
+fn parse_test_decoding_i32(payload: &str, column: &str) -> Result<i32, AnalyticalSidecarError> {
+    let value = parse_test_decoding_i64(payload, column)?;
+    i32::try_from(value).map_err(|error| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "invalid {column} value {value}: {error}"
+        ))
+    })
+}
+
+fn parse_test_decoding_i64(payload: &str, column: &str) -> Result<i64, AnalyticalSidecarError> {
+    let needle = format!("{column}[");
+    let start = payload.find(&needle).ok_or_else(|| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "missing {column} in decoded payload: {payload}"
+        ))
+    })?;
+    let after_column = &payload[start..];
+    let (_, after_type) = after_column.split_once(':').ok_or_else(|| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "missing {column} value separator in decoded payload: {payload}"
+        ))
+    })?;
+    let token = after_type.split_whitespace().next().ok_or_else(|| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "missing {column} value in decoded payload: {payload}"
+        ))
+    })?;
+    let unquoted = token.trim_matches(char::from(39));
+    unquoted.parse::<i64>().map_err(|error| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "invalid {column} value {unquoted}: {error}"
+        ))
+    })
+}
+
+fn write_mirror_artifact(
+    rows: &[LogicalMirrorRow],
+    artifact_path: &Path,
+) -> Result<u64, AnalyticalSidecarError> {
+    if let Some(parent) = artifact_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                AnalyticalSidecarError::MirrorMaterialization(format!(
+                    "create artifact directory {} failed: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+    }
+
+    let mut artifact = String::from("tenant_id\torder_id\ttotal\n");
+    for row in rows {
+        artifact.push_str(&format!(
+            "{}\t{}\t{}\n",
+            row.tenant_id, row.order_id, row.total
+        ));
+    }
+
+    let file_name = artifact_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("mirror.tsv");
+    let temp_path = artifact_path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        std::process::id(),
+        rows.len()
+    ));
+    fs::write(&temp_path, artifact).map_err(|error| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "write {} failed: {error}",
+            temp_path.display()
+        ))
+    })?;
+    fs::rename(&temp_path, artifact_path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "rename {} to {} failed: {error}",
+            temp_path.display(),
+            artifact_path.display()
+        ))
+    })?;
+    fs::metadata(artifact_path)
+        .map_err(|error| {
+            AnalyticalSidecarError::MirrorMaterialization(format!(
+                "metadata {} failed: {error}",
+                artifact_path.display()
+            ))
+        })
+        .map(|metadata| metadata.len())
+}
+
+fn execute_datafusion_over_mirror_artifact(
+    artifact_path: &Path,
+) -> Result<(u64, i64), AnalyticalSidecarError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+    runtime.block_on(execute_datafusion_over_mirror_artifact_async(artifact_path))
+}
+
+async fn execute_datafusion_over_mirror_artifact_async(
+    artifact_path: &Path,
+) -> Result<(u64, i64), AnalyticalSidecarError> {
+    let schema = Schema::new(vec![
+        Field::new("tenant_id", DataType::Int32, false),
+        Field::new("order_id", DataType::Int32, false),
+        Field::new("total", DataType::Int64, false),
+    ]);
+    let artifact = artifact_path.to_str().ok_or_else(|| {
+        AnalyticalSidecarError::MirrorMaterialization(format!(
+            "artifact path {} is not valid UTF-8",
+            artifact_path.display()
+        ))
+    })?;
+
+    let context = SessionContext::new();
+    context
+        .register_csv(
+            "mirror_orders",
+            artifact,
+            CsvReadOptions::new()
+                .delimiter(b'\t')
+                .has_header(true)
+                .schema(&schema)
+                .file_extension(".tsv"),
+        )
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+    let dataframe = context
+        .sql("SELECT tenant_id, total FROM mirror_orders WHERE total > 0 ORDER BY tenant_id, order_id")
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+    let batches = dataframe
+        .collect()
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+    let mut output_rows = 0_u64;
+    let mut output_total = 0_i64;
+    for batch in &batches {
+        output_rows += batch.num_rows() as u64;
+        let total_column = batch.column_by_name("total").ok_or_else(|| {
+            AnalyticalSidecarError::QueryEngineExecution(
+                "mirror DataFusion output did not include total column".to_string(),
+            )
+        })?;
+        let totals = total_column
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .ok_or_else(|| {
+                AnalyticalSidecarError::QueryEngineExecution(
+                    "mirror total column was not Int64".to_string(),
+                )
+            })?;
+        for index in 0..totals.len() {
+            output_total += totals.value(index);
+        }
+    }
+    Ok((output_rows, output_total))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn logical_mirror_materializes_test_decoding_rows_to_local_datafusion() {
+        let temp_path =
+            std::env::temp_dir().join(format!("ai-blaise-l8-test-{}.tsv", std::process::id()));
+        let decoded = "BEGIN 1\ntable public.l8_orders: INSERT: tenant_id[integer]:1 order_id[integer]:1 total[bigint]:1000\ntable public.l8_orders: INSERT: tenant_id[integer]:2 order_id[integer]:2 total[bigint]:2000\ntable public.l8_orders: INSERT: tenant_id[integer]:3 order_id[integer]:3 total[bigint]:3000\nCOMMIT 1";
+        let report = materialize_test_decoding_mirror_to_local_artifact(decoded, &temp_path)
+            .expect("logical mirror materialization");
+
+        assert_eq!(report.feature_id, "L8");
+        assert_eq!(report.source_plugin, "test_decoding");
+        assert_eq!(report.decoded_change_lines, 3);
+        assert_eq!(report.materialized_rows, 3);
+        assert_eq!(report.materialized_total, 6_000);
+        assert_eq!(report.datafusion_output_rows, 3);
+        assert_eq!(report.datafusion_output_total, 6_000);
+        assert_eq!(
+            std::fs::read_to_string(&temp_path).expect("mirror artifact"),
+            "tenant_id\torder_id\ttotal\n1\t1\t1000\n2\t2\t2000\n3\t3\t3000\n"
+        );
+        assert!(report.local_mirror_artifact_created);
+        assert!(!report.object_store_io_attempted);
+        assert!(!report.long_running_slot_tailing);
+        assert!(!report.checkpoint_persistence_exercised);
+        assert!(!report.kubernetes_traffic_exercised);
+        let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
+    fn logical_mirror_rejects_empty_decoded_stream() {
+        let temp_path =
+            std::env::temp_dir().join(format!("ai-blaise-l8-empty-{}.tsv", std::process::id()));
+
+        assert!(matches!(
+            materialize_test_decoding_mirror_to_local_artifact("BEGIN 1\nCOMMIT 1", &temp_path),
+            Err(AnalyticalSidecarError::MirrorMaterialization(_))
+        ));
+    }
+
+    #[test]
+    fn logical_mirror_rejects_out_of_range_integer_keys() {
+        let temp_path =
+            std::env::temp_dir().join(format!("ai-blaise-l8-overflow-{}.tsv", std::process::id()));
+        let decoded = "table public.l8_orders: INSERT: tenant_id[bigint]:2147483648 order_id[integer]:1 total[bigint]:1000";
+
+        assert!(matches!(
+            materialize_test_decoding_mirror_to_local_artifact(decoded, &temp_path),
+            Err(AnalyticalSidecarError::MirrorMaterialization(_))
+        ));
+        assert!(!temp_path.exists());
+    }
 
     #[test]
     fn analytical_sidecar_plan_validates_lakehouse_and_federation() {

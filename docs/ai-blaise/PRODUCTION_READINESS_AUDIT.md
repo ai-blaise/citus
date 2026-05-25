@@ -1090,14 +1090,28 @@ Rule 10 completion for this branch requires local and VM verification of:
   the analytical loopback probe server health/readiness/metrics/drain path.
   This remains `external_io_attempted=false` and must not be cited as
   production evidence for pg_lake, object-store IO, Iceberg/Parquet/Delta file
-  reads, Iceberg commits, DuckDB, MotherDuck, logical-replication mirror
-  materialization, Citus planner integration, Kubernetes traffic, or
-  benchmarked analytical performance. `FEATURE: L1`, `FEATURE: L3`,
-  `FEATURE: L5`, `FEATURE: L6`, `FEATURE: L8`, `FEATURE: L12`, and
-  `FEATURE: L13` remain alpha.
-- Agentmemory checkpointing for this depth-B slice was unavailable on the VM
-  because `http://127.0.0.1:3911` refused connections; no memory files were
-  edited or erased.
+  reads, Iceberg commits, DuckDB, MotherDuck, Citus planner integration,
+  Kubernetes traffic, or benchmarked analytical performance.
+- `FEATURE: L8` now has separate bounded live logical-replication mirror
+  materialization evidence. `ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
+  starts PostgreSQL 17 with `wal_level=logical`, creates a `test_decoding` slot,
+  inserts rows into `public.l8_orders`, consumes `pg_logical_slot_get_changes`,
+  runs `run-logical-mirror-materialization-from-stdin`, writes a local TSV mirror
+  artifact, and verifies `logical_mirror_live=passed`,
+  `l8_test_decoding_slot_consumed=true`, `l8_materialized_rows=3`,
+  `l8_materialized_total=6000`, and `l8_datafusion_mirror_query_executed=true`.
+  The claim is bounded to local live logical decoding plus local TSV artifact
+  materialization and DataFusion `.tsv` reads:
+  `object_store_io_attempted=false`,
+  `long_running_slot_tailing=false`, `checkpoint_persistence_exercised=false`,
+  and `kubernetes_traffic_exercised=false` are required. It is not evidence for
+  object-store mirror writes, a long-running logical-replication mirror daemon,
+  exactly-once checkpoint persistence, Citus distributed mirror routing, or
+  Kubernetes traffic. `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`,
+  `FEATURE: L6`, `FEATURE: L12`, and `FEATURE: L13` remain alpha.
+- Agentmemory checkpointing for this slice used the scaleable-database-infra
+  service at `http://127.0.0.1:3911` and did not edit or erase the backing
+  memory file directly.
 
 ## Whole-Repo Production Readiness Audit
 

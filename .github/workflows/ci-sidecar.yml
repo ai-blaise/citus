@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - bootstrap-v2
 
 jobs:
   analytical:
@@ -25,6 +26,8 @@ jobs:
         run: cargo run -q -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical
       - name: Run analytical runtime smoke
         run: bash ci/ai-blaise/sidecar-analytical-smoke.sh
+      - name: Run analytical logical mirror live smoke
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh
 
   shared:
     runs-on: ubuntu-latest

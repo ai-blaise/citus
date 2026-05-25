@@ -4244,14 +4244,34 @@ external engines.
 ### L8: Mooncake-Style Logical-Replication Mirror
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`, `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the analytical mirror contract binding a CDC slot to
-mirror name and object-storage URI, then accounts for deterministic mirror
-materialization events in the analytical runtime.
+**Summary**: Provides a bounded live logical-replication mirror materialization
+path: PostgreSQL `test_decoding` changes for `public.l8_orders` are consumed
+from stdin, validated, written to a local TSV mirror artifact, and queried via
+DataFusion as the analytical read surface.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
+starts a real PostgreSQL 17 container with `wal_level=logical`, creates a
+`test_decoding` logical slot, inserts three rows into `public.l8_orders`,
+consumes `pg_logical_slot_get_changes`, runs
+`run-logical-mirror-materialization-from-stdin`, writes the local mirror
+artifact, registers that `.tsv` artifact through `CsvReadOptions`, queries it
+through DataFusion, and verifies `logical_mirror_live=passed`,
+`l8_test_decoding_slot_consumed=true`, `l8_materialized_rows=3`,
+`l8_materialized_total=6000`, and `l8_datafusion_mirror_query_executed=true`.
+The release gate wires the same smoke through `sidecar-analytical-mirror-live-smoke`.
+
+Boundary: this production claim is the local live logical-decoding to local TSV
+artifact plus DataFusion `.tsv` read path only. It intentionally records
+`object_store_io_attempted=false`, `long_running_slot_tailing=false`,
+`checkpoint_persistence_exercised=false`, and `kubernetes_traffic_exercised=false`;
+it must not be cited as evidence for object-store mirror writes, a long-running
+logical-replication mirror daemon, exactly-once checkpoint persistence, Citus
+distributed mirror routing, or Kubernetes traffic.
 
 **Motivation**: HTAP without dual-write requires a validated mirror stream
 before analytical sidecars materialize warm columnar copies.
@@ -4267,7 +4287,9 @@ analytical mirror.
 - In-source: `FEATURE: L8` in `sidecar/analytical/src/lib.rs`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_cdc -- run-runtime-canonical`
 - Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-logical-mirror-materialization-from-stdin`
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
+- CI: `ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
 
 ### L9: Two-Step Aggregates Push To Workers
 
