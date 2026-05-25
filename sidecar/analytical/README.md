@@ -26,11 +26,13 @@ Current implemented surface:
 - `canonical_analytical_runtime_report()`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-parquet-read-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-logical-mirror-materialization-from-stdin`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-duckdb-extension-catalog-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- run-federation-catalog-publication-canonical`
 - `cargo run -p ai_blaise_citus_sidecar_analytical -- serve`
 - `bash ci/ai-blaise/sidecar-analytical-smoke.sh`
+- `bash ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh`
 - `REQUIRE_DOCKER=1 bash ci/ai-blaise/sidecar-analytical-duckdb-extension-live-smoke.sh`
 - `bash ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh`
@@ -51,6 +53,21 @@ Current runtime executes a bounded local DataFusion query over an Arrow
 evidence only for `FEATURE: L2` and `FEATURE: L4` under that local in-process
 runtime boundary. The smoke also starts the loopback probe server and verifies
 health, readiness, metrics, and drain behavior.
+
+`FEATURE: L3` has separate bounded production evidence:
+`sidecar-analytical-parquet-read-smoke.sh` runs
+`run-local-parquet-read-canonical`, writes a real local Parquet file with
+`ArrowWriter`, registers that file through DataFusion `ParquetReadOptions`, and
+queries it with projection, filter, ordering, and limit. The smoke requires
+`parquet_lakehouse_read_live=passed`, `l3_local_parquet_file_created=true`,
+`l3_datafusion_parquet_read_executed=true`, `l3_source_rows=4`,
+`l3_source_total=5500`, `l3_datafusion_output_rows=2`,
+`l3_datafusion_output_total=3000`, and
+`evidence_boundary=local-datafusion-parquet-file-only`. This is production
+evidence only for local Parquet file materialization and local DataFusion
+Parquet reads; it does not cover Iceberg runtime reads, Delta runtime reads,
+object-store IO, pg_lake, MotherDuck, Citus planner integration, or Kubernetes
+traffic.
 
 `FEATURE: L8` has separate bounded production evidence:
 `sidecar-analytical-mirror-live-smoke.sh` starts a real PostgreSQL 17 container
@@ -81,8 +98,12 @@ with the generated artifact. The smoke requires
 `l6_local_catalog_artifact_created=true`, `l6_local_http_catalog_served=true`,
 and `evidence_boundary=local-federation-catalog-artifact-http-only`.
 
-`FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, and `FEATURE: L13`
-remain alpha. The L8 mirror path remains explicitly bounded:
+`FEATURE: L1`, `FEATURE: L5`, and `FEATURE: L13` remain alpha. The L3 local
+Parquet path remains explicitly bounded: `external_io_attempted=false`,
+`object_store_io_attempted=false`, `iceberg_runtime_exercised=false`,
+`delta_runtime_exercised=false`, `pg_lake_runtime_exercised=false`,
+`motherduck_session_exercised=false`, and `kubernetes_traffic_exercised=false`.
+The L8 mirror path remains explicitly bounded:
 `object_store_io_attempted=false`, `long_running_slot_tailing=false`,
 `checkpoint_persistence_exercised=false`, and `kubernetes_traffic_exercised=false`.
 The L12 DuckDB path is also bounded: `pg_duckdb_runtime_exercised=false`,

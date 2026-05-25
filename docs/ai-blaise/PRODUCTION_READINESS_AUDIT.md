@@ -1090,8 +1090,27 @@ Rule 10 completion for this branch requires local and VM verification of:
   the analytical loopback probe server health/readiness/metrics/drain path.
   This remains `external_io_attempted=false` and must not be cited as
   production evidence for pg_lake, object-store IO, Iceberg/Parquet/Delta file
-  reads, Iceberg commits, DuckDB, MotherDuck, Citus planner integration,
-  Kubernetes traffic, or benchmarked analytical performance.
+  reads beyond the separately promoted local Parquet file path, Iceberg commits,
+  DuckDB, MotherDuck, Citus planner integration, Kubernetes traffic, or
+  benchmarked analytical performance.
+- `FEATURE: L3` now has bounded local Parquet read evidence.
+  `ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh` runs
+  `run-local-parquet-read-canonical`, writes a real local Parquet file with
+  `ArrowWriter`, registers it through DataFusion `ParquetReadOptions`, and
+  queries the file with projection, filter, ordering, and limit. The smoke
+  requires `parquet_lakehouse_read_live=passed`,
+  `l3_local_parquet_file_created=true`,
+  `l3_datafusion_parquet_read_executed=true`, `l3_source_rows=4`,
+  `l3_source_total=5500`, `l3_datafusion_output_rows=2`,
+  `l3_datafusion_output_total=3000`, and
+  `local-datafusion-parquet-file-only`. The claim is bounded to local Parquet
+  file materialization and local DataFusion Parquet reads. It is not evidence
+  for Iceberg runtime reads, Delta runtime reads, object-store IO, pg_lake,
+  MotherDuck, Citus planner integration, warehouse federation, or Kubernetes
+  traffic; the smoke requires `object_store_io_attempted=false`,
+  `iceberg_runtime_exercised=false`, `delta_runtime_exercised=false`,
+  `pg_lake_runtime_exercised=false`, `motherduck_session_exercised=false`, and
+  `kubernetes_traffic_exercised=false`.
 - `FEATURE: L7`, `FEATURE: R3`, and `FEATURE: R8` now have bounded live
   Citus columnar evidence. `ci/ai-blaise/columnar-tiering-live-smoke.sh` starts
   a real Citus coordinator and worker, installs `citus_columnar`, creates
@@ -1185,7 +1204,7 @@ Rule 10 completion for this branch requires local and VM verification of:
   federation, or Kubernetes traffic; the report requires
   `external_warehouse_connections_attempted=false`,
   `object_store_io_attempted=false`, and `catalog_auth_exercised=false`.
-  `FEATURE: L1`, `FEATURE: L3`, `FEATURE: L5`, and `FEATURE: L13` remain alpha.
+  `FEATURE: L1`, `FEATURE: L5`, and `FEATURE: L13` remain alpha.
 - Agentmemory checkpointing for this slice used the scaleable-database-infra
   service at `http://127.0.0.1:3911` and did not edit or erase the backing
   memory file directly.

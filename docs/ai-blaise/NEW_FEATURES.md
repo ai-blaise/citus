@@ -4117,10 +4117,11 @@ sidecar.
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 **Current boundary**: L1 remains alpha for pg_lake-backed analytical
-substrate behavior. L2 and L4 now have a separate bounded local DataFusion
-runtime proof, but that proof records `external_io_attempted=false` and does
-not cover pg_lake, object-store IO, Iceberg/Parquet/Delta object reads,
-DuckDB, MotherDuck, Iceberg commits, logical-replication mirror
+substrate behavior. L2 and L4 have a separate bounded local DataFusion
+runtime proof, and L3 now has a separate local Parquet file proof, but those
+proofs record `external_io_attempted=false` and do not cover pg_lake,
+object-store IO, Iceberg runtime reads, Delta runtime reads, DuckDB,
+MotherDuck, Iceberg commits, logical-replication mirror
 materialization, Citus planner integration, or Kubernetes traffic.
 
 ### L2: Rust Analytical Server
@@ -4146,8 +4147,8 @@ the analytical sidecar probe server and verifies `/healthz`, `/readyz`,
 
 **Current production-ready boundary**: L2 is production-ready only for the
 local Rust sidecar runtime and in-process DataFusion execution surface. It does
-not claim pg_lake, external object-store IO, Iceberg/Parquet/Delta object
-reads, DuckDB runtime, MotherDuck runtime, logical-replication mirror
+not claim pg_lake, external object-store IO, Iceberg runtime reads, Delta
+runtime reads, DuckDB runtime, MotherDuck runtime, logical-replication mirror
 materialization, Citus planner integration, Kubernetes traffic, or production
 query routing through the pool.
 
@@ -4167,13 +4168,30 @@ analytical server.
 ### L3: Iceberg, Parquet, and Delta Reads
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_lake`, `pg_parquet`
 
 **Summary**: Defines the lakehouse read plan for Iceberg, Parquet, and Delta
 objects, then executes the canonical lakehouse read report.
+
+Production evidence: `ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh`
+runs `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-parquet-read-canonical`,
+writes a real local Parquet file with `ArrowWriter`, registers that file through
+DataFusion `ParquetReadOptions`, and queries it with projected columns,
+`total > 0`, and `LIMIT 2`. The smoke requires
+`parquet_lakehouse_read_live=passed`, `l3_local_parquet_file_created=true`,
+`l3_datafusion_parquet_read_executed=true`, `l3_source_rows=4`,
+`l3_source_total=5500`, `l3_datafusion_output_rows=2`,
+`l3_datafusion_output_total=3000`, and
+`evidence_boundary=local-datafusion-parquet-file-only`.
+
+**Current production-ready boundary**: L3 is production-ready only for local
+Parquet file materialization plus local DataFusion Parquet reads. It does not
+claim Iceberg runtime reads, Delta runtime reads, object-store IO, pg_lake,
+MotherDuck, Citus planner integration, warehouse federation, or Kubernetes
+traffic.
 
 **Motivation**: Warm and cold analytical storage needs one validated format and
 object-URI contract before execution engines fan out reads.
@@ -4185,7 +4203,8 @@ tables through a sidecar.
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: L3` in `sidecar/analytical/src/lib.rs`
-- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-runtime-canonical`
+- Executable: `cargo run -p ai_blaise_citus_sidecar_analytical -- run-local-parquet-read-canonical`
+- CI: `ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh`
 - CI: `ci/ai-blaise/sidecar-analytical-smoke.sh`
 
 ### L4: DataFusion Pushdown

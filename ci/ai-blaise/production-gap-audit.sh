@@ -3503,17 +3503,19 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = {"L1", "L3", "L5", "L13"}
+analytical_alpha_ids = {"L1", "L5", "L13"}
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
 if not_alpha:
     fail(
-        "analytical/lakehouse features without local DataFusion execution evidence must remain alpha: "
+        "analytical/lakehouse features without local execution evidence must remain alpha: "
         + ", ".join(not_alpha)
     )
 for feature_id in ("L2", "L4"):
     if entry_status.get(feature_id) != "production-ready":
         fail(f"{feature_id} must be production-ready once local DataFusion runtime evidence is wired")
+if entry_status.get("L3") != "production-ready":
+    fail("L3 must be production-ready once local Parquet read evidence is wired")
 if entry_status.get("L8") != "production-ready":
     fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
 if entry_status.get("L12") != "production-ready":
@@ -3534,6 +3536,8 @@ analytical_truth = compact(
     + read(ROOT / "sidecar/analytical/Cargo.toml")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-smoke.sh")
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh")
     + "\n"
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-mirror-live-smoke.sh")
     + "\n"
@@ -3572,6 +3576,44 @@ for phrase in ("sidecar-analytical-smoke", "ci/ai-blaise/sidecar-analytical-smok
         fail(f"Makefile.ai-blaise must wire the analytical smoke: {phrase}")
 if "sidecar-analytical-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-analytical-smoke.sh")
+
+for phrase in (
+    "run-local-parquet-read-canonical",
+    "sidecar-analytical-parquet-read-smoke.sh",
+    "parquet = \"55.2.0\"",
+    "ArrowWriter",
+    "ParquetReadOptions",
+    "register_parquet",
+    "parquet_lakehouse_read_live=passed",
+    "l3_local_parquet_file_created=true",
+    "l3_datafusion_parquet_read_executed=true",
+    "l3_source_rows=4",
+    "l3_source_total=5500",
+    "l3_datafusion_output_rows=2",
+    "l3_datafusion_output_total=3000",
+    "local-datafusion-parquet-file-only",
+    "object_store_io_attempted=false",
+    "iceberg_runtime_exercised=false",
+    "delta_runtime_exercised=false",
+    "pg_lake_runtime_exercised=false",
+    "motherduck_session_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "Iceberg runtime reads",
+    "Delta runtime reads",
+    "object-store IO",
+    "pg_lake",
+    "MotherDuck",
+    "Citus planner integration",
+    "warehouse federation",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in analytical_truth:
+        fail(f"analytical L3 production boundary missing truth phrase: {phrase}")
+for phrase in ("sidecar-analytical-parquet-read-smoke", "ci/ai-blaise/sidecar-analytical-parquet-read-smoke.sh"):
+    if phrase not in makefile:
+        fail(f"Makefile.ai-blaise must wire the analytical Parquet read smoke: {phrase}")
+if "sidecar-analytical-parquet-read-smoke.sh" not in read(SIDECAR_WORKFLOW):
+    fail("ci-sidecar workflow must run sidecar-analytical-parquet-read-smoke.sh")
 
 for phrase in (
     "run-logical-mirror-materialization-from-stdin",

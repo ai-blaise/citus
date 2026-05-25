@@ -10,7 +10,8 @@
 
 use ai_blaise_citus_sidecar_analytical::{
     canonical_analytical_execution_plan, canonical_analytical_runtime_report,
-    canonical_duckdb_extension_catalog_report, materialize_test_decoding_mirror_to_local_artifact,
+    canonical_duckdb_extension_catalog_report, materialize_and_query_canonical_local_parquet,
+    materialize_test_decoding_mirror_to_local_artifact,
     publish_canonical_federation_catalog_artifact, AnalyticalEngine, FederationTarget,
     LakehouseFormat,
 };
@@ -38,6 +39,11 @@ fn main() {
 
     if args == ["run-logical-mirror-materialization-from-stdin"] {
         run_logical_mirror_materialization_from_stdin();
+        return;
+    }
+
+    if args == ["run-local-parquet-read-canonical"] {
+        run_local_parquet_read_canonical();
         return;
     }
 
@@ -187,6 +193,46 @@ fn run_runtime_canonical() {
     println!("{}", row.join("\t"));
 }
 
+fn run_local_parquet_read_canonical() {
+    let parquet_path = env::var("AI_BLAISE_ANALYTICAL_PARQUET_ARTIFACT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/tmp/ai-blaise-l3-orders.parquet"));
+    let report =
+        materialize_and_query_canonical_local_parquet(&parquet_path).unwrap_or_else(|error| {
+            eprintln!("analytical: local Parquet read failed: {error}");
+            process::exit(1);
+        });
+
+    println!(
+        "feature_id\ttable\tformat\tparquet_path\tparquet_bytes\tsource_rows\tsource_total\tdatafusion_output_rows\tdatafusion_output_total\tprojection_pushdown_executed\tfilter_pushdown_executed\tlimit_pushdown_executed\tlocal_parquet_file_created\tdatafusion_parquet_read_executed\texternal_io_attempted\tobject_store_io_attempted\ticeberg_runtime_exercised\tdelta_runtime_exercised\tpg_lake_runtime_exercised\tmotherduck_session_exercised\tkubernetes_traffic_exercised\tevidence_boundary"
+    );
+    let row = vec![
+        report.feature_id,
+        report.table,
+        format_name(&report.format).to_string(),
+        report.parquet_path,
+        report.parquet_bytes.to_string(),
+        report.source_rows.to_string(),
+        report.source_total.to_string(),
+        report.datafusion_output_rows.to_string(),
+        report.datafusion_output_total.to_string(),
+        report.projection_pushdown_executed.to_string(),
+        report.filter_pushdown_executed.to_string(),
+        report.limit_pushdown_executed.to_string(),
+        report.local_parquet_file_created.to_string(),
+        report.datafusion_parquet_read_executed.to_string(),
+        report.external_io_attempted.to_string(),
+        report.object_store_io_attempted.to_string(),
+        report.iceberg_runtime_exercised.to_string(),
+        report.delta_runtime_exercised.to_string(),
+        report.pg_lake_runtime_exercised.to_string(),
+        report.motherduck_session_exercised.to_string(),
+        report.kubernetes_traffic_exercised.to_string(),
+        report.evidence_boundary,
+    ];
+    println!("{}", row.join("\t"));
+}
+
 fn run_federation_catalog_publication_canonical() {
     let artifact_path = env::var("AI_BLAISE_FEDERATION_CATALOG_ARTIFACT")
         .map(PathBuf::from)
@@ -285,7 +331,7 @@ fn run_logical_mirror_materialization_from_stdin() {
 }
 
 fn print_usage() {
-    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical|run-federation-catalog-publication-canonical]");
+    println!("usage: analytical [serve|run-canonical|run-runtime-canonical|run-local-parquet-read-canonical|run-logical-mirror-materialization-from-stdin|run-duckdb-extension-catalog-canonical|run-federation-catalog-publication-canonical]");
     println!("runs deterministic canonical analytical sidecar plan/runtime reports and emits TSV");
 }
 

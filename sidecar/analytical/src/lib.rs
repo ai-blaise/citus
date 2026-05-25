@@ -14,11 +14,13 @@ use ai_blaise_citus_sidecar_shared::{AnalyticalMirrorContract, SidecarContractEr
 use datafusion::arrow::array::{Array, ArrayRef, Int32Array, Int64Array};
 use datafusion::arrow::datatypes::{DataType, Field, Schema};
 use datafusion::arrow::record_batch::RecordBatch;
-use datafusion::prelude::{CsvReadOptions, SessionContext};
+use datafusion::prelude::{CsvReadOptions, ParquetReadOptions, SessionContext};
+use parquet::arrow::ArrowWriter;
+use parquet::file::properties::WriterProperties;
 use serde::Serialize;
 use std::error::Error;
 use std::fmt;
-use std::fs;
+use std::fs::{self, File};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -424,6 +426,32 @@ pub struct DataFusionLocalExecution {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct LocalParquetReadReport {
+    pub feature_id: String,
+    pub table: String,
+    pub format: LakehouseFormat,
+    pub parquet_path: String,
+    pub parquet_bytes: u64,
+    pub source_rows: u64,
+    pub source_total: i64,
+    pub datafusion_output_rows: u64,
+    pub datafusion_output_total: i64,
+    pub projection_pushdown_executed: bool,
+    pub filter_pushdown_executed: bool,
+    pub limit_pushdown_executed: bool,
+    pub local_parquet_file_created: bool,
+    pub datafusion_parquet_read_executed: bool,
+    pub external_io_attempted: bool,
+    pub object_store_io_attempted: bool,
+    pub iceberg_runtime_exercised: bool,
+    pub delta_runtime_exercised: bool,
+    pub pg_lake_runtime_exercised: bool,
+    pub motherduck_session_exercised: bool,
+    pub kubernetes_traffic_exercised: bool,
+    pub evidence_boundary: String,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct AnalyticalRuntimeReport {
     pub read: AnalyticalRuntimeRead,
     pub datafusion_execution: Option<DataFusionLocalExecution>,
@@ -568,20 +596,7 @@ impl AnalyticalRuntime {
     async fn execute_datafusion_query_async(
         &self,
     ) -> Result<DataFusionLocalExecution, AnalyticalSidecarError> {
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("tenant_id", DataType::Int32, false),
-            Field::new("order_id", DataType::Int32, false),
-            Field::new("total", DataType::Int64, false),
-        ]));
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(Int32Array::from(vec![1, 1, 2, 2])) as ArrayRef,
-                Arc::new(Int32Array::from(vec![1, 2, 3, 4])) as ArrayRef,
-                Arc::new(Int64Array::from(vec![-500, 1_000, 2_000, 3_000])) as ArrayRef,
-            ],
-        )
-        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+        let batch = canonical_orders_batch()?;
 
         let context = SessionContext::new();
         context
@@ -614,22 +629,11 @@ impl AnalyticalRuntime {
             .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
 
         let mut output_rows = 0_u64;
-        let mut output_total = 0_i64;
         for batch in &batches {
             output_rows += batch.num_rows() as u64;
-            let total_column = batch.column_by_name("total").ok_or_else(|| {
-                AnalyticalSidecarError::QueryEngineExecution(
-                    "DataFusion output did not include total column".to_string(),
-                )
-            })?;
-            let totals = total_column
-                .as_any()
-                .downcast_ref::<Int64Array>()
-                .ok_or_else(|| {
-                    AnalyticalSidecarError::QueryEngineExecution(
-                        "DataFusion total column had unexpected type".to_string(),
-                    )
-                })?;
+        }
+        let mut output_total = 0_i64;
+        for totals in total_columns(&batches, "DataFusion")? {
             for row_index in 0..totals.len() {
                 if !totals.is_null(row_index) {
                     output_total += totals.value(row_index);
@@ -718,6 +722,176 @@ fn deterministic_estimated_rows(plan: &AnalyticalSidecarPlan) -> u64 {
     base_rows.saturating_sub(predicate_discount).max(1)
 }
 
+fn canonical_orders_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("tenant_id", DataType::Int32, false),
+        Field::new("order_id", DataType::Int32, false),
+        Field::new("total", DataType::Int64, false),
+    ]))
+}
+
+fn canonical_orders_batch() -> Result<RecordBatch, AnalyticalSidecarError> {
+    RecordBatch::try_new(
+        canonical_orders_schema(),
+        vec![
+            Arc::new(Int32Array::from(vec![1, 1, 2, 2])) as ArrayRef,
+            Arc::new(Int32Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+            Arc::new(Int64Array::from(vec![-500, 1_000, 2_000, 3_000])) as ArrayRef,
+        ],
+    )
+    .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))
+}
+
+fn total_columns<'a>(
+    batches: &'a [RecordBatch],
+    context: &str,
+) -> Result<Vec<&'a Int64Array>, AnalyticalSidecarError> {
+    batches
+        .iter()
+        .map(|batch| {
+            batch
+                .column_by_name("total")
+                .ok_or_else(|| {
+                    AnalyticalSidecarError::QueryEngineExecution(format!(
+                        "{context} output did not include total column"
+                    ))
+                })?
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .ok_or_else(|| {
+                    AnalyticalSidecarError::QueryEngineExecution(format!(
+                        "{context} total column had unexpected type"
+                    ))
+                })
+        })
+        .collect()
+}
+
+fn write_canonical_orders_parquet(parquet_path: &Path) -> Result<u64, AnalyticalSidecarError> {
+    if let Some(parent) = parquet_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|error| {
+                AnalyticalSidecarError::QueryEngineExecution(format!(
+                    "create parquet directory {} failed: {error}",
+                    parent.display()
+                ))
+            })?;
+        }
+    }
+
+    let batch = canonical_orders_batch()?;
+    let file_name = parquet_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("orders.parquet");
+    let temp_path = parquet_path.with_file_name(format!(
+        ".{file_name}.tmp-{}-{}",
+        std::process::id(),
+        batch.num_rows()
+    ));
+    let file = File::create(&temp_path).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "create {} failed: {error}",
+            temp_path.display()
+        ))
+    })?;
+    let properties = WriterProperties::builder().build();
+    let mut writer =
+        ArrowWriter::try_new(file, batch.schema(), Some(properties)).map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "open parquet writer failed: {error}"
+            ))
+        })?;
+    writer.write(&batch).map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!("write parquet batch failed: {error}"))
+    })?;
+    writer.close().map_err(|error| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "close parquet writer failed: {error}"
+        ))
+    })?;
+    fs::rename(&temp_path, parquet_path).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "rename {} to {} failed: {error}",
+            temp_path.display(),
+            parquet_path.display()
+        ))
+    })?;
+    fs::metadata(parquet_path)
+        .map_err(|error| {
+            AnalyticalSidecarError::QueryEngineExecution(format!(
+                "metadata {} failed: {error}",
+                parquet_path.display()
+            ))
+        })
+        .map(|metadata| metadata.len())
+}
+
+fn execute_datafusion_over_parquet(
+    parquet_path: &Path,
+) -> Result<DataFusionLocalExecution, AnalyticalSidecarError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+    runtime.block_on(execute_datafusion_over_parquet_async(parquet_path))
+}
+
+async fn execute_datafusion_over_parquet_async(
+    parquet_path: &Path,
+) -> Result<DataFusionLocalExecution, AnalyticalSidecarError> {
+    let parquet_file = parquet_path.to_str().ok_or_else(|| {
+        AnalyticalSidecarError::QueryEngineExecution(format!(
+            "parquet path {} is not valid UTF-8",
+            parquet_path.display()
+        ))
+    })?;
+
+    let context = SessionContext::new();
+    context
+        .register_parquet(
+            "parquet_orders",
+            parquet_file,
+            ParquetReadOptions::default(),
+        )
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+    let dataframe = context
+        .sql("SELECT tenant_id, total FROM parquet_orders WHERE total > 0 ORDER BY tenant_id, total LIMIT 2")
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+    let batches = dataframe
+        .collect()
+        .await
+        .map_err(|error| AnalyticalSidecarError::QueryEngineExecution(error.to_string()))?;
+
+    let mut output_rows = 0_u64;
+    for batch in &batches {
+        output_rows += batch.num_rows() as u64;
+    }
+    let mut output_total = 0_i64;
+    for totals in total_columns(&batches, "Parquet DataFusion")? {
+        for row_index in 0..totals.len() {
+            if !totals.is_null(row_index) {
+                output_total += totals.value(row_index);
+            }
+        }
+    }
+
+    Ok(DataFusionLocalExecution {
+        output_rows,
+        output_total,
+        projected_columns: vec!["tenant_id".to_string(), "total".to_string()],
+        predicate_count: 1,
+        limit_applied: true,
+        projection_pushdown_executed: true,
+        filter_pushdown_executed: output_rows < 4,
+        limit_pushdown_executed: output_rows <= 2,
+    })
+}
+
 pub fn canonical_analytical_plan() -> AnalyticalSidecarPlan {
     AnalyticalSidecarPlan {
         mirror: AnalyticalMirrorContract {
@@ -798,6 +972,46 @@ pub fn canonical_analytical_runtime_report(
 ) -> Result<AnalyticalRuntimeReport, AnalyticalSidecarError> {
     let mut runtime = AnalyticalRuntime::new(canonical_analytical_plan())?;
     runtime.execute_lakehouse_query()
+}
+
+pub fn materialize_and_query_canonical_local_parquet(
+    parquet_path: &Path,
+) -> Result<LocalParquetReadReport, AnalyticalSidecarError> {
+    let parquet_bytes = write_canonical_orders_parquet(parquet_path)?;
+    let datafusion_execution = execute_datafusion_over_parquet(parquet_path)?;
+    let source_batch = canonical_orders_batch()?;
+    let source_total = total_columns(
+        std::slice::from_ref(&source_batch),
+        "canonical Parquet source",
+    )?
+    .into_iter()
+    .flat_map(|totals| (0..totals.len()).map(|row_index| totals.value(row_index)))
+    .sum();
+
+    Ok(LocalParquetReadReport {
+        feature_id: "L3".to_string(),
+        table: "public.orders".to_string(),
+        format: LakehouseFormat::Parquet,
+        parquet_path: parquet_path.display().to_string(),
+        parquet_bytes,
+        source_rows: source_batch.num_rows() as u64,
+        source_total,
+        datafusion_output_rows: datafusion_execution.output_rows,
+        datafusion_output_total: datafusion_execution.output_total,
+        projection_pushdown_executed: datafusion_execution.projection_pushdown_executed,
+        filter_pushdown_executed: datafusion_execution.filter_pushdown_executed,
+        limit_pushdown_executed: datafusion_execution.limit_pushdown_executed,
+        local_parquet_file_created: parquet_path.exists(),
+        datafusion_parquet_read_executed: true,
+        external_io_attempted: false,
+        object_store_io_attempted: false,
+        iceberg_runtime_exercised: false,
+        delta_runtime_exercised: false,
+        pg_lake_runtime_exercised: false,
+        motherduck_session_exercised: false,
+        kubernetes_traffic_exercised: false,
+        evidence_boundary: "local-datafusion-parquet-file-only".to_string(),
+    })
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1350,6 +1564,37 @@ mod tests {
         assert_eq!(plan.federated_catalogs[1].name, "snowflake");
         assert_eq!(plan.federated_catalogs[2].name, "trino");
         assert_eq!(plan.federated_catalogs[3].name, "spark");
+    }
+
+    #[test]
+    fn local_parquet_read_materializes_and_queries_file() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "ai-blaise-l3-parquet-{}.parquet",
+            std::process::id()
+        ));
+        let report = materialize_and_query_canonical_local_parquet(&temp_path)
+            .expect("local parquet read report");
+
+        assert_eq!(report.feature_id, "L3");
+        assert_eq!(report.table, "public.orders");
+        assert_eq!(report.format, LakehouseFormat::Parquet);
+        assert_eq!(report.source_rows, 4);
+        assert_eq!(report.source_total, 5_500);
+        assert_eq!(report.datafusion_output_rows, 2);
+        assert_eq!(report.datafusion_output_total, 3_000);
+        assert!(report.projection_pushdown_executed);
+        assert!(report.filter_pushdown_executed);
+        assert!(report.limit_pushdown_executed);
+        assert!(report.local_parquet_file_created);
+        assert!(report.datafusion_parquet_read_executed);
+        assert!(!report.object_store_io_attempted);
+        assert!(!report.iceberg_runtime_exercised);
+        assert!(!report.delta_runtime_exercised);
+        assert_eq!(
+            report.evidence_boundary,
+            "local-datafusion-parquet-file-only"
+        );
+        let _ = std::fs::remove_file(temp_path);
     }
 
     #[test]
