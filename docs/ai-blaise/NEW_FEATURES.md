@@ -3368,26 +3368,34 @@ manage them as region objects.
 
 ### MR5: Pool GeoIP Routing
 
-**Overlay**: `pool/src/runtime.rs`, `pool/src/geoip.rs`
-**Status**: alpha
+**Overlay**: `pool/src/runtime.rs`, `pool/src/geoip.rs`, `pool/src/proxy.rs`
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines the pool region-routing contract from CIDR/GeoIP region
-resolution to nearest preferred replicas.
+**Summary**: Defines and executes bounded pool region routing from CIDR/GeoIP
+region resolution to nearest preferred replicas.
 
-**Current alpha boundary**: `GeoRoutingPolicy` now validates CIDR syntax and
-region names fail-closed, `ClosestReplicaTable::from_specs` validates replica
-rows, and `route_report_for_client` records requested region, selected region,
-and default-region fallback evidence. This bounded parser/report path does not
-claim managed MaxMind DB loading, Region-CR synchronization, hot-swap reloads,
-live read routing, cross-region traffic behavior, or edge-replica traffic.
+Production evidence: `ci/ai-blaise/pool-geoip-live-smoke.sh` starts two real
+`postgres:17-bookworm` regional replicas with different `geo_route_marker`
+rows, starts the real `ai_blaise_citus_pool serve` data plane with
+`AI_BLAISE_POOL_GEO_DEFAULT_REGION=us-east-1`,
+`AI_BLAISE_POOL_GEO_RULES=127.0.0.0/8=us-east-1`, and
+`AI_BLAISE_POOL_GEO_REPLICAS` pointing at the two regional PostgreSQL ports,
+and proves a PostgreSQL client query through the pool reaches the selected
+`us-east-1` replica with `geoip_pool_route_selected_region=us-east-1`. The
+same smoke restarts the pool with a rule resolving to an unknown region and
+proves default-region fallback reaches `us-east-1` with
+`geoip_pool_fallback_region=us-east-1`, then proves an invalid CIDR fails
+closed during pool startup. The pool exposes
+`ai_blaise_citus_pool_geo_routes_total` and
+`ai_blaise_citus_pool_geo_fallback_routes_total` metrics for this route path.
 
-Alpha evidence: `cargo test -p ai_blaise_citus_pool --all-targets`,
-`cargo run -p ai_blaise_citus_pool -- run-canonical`, and
-`ci/ai-blaise/pool-routing-security-smoke.sh` assert replica-region count,
-default fallback, and invalid-CIDR rejection columns.
+The MR5 production-ready boundary is the static env-configured CIDR/replica
+pool data-plane path only. It does not claim managed MaxMind DB loading,
+Region-CR synchronization, hot-swap reloads, cross-region/WAN traffic behavior,
+edge-replica traffic, or Kubernetes traffic.
 
 **Motivation**: Multi-region reads need a pool-side routing contract before
 GeoIP and edge-replica behavior can be enforced.
@@ -3399,8 +3407,11 @@ GeoIP and edge-replica behavior can be enforced.
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: MR5` in `pool/src/runtime.rs`
 - In-source: `FEATURE: MR5` in `pool/src/geoip.rs`
+- In-source: `FEATURE: MR5` in `pool/src/proxy.rs`
+- Executable: `cargo test -p ai_blaise_citus_pool --all-targets`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 - CI: `ci/ai-blaise/pool-routing-security-smoke.sh`
+- CI: `ci/ai-blaise/pool-geoip-live-smoke.sh`
 
 ### MR8: Leader Pinning Per Region
 

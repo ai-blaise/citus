@@ -62,6 +62,7 @@ STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
+POOL_GEOIP_LIVE_SMOKE = ROOT / "ci/ai-blaise/pool-geoip-live-smoke.sh"
 PLACEMENT_GENERATION_UDF_SMOKE = ROOT / "ci/ai-blaise/placement-generation-udf-contract-smoke.sh"
 SECURITY_SUPPLY_CHAIN_SMOKE = ROOT / "ci/ai-blaise/security-supply-chain-smoke.sh"
 SECURITY_EXTERNAL_SECRETS_TLS_LIVE_SMOKE = ROOT / "ci/ai-blaise/security-external-secrets-tls-live-smoke.sh"
@@ -241,7 +242,7 @@ entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in ("C6", "C7", "C8"):
     if status_by_id.get(feature_id) != "alpha":
         fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
-for feature_id in ("MR3", "MR5", "MR9"):
+for feature_id in ("MR3", "MR9"):
     if status_by_id.get(feature_id) != "alpha":
         fail(f"{feature_id} must remain alpha until live multi-region runtime evidence exists")
 
@@ -2070,6 +2071,7 @@ if "### T7: Pipelined Client Protocol In Pool" in docs:
             fail(f"T7 production boundary lost required docs phrase: {required}")
 
 pool_routing_smoke = read(POOL_ROUTING_SECURITY_SMOKE)
+pool_geoip_live_smoke = read(POOL_GEOIP_LIVE_SMOKE)
 for required in (
     "mirror_decision_bucket",
     "htap_fail_closed_rejections",
@@ -2079,6 +2081,69 @@ for required in (
 ):
     if required not in pool_routing_smoke:
         fail(f"pool routing/security smoke lost required assertion: {required}")
+
+
+if status_by_id.get("MR5") != "production-ready":
+    fail("MR5 must be production-ready once live pool GeoIP routing evidence is wired")
+section_mr5 = feature_section(docs, "MR5")
+mr5_truth = compact(section_mr5 + "\n" + audit + "\n" + pool_geoip_live_smoke + "\n" + read(ROOT / "pool/src/proxy.rs") + "\n" + read(MAKEFILE))
+for phrase in (
+    "Production evidence:",
+    "ci/ai-blaise/pool-geoip-live-smoke.sh",
+    "AI_BLAISE_POOL_GEO_DEFAULT_REGION=us-east-1",
+    "AI_BLAISE_POOL_GEO_RULES=127.0.0.0/8=us-east-1",
+    "AI_BLAISE_POOL_GEO_REPLICAS",
+    "geoip_pool_route_selected_region=us-east-1",
+    "geoip_pool_fallback_region=us-east-1",
+    "ai_blaise_citus_pool_geo_routes_total",
+    "ai_blaise_citus_pool_geo_fallback_routes_total",
+    "invalid CIDR fails closed",
+    "managed MaxMind DB loading",
+    "Region-CR synchronization",
+    "hot-swap reloads",
+    "cross-region/WAN traffic behavior",
+    "edge-replica traffic",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in compact(section_mr5):
+        fail(f"MR5 docs missing production boundary phrase: {phrase}")
+for phrase in (
+    "FEATURE: MR5",
+    "AI_BLAISE_POOL_GEO_DEFAULT_REGION",
+    "AI_BLAISE_POOL_GEO_RULES",
+    "AI_BLAISE_POOL_GEO_REPLICAS",
+    "PoolGeoRoutingConfig",
+    "route_upstream",
+    "pool_geoip_live=passed",
+    "geoip_pool_route_selected_region=us-east-1",
+    "geoip_pool_fallback_region=us-east-1",
+    "geoip_live_routes_total=1",
+    "geoip_live_fallback_routes_total=1",
+    "geoip_invalid_cidr_fail_closed=true",
+    "managed_maxmind_db_loaded=false",
+    "region_cr_synchronization=false",
+    "hot_swap_reload_exercised=false",
+    "cross_region_wan_exercised=false",
+    "edge_replica_traffic_exercised=false",
+    "kubernetes_traffic_exercised=false",
+    "pool-geoip-live-smoke:",
+    "gate-close:",
+):
+    if compact(phrase) not in mr5_truth:
+        fail(f"MR5 live GeoIP routing production boundary missing truth phrase: {phrase}")
+for phrase in (
+    "MR5 now has a bounded live data-plane proof",
+    "geoip_pool_route_selected_region=us-east-1",
+    "ai_blaise_citus_pool_geo_routes_total",
+    "managed GeoIP databases",
+    "Region-CR synchronization",
+    "hot-swap reloads",
+    "cross-region/WAN behavior",
+    "edge-replica traffic",
+    "Kubernetes traffic",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"PRODUCTION_READINESS_AUDIT.md missing MR5 boundary phrase: {phrase}")
 
 for phrase in (
     "live canary mirroring",

@@ -9,7 +9,8 @@
 use crate::{
     admission::{PoolAdmissionConfig, PoolAdmissionController, PoolAdmissionError},
     auth_introspection::{PoolAuthConfig, PoolAuthError, PoolAuthGate},
-    runtime::{SessionSetting, SettingsBucketPolicy},
+    geoip::{route_report_for_client, ClosestReplicaTable, GeoIpError},
+    runtime::{GeoRoutingPolicy, GeoRoutingRule, SessionSetting, SettingsBucketPolicy},
     settings_bucket::{SettingsBucketError, SettingsBucketPoolMap},
     trace_tap,
 };
@@ -35,6 +36,7 @@ pub struct PoolProxyConfig {
     pub admission: PoolAdmissionConfig,
     pub auth: Option<PoolAuthConfig>,
     pub settings_bucket: Option<SettingsBucketPolicy>,
+    pub geo_routing: Option<PoolGeoRoutingConfig>,
 }
 
 impl PoolProxyConfig {
@@ -52,6 +54,7 @@ impl PoolProxyConfig {
         let admission = PoolAdmissionConfig::from_env()?;
         let auth = PoolAuthConfig::from_env()?;
         let settings_bucket = settings_bucket_policy_from_env()?;
+        let geo_routing = geo_routing_config_from_env()?;
 
         let config = Self {
             listen_addr,
@@ -61,6 +64,7 @@ impl PoolProxyConfig {
             admission,
             auth,
             settings_bucket,
+            geo_routing,
         };
         config.validate()?;
         Ok(config)
@@ -83,8 +87,53 @@ impl PoolProxyConfig {
         if let Some(settings_bucket) = &self.settings_bucket {
             settings_bucket.validate().map_err(PoolProxyError::from)?;
         }
+        if let Some(geo_routing) = &self.geo_routing {
+            geo_routing.validate()?;
+        }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PoolGeoRoutingConfig {
+    pub policy: GeoRoutingPolicy,
+    pub replicas: ClosestReplicaTable,
+}
+
+impl PoolGeoRoutingConfig {
+    pub fn validate(&self) -> Result<(), PoolProxyError> {
+        self.policy
+            .validate()
+            .map_err(|error| PoolProxyError::GeoRouting(error.to_string()))?;
+        if self.replicas.region_count() == 0 {
+            return Err(PoolProxyError::GeoRouting(
+                "geo replica table must not be empty".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn route_upstream(
+        &self,
+        client_ip: IpAddr,
+    ) -> Result<PoolGeoRouteDecision, PoolProxyError> {
+        self.validate()?;
+        let report = route_report_for_client(&self.policy, &self.replicas, client_ip, None)
+            .map_err(PoolProxyError::from)?;
+        let target = report.replica.target;
+        Ok(PoolGeoRouteDecision {
+            upstream_addr: format!("{}:{}", target.host, target.port),
+            selected_region: report.selected_region,
+            fallback_used: report.fallback_used,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct PoolGeoRouteDecision {
+    pub upstream_addr: String,
+    pub selected_region: String,
+    pub fallback_used: bool,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
@@ -228,6 +277,8 @@ pub struct PoolProxyState {
     upstream_to_client_bytes: AtomicU64,
     traceparent_tapped: AtomicU64,
     traceparent_absent: AtomicU64,
+    geo_routes: AtomicU64,
+    geo_fallback_routes: AtomicU64,
 }
 
 impl PoolProxyState {
@@ -281,6 +332,8 @@ impl PoolProxyState {
             upstream_to_client_bytes: AtomicU64::new(0),
             traceparent_tapped: AtomicU64::new(0),
             traceparent_absent: AtomicU64::new(0),
+            geo_routes: AtomicU64::new(0),
+            geo_fallback_routes: AtomicU64::new(0),
         })
     }
 
@@ -412,6 +465,13 @@ impl PoolProxyState {
         self.traceparent_absent.fetch_add(1, Ordering::Relaxed);
     }
 
+    fn geo_route(&self, fallback_used: bool) {
+        self.geo_routes.fetch_add(1, Ordering::Relaxed);
+        if fallback_used {
+            self.geo_fallback_routes.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     pub fn traceparent_tapped_count(&self) -> u64 {
         self.traceparent_tapped.load(Ordering::Relaxed)
     }
@@ -526,11 +586,16 @@ pub fn run_pool_service(config: PoolProxyConfig) -> Result<(), PoolProxyError> {
         let client = client?;
         let upstream_addr = config.upstream_addr.clone();
         let client_cidr_allowlist = config.client_cidr_allowlist.clone();
+        let geo_routing = config.geo_routing.clone();
         let state = Arc::clone(&state);
         thread::spawn(move || {
-            if let Err(error) =
-                handle_proxy_connection(client, &upstream_addr, &client_cidr_allowlist, &state)
-            {
+            if let Err(error) = handle_proxy_connection(
+                client,
+                &upstream_addr,
+                &client_cidr_allowlist,
+                geo_routing.as_ref(),
+                &state,
+            ) {
                 eprintln!("pool connection failed: {error}");
             }
         });
@@ -543,6 +608,7 @@ pub fn handle_proxy_connection(
     client: TcpStream,
     upstream_addr: &str,
     client_cidr_allowlist: &ClientCidrAllowlist,
+    geo_routing: Option<&PoolGeoRoutingConfig>,
     state: &PoolProxyState,
 ) -> Result<(), PoolProxyError> {
     let client_ip = client.peer_addr()?.ip();
@@ -553,6 +619,22 @@ pub fn handle_proxy_connection(
             allowlist: client_cidr_allowlist.as_csv(),
         });
     }
+
+    let selected_upstream_addr = if let Some(geo_routing) = geo_routing {
+        match geo_routing.route_upstream(client_ip) {
+            Ok(decision) => {
+                state.geo_route(decision.fallback_used);
+                decision.upstream_addr
+            }
+            Err(error) => {
+                state.rejected();
+                state.fail_closed_route();
+                return Err(error);
+            }
+        }
+    } else {
+        upstream_addr.to_string()
+    };
 
     let permit = match state.admission().acquire_connection() {
         Ok(permit) => permit,
@@ -566,7 +648,7 @@ pub fn handle_proxy_connection(
     };
 
     state.accepted();
-    let result = proxy_connection(client, upstream_addr, state);
+    let result = proxy_connection(client, &selected_upstream_addr, state);
     state.completed();
     drop(permit);
     result
@@ -829,6 +911,71 @@ fn env_or_default(name: &str, default_value: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default_value.to_string())
 }
 
+fn geo_routing_config_from_env() -> Result<Option<PoolGeoRoutingConfig>, PoolProxyError> {
+    let raw_replicas = env_or_default("AI_BLAISE_POOL_GEO_REPLICAS", "");
+    if raw_replicas.trim().is_empty() {
+        return Ok(None);
+    }
+    let default_region = std::env::var("AI_BLAISE_POOL_GEO_DEFAULT_REGION")
+        .map_err(|_| PoolProxyError::MissingEnv("AI_BLAISE_POOL_GEO_DEFAULT_REGION"))?;
+    let raw_rules = std::env::var("AI_BLAISE_POOL_GEO_RULES")
+        .map_err(|_| PoolProxyError::MissingEnv("AI_BLAISE_POOL_GEO_RULES"))?;
+    let rules = parse_geo_rules_env(&raw_rules)?;
+    let replica_specs = raw_replicas
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    if replica_specs.is_empty() {
+        return Err(PoolProxyError::InvalidEnv {
+            name: "AI_BLAISE_POOL_GEO_REPLICAS",
+            value: raw_replicas,
+            reason: "expected semicolon-separated region,latency_rank,host,port entries",
+        });
+    }
+    let replica_refs = replica_specs.iter().map(String::as_str).collect::<Vec<_>>();
+    let replicas = ClosestReplicaTable::from_specs(&replica_refs).map_err(PoolProxyError::from)?;
+    let config = PoolGeoRoutingConfig {
+        policy: GeoRoutingPolicy {
+            default_region,
+            rules,
+        },
+        replicas,
+    };
+    config.validate()?;
+    Ok(Some(config))
+}
+
+fn parse_geo_rules_env(raw_rules: &str) -> Result<Vec<GeoRoutingRule>, PoolProxyError> {
+    let mut rules = Vec::new();
+    for entry in raw_rules
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let Some((cidr, region)) = entry.split_once('=') else {
+            return Err(PoolProxyError::InvalidEnv {
+                name: "AI_BLAISE_POOL_GEO_RULES",
+                value: raw_rules.to_string(),
+                reason: "expected semicolon-separated cidr=region entries",
+            });
+        };
+        rules.push(GeoRoutingRule {
+            cidr: cidr.trim().to_string(),
+            region: region.trim().to_string(),
+        });
+    }
+    if rules.is_empty() {
+        return Err(PoolProxyError::InvalidEnv {
+            name: "AI_BLAISE_POOL_GEO_RULES",
+            value: raw_rules.to_string(),
+            reason: "expected at least one cidr=region rule",
+        });
+    }
+    Ok(rules)
+}
+
 fn settings_bucket_policy_from_env() -> Result<Option<SettingsBucketPolicy>, PoolProxyError> {
     let tracked_gucs = env_or_default("AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS", "");
     let tracked_gucs = tracked_gucs
@@ -935,7 +1082,7 @@ fn health_json(
         settings_bucket_release_errors,
     ) = state.settings_bucket_snapshot();
     format!(
-        r#"{{"component":"pool","ready":{},"upstream_ready":{},"upstream_addr":"{}","active_connections":{},"accepted_connections":{},"completed_connections":{},"rejected_connections":{},"overloaded_connections":{},"tenant_quota_rejections":{},"auth_verified_connections":{},"auth_cache_hits":{},"auth_rejections":{},"settings_bucket_unique_fingerprints":{},"settings_bucket_assigned_connections":{},"settings_bucket_backend_borrows":{},"settings_bucket_release_errors":{},"startup_timeouts":{},"fail_closed_routes":{},"upstream_connect_errors":{},"io_errors":{},"uptime_seconds":{}}}
+        r#"{{"component":"pool","ready":{},"upstream_ready":{},"upstream_addr":"{}","active_connections":{},"accepted_connections":{},"completed_connections":{},"rejected_connections":{},"overloaded_connections":{},"tenant_quota_rejections":{},"auth_verified_connections":{},"auth_cache_hits":{},"auth_rejections":{},"geo_routes":{},"geo_fallback_routes":{},"settings_bucket_unique_fingerprints":{},"settings_bucket_assigned_connections":{},"settings_bucket_backend_borrows":{},"settings_bucket_release_errors":{},"startup_timeouts":{},"fail_closed_routes":{},"upstream_connect_errors":{},"io_errors":{},"uptime_seconds":{}}}
 "#,
         ready,
         upstream_ready,
@@ -949,6 +1096,8 @@ fn health_json(
         state.auth_verified_connections.load(Ordering::Relaxed),
         state.auth_cache_hits.load(Ordering::Relaxed),
         state.auth_rejections.load(Ordering::Relaxed),
+        state.geo_routes.load(Ordering::Relaxed),
+        state.geo_fallback_routes.load(Ordering::Relaxed),
         settings_bucket_unique,
         settings_bucket_assigned,
         settings_bucket_borrows,
@@ -997,6 +1146,12 @@ ai_blaise_citus_pool_auth_cache_hits_total {}
 # HELP ai_blaise_citus_pool_auth_rejections_total PostgreSQL client connections rejected by auth introspection.
 # TYPE ai_blaise_citus_pool_auth_rejections_total counter
 ai_blaise_citus_pool_auth_rejections_total {}
+# HELP ai_blaise_citus_pool_geo_routes_total Connections routed through the GeoIP replica table.
+# TYPE ai_blaise_citus_pool_geo_routes_total counter
+ai_blaise_citus_pool_geo_routes_total {}
+# HELP ai_blaise_citus_pool_geo_fallback_routes_total GeoIP-routed connections that used the default-region fallback.
+# TYPE ai_blaise_citus_pool_geo_fallback_routes_total counter
+ai_blaise_citus_pool_geo_fallback_routes_total {}
 # HELP ai_blaise_citus_pool_settings_bucket_unique_fingerprints Unique tracked-GUC fingerprints observed by the pool.
 # TYPE ai_blaise_citus_pool_settings_bucket_unique_fingerprints gauge
 ai_blaise_citus_pool_settings_bucket_unique_fingerprints {}
@@ -1041,6 +1196,8 @@ ai_blaise_citus_pool_traceparent_absent_total {}
         state.auth_verified_connections.load(Ordering::Relaxed),
         state.auth_cache_hits.load(Ordering::Relaxed),
         state.auth_rejections.load(Ordering::Relaxed),
+        state.geo_routes.load(Ordering::Relaxed),
+        state.geo_fallback_routes.load(Ordering::Relaxed),
         settings_bucket_unique,
         settings_bucket_assigned,
         settings_bucket_borrows,
@@ -1104,6 +1261,7 @@ pub enum PoolProxyError {
         reason: &'static str,
     },
     SettingsBucket(SettingsBucketError),
+    GeoRouting(String),
     SettingsBucketLockPoisoned,
     WorkerPanicked,
 }
@@ -1139,6 +1297,7 @@ impl fmt::Display for PoolProxyError {
                 write!(formatter, "{name}={value:?} is invalid: {reason}")
             }
             Self::SettingsBucket(error) => write!(formatter, "{error}"),
+            Self::GeoRouting(error) => write!(formatter, "geo routing error: {error}"),
             Self::SettingsBucketLockPoisoned => write!(formatter, "settings bucket lock poisoned"),
             Self::WorkerPanicked => write!(formatter, "proxy worker panicked"),
         }
@@ -1162,6 +1321,12 @@ impl From<PoolAuthError> for PoolProxyError {
 impl From<SettingsBucketError> for PoolProxyError {
     fn from(error: SettingsBucketError) -> Self {
         Self::SettingsBucket(error)
+    }
+}
+
+impl From<GeoIpError> for PoolProxyError {
+    fn from(error: GeoIpError) -> Self {
+        Self::GeoRouting(error.to_string())
     }
 }
 
@@ -1189,6 +1354,30 @@ mod tests {
     use std::io::{Read, Write};
 
     #[test]
+    fn geo_routing_config_routes_client_ip_to_replica_and_fallback() {
+        let config = PoolGeoRoutingConfig {
+            policy: GeoRoutingPolicy {
+                default_region: "us-east-1".to_string(),
+                rules: vec![GeoRoutingRule {
+                    cidr: "127.0.0.0/8".to_string(),
+                    region: "moon".to_string(),
+                }],
+            },
+            replicas: ClosestReplicaTable::from_specs(&[
+                "us-east-1,1,127.0.0.1,15432",
+                "eu-west-1,1,127.0.0.1,25432",
+            ])
+            .unwrap(),
+        };
+
+        let decision = config.route_upstream("127.0.0.1".parse().unwrap()).unwrap();
+
+        assert_eq!(decision.upstream_addr, "127.0.0.1:15432");
+        assert_eq!(decision.selected_region, "us-east-1");
+        assert!(decision.fallback_used);
+    }
+
+    #[test]
     fn config_requires_upstream_and_separate_ports() {
         let config = PoolProxyConfig {
             listen_addr: "127.0.0.1:15432".to_string(),
@@ -1198,6 +1387,7 @@ mod tests {
             admission: PoolAdmissionConfig::default(),
             auth: None,
             settings_bucket: None,
+            geo_routing: None,
         };
 
         assert_eq!(
@@ -1406,7 +1596,7 @@ mod tests {
             let (client, _) = proxy_listener.accept().unwrap();
             let state = PoolProxyState::new();
             let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
-            handle_proxy_connection(client, &upstream_addr, &allowlist, &state).unwrap();
+            handle_proxy_connection(client, &upstream_addr, &allowlist, None, &state).unwrap();
             assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
             assert_eq!(state.completed_connections.load(Ordering::Relaxed), 1);
             assert_eq!(state.traceparent_absent_count(), 1);
@@ -1447,7 +1637,7 @@ mod tests {
             let (client, _) = proxy_listener.accept().unwrap();
             let state = PoolProxyState::new();
             let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
-            handle_proxy_connection(client, &upstream_addr, &allowlist, &state).unwrap();
+            handle_proxy_connection(client, &upstream_addr, &allowlist, None, &state).unwrap();
             assert_eq!(state.traceparent_tapped_count(), 1);
             assert_eq!(state.traceparent_absent_count(), 0);
         });
@@ -1481,8 +1671,9 @@ mod tests {
         let proxy_thread = thread::spawn(move || {
             let (client, _) = proxy_listener.accept().unwrap();
             let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
-            let error = handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &worker_state)
-                .unwrap_err();
+            let error =
+                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, None, &worker_state)
+                    .unwrap_err();
 
             assert!(matches!(
                 error,
@@ -1515,8 +1706,8 @@ mod tests {
             let (client, _) = proxy_listener.accept().unwrap();
             let state = PoolProxyState::new();
             let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
-            let error =
-                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+            let error = handle_proxy_connection(client, "127.0.0.1:1", &allowlist, None, &state)
+                .unwrap_err();
 
             assert!(matches!(error, PoolProxyError::Io(_)));
             assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
@@ -1547,8 +1738,8 @@ mod tests {
             })
             .unwrap();
             let allowlist = ClientCidrAllowlist::parse_csv("127.0.0.0/8").unwrap();
-            let error =
-                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+            let error = handle_proxy_connection(client, "127.0.0.1:1", &allowlist, None, &state)
+                .unwrap_err();
 
             assert!(matches!(error, PoolProxyError::Io(_)));
             assert_eq!(state.accepted_connections.load(Ordering::Relaxed), 1);
@@ -1572,8 +1763,8 @@ mod tests {
             let (client, _) = proxy_listener.accept().unwrap();
             let state = PoolProxyState::new();
             let allowlist = ClientCidrAllowlist::parse_csv("192.0.2.0/24").unwrap();
-            let error =
-                handle_proxy_connection(client, "127.0.0.1:1", &allowlist, &state).unwrap_err();
+            let error = handle_proxy_connection(client, "127.0.0.1:1", &allowlist, None, &state)
+                .unwrap_err();
 
             assert!(matches!(error, PoolProxyError::ClientRejected { .. }));
             assert_eq!(state.rejected_connections.load(Ordering::Relaxed), 1);

@@ -558,14 +558,18 @@ more production-ready than the artifacts justified.
   promotes only the `FEATURE: T7` simple-query data-plane pipelining boundary;
   extended-query batching and broader shard-aware pool routing remain alpha.
 
-- The pool routing/security canonical smoke now covers bounded production-ready
-  contracts for T9/T12/R10 plus alpha-only MR5 parser/report evidence:
-  fail-closed mirror rule parsing and deterministic sampling reports,
-  fail-closed HTAP feature-report parsing, fail-closed GeoIP CIDR/replica-table
-  parsing with fallback reports, and TLS ticket rotation reports with redacted
-  fingerprints. This is not evidence for live canary mirroring, managed GeoIP
-  databases, rustls listener/session-resumption traffic, analytical sidecar
-  query execution, live multi-region read routing, or Kubernetes traffic.
+- The pool routing/security canonical smoke covers bounded production-ready
+  contracts for T9/T12/R10, and MR5 now has a bounded live data-plane proof in
+  `ci/ai-blaise/pool-geoip-live-smoke.sh`: two real `postgres:17-bookworm`
+  regional replicas, static `AI_BLAISE_POOL_GEO_*` configuration,
+  `geoip_pool_route_selected_region=us-east-1`, default-region fallback,
+  `ai_blaise_citus_pool_geo_routes_total`,
+  `ai_blaise_citus_pool_geo_fallback_routes_total`, and invalid-CIDR
+  fail-closed startup. This is still not evidence for live canary mirroring,
+  managed GeoIP databases, Region-CR synchronization, hot-swap reloads,
+  rustls listener/session-resumption traffic, analytical sidecar query
+  execution, cross-region/WAN behavior, edge-replica traffic, or Kubernetes
+  traffic.
 - R1/R5/R9/Search8 cold-tier local file materialization is production-ready for
   the bounded sidecar local `file://` runtime. `sidecar-coldtier-runtime-smoke.sh`
   runs the real `ai_blaise_citus_sidecar_coldtier` binary through

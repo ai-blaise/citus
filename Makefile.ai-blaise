@@ -136,7 +136,7 @@ operator-boundary-smoke:
 operator-reconcilers-batch-a-smoke:
 	@bash ci/ai-blaise/operator-reconcilers-batch-a-smoke.sh
 
-.PHONY: operator-branch-lifecycle-smoke operator-branch-scale-to-zero-live-smoke coordinatorless-mx-live-smoke
+.PHONY: operator-branch-lifecycle-smoke operator-branch-scale-to-zero-live-smoke coordinatorless-mx-live-smoke pool-geoip-live-smoke
 operator-branch-lifecycle-smoke:
 	@bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh
 
@@ -145,6 +145,9 @@ operator-branch-scale-to-zero-live-smoke:
 
 coordinatorless-mx-live-smoke:
 	@REQUIRE_DOCKER=1 bash ci/ai-blaise/coordinatorless-mx-live-smoke.sh
+
+pool-geoip-live-smoke:
+	@REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-geoip-live-smoke.sh
 
 build-pool:
 	cargo check -p ai_blaise_citus_pool --all-targets
@@ -831,6 +834,7 @@ gate-close: schema-drift-live-smoke
 gate-close: sidecar-coldtier-runtime-smoke
 gate-close: operator-branch-scale-to-zero-live-smoke
 gate-close: coordinatorless-mx-live-smoke
+gate-close: pool-geoip-live-smoke
 gate-close: shard-temperature-ranking-live-smoke
 gate-close: regional-placement-live-smoke
 gate-close: transaction-state-live-smoke
