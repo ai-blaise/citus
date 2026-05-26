@@ -124,7 +124,7 @@
       "landed_by": "direct bootstrap-v2 merge batch with PRs #106 and #108",
       "watch_paths": [
         "ci/ai-blaise/bootstrap-v2-merge-plan-check.py",
-        "docs/ai-blaise/BOOTSTRAP_V2_MERGE_PLAN.md",
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md",
         "docs/ai-blaise/bootstrap-v2-merge-plan.json"
       ]
     },
@@ -573,8 +573,7 @@
         "ci/ai-blaise/performance-evidence-check.sh",
         "ci/ai-blaise/runbook-command-check.sh",
         "ci/ai-blaise/sidecar-api-runtime-smoke.sh",
-        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md",
-        "docs/ai-blaise/PRODUCTION_GAP_AUDIT_INTEGRATION_PLAN.md"
+        "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
       ],
       "landed_by": "direct bootstrap-v2 final release/patch integration batch"
     },

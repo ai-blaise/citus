@@ -1463,3 +1463,155 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+
+## Bootstrap V2 PR Train Integration Record
+
+This section consolidates the bootstrap-v2 PR-train integration history and
+expensive-matrix policy that previously lived in two sibling tracker docs:
+`docs/ai-blaise/BOOTSTRAP_V2_MERGE_PLAN.md` and
+`docs/ai-blaise/PRODUCTION_GAP_AUDIT_INTEGRATION_PLAN.md`. Both Markdown
+companions are removed in favor of this single section so that the production
+readiness audit is the canonical narrative tracker. The machine-readable
+merge-plan ledger continues to live at
+`docs/ai-blaise/bootstrap-v2-merge-plan.json`, and the live validator
+continues to live at `ci/ai-blaise/bootstrap-v2-merge-plan-check.py`. Those
+two artifacts are tooling, not narrative, and remain in place.
+
+### Validator and Live Plan
+
+The metadata-only validator runs from the repository root:
+
+```bash
+python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --offline
+python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live
+```
+
+`--offline` validates the JSON schema, order, dependency direction, batch
+coverage, and matrix-policy references. `--live` also queries GitHub with
+`gh pr list`; planned PRs that close, retarget, rename, rehead, or change
+draft state fail the check. Newly opened PRs outside the snapshot are warnings
+by default and become failures with `--strict-open-set`. After the final
+release/patch integration batch is pushed, the closed-loop check is
+`python3 ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live
+--strict-open-set --require-no-drafts`. That command passes when GitHub has
+marked the batch PR heads as merged and no new PR at or above the
+`metadata.pr_number_min` is open against `bootstrap-v2`.
+
+`origin/bootstrap-v2-intermediate` remains reference-only; merge-order work
+must continue to target `bootstrap-v2`. The intermediate branch carries the
+tarball-archived worker snapshots from earlier execution loops and is not a
+merge candidate.
+
+### Current Snapshot
+
+As of this audit at the `bootstrap-v2` tip:
+
+- The bootstrap-v2 PR train has fully drained: zero open PRs target
+  `bootstrap-v2` (`gh pr list --state open` returns empty).
+- All PRs in the manifest are recorded as landed. PRs #70 through #146 (the
+  most recent merged head at audit time) are integrated into `bootstrap-v2`.
+- `ci/ai-blaise/production-gap-audit.sh` emits machine-derived inventory at
+  this HEAD. The inventory line shape is
+  `production_gap_audit source_feature_ids=N doc_feature_headings=N
+  feature_headings=N production_ready=N alpha_headings=N
+  inventory_contract=machine_derived source_only_alpha=0
+  v2_acceptance=model_only production_release_blocked=true
+  live_sql_guards=true k8s_guardrail_contract=true live_k8s_e2e_harness=true
+  chart_folded_to_command_center=2026-05-22`. The numeric values are evidence
+  output from the script. Do not restate source/heading/status counts in
+  prose; the production gap audit derives them on every run.
+
+### Final Release and Patch Integration Batch
+
+The final release/patch integration batch preserved the contracts from these
+PRs:
+
+- #99 `codex/patch-production-integration-audit-20260524020118`
+- #100 `codex/release-env-preflight`
+- #102 `codex/slo-performance-evidence-hardening-20260524015908`
+- #103 `codex/production-gap-inventory-audit`
+- #105 `codex/runbook-command-checks-20260524-022745`
+- #109 `codex/integration-gap-audit-canonical-20260524T024726Z`
+- #97 `codex/release-publishability-20260523-2357`
+
+The #104 sidecar API runtime smoke had already landed in the runtime
+durability batch and is preserved in the same release path.
+
+The resolved contracts from that batch are:
+
+- This audit (`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`) keeps the
+  machine-derived inventory boundary and does not restate mutable
+  source/heading/status counts in prose.
+- `Makefile.ai-blaise` unions release preflight, release publishability,
+  Citus patch production audit, runbook command validation, performance
+  evidence, sidecar API runtime smoke, DR restore-depth, and release gate
+  monitor targets into the release path without dropping prior gates.
+- `ci/ai-blaise/production-gap-audit.sh` preserves machine-derived
+  inventory, performance evidence fail-closed checks, sidecar API runtime
+  smoke guards, runbook command wiring, DR restore-depth evidence, live
+  Kubernetes harness boundaries, and Timescale 2.28 pass-with-note truth.
+- The PostgREST, GraphQL, and edge-functions HTTP serve loops retain
+  persistent runtime drain state; edge-functions also retains process-local
+  function registration state across requests.
+- The release gate monitor baseline is refreshed to the current 51-command
+  V2 domain-contract output.
+
+### Verification On VM
+
+The integration batch passed on the VM worktree
+`/home/spencer/wt/release-patch-final-integration-20260524T0553Z` with the
+release-path command set:
+
+- `ci/ai-blaise/env-preflight.sh release`
+- `cargo metadata --locked --format-version=1`
+- `cargo fmt --all -- --check`
+- `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh`
+- `bash ci/ai-blaise/citus-patch-production-audit.sh`
+- `bash ci/ai-blaise/runbook-command-check.sh`
+- `bash ci/ai-blaise/performance-evidence-check.sh exploratory`
+- `PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release bash
+  ci/ai-blaise/performance-evidence-check.sh release` (fail-closed without
+  release artifacts)
+- `bash ci/ai-blaise/release-publishability-check.sh`
+- `REQUIRE_DOCKER=1 bash ci/ai-blaise/dr-restore-depth-check.sh`
+- `RELEASE_GATE_MONITOR_STATIC=1 bash
+  ci/ai-blaise/release-gate-monitor.sh --local-only`
+- `bash ci/ai-blaise/production-gap-audit.sh`
+- `bash ci/ai-blaise/production-readiness-check.sh audit`
+- `bash ci/ai-blaise/v2-closure-check.sh`
+- `bash ci/ai-blaise/v2-acceptance-check.sh`
+- `bash ci/ai-blaise/features-doc-check.sh`
+- `bash ci/ai-blaise/docs-evidence-boundary-check.sh`
+- `bash ci/ai-blaise/deploy-check.sh`
+- `bash ci/ai-blaise/image-check.sh`
+- `git diff --cached --check`
+- `git diff --check`
+
+The release performance evidence gate intentionally remains fail-closed
+without complete release benchmark artifacts. That behavior is the production
+boundary, not a release signoff.
+
+### Expensive Matrix Rules
+
+Batch meaningful work before a full Citus matrix run. Run focused PR smokes
+first, then run the expensive matrix at meaningful integration boundaries.
+Keep the matrix monitor in a parallel worker while non-overlapping
+implementation continues on the next PR or batch.
+
+Run the full matrix immediately if a merge or conflict resolution edits:
+
+- `src/backend/distributed/**`, `src/include/distributed/**`,
+  `src/test/regress/**`, `src/test/cdc/**`, or `patches/series`
+- `images/citus-pg-overlay/extensions/**`, SQL upgrade manifests, or
+  installable extension SQL
+- `.github/workflows/build_and_test.yml`,
+  `.github/workflows/run_tests.yml`, `packaging-test-pipelines.yml`, or
+  Citus matrix fanout logic
+
+Do not run the full matrix for merge-plan-only changes, metadata-only drift,
+or a no-semantic-diff rebase when focused checks have already passed on
+identical patch content.
+
+Before promotion, the final integrated `bootstrap-v2` tip must pass the
+full Citus matrix plus the ai-blaise release gates listed in
+`docs/ai-blaise/RELEASING.md`.
