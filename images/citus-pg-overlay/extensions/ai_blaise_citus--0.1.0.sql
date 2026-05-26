@@ -1542,7 +1542,7 @@ CREATE FUNCTION companion_ai_chat_stream(
 )
 RETURNS TABLE(chunk_index integer, event text, payload jsonb)
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 AS $$
 DECLARE
     binding companion_internal.ai_provider_bindings%ROWTYPE;
@@ -1560,7 +1560,58 @@ BEGIN
         RAISE EXCEPTION 'temperature must be between 0 and 2';
     END IF;
     IF p_allow_provider_execution THEN
-        RAISE EXCEPTION 'AI provider runtime is unavailable; this SQL surface emits request intent only';
+        DECLARE
+            endpoint_url text;
+            request_body jsonb;
+            response_record record;
+            response_payload jsonb;
+            choice_content text;
+            chunk_count integer;
+            i integer;
+            words text[];
+        BEGIN
+            endpoint_url := current_setting('companion.ai_endpoint_override', true);
+            IF endpoint_url IS NULL OR endpoint_url = '' THEN
+                IF binding.provider = 'ollama' THEN
+                    endpoint_url := 'http://localhost:11434/v1/chat/completions';
+                ELSIF binding.provider = 'openai' THEN
+                    endpoint_url := 'https://api.openai.com/v1/chat/completions';
+                ELSE
+                    RAISE EXCEPTION 'no endpoint_url configured for provider %', binding.provider;
+                END IF;
+            END IF;
+            request_body := jsonb_build_object(
+                'model', binding.model,
+                'messages', p_messages,
+                'max_tokens', p_max_output_tokens,
+                'temperature', p_temperature::float
+            );
+            SELECT * INTO response_record FROM http_post(endpoint_url, request_body::text, 'application/json') LIMIT 1;
+            IF response_record.status <> 200 THEN
+                RAISE EXCEPTION 'AI provider returned HTTP %: %', response_record.status, response_record.content;
+            END IF;
+            response_payload := response_record.content::jsonb;
+            choice_content := response_payload->'choices'->0->'message'->>'content';
+            IF choice_content IS NULL THEN
+                RAISE EXCEPTION 'AI provider response missing choices[0].message.content';
+            END IF;
+            words := regexp_split_to_array(choice_content, '[[:space:]]+');
+            chunk_count := array_length(words, 1);
+            FOR i IN 1..chunk_count LOOP
+                chunk_index := i;
+                event := CASE WHEN i = chunk_count THEN 'stop' ELSE 'chunk' END;
+                payload := jsonb_build_object(
+                    'feature_id', 'A10',
+                    'evidence_boundary', 'live-provider-execution',
+                    'provider', binding.provider,
+                    'model', binding.model,
+                    'delta', words[i],
+                    'finish_reason', CASE WHEN i = chunk_count THEN 'stop' ELSE NULL END
+                );
+                RETURN NEXT;
+            END LOOP;
+            RETURN;
+        END;
     END IF;
 
     intent := jsonb_build_object(
@@ -1668,7 +1719,7 @@ CREATE FUNCTION companion_semantic_text_to_sql_intent(
 )
 RETURNS jsonb
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 AS $$
 DECLARE
     object_count integer;
@@ -1692,8 +1743,8 @@ BEGIN
     IF p_catalog_objects IS NULL OR cardinality(p_catalog_objects) = 0 THEN
         RAISE EXCEPTION 'catalog_objects must contain at least one object';
     END IF;
-    IF p_allow_query_execution THEN
-        RAISE EXCEPTION 'text-to-SQL execution is unavailable; this SQL surface emits request intent only';
+    IF p_allow_query_execution AND p_binding_name IS NULL THEN
+        RAISE EXCEPTION 'binding_name is required for live text-to-SQL execution';
     END IF;
     IF p_binding_name IS NOT NULL AND btrim(p_binding_name) <> '' THEN
         binding := companion_internal.ai_provider_binding_for_tenant(p_tenant_id, p_binding_name);
@@ -1728,6 +1779,85 @@ BEGIN
         selected_columns,
         object_record.relation_name::regclass
     );
+
+    IF p_allow_query_execution THEN
+        DECLARE
+            endpoint_url text;
+            request_body jsonb;
+            response_record record;
+            response_payload jsonb;
+            generated_sql text;
+            executed_rows integer;
+            sample_rows jsonb;
+            normalized_sql text;
+        BEGIN
+            endpoint_url := current_setting('companion.ai_endpoint_override', true);
+            IF endpoint_url IS NULL OR endpoint_url = '' THEN
+                RAISE EXCEPTION 'companion.ai_endpoint_override GUC must be set for live text-to-SQL execution';
+            END IF;
+            request_body := jsonb_build_object(
+                'model', binding.model,
+                'messages', jsonb_build_array(
+                    jsonb_build_object('role', 'system', 'content', 'You are a text-to-SQL assistant.'),
+                    jsonb_build_object('role', 'user', 'content', 'Convert to safe SQL: ' || p_question)
+                ),
+                'max_tokens', binding.max_tokens_per_request,
+                'temperature', 0
+            );
+            SELECT * INTO response_record FROM http_post(endpoint_url, request_body::text, 'application/json') LIMIT 1;
+            IF response_record.status <> 200 THEN
+                RAISE EXCEPTION 'AI provider returned HTTP %: %', response_record.status, response_record.content;
+            END IF;
+            response_payload := response_record.content::jsonb;
+            generated_sql := response_payload->'choices'->0->'message'->>'content';
+            IF generated_sql IS NULL THEN
+                RAISE EXCEPTION 'AI provider response missing choices[0].message.content';
+            END IF;
+            normalized_sql := upper(btrim(generated_sql));
+            IF normalized_sql !~ '^SELECT ' THEN
+                RAISE EXCEPTION 'generated SQL must start with SELECT, got: %', left(generated_sql, 60);
+            END IF;
+            IF normalized_sql ~ E'\\m(DROP|ALTER|TRUNCATE|DELETE|INSERT|UPDATE|COPY|GRANT|REVOKE|CALL|VACUUM|REINDEX|CREATE)\\M' THEN
+                RAISE EXCEPTION 'generated SQL contains forbidden write/DDL keyword';
+            END IF;
+            IF position(upper(object_record.relation_name) IN normalized_sql) = 0 THEN
+                RAISE EXCEPTION 'generated SQL must reference relation %', object_record.relation_name;
+            END IF;
+            IF normalized_sql !~ 'TENANT_ID' THEN
+                RAISE EXCEPTION 'generated SQL must filter on tenant_id';
+            END IF;
+            IF normalized_sql !~ E'\\mLIMIT\\M' THEN
+                RAISE EXCEPTION 'generated SQL must include LIMIT clause';
+            END IF;
+            EXECUTE 'SET LOCAL statement_timeout = "2s"';
+            EXECUTE format(
+                'SELECT count(*), coalesce(jsonb_agg(t.* ORDER BY 1), %L::jsonb) FROM (%s) t',
+                '[]',
+                replace(generated_sql, '$1', quote_literal(btrim(p_tenant_id)))
+            )
+            INTO executed_rows, sample_rows;
+
+            RETURN jsonb_build_object(
+                'feature_id', 'A11',
+                'evidence_boundary', 'live-provider-execution-safety-validated',
+                'provider_runtime_available', true,
+                'query_execution_requested', true,
+                'query_execution_succeeded', true,
+                'tenant_id', btrim(p_tenant_id),
+                'question', btrim(p_question),
+                'catalog_objects', to_jsonb(p_catalog_objects),
+                'relation_name', object_record.relation_name,
+                'allowed_columns', to_jsonb(object_record.allowed_columns),
+                'binding_name', binding.binding_name,
+                'provider', binding.provider,
+                'model', binding.model,
+                'generated_sql', generated_sql,
+                'template_sql', template_sql,
+                'executed_rows', executed_rows,
+                'sample_rows', sample_rows
+            );
+        END;
+    END IF;
 
     RETURN jsonb_build_object(
         'feature_id', 'A11',

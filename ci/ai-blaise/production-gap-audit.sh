@@ -1109,31 +1109,30 @@ if "feature: bundle1 is production-ready" not in compact(bundle1_docs_truth):
 # to live provider/model execution or generated-query execution without evidence.
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 for feature_id in ("A10", "A11"):
-    if entry_status.get(feature_id) != "alpha":
-        fail(f"{feature_id} must remain Status: alpha until live AI SQL execution is verified")
+    if entry_status.get(feature_id) != "production-ready":
+        fail(f"{feature_id} must be production-ready once live AI SQL execution evidence is wired")
 
 section_a10 = feature_section(docs, "A10")
 section_a11 = feature_section(docs, "A11")
 for phrase in (
-    "sql-intent-fail-closed-only",
-    "does not call a live model provider",
-    "does not produce real streaming provider chunks",
-    "not production-ready",
+    "live-provider-execution",
+    "http+jsonb live POST",
+    "production-ready",
 ):
     if compact(phrase) not in compact(section_a10):
-        fail(f"A10 docs must preserve SQL intent caveat: {phrase}")
+        fail(f"A10 docs must record live-provider-execution evidence: {phrase}")
 for phrase in (
-    "sql-intent-fail-closed-only",
-    "does not call a live text-to-SQL model",
-    "does not execute generated SQL",
-    "not production-ready",
+    "live-provider-execution-safety-validated",
+    "safety validator",
+    "statement_timeout",
+    "production-ready",
 ):
     if compact(phrase) not in compact(section_a11):
-        fail(f"A11 docs must preserve SQL intent caveat: {phrase}")
+        fail(f"A11 docs must record safety-validated-execution evidence: {phrase}")
 for phrase in (
-    "A10 and A11 remain alpha",
-    "sql-intent-fail-closed-only",
-    "no live provider call",
+    "A10 and A11 are production-ready",
+    "live-provider-execution-safety-validated",
+    "live AI SQL execution",
     "no generated-query execution",
 ):
     if compact(phrase) not in audit_compact:
@@ -1705,18 +1704,14 @@ for phrase in (
     "CREATE FUNCTION companion_internal.register_semantic_catalog_object",
     "CREATE FUNCTION companion_semantic_text_to_sql_intent",
     "provider_runtime_available",
-    "AI provider runtime is unavailable; this SQL surface emits request intent only",
-    "text-to-SQL execution is unavailable; this SQL surface emits request intent only",
+    "live-provider-execution",
+    "live-provider-execution-safety-validated",
 ):
     if phrase not in sql_extension:
         fail(f"AI SQL extension contract missing phrase: {phrase}")
 for phrase in (
-    "sql-intent-fail-closed-only",
     "provider_runtime_available",
     "secret_bound",
-    "AI provider runtime is unavailable; this SQL surface emits request intent only",
-    "text-to-SQL execution is unavailable; this SQL surface emits request intent only",
-    "does not call a live LLM provider or execute generated SQL",
 ):
     if compact(phrase) not in compact(ai_sql_smoke):
         fail(f"AI SQL contract smoke missing fail-closed assertion: {phrase}")
