@@ -16,12 +16,19 @@ set -euo pipefail
 # when the existing sql-extension-smoke flow builds bundle1-final-light from the
 # in-tree source.
 #
-# Mode 2 (REQUIRE_DOCKER=1): boots citusdata/citus:13.3.0-pg17 (pre-cherry-pick
-# upstream Citus binary distribution), runs distributed-query patterns from the
-# new regression tests, and records whether each pattern still triggers the
-# upstream bug as deployed today. Combined with Mode 1's source-level proof that
-# our tree contains the fix, this demonstrates the production value of folding
-# the upstream commits into the fork.
+# Mode 2 (REQUIRE_DOCKER=1): boots citusdata/citus:14.0.0-pg17 (the latest
+# stable upstream Citus release tag, pre-dates all five cherry-picks - see
+# `git log v14.0.0..upstream/main` for the gap), runs distributed-query
+# patterns from the new regression tests, and records whether each pattern
+# still triggers the upstream bug as deployed today.
+#
+# Mode 3 (REQUIRE_DOCKER=1 RUN_BUNDLE1_FIX_VERIFICATION=1): rebuilds the
+# bundle1-final-light image from the in-tree cherry-picked Citus source (i.e.
+# our fork after this rebase), boots it on a loopback port, and runs the same
+# bug-reproducer queries. Each one must now return the correct result, proving
+# the cherry-picks integrate end-to-end with our build flow + customizations.
+# This is gated behind a separate env var because the bundle1 source-build
+# takes ~5-10 minutes even on a 48-core host.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -31,9 +38,9 @@ mkdir -p "${artifacts_dir}"
 evidence_tsv="${artifacts_dir}/upstream-rebase-2026-05-25-integration-evidence.tsv"
 
 require_docker="${REQUIRE_DOCKER:-0}"
-upstream_image="${UPSTREAM_REBASE_SMOKE_IMAGE:-citusdata/citus:13.3.0-pg17}"
+upstream_image="${UPSTREAM_REBASE_SMOKE_IMAGE:-citusdata/citus:14.0.0-pg17}"
 
-log() { printf '%s %s\n' "[upstream-rebase-2026-05-25]" "$*"; }
+log() { printf '%s %s\n' "[upstream-rebase-2026-05-25]" "$*" >&2; }
 fail() { log "FAIL: $*"; exit 1; }
 
 # --- Mode 1: source-level fingerprint verification --------------------------
@@ -124,121 +131,271 @@ if ! grep -q "^- \*\*Reference tables\*\*" README.md; then
 fi
 log "ok: #8592 README grammar fixes present"
 
-# --- Mode 2: live runtime exercise against pre-cherry-pick upstream Citus ---
+# --- shared helper: boot a single-coordinator + 1-worker Citus cluster ------
 
-bug_collate="skipped"
-bug_not_distinct="skipped"
-bug_ownership="skipped"
-upstream_runtime_exercised="false"
+network=""
+coord_container=""
+worker_container=""
 
-if [ "${require_docker}" = "1" ]; then
-  upstream_runtime_exercised="true"
-  log "phase 2: live runtime exercise against ${upstream_image} (pre-cherry-pick)"
-
-  if ! command -v docker >/dev/null 2>&1; then
-    fail "docker not on PATH but REQUIRE_DOCKER=1"
+cluster_cleanup() {
+  if [ -n "${worker_container}" ]; then
+    docker rm -f "${worker_container}" >/dev/null 2>&1 || true
   fi
+  if [ -n "${coord_container}" ]; then
+    docker rm -f "${coord_container}" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${network}" ]; then
+    docker network rm "${network}" >/dev/null 2>&1 || true
+  fi
+}
+trap cluster_cleanup EXIT
 
-  pg_container="upstream-rebase-pg-$$"
-  cleanup() { docker rm -f "${pg_container}" >/dev/null 2>&1 || true; }
-  trap cleanup EXIT
+boot_citus_cluster() {
+  local image="$1"
+  local tag="$2"
+  local shared_preload="$3"
 
-  docker run -d --name "${pg_container}" \
+  network="upstream-rebase-net-${tag}-$$"
+  coord_container="upstream-rebase-coord-${tag}-$$"
+  worker_container="upstream-rebase-worker-${tag}-$$"
+
+  docker network create "${network}" >/dev/null
+
+  # PGSODIUM_KEY: bundle1 image preloads pgsodium which is fail-closed on a
+  # missing key. Provide a deterministic dev-only 64-hex key so initdb passes
+  # without an external secret mount. The upstream Citus image ignores this.
+  local pgsodium_dev_key="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  docker run -d --name "${coord_container}" --network "${network}" --network-alias coord \
     -e POSTGRES_PASSWORD=postgres \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
-    "${upstream_image}" >/dev/null
-  for _ in $(seq 1 60); do
-    if docker exec "${pg_container}" pg_isready -U postgres >/dev/null 2>&1; then
+    -e PGSODIUM_KEY="${pgsodium_dev_key}" \
+    "${image}" \
+    postgres -c "shared_preload_libraries=${shared_preload}" >/dev/null
+  docker run -d --name "${worker_container}" --network "${network}" --network-alias worker \
+    -e POSTGRES_PASSWORD=postgres \
+    -e POSTGRES_HOST_AUTH_METHOD=trust \
+    -e PGSODIUM_KEY="${pgsodium_dev_key}" \
+    "${image}" \
+    postgres -c "shared_preload_libraries=${shared_preload}" >/dev/null
+
+  # Wait for actual SQL connectivity, not just pg_isready. Bundle1 image
+  # restarts postgres mid-initdb (to apply config changes), so an early
+  # pg_isready can succeed during the initial startup right before the
+  # restart — a SELECT 1 only succeeds when the final postgres is serving.
+  local ready_coord=0 ready_worker=0
+  for _ in $(seq 1 180); do
+    if [ "${ready_coord}" = 0 ] \
+        && docker exec "${coord_container}" psql -U postgres -d postgres -tA \
+             -c "SELECT 1;" >/dev/null 2>&1; then
+      ready_coord=1
+    fi
+    if [ "${ready_worker}" = 0 ] \
+        && docker exec "${worker_container}" psql -U postgres -d postgres -tA \
+             -c "SELECT 1;" >/dev/null 2>&1; then
+      ready_worker=1
+    fi
+    if [ "${ready_coord}" = 1 ] && [ "${ready_worker}" = 1 ]; then
       break
     fi
     sleep 1
   done
-  if ! docker exec "${pg_container}" pg_isready -U postgres >/dev/null 2>&1; then
-    fail "${upstream_image} did not become ready"
-  fi
+  [ "${ready_coord}" = 1 ] || fail "${image} coordinator did not become ready"
+  [ "${ready_worker}" = 1 ] || fail "${image} worker did not become ready"
 
-  docker exec "${pg_container}" psql -U postgres -d postgres -c "CREATE EXTENSION citus;" >/dev/null
-  docker exec "${pg_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
-    "SELECT citus_set_coordinator_host('localhost', 5432);" >/dev/null
-  docker exec "${pg_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
-    CREATE TABLE upstream_rebase_collate_cast (c0 inet, c1 inet);
-    SELECT create_distributed_table('upstream_rebase_collate_cast', 'c0');
-    INSERT INTO upstream_rebase_collate_cast(c1, c0) VALUES
+  for c in "${coord_container}" "${worker_container}"; do
+    docker exec "${c}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+      -c "CREATE EXTENSION IF NOT EXISTS citus;" >/dev/null
+  done
+  docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    SELECT citus_set_coordinator_host('coord', 5432);
+    SELECT master_add_node('worker', 5432);
+  " >/dev/null
+}
+
+run_bug_reproducers() {
+  local target_label="$1"
+  local _bug_collate _bug_not_distinct _bug_ownership
+
+  # pgsodium installs an event trigger trg_mask_update that references the
+  # pgsodium.enable_event_trigger GUC which is only set by the pgsodium-
+  # preloaded image. With pgsodium SQL-loaded but not preloaded, the trigger
+  # fires on every CREATE TABLE and errors. Drop it so DDL doesn't choke.
+  docker exec "${coord_container}" psql -U postgres -d postgres -c \
+    "DROP EXTENSION IF EXISTS pgsodium CASCADE;" >/dev/null 2>&1 || true
+  docker exec "${worker_container}" psql -U postgres -d postgres -c \
+    "DROP EXTENSION IF EXISTS pgsodium CASCADE;" >/dev/null 2>&1 || true
+
+  docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    DROP TABLE IF EXISTS r_collate, r_t5, r_t2_child, r_t1_parent, r_t0, r_owned CASCADE;
+    DROP ROLE IF EXISTS r_other;
+    SET citus.shard_count = 4;
+    CREATE TABLE r_collate (c0 inet, c1 inet);
+    SELECT create_distributed_table('r_collate', 'c0');
+    INSERT INTO r_collate(c1, c0) VALUES
       ('144.150.228.243', '230.194.119.117'),
-      ('22.171.214.19',   '138.53.199.60');
+      ('22.171.214.19',   '138.53.199.60'),
+      ('14.25.58.22',     '103.167.89.59');
   " >/dev/null
 
-  # #8498 bug reproducer: COLLATE+typecast on distributed GROUP BY raises
-  #   'attribute N of type record has wrong type' on unpatched Citus.
-  if docker exec "${pg_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
-      SELECT SUM(agg0)
-      FROM (
-          SELECT ALL SUM(0.5) as agg0
-          FROM ONLY upstream_rebase_collate_cast
-          GROUP BY (((('fooText')||(upstream_rebase_collate_cast.c1)))::VARCHAR COLLATE \"C\")
-      ) AS asdf;
+  # #8498 reproducer: GROUP BY (...::VARCHAR COLLATE \"C\") on distributed
+  #   table. Pre-fix: 'attribute N of type record has wrong type'.
+  if docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+        SELECT SUM(agg0)
+        FROM (
+            SELECT ALL SUM(0.5) AS agg0
+            FROM ONLY r_collate
+            GROUP BY (((('fooText')||(r_collate.c1)))::VARCHAR COLLATE \"C\")
+        ) sub;
+      " >/dev/null 2>&1; then
+    _bug_collate="behaves_correctly"
+  else
+    _bug_collate="bug_observed"
+  fi
+
+  # #8497 reproducer: TLP branch_true + branch_false must equal original.
+  # Mirrors the upstream issue_8468.sql shape: distributed t5 + INHERITS parent
+  # + local t0, LEFT OUTER JOIN that triggers recursive-planning wrap of the
+  # local table whose restriction columns must be projected to evaluate the
+  # outer WHERE correctly. Pre-fix: branch_false=0 (NULL-projection of the
+  # restriction column makes NOT (0 IS DISTINCT FROM NULL) always FALSE).
+  docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    CREATE TABLE r_t5(c0 float);
+    SELECT create_distributed_table('r_t5', 'c0');
+    INSERT INTO r_t5(c0) VALUES (0.009452163), (1.4691802E9), (0.005109378),
+      (0.6941109), (0.7013781), (0.8670044), (-1.6739732E9), (-4.5730365E8);
+    CREATE TABLE r_t1_parent(c0 float);
+    CREATE TABLE r_t2_child(c0 float, c1 char(20), c2 decimal) INHERITS(r_t1_parent);
+    INSERT INTO r_t1_parent(c0) VALUES(-1.6739732E9), (0), (0.32921866), ('-Infinity');
+    INSERT INTO r_t2_child(c1, c2, c0) VALUES('', 0.19, 0), ('test', 0.33, 0.89),
+      ('abc', 0.58, 0.68), ('', 0.18, 0.74), ('', 0.22, 0.71);
+    CREATE TABLE r_t0(c0 float);
+    INSERT INTO r_t0(c0) VALUES(-1.9619044E9), (0.18373421), (6.175733E8), (0.58579546);
+  " >/dev/null
+  local orig br_true br_false
+  orig=$(docker exec "${coord_container}" psql -U postgres -d postgres -tA -c "
+    SELECT count(*) FROM (
+      SELECT r_t5.c0 FROM r_t1_parent, r_t0 LEFT OUTER JOIN r_t5 ON (True)
+    ) sub;
+  " | tr -d '[:space:]')
+  br_true=$(docker exec "${coord_container}" psql -U postgres -d postgres -tA -c "
+    SELECT count(*) FROM (
+      SELECT r_t5.c0 FROM r_t1_parent, r_t0 LEFT OUTER JOIN r_t5 ON (True)
+      WHERE (0::double precision IS DISTINCT FROM r_t1_parent.c0)
+    ) sub;
+  " | tr -d '[:space:]')
+  br_false=$(docker exec "${coord_container}" psql -U postgres -d postgres -tA -c "
+    SELECT count(*) FROM (
+      SELECT r_t5.c0 FROM r_t1_parent, r_t0 LEFT OUTER JOIN r_t5 ON (True)
+      WHERE NOT (0::double precision IS DISTINCT FROM r_t1_parent.c0)
+    ) sub;
+  " | tr -d '[:space:]')
+  log "${target_label} #8497 TLP counts: original=${orig} true=${br_true} false=${br_false}"
+  if [ "$((br_true + br_false))" -eq "${orig}" ]; then
+    _bug_not_distinct="behaves_correctly"
+  else
+    _bug_not_distinct="bug_observed"
+  fi
+
+  # #8587 reproducer: non-owner attempts citus_internal_update_relation_colocation.
+  # ROLE create + GRANT must be in separate transactions from the distributed
+  # table create to avoid Citus parallel-op constraint.
+  docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    CREATE TABLE r_owned(id int);
+    SELECT create_distributed_table('r_owned', 'id');
+  " >/dev/null
+  docker exec "${coord_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+    CREATE ROLE r_other LOGIN;
+    GRANT USAGE ON SCHEMA pg_catalog TO r_other;
+  " >/dev/null
+  if docker exec "${coord_container}" psql -U postgres -d postgres -tA -v ON_ERROR_STOP=1 -c "
+      SET ROLE r_other;
+      SELECT pg_catalog.citus_internal_update_relation_colocation('r_owned'::regclass, 0);
     " >/dev/null 2>&1; then
-    bug_collate="not_reproduced"
+    _bug_ownership="bug_observed"
   else
-    bug_collate="reproduced_on_upstream"
+    _bug_ownership="behaves_correctly"
   fi
-  log "#8498 COLLATE+typecast bug on ${upstream_image}: ${bug_collate}"
 
-  # #8497 bug reproducer: NOT (x IS DISTINCT FROM y) with recursive planning
-  #   should sum branch_true + branch_false == original on a fixed cohort.
-  docker exec "${pg_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
-    CREATE TABLE upstream_rebase_t5 (c0 float);
-    SELECT create_distributed_table('upstream_rebase_t5', 'c0');
-    INSERT INTO upstream_rebase_t5(c0) VALUES (0.0), (1.0), (NULL), (2.0);
-    CREATE TABLE upstream_rebase_t1_parent (c0 float);
-    INSERT INTO upstream_rebase_t1_parent(c0) VALUES (-1.0), (0.0), (0.5), ('-Infinity');
-  " >/dev/null
-  original_count=$(docker exec "${pg_container}" psql -U postgres -d postgres -tA -c "
-    SELECT count(*) FROM (
-      SELECT t5.c0 FROM upstream_rebase_t1_parent, upstream_rebase_t5
-    ) sub;
-  " | tr -d '[:space:]')
-  branch_true=$(docker exec "${pg_container}" psql -U postgres -d postgres -tA -c "
-    SELECT count(*) FROM (
-      SELECT t5.c0 FROM upstream_rebase_t1_parent, upstream_rebase_t5
-      WHERE (0::double precision IS DISTINCT FROM upstream_rebase_t1_parent.c0)
-    ) sub;
-  " | tr -d '[:space:]')
-  branch_false=$(docker exec "${pg_container}" psql -U postgres -d postgres -tA -c "
-    SELECT count(*) FROM (
-      SELECT t5.c0 FROM upstream_rebase_t1_parent, upstream_rebase_t5
-      WHERE NOT (0::double precision IS DISTINCT FROM upstream_rebase_t1_parent.c0)
-    ) sub;
-  " | tr -d '[:space:]')
-  log "#8497 TLP branch counts on ${upstream_image}: original=${original_count} true=${branch_true} false=${branch_false}"
-  expected_sum=$((branch_true + branch_false))
-  if [ "${expected_sum}" -ne "${original_count}" ]; then
-    bug_not_distinct="reproduced_on_upstream"
-  else
-    bug_not_distinct="not_reproduced"
+  printf '%s\t%s\t%s\n' "${_bug_collate}" "${_bug_not_distinct}" "${_bug_ownership}"
+}
+
+# --- Mode 2: live runtime exercise against pre-cherry-pick upstream Citus ---
+
+bug_collate_upstream="skipped"
+bug_not_distinct_upstream="skipped"
+bug_ownership_upstream="skipped"
+upstream_runtime_exercised="false"
+
+bug_collate_fork="skipped"
+bug_not_distinct_fork="skipped"
+bug_ownership_fork="skipped"
+fork_runtime_exercised="false"
+
+if [ "${require_docker}" = "1" ]; then
+  if ! command -v docker >/dev/null 2>&1; then
+    fail "docker not on PATH but REQUIRE_DOCKER=1"
   fi
-  log "#8497 NOT (IS DISTINCT FROM) bug on ${upstream_image}: ${bug_not_distinct}"
 
-  # #8587 ownership enforcement: pre-cherry-pick metadata_sync.c does not gate
-  # citus_internal.update_relation_colocation on relation ownership; create a
-  # non-superuser role and assert the unpatched call path. We only check that
-  # the relation exists; live ownership-bypass exploitation is out of scope.
-  docker exec "${pg_container}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
-    CREATE TABLE upstream_rebase_owned (id int);
-    SELECT create_distributed_table('upstream_rebase_owned', 'id');
-    CREATE ROLE upstream_rebase_other LOGIN;
-  " >/dev/null
-  bug_ownership="probe_only"
-  log "#8587 ownership-enforcement probe on ${upstream_image}: ${bug_ownership} (relation + role created; live exploit out of scope for smoke)"
+  upstream_runtime_exercised="true"
+  log "phase 2: live runtime exercise against ${upstream_image} (pre-cherry-pick)"
+  boot_citus_cluster "${upstream_image}" "upstream" "citus"
+  read -r bug_collate_upstream bug_not_distinct_upstream bug_ownership_upstream \
+    < <(run_bug_reproducers "upstream@${upstream_image}")
+  log "#8498 COLLATE+typecast on ${upstream_image}: ${bug_collate_upstream}"
+  log "#8497 NOT (IS DISTINCT FROM) on ${upstream_image}: ${bug_not_distinct_upstream}"
+  log "#8587 ownership enforcement on ${upstream_image}: ${bug_ownership_upstream}"
+  cluster_cleanup
+  network=""; coord_container=""; worker_container=""
+fi
+
+# --- Mode 3: live runtime exercise against our cherry-picked bundle1 image --
+
+if [ "${require_docker}" = "1" ] && [ "${RUN_BUNDLE1_FIX_VERIFICATION:-0}" = "1" ]; then
+  fork_image="${FORK_BUNDLE1_IMAGE:-ai-blaise-citus-overlay:upstream-rebase-fix-verification}"
+  log "phase 3: building bundle1-final-light from in-tree cherry-picked Citus"
+
+  docker build \
+    -f images/citus-pg-overlay/Dockerfile \
+    --target bundle1-final-light \
+    --build-arg PG_MAJOR=17 \
+    --build-arg BASE_IMAGE=postgres:17-bookworm \
+    -t "${fork_image}" \
+    . >/dev/null
+
+  log "phase 3: live runtime exercise against ${fork_image} (with cherry-picks)"
+  # Bundle1 shared_preload set minus pgsodium (which gates the whole startup
+  # on a real key file). pgsodium still gets created via the initdb SQL with
+  # PGSODIUM_KEY env, which is sufficient for everything we test here.
+  boot_citus_cluster "${fork_image}" "fork" \
+    "citus,timescaledb,pgaudit,pgauditlogtofile,pg_cron,age,pg_failover_slots,pgnodemx"
+  fork_runtime_exercised="true"
+  read -r bug_collate_fork bug_not_distinct_fork bug_ownership_fork \
+    < <(run_bug_reproducers "fork@${fork_image}")
+  log "#8498 COLLATE+typecast on ${fork_image}: ${bug_collate_fork}"
+  log "#8497 NOT (IS DISTINCT FROM) on ${fork_image}: ${bug_not_distinct_fork}"
+  log "#8587 ownership enforcement on ${fork_image}: ${bug_ownership_fork}"
+
+  # Each fix must produce the correct result on the cherry-picked image.
+  if [ "${bug_collate_fork}" != "behaves_correctly" ]; then
+    fail "#8498 COLLATE+typecast still buggy on cherry-picked bundle1 image"
+  fi
+  if [ "${bug_not_distinct_fork}" != "behaves_correctly" ]; then
+    fail "#8497 NOT (IS DISTINCT FROM) still buggy on cherry-picked bundle1 image"
+  fi
+  if [ "${bug_ownership_fork}" != "behaves_correctly" ]; then
+    fail "#8587 ownership enforcement still bypassable on cherry-picked bundle1 image"
+  fi
 fi
 
 # --- emit evidence ----------------------------------------------------------
 
 ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 {
-  printf 'timestamp\tupstream_base\tupstream_head\tcommits_folded\tregression_files_landed\tschedule_wired\treadme_grammar_fixes\tupstream_runtime_exercised\tbug_8498_collate\tbug_8497_not_distinct\tbug_8587_ownership_probe\tevidence_boundary\n'
-  printf '%s\t4d54b11bbab52f71b76c316432e878a1bc38206c\tdee8ec140aff84d8769bdcd859c39c379180fe06\t5\t3\ttrue\t2\t%s\t%s\t%s\t%s\tupstream-rebase-2026-05-25-integration\n' \
-    "${ts}" "${upstream_runtime_exercised}" "${bug_collate}" "${bug_not_distinct}" "${bug_ownership}"
+  printf 'timestamp\tupstream_base\tupstream_head\tcommits_folded\tregression_files_landed\tschedule_wired\treadme_grammar_fixes\tupstream_runtime_exercised\tupstream_8498_collate\tupstream_8497_not_distinct\tupstream_8587_ownership\tfork_runtime_exercised\tfork_8498_collate\tfork_8497_not_distinct\tfork_8587_ownership\tevidence_boundary\n'
+  printf '%s\t4d54b11bbab52f71b76c316432e878a1bc38206c\tdee8ec140aff84d8769bdcd859c39c379180fe06\t5\t3\ttrue\t2\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\tupstream-rebase-2026-05-25-integration\n' \
+    "${ts}" \
+    "${upstream_runtime_exercised}" "${bug_collate_upstream}" "${bug_not_distinct_upstream}" "${bug_ownership_upstream}" \
+    "${fork_runtime_exercised}" "${bug_collate_fork}" "${bug_not_distinct_fork}" "${bug_ownership_fork}"
 } > "${evidence_tsv}"
 
 log "evidence row written to ${evidence_tsv}"
