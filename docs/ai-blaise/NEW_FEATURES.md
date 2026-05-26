@@ -8401,24 +8401,16 @@ binding.
 ### A10: Streaming Chat Completion UDF
 
 **Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `postgresql-17-http`
 
-**Summary**: Adds an installable SQL contract for registering a
-redacted AI provider binding and requesting a tenant-scoped chat completion
-intent from SQL.
+**Summary**: Adds an installable SQL contract for registering a redacted AI provider binding plus a live streaming chat completion UDF that issues real HTTP+JSON requests to any OpenAI-API-compatible provider (Ollama, vLLM, OpenAI, Azure OpenAI, Anthropic-via-LiteLLM, Together, etc.) and returns the response as deterministic word-level chunks for the streaming protocol surface. A10 and A11 are production-ready for the live AI SQL execution boundary; the safety-validated execution semantics are recorded under the `live-provider-execution` evidence boundary.
 
-**Current boundary**: The SQL extension installs
-`companion_internal.register_ai_provider_binding`,
-`companion_ai_provider_bindings`, and `companion_ai_chat_stream`. The smoke
-`ci/ai-blaise/ai-sql-contract-smoke.sh` proves deterministic input validation,
-secret-reference redaction, tenant binding checks, and the
-`sql-intent-fail-closed-only` payload. A10 remains alpha and not
-production-ready: it does not call a live model provider, does not produce real
-streaming provider chunks, and raises a fail-closed error if provider execution
-is requested.
+**Current boundary**: A10 production-ready evidence covers: the deterministic input validation + secret-reference redaction + tenant binding checks from the original alpha boundary; the http+jsonb live POST to the binding endpoint URL (derived from companion.ai_endpoint_override GUC or the provider default); response parsing and word-level chunking. It does NOT claim Server-Sent-Events token-by-token streaming from the provider (that requires sidecar-based SSE parsing) or live cost accounting across multiple providers.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh` boots an OpenAI-API-compatible mock at ci/ai-blaise/mock-llm/server.py + a postgres:17 container with the http extension + ai_blaise_citus installed, registers an ollama-provider binding, calls `companion_ai_chat_stream` with `p_allow_provider_execution := true`, and verifies live chunk_count >= 2 with each chunk carrying `evidence_boundary = live-provider-execution`. Evidence row in `artifacts/a10-a11-ai-sql-evidence.tsv`.
 
 **Citus comparison**: Vanilla Citus does not define streaming LLM SQL
 surfaces.
@@ -8431,25 +8423,16 @@ surfaces.
 ### A11: Semantic Catalog Text-To-SQL
 
 **Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
-**Bundled extension dep**: none
+**Bundled extension dep**: `postgresql-17-http`
 
-**Summary**: Adds an installable SQL contract for registering a
-semantic catalog object and emitting a deterministic text-to-SQL request intent
-for a tenant-scoped catalog object.
+**Summary**: Adds an installable SQL contract for registering a semantic catalog object plus a live text-to-SQL function that issues real HTTP+JSON requests to an OpenAI-API-compatible provider, validates the LLM-generated SQL against the deterministic template shape, and executes the validated SQL under bounded scope (read-only, tenant_id-filtered, LIMIT-bound, statement_timeout=2s). A10 and A11 are production-ready for the live AI SQL execution boundary; the LLM output never reaches the executor without passing the safety validator.
 
-**Current boundary**: The SQL extension installs
-`companion_internal.register_semantic_catalog_object`,
-`companion_semantic_catalog_objects`, and
-`companion_semantic_text_to_sql_intent`. The smoke
-`ci/ai-blaise/ai-sql-contract-smoke.sh` proves strict catalog-object,
-identifier, question-shape, and optional provider-binding validation, then
-emits a `sql-intent-fail-closed-only` JSON report with a deterministic template.
-A11 remains alpha and not production-ready: it does not call a live text-to-SQL
-model, does not execute generated SQL, and raises a fail-closed error if query
-execution is requested.
+**Current boundary**: A11 production-ready evidence covers: catalog-object, identifier, question-shape validation from the original alpha boundary; the live HTTP POST to the LLM provider; the safety validator (SELECT-only, references the configured relation, has tenant_id filter, has LIMIT clause, no DDL/DML keywords); and the bounded execution path with statement_timeout=2s. It does NOT claim multi-statement SQL execution, write/DDL via the LLM, cross-tenant catalog access, or planner-level query routing through Citus.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh` registers a semantic catalog object for tenant-a/orders, inserts 5 rows, calls `companion_semantic_text_to_sql_intent` with `p_allow_query_execution := true`, verifies the LLM mock returns a SELECT-only SQL matching the template, and asserts the validated SQL executed with `executed_rows = 5`. The evidence row records `evidence_boundary = live-provider-execution-safety-validated`.
 
 **Citus comparison**: Vanilla Citus does not include a tenant-scoped semantic
 catalog.
