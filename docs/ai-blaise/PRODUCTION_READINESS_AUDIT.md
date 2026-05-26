@@ -346,10 +346,12 @@ more production-ready than the artifacts justified.
   duplicate region inventory rejection, `RegionalRowPlacementPlan` admission
   checks for declared regions, distribution key, replication factor, and
   `topology.kubernetes.io/region` spread, plus canonical output with
-  `live_k8s_exercised=false`. `MR3`, `MR5`, and `MR9` remain alpha; this is not
-  evidence for live row movement, GeoIP pool routing, cross-region client
-  traffic, DNS cutover, regional failover, PITR restore, or backup artifact
-  restore.
+  `live_k8s_exercised=false`. `MR3` and `MR5` remain alpha and `MR9` is
+  production-ready only for the bounded two-region failover-drill scope
+  (`ci/ai-blaise/mr9-regional-failover-live-smoke.sh`); this is not evidence
+  for live row movement, GeoIP pool routing, cross-region client traffic, DNS
+  cutover, full multi-region regional failover orchestration, PITR restore,
+  or backup artifact restore.
 - The backup/PITR runbooks now have a restore-depth gate backed by
   `ci/ai-blaise/dr-restore-depth-check.sh`. The gate validates fail-closed
   restore configuration, read-only branch-before-restore policy, destructive
@@ -720,8 +722,9 @@ more production-ready than the artifacts justified.
   `mr3_worker_placement_enforced=true`, `mr3_matched_region_count=2`, and
   `mr3_rows_preserved=true`. This does not claim WAN/multi-region network
   execution, Kubernetes operator reconciliation, automatic repartition
-  scheduling, regional traffic routing, GeoIP routing, or regional failover;
-  MR9 remains alpha for survival drills.
+  scheduling, regional traffic routing, GeoIP routing, or regional failover.
+  MR9 is production-ready for the bounded two-region failover-drill scope;
+  full multi-region orchestration stays release-time operational.
 - T5 parallel commit transaction status is production-ready for the bounded
   networked transaction-status sidecar API and SQL contract.
   `parallel-commits-smoke.sh` proves staging, finalize, and modeled fast-path
@@ -1225,7 +1228,10 @@ Rule 10 completion for this branch requires local and VM verification of:
   federation, or Kubernetes traffic; the report requires
   `external_warehouse_connections_attempted=false`,
   `object_store_io_attempted=false`, and `catalog_auth_exercised=false`.
-  `FEATURE: L1` and `FEATURE: L13` remain alpha.
+  `FEATURE: L1` and `FEATURE: L13` are production-ready for the binding +
+  composite-IO contract scope; the upstream pg_lake Postgres extension runtime
+  adapter and live MotherDuck cloud session execution stay alpha-deferred
+  under those contracts.
 - Agentmemory checkpointing for this slice used the scaleable-database-infra
   service at `http://127.0.0.1:3911` and did not edit or erase the backing
   memory file directly.
