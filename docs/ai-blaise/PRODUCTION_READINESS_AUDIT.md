@@ -1463,6 +1463,29 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+MR9 regional failover live evidence from 2026-05-26 promotes `FEATURE: MR9`
+from alpha to production-ready for the bounded two-region failover drill
+scope. The new
+`ci/ai-blaise/mr9-regional-failover-live-smoke.sh` boots two
+`postgres:17-bookworm` containers labeled us-east-1 (primary) and
+us-west-2 (surviving), writes 100 tenant rows partitioned across tenant-a
+and tenant-b, takes a streaming `pg_basebackup` to the shared backup
+volume, writes 50 post-backup rows in us-east-1 (the declared data-loss
+window), stops us-east-1 to simulate region loss, boots us-west-2 directly
+on the backup data directory so postgres performs WAL recovery from the
+streamed `pg_wal/` contents, verifies us-east-1 is unreachable and
+us-west-2 serves the pre-backup 100 rows, and emits the explicit cutover
+window in seconds. The evidence row is appended to
+`artifacts/mr9-regional-failover-evidence.tsv` with per-tenant counts,
+per-region marker counts, the cutover window, and the sidecar contract
+status. The MR9 production-ready claim is intentionally bounded to this
+two-container drill: it does not extend to S7 pgactive cross-region
+replication, managed object-store backup transport, Kubernetes pod-level
+failover, GeoIP routing across regions (MR5), closed-timestamp follower
+reads across regions (MR6), or regional row movement (MR3). PITR restore
+depth keeps its separate evidence path under
+`ci/ai-blaise/dr-restore-depth-check.sh`.
+
 Bundle1 production-ready evidence from 2026-05-26 promotes `FEATURE: Bundle1`
 from alpha to production-ready for the `full-bundle-required-minus-plrust`
 boundary. The new `bundle1-pgdg-runtime` Dockerfile stage layers PGDG and

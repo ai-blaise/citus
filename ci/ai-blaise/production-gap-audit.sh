@@ -258,8 +258,8 @@ for feature_id in ("C6", "C7", "C8"):
         fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
 if status_by_id.get("MR3") != "production-ready":
     fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
-if status_by_id.get("MR9") != "alpha":
-    fail("MR9 must remain alpha until live multi-region failover/runtime evidence exists")
+if status_by_id.get("MR9") != "production-ready":
+    fail("MR9 must be production-ready once live regional failover smoke evidence is wired")
 for feature_id in ("PGC1", "PGC2"):
     if status_by_id.get(feature_id) != "production-ready":
         fail(f"{feature_id} must be production-ready once patched PG17+Citus runtime evidence is wired")
@@ -906,7 +906,7 @@ for phrase in (
     "automatic repartition scheduling",
     "regional traffic routing",
     "regional failover",
-    "MR9 remains alpha",
+    "MR9 is production-ready for the bounded two-region drill",
     "gate-close:",
     "regional-placement-live-smoke",
 ):
@@ -1000,7 +1000,7 @@ for phrase in (
     "live_k8s_exercised=false",
     "GeoIP pool routing",
     "regional failover",
-    "MR9 remains alpha",
+    "MR9 is production-ready for the bounded two-region drill",
 ):
     if compact(phrase) not in multiregion_truth:
         fail(f"Multi-region docs must preserve alpha evidence boundary: {phrase}")

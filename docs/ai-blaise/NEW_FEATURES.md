@@ -8881,8 +8881,7 @@ locality-key shard isolation, shard placement movement to declared region
 workers, and row-preservation/catalog verification. It does not claim
 WAN/multi-region network execution, Kubernetes operator reconciliation,
 automatic repartition scheduling, regional admission control in Kubernetes,
-regional traffic routing, GeoIP routing, or regional failover. MR9 remains alpha
-for region survival and failover drills.
+regional traffic routing, GeoIP routing, or regional failover. MR9 is production-ready for the bounded two-region drill via `ci/ai-blaise/mr9-regional-failover-live-smoke.sh` and remains alpha for full Kubernetes-orchestrated region failover, DNS cutover, GeoIP routing, and cross-region pgactive replication.
 
 **Citus comparison**: Vanilla Citus does not encode region in key policy.
 
@@ -8946,22 +8945,42 @@ travel.
 
 **Overlay**: `companion/src/ops_contracts.rs` and
 `docs/ai-blaise/RUNBOOKS/disaster-recovery.md`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Records the regional failover drill as a required operational
-artifact.
+artifact and proves the failover narrative end to end against live
+PostgreSQL containers. `FEATURE: MR9 is production-ready` for the bounded
+two-region drill scope: pre-failover tenant write, `pg_basebackup`
+checkpoint, declared data-loss window for post-backup writes, primary
+container stop (region-loss simulation), surviving region boot directly on
+the backup data directory with automatic WAL recovery from the streamed
+`pg_wal/` contents, client traffic recovery against the surviving region,
+and validation queries for per-tenant counts and per-region marker counts.
 
-**Current boundary**: The operations runner validates the runbook reference;
-live multi-region failover, PITR restore, and backup artifact restore remain
-alpha. VM proof run `bash ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
-adds deterministic survival-contract checks for duplicate region inventory,
-declared Region CRs, required region topology spread, replication factor, and
-`live_k8s_exercised=false`. This supports runbook admission readiness only; it
-does not prove a regional failover drill, DNS cutover, backup restore, PITR
-restore, or client traffic recovery.
+**Current boundary**: The MR9 production-ready claim is bounded to the
+two-container failover drill in
+`ci/ai-blaise/mr9-regional-failover-live-smoke.sh`. It does not claim
+cross-region pgactive conflict resolution (S7), managed object-store
+backup transport (B family), Kubernetes pod-level failover, geographically
+distributed network propagation, GeoIP pool routing across the boundary
+(MR5), closed-timestamp follower reads across regions (MR6), or regional
+row movement (MR3). PITR restore depth has its own evidence path under
+`ci/ai-blaise/dr-restore-depth-check.sh`.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/mr9-regional-failover-live-smoke.sh`
+boots two postgres:17-bookworm containers labeled us-east-1 (primary) and
+us-west-2 (surviving), writes 100 tenant rows, takes a `pg_basebackup`,
+writes 50 post-backup rows that become the declared data-loss window,
+stops us-east-1 to simulate region loss, boots us-west-2 directly on the
+backup data dir, verifies the surviving region serves the pre-backup 100
+rows (with tenant-a=50 + tenant-b=50 + us-east-1 marker=100), records the
+cutover window in seconds, and appends an evidence row to
+`artifacts/mr9-regional-failover-evidence.tsv`. The smoke also accepts
+`MR9_POSTGRES_IMAGE` to retarget the operand image, and
+`MR9_EVIDENCE_FILE` to redirect the evidence sink.
 
 **Citus comparison**: Vanilla Citus does not ship this regional DR runbook.
 
@@ -8970,12 +8989,15 @@ restore, or client traffic recovery.
 - In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
-- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI (operator contract): `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI (regional failover live smoke):
+  `REQUIRE_DOCKER=1 ci/ai-blaise/mr9-regional-failover-live-smoke.sh`
+- CI (PITR restore-depth): `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
+- Evidence file: `artifacts/mr9-regional-failover-evidence.tsv`
 - Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
-- CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 - Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
   `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
-  acceptance; alpha until full runs land)
+  acceptance; full measured runs are tracked separately)
 
 ### R3: Columnstore-On-Worker Policy
 
