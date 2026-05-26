@@ -2185,7 +2185,7 @@ available replica, validates the operator `run-branch-lifecycle-canonical` suspe
 production-ready boundary is the bounded Kubernetes compute scale-down primitive plus
 operator fail-closed suspend admission. CSI `VolumeSnapshot` creation, PVC cloning, full branch
 suspend/resume reconciliation, Service/DNS retargeting, traffic cut-over, and branch promotion
-remain alpha under C6/C7/C8.
+stay alpha-deferred under the same C6/C7/C8 contract.
 
 **Motivation**: Development, analytics, and point-in-time investigation
 branches should not burn compute while idle.

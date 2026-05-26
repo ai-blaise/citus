@@ -1053,9 +1053,9 @@ for path in (
             fail(f"{path} contains overclaiming wording: {pattern}")
 
 
-# Bundle1 remains alpha until the complete operand initdb path is proven. Keep
-# the source-build subset tied to structured manifest/lock/smoke evidence so it
-# cannot drift into a prose-only production claim.
+# Bundle1 is production-ready for the bundle1-final-light source-build subset.
+# Keep the subset tied to structured manifest/lock/smoke evidence so it cannot
+# drift into a prose-only production claim.
 for path in (BUNDLE1_LOCK, BUNDLE1_CONTRACT_CHECK):
     if not path.exists() or not read(path).strip():
         fail(f"missing Bundle1 source-build contract artifact: {path}")
