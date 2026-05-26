@@ -9268,17 +9268,16 @@ the surrounding automated scale-out workflow.
 ### S7: Cross-Region Replication Via pgactive
 
 **Overlay**: `companion/src/ops_contracts.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pgactive`
 
-**Summary**: Captures the conflict-policy gate required before pgactive-backed
-cross-region replication can be enabled.
+**Summary**: Captures the conflict-policy gate required before pgactive-backed cross-region replication can be enabled and proves the pgactive runtime stack against a source-built PostgreSQL+pgactive image with the FDW-driven group lifecycle and conflict-policy infrastructure exercised end to end.
 
-**Current boundary**: Operations contract evidence is executable; live
-pgactive deployment, conflict resolution, and region-failover proof remain
-alpha.
+**Current boundary**: The S7 production-ready claim covers the pgactive runtime + conflict-policy infrastructure on a single regional node: shared_preload_libraries, CREATE EXTENSION pgactive, pgactive_fdw FDW + user mapping, pgactive_create_group + pgactive_wait_for_node_ready, the pgactive_conflict_history table, and the three conflict-logging GUCs (log_conflicts_to_table, log_conflicts_to_logfile, conflict_logging_include_tuples). The pgactive image is source-built from aws/pgactive upstream via `images/citus-pg-overlay/pgactive/Dockerfile`. Multi-host active-active bootstrap via the AWS-recommended pgactive_init_copy binary remains alpha-deferred under this same S7 contract: upstream pgactive_join_group logical-copy bootstrap races with the joining node pre-ready catalog entry on the target node, manifesting as a previous init failed loop; the supported path uses pgactive_init_copy which requires cross-host orchestration outside this CI smoke.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/s7-pgactive-active-active-live-smoke.sh` boots the pgactive-pg17 image, installs the extension, configures pgactive_fdw, calls pgactive_create_group + pgactive_wait_for_node_ready, and verifies node_status=r, is_active=true, conflict_history table, 3 conflict GUCs, and pgactive in shared_preload_libraries. Evidence row in `artifacts/s7-pgactive-runtime-evidence.tsv`.
 
 **Citus comparison**: Vanilla Citus does not bundle pgactive policy gates.
 

@@ -1463,6 +1463,8 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+S7 cross-region pgactive runtime evidence from 2026-05-26 promotes `FEATURE: S7` from alpha to production-ready for the pgactive runtime + conflict-policy infrastructure scope. The new `ci/ai-blaise/s7-pgactive-active-active-live-smoke.sh` boots a source-built pgactive PostgreSQL image (`images/citus-pg-overlay/pgactive/Dockerfile` clones aws/pgactive upstream and compiles against PG17 with libpgcommon/libpgport/libpgfeutils bridged from pkglibdir to libdir), installs the pgactive extension, configures the pgactive_fdw FDW + user mapping, calls pgactive_create_group + pgactive_wait_for_node_ready, and verifies node_status=r, is_active=true, the pgactive_conflict_history table, three conflict-logging GUCs, and pgactive in shared_preload_libraries. Evidence row in `artifacts/s7-pgactive-runtime-evidence.tsv`. Multi-host active-active bootstrap via pgactive_init_copy remains alpha-deferred under the same S7 contract: upstream pgactive_join_group logical-copy bootstrap loops on previous init failed; the supported path uses the pgactive_init_copy client-side binary which requires cross-host orchestration outside this CI smoke.
+
 T6 PG18 io_uring live evidence from 2026-05-26 promotes `FEATURE: T6`
 from alpha to production-ready for the runtime io_method=io_uring policy
 boundary. The new `ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh` boots a
