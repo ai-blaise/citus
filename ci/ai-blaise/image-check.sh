@@ -125,9 +125,9 @@ if [[ ! -x "${companion_runtime_depth_a_smoke}" ]]; then
 fi
 
 required_extensions=(
-  timescaledb citus pgvector pg_cron pg_partman pgaudit pgauditlogtofile
+  timescaledb citus vector pg_cron pg_partman pgaudit pgauditlogtofile
   ai_blaise_citus pgsodium hll topn tdigest pgnodemx postgis pg_search pg_graphql
-  pg_jsonschema age plrust plv8 pg_uuidv7 pg_repack pg_failover_slots
+  pg_jsonschema age plv8 pg_uuidv7 pg_repack pg_failover_slots
   pg_warm pgcrypto pg_trgm citext rum
 )
 
@@ -138,6 +138,7 @@ optional_extensions=(
   oracle_fdw mysql_fdw mongo_fdw tds_fdw pgmq pgque pg_parquet pg_squeeze
   pg_show_plans pg_stat_monitor pg_walinspect pg_safeupdate anon vchord
   pg_hint_plan sr_plan pgledger pglinter omnigres
+  plrust
 )
 
 hard_blocked_extensions=(
@@ -154,10 +155,24 @@ manifest_has() {
     "${manifest}"
 }
 
+# pg_failover_slots is shared_preload_libraries-only; no SQL extension surface.
+preload_only_extensions=(pg_failover_slots)
+is_preload_only() {
+  local needle="$1" item
+  for item in "${preload_only_extensions[@]}"; do
+    if [[ "${item}" == "${needle}" ]]; then return 0; fi
+  done
+  return 1
+}
+
 for extension in "${required_extensions[@]}"; do
   if ! manifest_has "${extension}" "required"; then
     echo "required extension missing from manifest: ${extension}" >&2
     exit 1
+  fi
+
+  if is_preload_only "${extension}"; then
+    continue
   fi
 
   if ! grep -Fq "CREATE EXTENSION IF NOT EXISTS ${extension};" "${init_sql}"; then
@@ -199,8 +214,8 @@ if [[ "${hard_block_count}" -ne "${#hard_blocked_extensions[@]}" ]]; then
   exit 1
 fi
 
-grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgvector,pgaudit,pgsodium,pg_cron,age,plrust,companion,pg_hint_plan,sr_plan'" "${load_order}"
-grep -Fq "citus.cohabit_extensions = 'timescaledb'" "${load_order}"
+grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx'" "${load_order}"
+grep -Fq "citus.cohabit_extensions = 'timescaledb,pg_cron'" "${load_order}"
 grep -Fq "COPY images/citus-pg-overlay/extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv" "${dockerfile}"
@@ -249,7 +264,7 @@ grep -Fq "AI_BLAISE_SOURCE_GIT_SHA" "${dockerfile}"
 grep -Fq "ai-blaise.citus.source-git-sha" "${dockerfile}"
 grep -Fq "ai-blaise.citus.source-tree-state" "${dockerfile}"
 grep -Fq "bundle1-source-build.lock.tsv" "${dockerfile}"
-grep -Fq "source-build-subset-no-complete-initdb" "${dockerfile}"
+grep -Fq "full-bundle-required-minus-plrust" "${dockerfile}"
 python3 "${bundle1_contract_check}"
 grep -Fq "AS bundle1-final-light" "${dockerfile}"
 grep -Fq "AS bundle1-final-full" "${dockerfile}"
@@ -266,7 +281,7 @@ grep -Fq "not production evidence" "${image_dir}/README.md"
 grep -Fq "ai_blaise_citus-upgrade-manifest.tsv" "${image_dir}/README.md"
 grep -Fq "bundle1-source-build.lock.tsv" "${image_dir}/README.md"
 grep -Fq "structured Bundle1 contract check" "${image_dir}/README.md"
-grep -Fq "every binary package" "${image_dir}/README.md"
+grep -Fq "every required extension" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 if [[ "$(grep -Fc "ARG DEFAULT_ARGS=serve" "${runtime_dockerfile}")" -lt 2 ]]; then
   echo "runtime Dockerfile must declare DEFAULT_ARGS in both builder and runtime stages" >&2

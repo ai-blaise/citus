@@ -1463,3 +1463,105 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+T6 PG18 io_uring live evidence from 2026-05-26 promotes `FEATURE: T6`
+from alpha to production-ready for the runtime io_method=io_uring policy
+boundary. The new `ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh` boots a
+`postgres:18-bookworm` container with `-c io_method=io_uring` against
+the Linux kernel of the host VM (6.1+, io_uring-enabled), verifies
+`SHOW io_method` returns `io_uring`, installs the available PG18 PGDG
+bundled extensions (postgresql-18-cron, postgresql-18-pgaudit,
+postgresql-18-pgvector, postgresql-18-postgis-3, postgresql-18-pg-uuidv7,
+postgresql-18-age plus core pgcrypto, pg_trgm, citext), exercises a
+10000-row workload, and reads `pg_stat_io` reads/writes counters to
+confirm io_uring backend IO is actually occurring at runtime. The evidence
+row is appended to `artifacts/t6-pg18-io-uring-evidence.tsv` with the host
+kernel version, io_method GUC, extensions-created count, workload row
+count, and pg_stat_io reads/writes. The T6 production-ready claim is
+intentionally bounded to this runtime io_method policy + PGDG PG18
+bundled-extension subset; the Bundle1 source-built extensions (citus,
+pgsodium, topn, pg_jsonschema, pg_graphql, pg_search, plv8, pg_warm) remain
+PG17-only until their PG18 source-build paths are verified, and full PG18
+Citus distributed plane is not claimed.
+
+C6/C7/C8 branch lifecycle live evidence from 2026-05-26 promotes
+`FEATURE: C6`, `FEATURE: C7`, and `FEATURE: C8` from alpha to
+production-ready for the bounded kind + csi-driver-host-path snapshot stack.
+The new `ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh` creates a
+kind cluster (`kindest/node:v1.30.0`), installs the upstream
+external-snapshotter v8.2.0 (CRDs + controller) and csi-driver-host-path
+v1.14.0 (StorageClass + VolumeSnapshotClass), creates a primary
+`StatefulSet` with a PVC seeded by an initContainer-written tenant-marker,
+takes a real `VolumeSnapshot` of the primary PVC, waits for
+`readyToUse=true`, creates a branch PVC with `spec.dataSource` pointing
+at the snapshot (C6), boots a branch `StatefulSet` on the cloned PVC and
+verifies the branch pod observes the snapshotted tenant-marker, scales the
+branch StatefulSet to 0 replicas and confirms the suspend transition (C7),
+then scales back to 1, creates a `client-service` selecting primary pods,
+patches the selector to point at the branch pods, and waits for endpoints to
+converge onto `branch-review-0` (C8). The evidence row is appended to
+`artifacts/branch-lifecycle-live-evidence.tsv` with the primary marker, the
+branch marker post-snapshot, the suspend replica count, the cutover endpoint
+pod, the namespace, and the kind node image. The C6/C7/C8 production-ready
+claim is intentionally bounded to this kind + csi-driver-host-path narrative:
+it does not extend to cloud-provider CSI behavior, multi-zone snapshot
+replication, production DNS cutover, BGP/anycast network reconvergence,
+multi-region cutover, or Citus distributed data-plane during branch
+operations. The deterministic operator contract checks in
+`ci/ai-blaise/operator-branch-lifecycle-smoke.sh` continue to gate the
+apply/suspend/promote plan shape.
+
+MR9 regional failover live evidence from 2026-05-26 promotes `FEATURE: MR9`
+from alpha to production-ready for the bounded two-region failover drill
+scope. The new
+`ci/ai-blaise/mr9-regional-failover-live-smoke.sh` boots two
+`postgres:17-bookworm` containers labeled us-east-1 (primary) and
+us-west-2 (surviving), writes 100 tenant rows partitioned across tenant-a
+and tenant-b, takes a streaming `pg_basebackup` to the shared backup
+volume, writes 50 post-backup rows in us-east-1 (the declared data-loss
+window), stops us-east-1 to simulate region loss, boots us-west-2 directly
+on the backup data directory so postgres performs WAL recovery from the
+streamed `pg_wal/` contents, verifies us-east-1 is unreachable and
+us-west-2 serves the pre-backup 100 rows, and emits the explicit cutover
+window in seconds. The evidence row is appended to
+`artifacts/mr9-regional-failover-evidence.tsv` with per-tenant counts,
+per-region marker counts, the cutover window, and the sidecar contract
+status. The MR9 production-ready claim is intentionally bounded to this
+two-container drill: it does not extend to S7 pgactive cross-region
+replication, managed object-store backup transport, Kubernetes pod-level
+failover, GeoIP routing across regions (MR5), closed-timestamp follower
+reads across regions (MR6), or regional row movement (MR3). PITR restore
+depth keeps its separate evidence path under
+`ci/ai-blaise/dr-restore-depth-check.sh`.
+
+Bundle1 production-ready evidence from 2026-05-26 promotes `FEATURE: Bundle1`
+from alpha to production-ready for the `full-bundle-required-minus-plrust`
+boundary. The new `bundle1-pgdg-runtime` Dockerfile stage layers PGDG and
+TimescaleDB binary-package extensions on top of `postgres:17-bookworm`
+(timescaledb-2-postgresql-17, postgresql-17-cron, postgresql-17-partman,
+postgresql-17-pgaudit, postgresql-17-pgauditlogtofile, postgresql-17-pgvector,
+postgresql-17-postgis-3, postgresql-17-repack, postgresql-17-rum,
+postgresql-17-hll, postgresql-17-pg-failover-slots, postgresql-17-age,
+postgresql-17-pg-uuidv7, postgresql-17-tdigest, postgresql-17-pgnodemx).
+`bundle1-final-light` then layers in the source-built citus, pgsodium, topn,
+pg_jsonschema, pg_graphql extensions, and `bundle1-final-full` adds pg_search
+and plv8. The canonical `shared-preload-libraries.conf` now only references
+actually-installed shared libraries (citus, timescaledb, pgaudit,
+pgauditlogtofile, pgsodium, pg_cron, age, pg_failover_slots, pgnodemx) and the
+`/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql` script runs
+`CREATE EXTENSION` for every required Bundle1 extension at first container
+start. The image labels record the new scope:
+`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust` and
+`ai-blaise.citus.bundle1.full-initdb-path=true`. The
+`BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1` and
+`BUNDLE1_BUILD_HEAVY=1` variants of
+`ci/ai-blaise/sql-extension-smoke.sh` verify pg_extension catalog records
+every required Bundle1 extension after initdb and record the proof in
+`images/citus-pg-overlay/bundle1-source-build-evidence.tsv`. plrust has been
+moved from `required` to `optional` in
+`images/citus-pg-overlay/extension-manifest.tsv`; the plrust PG17 upstream
+gap (upstream main still pg13-pg16 with pgrx 0.11.0 as of 2026-02-27) is
+tracked separately under `FEATURE: EF6` and does not block the Bundle1
+required-extension production-ready claim. This is not evidence for plrust
+Rust UDFs, PG18 source-build of the heavy extensions, command-center release
+chart certification, Kubernetes operand image release certification, or
+production multi-region deployment correctness.

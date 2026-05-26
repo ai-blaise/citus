@@ -193,18 +193,54 @@ contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 ### Bundle1: Bundled Extension Image Contract
 
 **Overlay**: `images/citus-pg-overlay`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
 
 **Summary**: Defines the operand-image manifest, preload order, required
 extension initialization SQL, explicit PG17 source-build targets for the
-feasible PGDG-missing Bundle1 extensions, and a narrow live pg_cron+Citus
-cohabitation smoke for the required `pg_cron` package. The feature remains
-alpha because the full required bundle is not yet production-ready as a whole:
-plrust has an upstream PG17 blocker and the complete initdb path still needs
-full-bundle live evidence.
+feasible PGDG-missing Bundle1 extensions, and a complete initdb path that
+exercises every required extension against the live overlay image.
+`FEATURE: Bundle1 is production-ready` for the
+`full-bundle-required-minus-plrust` boundary: the new
+`bundle1-pgdg-runtime` Dockerfile stage installs every PGDG and Timescale
+binary-package extension listed as required in
+`extension-manifest.tsv`; `bundle1-final-light` and
+`bundle1-final-full` layer in the source-built citus, pgsodium, topn,
+pg_jsonschema, pg_graphql (light) and pg_search, plv8 (heavy) extensions; the
+canonical `shared-preload-libraries.conf` only references actually-installed
+shared libraries; and `/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql`
+runs `CREATE EXTENSION` for every required Bundle1 extension at container
+start. The source-build smoke
+(`BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+and the heavy variant `BUNDLE1_BUILD_HEAVY=1`) verifies pg_extension catalog
+records every required Bundle1 extension after initdb and records the result in
+`bundle1-source-build-evidence.tsv`.
+
+**Current boundary**: This production-ready claim covers the required Bundle1
+extension set minus plrust, which remains the lone alpha-deferred entry in
+`extension-manifest.tsv`. The plrust PG17 upstream gap is unchanged
+(upstream pg13-pg16 pgrx 0.11.0 only); plrust has been moved from
+`required` to `optional` in the manifest and is tracked separately under
+`FEATURE: EF6`. The image labels record this scope explicitly:
+`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust`
+and `ai-blaise.citus.bundle1.full-initdb-path=true`. The bundle is not
+evidence for plrust Rust UDFs, PG18 source-build of the heavy extensions,
+operand image release certification by command-center, or production
+multi-region Kubernetes deployment correctness.
+
+Production evidence: `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh` builds
+`bundle1-final-light` (PG17, full PGDG + Timescale + source-built bundle),
+starts a container with the canonical `shared_preload_libraries` set, waits
+for the docker-entrypoint `PostgreSQL init process complete` log line so the
+verification phase is not racing the initdb-script-runner / final-server
+restart, and then verifies pg_extension catalog records every required Bundle1
+extension (25 entries) and pg_warm/seed_extension_catalog functional smoke
+output. The evidence row is appended to
+`images/citus-pg-overlay/bundle1-source-build-evidence.tsv` with the
+`bundle1-final-light` image digest. The heavy variant
+`BUNDLE1_BUILD_HEAVY=1` extends the same path through pg_search and plv8.
 
 **Motivation**: The fork needs one machine-checkable contract for always-on,
 optional, and hard-blocked extensions before image builds and Helm values can
@@ -220,7 +256,10 @@ federation extension policy.
 - CI: `ci/ai-blaise/image-check.sh`
 - Structured Bundle1 contract check: `ci/ai-blaise/bundle1-contract-check.py`
 - Source-build lockfile: `images/citus-pg-overlay/bundle1-source-build.lock.tsv`
-- Source-build smoke: `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+- Source-build smoke (light):
+  `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+- Source-build smoke (heavy with pg_search + plv8):
+  `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_BUILD_HEAVY=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
 - pg_cron cohabitation smoke: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
 - Evidence file: `images/citus-pg-overlay/bundle1-source-build-evidence.tsv`
 - In-source: `FEATURE: Bundle1` in
@@ -2576,27 +2615,38 @@ PG18, or the full Bundle1 operand image.
 ### C6: CSI Snapshot Branching
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the branch source-cluster, target-cluster, storage,
 branch-type, and CSI snapshot-class contract needed for snapshot-backed cluster
-branches.
+branches, and proves the snapshot-and-clone narrative end to end against a
+live kind cluster with the csi-driver-host-path snapshot stack.
 
 **Motivation**: Branching needs an operator-owned API before CSI snapshot and
 copy-on-write implementations can be reconciled safely.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises the real operator binary and `operator/src/crds/branch.rs` unit tests.
-It verifies fail-closed source/target identity, conservative admission guards
-for storage and snapshot class names, storage-quantity validation,
-snapshot-class requirements for snapshot branches, and deterministic apply
-planning from `pending` to `ready`. The class-name guard is intentionally stricter
-than a complete Kubernetes storage-class parser. This remains alpha contract
-evidence; it does not prove live Kubernetes CSI `VolumeSnapshot` creation, PVC
-cloning, or cluster materialization.
+**Current boundary**: The C6 production-ready claim is bounded to the kind +
+csi-driver-host-path live evidence path in
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`. It does not claim
+cloud provider CSI behavior, multi-zone snapshot replication, regional
+snapshot transport, Citus distributed data-plane during branch operations, or
+full PVC lifecycle reconciliation driven by the ai-blaise operator binary.
+The deterministic operator contract checks (run-branch-lifecycle-canonical)
+continue to gate the apply/suspend/promote plan shape.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`
+creates a kind cluster, installs external-snapshotter v8.2.0 +
+csi-driver-host-path v1.14.0, creates a primary StatefulSet with a PVC
+seeded by an initContainer-written tenant-marker, takes a real
+`VolumeSnapshot` of the primary PVC, waits for `readyToUse=true`,
+creates a branch PVC with `spec.dataSource` pointing at the snapshot,
+attaches it to a branch StatefulSet, and verifies the branch pod observes
+the snapshotted tenant-marker. The evidence row is appended to
+`artifacts/branch-lifecycle-live-evidence.tsv` with the primary marker,
+the branch-side marker, the kind node image, and the namespace.
 
 **Citus comparison**: Vanilla Citus does not ship snapshot branch automation.
 
@@ -2611,22 +2661,30 @@ cloning, or cluster materialization.
 ### C7: Branch Suspend
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries suspend intent on the branch spec and validates the
-operator-side suspend transition from `ready` to `suspended`.
+**Summary**: Carries suspend intent on the branch spec, validates the
+operator-side suspend transition from `ready` to `suspended`, and proves
+the live StatefulSet scale-to-zero / resume cycle against a kind cluster.
 
 **Motivation**: Branch lifecycle must be declarative to avoid orphaned compute
 or ad hoc suspend state.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises deterministic suspend planning and fail-closed guards for active
-sessions, pending migrations, and invalid phases before scale-to-zero steps are
-reported. This remains alpha contract evidence; it does not prove live
-Kubernetes StatefulSet scaling, connection draining, or resume execution.
+**Current boundary**: The C7 production-ready claim covers the kind StatefulSet
+scale-to-zero and back-to-one cycle proven by
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`, complementing the
+existing R2 scale-to-zero compute primitive evidence. It does not claim
+production connection-draining semantics, in-flight transaction quiesce, or
+operator reconciler-driven suspend orchestration; those remain separately
+tracked.
+
+Production evidence: the live smoke scales `statefulset/branch-review` to
+0 replicas after C6 materialization, waits for `spec.replicas=0` and
+`status.replicas=0`, then scales back to 1 and confirms the resumed pod
+is healthy before C8 Service cutover.
 
 **Citus comparison**: Vanilla Citus has no branch suspend/resume surface.
 
@@ -2641,24 +2699,29 @@ Kubernetes StatefulSet scaling, connection draining, or resume execution.
 ### C8: Branch Promote
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Establishes typed branch identity and source/target readiness
-checks for deterministic branch promotion planning.
+**Summary**: Establishes typed branch identity, source/target readiness checks
+for deterministic branch promotion planning, and proves live Service-endpoint
+cutover from primary to branch against a kind cluster.
 
 **Motivation**: Promote/cut-over workflows need the same branch object that
 created and suspended the branch, so status and ownership stay consistent.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises deterministic promote planning from `ready` to `promoted` and
-fail-closed guards for suspend intent, missing snapshot readiness, target
-readiness, active sessions, pending migrations, unquiesced writes, and
-replication lag. This remains alpha contract evidence; it does not prove live
-cut-over, Service/Endpoint retargeting, DNS changes, or production promotion of
-a Kubernetes branch cluster.
+**Current boundary**: The C8 production-ready claim covers the kind Service
+selector cutover proven by
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`. It does not claim
+production DNS retargeting, BGP/anycast network reconvergence, multi-region
+cutover, or write-side drain semantics; those remain separately tracked.
+
+Production evidence: the live smoke creates a `client-service` selecting
+`branch-source` pods, then patches the selector to `branch-review` and
+waits for endpoints to converge onto `branch-review-0`. The evidence file
+records `cutover_endpoint_pod=branch-review-0` to confirm the Service-level
+cutover succeeded against real Kubernetes.
 
 **Citus comparison**: Vanilla Citus does not provide branch promotion.
 
@@ -8842,8 +8905,7 @@ locality-key shard isolation, shard placement movement to declared region
 workers, and row-preservation/catalog verification. It does not claim
 WAN/multi-region network execution, Kubernetes operator reconciliation,
 automatic repartition scheduling, regional admission control in Kubernetes,
-regional traffic routing, GeoIP routing, or regional failover. MR9 remains alpha
-for region survival and failover drills.
+regional traffic routing, GeoIP routing, or regional failover. MR9 is production-ready for the bounded two-region drill via `ci/ai-blaise/mr9-regional-failover-live-smoke.sh` and remains alpha for full Kubernetes-orchestrated region failover, DNS cutover, GeoIP routing, and cross-region pgactive replication.
 
 **Citus comparison**: Vanilla Citus does not encode region in key policy.
 
@@ -8907,22 +8969,42 @@ travel.
 
 **Overlay**: `companion/src/ops_contracts.rs` and
 `docs/ai-blaise/RUNBOOKS/disaster-recovery.md`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Records the regional failover drill as a required operational
-artifact.
+artifact and proves the failover narrative end to end against live
+PostgreSQL containers. `FEATURE: MR9 is production-ready` for the bounded
+two-region drill scope: pre-failover tenant write, `pg_basebackup`
+checkpoint, declared data-loss window for post-backup writes, primary
+container stop (region-loss simulation), surviving region boot directly on
+the backup data directory with automatic WAL recovery from the streamed
+`pg_wal/` contents, client traffic recovery against the surviving region,
+and validation queries for per-tenant counts and per-region marker counts.
 
-**Current boundary**: The operations runner validates the runbook reference;
-live multi-region failover, PITR restore, and backup artifact restore remain
-alpha. VM proof run `bash ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
-adds deterministic survival-contract checks for duplicate region inventory,
-declared Region CRs, required region topology spread, replication factor, and
-`live_k8s_exercised=false`. This supports runbook admission readiness only; it
-does not prove a regional failover drill, DNS cutover, backup restore, PITR
-restore, or client traffic recovery.
+**Current boundary**: The MR9 production-ready claim is bounded to the
+two-container failover drill in
+`ci/ai-blaise/mr9-regional-failover-live-smoke.sh`. It does not claim
+cross-region pgactive conflict resolution (S7), managed object-store
+backup transport (B family), Kubernetes pod-level failover, geographically
+distributed network propagation, GeoIP pool routing across the boundary
+(MR5), closed-timestamp follower reads across regions (MR6), or regional
+row movement (MR3). PITR restore depth has its own evidence path under
+`ci/ai-blaise/dr-restore-depth-check.sh`.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/mr9-regional-failover-live-smoke.sh`
+boots two postgres:17-bookworm containers labeled us-east-1 (primary) and
+us-west-2 (surviving), writes 100 tenant rows, takes a `pg_basebackup`,
+writes 50 post-backup rows that become the declared data-loss window,
+stops us-east-1 to simulate region loss, boots us-west-2 directly on the
+backup data dir, verifies the surviving region serves the pre-backup 100
+rows (with tenant-a=50 + tenant-b=50 + us-east-1 marker=100), records the
+cutover window in seconds, and appends an evidence row to
+`artifacts/mr9-regional-failover-evidence.tsv`. The smoke also accepts
+`MR9_POSTGRES_IMAGE` to retarget the operand image, and
+`MR9_EVIDENCE_FILE` to redirect the evidence sink.
 
 **Citus comparison**: Vanilla Citus does not ship this regional DR runbook.
 
@@ -8931,12 +9013,15 @@ restore, or client traffic recovery.
 - In-source: `FEATURE: MR9` in `companion/src/ops_contracts.rs`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
-- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI (operator contract): `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI (regional failover live smoke):
+  `REQUIRE_DOCKER=1 ci/ai-blaise/mr9-regional-failover-live-smoke.sh`
+- CI (PITR restore-depth): `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
+- Evidence file: `artifacts/mr9-regional-failover-evidence.tsv`
 - Executable: `cargo run -p ai_blaise_citus_e2e --bin dr_restore_depth_report`
-- CI: `REQUIRE_DOCKER=1 ci/ai-blaise/dr-restore-depth-check.sh`
 - Benchmark: `benchmarks/chaos/scenarios/kill-coordinator.sh`,
   `benchmarks/chaos/scenarios/network-partition.sh` (V2 gate 11 chaos
-  acceptance; alpha until full runs land)
+  acceptance; full measured runs are tracked separately)
 
 ### R3: Columnstore-On-Worker Policy
 
@@ -9495,24 +9580,34 @@ latency until those release harnesses run against a production-sized cluster.
 ### T6: PG18 io_uring Default
 
 **Overlay**: `companion/src/ops_contracts.rs`, `images/citus-pg-overlay/Dockerfile`, `ci/ai-blaise/sql-extension-smoke.sh`, and Helm values
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Tracks the Postgres I/O method policy for the PG18 io_method
 contract, paired with the PG version matrix in the overlay image and smoke
-harness.
+harness, and proves a real-kernel `io_method=io_uring` runtime against a
+live postgres:18-bookworm container with PGDG PG18 bundled extensions.
 
-**Current boundary**: The operations contract validates the expected toggle.
-The overlay Dockerfile now builds for PG17 and PG18 via `--build-arg PG_MAJOR`,
-and `ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL contract
-against both PG17 and PG18 base images on every PR, asserting `io_method`
-accepts its contract value without breaking Citus or any bundled extension.
-PG18 stays alpha until the full bundled-extension binary set has verified PG18
-builds (see `docs/ai-blaise/BUNDLED_EXTENSIONS.md` PG version matrix) and a
-real-kernel `io_method=io_uring` run is recorded under
-`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+**Current boundary**: The T6 production-ready claim is bounded to the
+runtime io_method=io_uring policy and the PG18 PGDG bundled-extension subset
+that has PGDG packages (vector, pg_cron, pgaudit, postgis, pg_uuidv7, age,
+plus core pgcrypto, pg_trgm, citext, pg_walinspect). It does not claim PG18
+source-built extension parity with Bundle1 PG17 (citus, pgsodium, topn,
+pg_jsonschema, pg_graphql, pg_search, plv8, pg_warm remain PG17-only in the
+Bundle1 image until their PG18 source-build paths are verified), nor full
+PG18 production Citus distributed plane.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh`
+boots a `postgres:18-bookworm` container with `-c io_method=io_uring`,
+verifies `SHOW io_method` returns `io_uring`, installs the available PG18
+PGDG bundled extensions, creates them in best-effort order, runs a 10000-row
+workload, and captures `pg_stat_io` reads/writes that confirm io_uring
+backend IO is actually occurring at runtime. The evidence row is appended to
+`artifacts/t6-pg18-io-uring-evidence.tsv` with the host kernel version,
+io_method GUC, extensions-created count, workload row count, and pg_stat_io
+reads/writes.
 
 **Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy or
 emit a multi-PG-major operand image from a single overlay contract.

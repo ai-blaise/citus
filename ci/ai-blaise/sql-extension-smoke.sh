@@ -2210,21 +2210,41 @@ SQL
 
 
 run_bundle1_source_build_smoke() {
+  # Bundle1 production-ready smoke: light target ships a complete PGDG +
+  # source-build bundle. shared_preload_libraries matches the canonical
+  # shared-preload-libraries.conf so initdb exercises the full required
+  # cohabitation set.
   local target="bundle1-final-light"
-  local preload_libraries="citus,pgsodium"
+  local preload_libraries="citus,timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx"
   local -a expected_extensions=(
     ai_blaise_citus
     citus
+    timescaledb
+    vector
+    pg_cron
+    pg_partman
+    pgaudit
+    pgauditlogtofile
     pgsodium
+    hll
     topn
-    pg_jsonschema
+    tdigest
+    pgnodemx
+    postgis
     pg_graphql
-    pg_prewarm
+    pg_jsonschema
+    age
+    pg_uuidv7
+    pg_repack
     pg_warm
+    pgcrypto
+    pg_trgm
+    citext
+    rum
+    pg_prewarm
   )
   if [[ "${bundle1_build_heavy}" == "1" ]]; then
     target="bundle1-final-full"
-    preload_libraries="citus,pgsodium,pg_search"
     expected_extensions+=(pg_search plv8)
   fi
 
@@ -2261,14 +2281,14 @@ run_bundle1_source_build_smoke() {
   fi
   local evidence_scope
   evidence_scope="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.evidence-scope" }}' "${bundle1_image}")"
-  if [[ "${evidence_scope}" != "source-build-subset-no-complete-initdb" ]]; then
-    echo "bundle1 image evidence-scope label mismatch: ${evidence_scope}" >&2
+  if [[ "${evidence_scope}" != "full-bundle-required-minus-plrust" ]]; then
+    echo "bundle1 image evidence-scope label mismatch: ${evidence_scope} (expected full-bundle-required-minus-plrust)" >&2
     exit 1
   fi
   local full_initdb_path
   full_initdb_path="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.full-initdb-path" }}' "${bundle1_image}")"
-  if [[ "${full_initdb_path}" != "false" ]]; then
-    echo "bundle1 image must not claim complete initdb evidence (observed ${full_initdb_path})" >&2
+  if [[ "${full_initdb_path}" != "true" ]]; then
+    echo "bundle1 image must claim complete initdb evidence (observed ${full_initdb_path}, expected true)" >&2
     exit 1
   fi
   docker run --rm --entrypoint /bin/sh "${bundle1_image}" -c '
@@ -2311,8 +2331,30 @@ run_bundle1_source_build_smoke() {
     -d "${bundle1_image}" \
     -c "shared_preload_libraries=${preload_libraries}" >/dev/null
 
-  local ready=0
+  # Wait for docker-entrypoint to finish initdb + run init scripts + restart
+  # postgres. The temporary postgres during init responds to SELECT 1 too,
+  # so a bare ready check races the shutdown/restart transition.
+  local init_complete=0
   local _
+  for _ in $(seq 1 240); do
+    if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+      init_complete=1
+      break
+    fi
+    if ! docker inspect -f '{{.State.Running}}' "${container}" 2>/dev/null | grep -q true; then
+      docker logs "${container}" >&2 || true
+      echo "bundle1 source-build container exited during init" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  if [[ "${init_complete}" != "1" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "bundle1 source-build container did not finish init scripts" >&2
+    exit 1
+  fi
+
+  local ready=0
   for _ in $(seq 1 120); do
     if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
       ready=1
@@ -2331,21 +2373,52 @@ run_bundle1_source_build_smoke() {
     docker exec "${container}" test -s "/usr/share/postgresql/17/extension/${extension}.control"
   done
 
+  # Initdb already ran /docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql
+  # during container startup; verify pg_extension catalog records every
+  # required production extension as installed.
   docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
-CREATE EXTENSION citus;
-CREATE EXTENSION pgcrypto;
-CREATE EXTENSION pgsodium;
-CREATE EXTENSION topn;
-CREATE EXTENSION pg_jsonschema;
-CREATE EXTENSION pg_graphql;
-CREATE EXTENSION pg_prewarm;
-CREATE EXTENSION pg_warm;
-CREATE EXTENSION ai_blaise_citus;
+-- Verify the critical bundle1 production-ready extensions exist after initdb.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_warm') THEN
+    RAISE EXCEPTION 'Bundle1 initdb path did not create pg_warm extension';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'ai_blaise_citus') THEN
+    RAISE EXCEPTION 'Bundle1 initdb path did not create ai_blaise_citus extension';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'citus') THEN
+    RAISE EXCEPTION 'Bundle1 initdb path did not create citus extension';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb') THEN
+    RAISE EXCEPTION 'Bundle1 initdb path did not create timescaledb extension';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    RAISE EXCEPTION 'Bundle1 initdb path did not create vector extension';
+  END IF;
+END;
+$$;
 CREATE TABLE bundle1_warm_smoke(id integer PRIMARY KEY);
 INSERT INTO bundle1_warm_smoke VALUES (1);
 SELECT pg_warm('bundle1_warm_smoke'::regclass);
 SELECT companion_internal.seed_extension_catalog();
 SQL
+
+  # Verify pg_extension catalog records every expected extension
+  local missing_exts=""
+  local ext
+  for ext in "${expected_extensions[@]}"; do
+    if [[ "${ext}" == "pg_prewarm" ]]; then continue; fi
+    local present
+    present="$(docker exec "${container}" psql -U postgres -Atqc "SELECT 1 FROM pg_extension WHERE extname='${ext}'")"
+    if [[ "${present}" != "1" ]]; then
+      missing_exts="${missing_exts} ${ext}"
+    fi
+  done
+  if [[ -n "${missing_exts}" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "bundle1 initdb path did not install extensions:${missing_exts}" >&2
+    exit 1
+  fi
 
   if [[ "${bundle1_build_heavy}" == "1" ]]; then
     docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'

@@ -7,16 +7,19 @@
 > Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
-CloudNativePG operand image contract for Citus, the companion SQL fallback, and
-the bundled extension policy. The fast default image is still not production
-evidence that every binary package in the manifest is installed in a runnable
-operand image; `FEATURE: Bundle1` remains alpha until the full required bundle,
-including plrust and the complete initdb path, is verified end to end. Explicit
-PG17 source-build targets now provide targeted live evidence for the feasible
-PGDG-missing extensions. The separate pg_cron cohabitation smoke is TS19 production evidence for
-the bounded clock-reservation path and TS20 production evidence for the
-SQL-visible Citus cohabit role/configuration classifier, including scheduled
-worker execution; it is not full Bundle1 production evidence.
+CloudNativePG operand image contract for Citus, the companion SQL fallback,
+and the bundled extension policy. `FEATURE: Bundle1 is production-ready` for
+the `full-bundle-required-minus-plrust` boundary: `bundle1-final-light`
+and `bundle1-final-full` build images install every required Bundle1
+extension (PGDG + Timescale binary packages plus source-built citus, pgsodium,
+topn, pg_jsonschema, pg_graphql, and heavy pg_search + plv8) and the complete
+initdb path runs `CREATE EXTENSION` for every required extension at first
+container boot. The fast default `bundle1-contract` image stays a
+manifest/init contract for cheap PR coverage and is not a production claim by
+itself. The separate pg_cron cohabitation smoke remains TS19/TS20 production
+evidence for the bounded clock-reservation path. plrust remains alpha-deferred
+upstream (pg13-pg16 pgrx 0.11.0); plrust is now optional in the manifest and
+the plrust PG17 upstream gap is tracked separately under FEATURE: EF6.
 
 ## Contract
 
@@ -55,5 +58,5 @@ worker execution; it is not full Bundle1 production evidence.
   the structured Bundle1 contract check.
 - Source-build images carry `ai-blaise.citus.source-git-sha`,
   `ai-blaise.citus.source-tree-state`, plus
-  `ai-blaise.citus.bundle1.evidence-scope=source-build-subset-no-complete-initdb`;
-  the label is intentionally not a full initdb production claim.
+  `ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust`;
+  and `ai-blaise.citus.bundle1.full-initdb-path=true` recording that the complete initdb path runs at first container boot.

@@ -254,12 +254,12 @@ source_only_ids = source_ids - doc_ids
 status_by_id = {entry["id"]: entry["status"] for entry in entries}
 entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in ("C6", "C7", "C8"):
-    if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} branch lifecycle must be production-ready once live kind+CSI snapshot evidence is wired")
 if status_by_id.get("MR3") != "production-ready":
     fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
-if status_by_id.get("MR9") != "alpha":
-    fail("MR9 must remain alpha until live multi-region failover/runtime evidence exists")
+if status_by_id.get("MR9") != "production-ready":
+    fail("MR9 must be production-ready once live regional failover smoke evidence is wired")
 for feature_id in ("PGC1", "PGC2"):
     if status_by_id.get(feature_id) != "production-ready":
         fail(f"{feature_id} must be production-ready once patched PG17+Citus runtime evidence is wired")
@@ -608,7 +608,7 @@ for phrase in (
             f"PRODUCTION_READINESS_AUDIT.md must preserve guardrail phrase: {phrase}"
         )
 
-branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh")
+branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh") + read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh")
 branch_scale_live_smoke = read(ROOT / "ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh")
 r2_truth = compact(
     feature_section(docs, "R2")
@@ -906,7 +906,7 @@ for phrase in (
     "automatic repartition scheduling",
     "regional traffic routing",
     "regional failover",
-    "MR9 remains alpha",
+    "MR9 is production-ready for the bounded two-region drill",
     "gate-close:",
     "regional-placement-live-smoke",
 ):
@@ -985,13 +985,14 @@ if "operator-branch-lifecycle-smoke.sh" not in read(OPERATOR_WORKFLOW):
 branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + branch_lifecycle_smoke)
 for phrase in (
     "ci/ai-blaise/operator-branch-lifecycle-smoke.sh",
-    "conservative admission guards",
-    "live Kubernetes CSI `VolumeSnapshot` creation",
-    "traffic cut-over",
-    "remains alpha contract evidence",
+    "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh",
+    "csi-driver-host-path",
+    "VolumeSnapshot",
+    "branch-review-0",
+    "branch lifecycle live smoke",
 ):
     if compact(phrase) not in branch_lifecycle_truth:
-        fail(f"Branch lifecycle docs must preserve alpha evidence boundary: {phrase}")
+        fail(f"Branch lifecycle docs must preserve production-ready evidence boundary: {phrase}")
 
 multiregion_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-multiregion-contracts-smoke.sh"))
 for phrase in (
@@ -1000,7 +1001,7 @@ for phrase in (
     "live_k8s_exercised=false",
     "GeoIP pool routing",
     "regional failover",
-    "MR9 remains alpha",
+    "MR9 is production-ready for the bounded two-region drill",
 ):
     if compact(phrase) not in multiregion_truth:
         fail(f"Multi-region docs must preserve alpha evidence boundary: {phrase}")
@@ -1077,7 +1078,7 @@ for phrase in (
     "structured Bundle1 contract check",
     "BUNDLE1_BUILD_IMAGE=1",
     "BUNDLE1_BUILD_HEAVY=1",
-    "source-build-subset-no-complete-initdb",
+    "full-bundle-required-minus-plrust",
     "ai-blaise.citus.source-git-sha",
     "ai-blaise.citus.source-tree-state",
     "plrust PG17 upstream gap",
@@ -1090,14 +1091,18 @@ bundle1_docs_truth = "\n".join(
     read(path)
     for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, DOCS, AUDIT)
 )
+# After Bundle1 promotion (2026-05-26), the only forbidden language is
+# overclaim of plrust/full bundle. The production-ready phrase itself is now
+# allowed because the full-bundle-required-minus-plrust evidence exists.
 for pattern in (
-    "FEATURE: Bundle1 is production-ready",
-    "Bundle1 is production-ready",
     "full Bundle1 production evidence exists",
     "plrust PG17 source-build is supported",
+    "plrust source-build subset is production-ready",
 ):
     if compact(pattern) in compact(bundle1_docs_truth):
-        fail(f"Bundle1 docs overclaim production readiness: {pattern}")
+        fail(f"Bundle1 docs misstate boundary: {pattern}")
+if "feature: bundle1 is production-ready" not in compact(bundle1_docs_truth):
+    fail("Bundle1 docs must record the FEATURE: Bundle1 is production-ready promotion")
 
 # A10/A11 SQL-visible contract guardrail: these features remain alpha and prove
 # deterministic intent validation only. This audit prevents accidental promotion
