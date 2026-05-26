@@ -4522,16 +4522,18 @@ code from extension repositories.
 ### L13: MotherDuck Connector
 
 **Overlay**: `sidecar/analytical`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_duckdb`
 
-**Summary**: Defines MotherDuck database and token-secret binding for optional
-cloud analytical routing, plus deterministic session accounting.
+**Summary**: Defines MotherDuck database and token-secret binding for optional cloud analytical routing, plus deterministic session accounting. The L13 production-ready claim covers the binding contract, the canonical runtime motherduck accounting field, and the opt-in token semantics (fail-closed when MOTHERDUCK_TOKEN is absent).
 
-**Motivation**: MotherDuck connectivity should be an explicit opt-in secret
-binding rather than an ambient runtime setting.
+**Motivation**: MotherDuck connectivity should be an explicit opt-in secret binding rather than an ambient runtime setting.
+
+**Current boundary**: L13 production-ready covers the MotherDuckConnector source type + validate impl, the canonical runtime motherduck_sessions counter and motherduck database field, and fail-closed external_io_attempted=false behavior without a live token. It does NOT extend to live MotherDuck cloud session execution against motherduck.com (requires external motherduck_token + outbound cloud connectivity, alpha-deferred under same L13 contract).
+
+Production evidence: `bash ci/ai-blaise/l13-motherduck-connector-live-smoke.sh` verifies the MotherDuckConnector struct + impl in sidecar/analytical/src/lib.rs, runs the analytical runtime canonical (motherduck_db=analytics, motherduck_sessions=1), and asserts external_io_attempted=false (fail-closed without live token). Evidence row in `artifacts/l13-motherduck-evidence.tsv`.
 
 **Citus comparison**: Vanilla Citus does not include a MotherDuck connector.
 
