@@ -9,9 +9,16 @@ The sync job intentionally starts as a dry-run gate. Once the first overlay
 release stabilizes, it should be extended to open a PR on
 `chore/upstream-sync-YYYY-MM-DD` with:
 
-Status snapshot: 2026-05-24. The patch and PR tables below are a dated planning
+Status snapshot: 2026-05-26. The patch and PR tables below are a dated planning
 snapshot, not live PR evidence. Refresh this date before a release and whenever
-an upstream or fork PR opens, closes, merges, or changes target branch.
+an upstream or fork PR opens, closes, merges, or changes target branch. The
+2026-05-26 refresh folds in five upstream `citusdata/citus` `main` commits on
+top of the 2026-05-20 base (`4d54b11bbab52f71b76c316432e878a1bc38206c` ->
+`dee8ec140aff84d8769bdcd859c39c379180fe06`): #8587 object-ownership
+enforcement, #8497 NOT (x IS DISTINCT FROM y) recursive-planning fix, #8498
+COLLATE-with-type-cast distributed-query fix, #8593 SortList short-circuit,
+#8592 README grammar; the live integration smoke is
+`ci/ai-blaise/upstream-rebase-2026-05-25-integration-smoke.sh`.
 
 - upstream Citus changes
 - refreshed patch applicability output
