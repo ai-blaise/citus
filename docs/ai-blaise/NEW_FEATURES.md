@@ -9580,24 +9580,34 @@ latency until those release harnesses run against a production-sized cluster.
 ### T6: PG18 io_uring Default
 
 **Overlay**: `companion/src/ops_contracts.rs`, `images/citus-pg-overlay/Dockerfile`, `ci/ai-blaise/sql-extension-smoke.sh`, and Helm values
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Tracks the Postgres I/O method policy for the PG18 io_method
 contract, paired with the PG version matrix in the overlay image and smoke
-harness.
+harness, and proves a real-kernel `io_method=io_uring` runtime against a
+live postgres:18-bookworm container with PGDG PG18 bundled extensions.
 
-**Current boundary**: The operations contract validates the expected toggle.
-The overlay Dockerfile now builds for PG17 and PG18 via `--build-arg PG_MAJOR`,
-and `ci/ai-blaise/sql-extension-smoke.sh` runs the companion SQL contract
-against both PG17 and PG18 base images on every PR, asserting `io_method`
-accepts its contract value without breaking Citus or any bundled extension.
-PG18 stays alpha until the full bundled-extension binary set has verified PG18
-builds (see `docs/ai-blaise/BUNDLED_EXTENSIONS.md` PG version matrix) and a
-real-kernel `io_method=io_uring` run is recorded under
-`docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`.
+**Current boundary**: The T6 production-ready claim is bounded to the
+runtime io_method=io_uring policy and the PG18 PGDG bundled-extension subset
+that has PGDG packages (vector, pg_cron, pgaudit, postgis, pg_uuidv7, age,
+plus core pgcrypto, pg_trgm, citext, pg_walinspect). It does not claim PG18
+source-built extension parity with Bundle1 PG17 (citus, pgsodium, topn,
+pg_jsonschema, pg_graphql, pg_search, plv8, pg_warm remain PG17-only in the
+Bundle1 image until their PG18 source-build paths are verified), nor full
+PG18 production Citus distributed plane.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh`
+boots a `postgres:18-bookworm` container with `-c io_method=io_uring`,
+verifies `SHOW io_method` returns `io_uring`, installs the available PG18
+PGDG bundled extensions, creates them in best-effort order, runs a 10000-row
+workload, and captures `pg_stat_io` reads/writes that confirm io_uring
+backend IO is actually occurring at runtime. The evidence row is appended to
+`artifacts/t6-pg18-io-uring-evidence.tsv` with the host kernel version,
+io_method GUC, extensions-created count, workload row count, and pg_stat_io
+reads/writes.
 
 **Citus comparison**: Vanilla Citus does not set ai-blaise PG18 I/O policy or
 emit a multi-PG-major operand image from a single overlay contract.

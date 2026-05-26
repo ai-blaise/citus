@@ -1463,6 +1463,26 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+T6 PG18 io_uring live evidence from 2026-05-26 promotes `FEATURE: T6`
+from alpha to production-ready for the runtime io_method=io_uring policy
+boundary. The new `ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh` boots a
+`postgres:18-bookworm` container with `-c io_method=io_uring` against
+the Linux kernel of the host VM (6.1+, io_uring-enabled), verifies
+`SHOW io_method` returns `io_uring`, installs the available PG18 PGDG
+bundled extensions (postgresql-18-cron, postgresql-18-pgaudit,
+postgresql-18-pgvector, postgresql-18-postgis-3, postgresql-18-pg-uuidv7,
+postgresql-18-age plus core pgcrypto, pg_trgm, citext), exercises a
+10000-row workload, and reads `pg_stat_io` reads/writes counters to
+confirm io_uring backend IO is actually occurring at runtime. The evidence
+row is appended to `artifacts/t6-pg18-io-uring-evidence.tsv` with the host
+kernel version, io_method GUC, extensions-created count, workload row
+count, and pg_stat_io reads/writes. The T6 production-ready claim is
+intentionally bounded to this runtime io_method policy + PGDG PG18
+bundled-extension subset; the Bundle1 source-built extensions (citus,
+pgsodium, topn, pg_jsonschema, pg_graphql, pg_search, plv8, pg_warm) remain
+PG17-only until their PG18 source-build paths are verified, and full PG18
+Citus distributed plane is not claimed.
+
 C6/C7/C8 branch lifecycle live evidence from 2026-05-26 promotes
 `FEATURE: C6`, `FEATURE: C7`, and `FEATURE: C8` from alpha to
 production-ready for the bounded kind + csi-driver-host-path snapshot stack.
