@@ -48,6 +48,29 @@ LIGHT_EXTENSIONS = {
     "pg_prewarm",
     "pg_warm",
 }
+# Bundle1 production-ready bar: every required-tier manifest extension whose
+# control file is supplied by the bundle1-pgdg-runtime layer or the local SQL
+# shims. pg_failover_slots is preload-only (no SQL extension) and plrust is
+# optional/deferred upstream, so neither participates in this set.
+REQUIRED_PRODUCTION_EXTENSIONS = LIGHT_EXTENSIONS | {
+    "timescaledb",
+    "vector",
+    "pg_cron",
+    "pg_partman",
+    "pgaudit",
+    "pgauditlogtofile",
+    "hll",
+    "tdigest",
+    "pgnodemx",
+    "postgis",
+    "age",
+    "pg_uuidv7",
+    "pg_repack",
+    "pgcrypto",
+    "pg_trgm",
+    "citext",
+    "rum",
+}
 HEAVY_EXTENSIONS = LIGHT_EXTENSIONS | {"pg_search", "plv8"}
 
 
@@ -182,10 +205,14 @@ def main() -> None:
             for phrase in (
                 "COPY images/citus-pg-overlay/extensions/pg_warm.control",
                 "COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql",
-                "CREATE EXTENSION pg_warm;",
             ):
-                if phrase not in (dockerfile + "\n" + sql_smoke):
+                if phrase not in dockerfile:
                     fail(f"Bundle1 pg_warm local shim contract missing: {phrase}")
+            if (
+                "CREATE EXTENSION pg_warm;" not in sql_smoke
+                and "CREATE EXTENSION IF NOT EXISTS pg_warm;" not in initdb
+            ):
+                fail("Bundle1 pg_warm local shim must be created by either smoke or initdb")
         elif extension == "plrust":
             for phrase in (
                 "ARG PLRUST_TAG=v1.2.8",
@@ -196,11 +223,16 @@ def main() -> None:
                 if phrase not in (dockerfile + "\n" + MANIFEST.read_text(encoding="utf-8")):
                     fail(f"Bundle1 plrust deferred boundary missing: {phrase}")
 
-    for extension in sorted(LIGHT_EXTENSIONS):
+    # Bundle1 production-ready: every required extension created by initdb or smoke.
+    initdb_or_smoke = initdb + sql_smoke
+    for extension in sorted(REQUIRED_PRODUCTION_EXTENSIONS):
         if extension == "pg_prewarm":
             continue
-        if f"CREATE EXTENSION {extension};" not in sql_smoke:
-            fail(f"Bundle1 source-build smoke does not create light extension {extension}")
+        if (
+            f"CREATE EXTENSION {extension};" not in initdb_or_smoke
+            and f"CREATE EXTENSION IF NOT EXISTS {extension};" not in initdb_or_smoke
+        ):
+            fail(f"Bundle1 initdb/smoke does not create required extension {extension}")
     for extension in sorted(HEAVY_EXTENSIONS - LIGHT_EXTENSIONS):
         if f"CREATE EXTENSION {extension};" not in sql_smoke:
             fail(f"Bundle1 heavy source-build smoke does not create {extension}")
@@ -212,7 +244,7 @@ def main() -> None:
         "AI_BLAISE_SOURCE_GIT_SHA",
         "ai-blaise.citus.source-git-sha",
         "ai-blaise.citus.bundle1.evidence-scope",
-        "source-build-subset-no-complete-initdb",
+        "full-bundle-required-minus-plrust",
         "pgsodium key unavailable",
         "PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         "bundle1-source-build.lock.tsv",
@@ -220,8 +252,12 @@ def main() -> None:
         if phrase not in sql_smoke + "\n" + dockerfile:
             fail(f"Bundle1 smoke/Dockerfile lost required fail-closed phrase: {phrase}")
 
+    # pg_failover_slots has no SQL extension surface (shared_preload_libraries-only).
+    preload_only_extensions = {"pg_failover_slots"}
     required_extensions = [name for name, row in manifest.items() if row["tier"] == "required"]
     for extension in required_extensions:
+        if extension in preload_only_extensions:
+            continue
         if f"CREATE EXTENSION IF NOT EXISTS {extension};" not in initdb:
             fail(f"initdb contract does not create required extension {extension}")
     for extension in EXPECTED_LOCK_ORDER:
@@ -239,9 +275,9 @@ def main() -> None:
         if not light_rows:
             fail("Bundle1 evidence TSV must keep at least one light source-build proof row")
         latest_light_extensions = set(light_rows[-1]["extensions"].split())
-        missing = LIGHT_EXTENSIONS - latest_light_extensions
+        missing = REQUIRED_PRODUCTION_EXTENSIONS - latest_light_extensions
         if missing:
-            fail(f"latest Bundle1 light evidence row missing extensions: {sorted(missing)}")
+            fail(f"latest Bundle1 light evidence row missing required production extensions: {sorted(missing)}")
         if "plrust" in latest_light_extensions:
             fail("Bundle1 light evidence must not imply plrust PG17 support")
 
@@ -249,13 +285,13 @@ def main() -> None:
         docs,
         (
             "bundle1-source-build.lock.tsv",
-            "source-build-subset-no-complete-initdb",
+            "full-bundle-required-minus-plrust",
             "structured Bundle1 contract check",
             "BUNDLE1_BUILD_IMAGE=1",
             "BUNDLE1_BUILD_HEAVY=1",
             "complete initdb path",
             "plrust PG17 upstream gap",
-            "FEATURE: Bundle1 remains alpha",
+            "FEATURE: Bundle1 is production-ready",
         ),
         "Bundle1 docs",
     )
@@ -264,19 +300,19 @@ def main() -> None:
         (
             "bundle1-contract-check.py",
             "bundle1-source-build.lock.tsv",
-            "source-build-subset-no-complete-initdb",
+            "full-bundle-required-minus-plrust",
         ),
         "image-check.sh",
     )
 
     for forbidden in (
-        "FEATURE: Bundle1 is production-ready",
-        "Bundle1 is production-ready",
+        "FEATURE: Bundle1 remains alpha",
         "full Bundle1 production evidence exists",
         "plrust PG17 source-build is supported",
+        "plrust source-build subset is production-ready",
     ):
         if compact(forbidden) in compact(docs):
-            fail(f"Bundle1 docs overclaim production readiness: {forbidden}")
+            fail(f"Bundle1 docs misstate boundary: {forbidden}")
 
     print("bundle1-contract-check passed")
 

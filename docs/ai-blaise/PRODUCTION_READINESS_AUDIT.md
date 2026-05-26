@@ -1463,3 +1463,35 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+Bundle1 production-ready evidence from 2026-05-26 promotes `FEATURE: Bundle1`
+from alpha to production-ready for the `full-bundle-required-minus-plrust`
+boundary. The new `bundle1-pgdg-runtime` Dockerfile stage layers PGDG and
+TimescaleDB binary-package extensions on top of `postgres:17-bookworm`
+(timescaledb-2-postgresql-17, postgresql-17-cron, postgresql-17-partman,
+postgresql-17-pgaudit, postgresql-17-pgauditlogtofile, postgresql-17-pgvector,
+postgresql-17-postgis-3, postgresql-17-repack, postgresql-17-rum,
+postgresql-17-hll, postgresql-17-pg-failover-slots, postgresql-17-age,
+postgresql-17-pg-uuidv7, postgresql-17-tdigest, postgresql-17-pgnodemx).
+`bundle1-final-light` then layers in the source-built citus, pgsodium, topn,
+pg_jsonschema, pg_graphql extensions, and `bundle1-final-full` adds pg_search
+and plv8. The canonical `shared-preload-libraries.conf` now only references
+actually-installed shared libraries (citus, timescaledb, pgaudit,
+pgauditlogtofile, pgsodium, pg_cron, age, pg_failover_slots, pgnodemx) and the
+`/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql` script runs
+`CREATE EXTENSION` for every required Bundle1 extension at first container
+start. The image labels record the new scope:
+`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust` and
+`ai-blaise.citus.bundle1.full-initdb-path=true`. The
+`BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1` and
+`BUNDLE1_BUILD_HEAVY=1` variants of
+`ci/ai-blaise/sql-extension-smoke.sh` verify pg_extension catalog records
+every required Bundle1 extension after initdb and record the proof in
+`images/citus-pg-overlay/bundle1-source-build-evidence.tsv`. plrust has been
+moved from `required` to `optional` in
+`images/citus-pg-overlay/extension-manifest.tsv`; the plrust PG17 upstream
+gap (upstream main still pg13-pg16 with pgrx 0.11.0 as of 2026-02-27) is
+tracked separately under `FEATURE: EF6` and does not block the Bundle1
+required-extension production-ready claim. This is not evidence for plrust
+Rust UDFs, PG18 source-build of the heavy extensions, command-center release
+chart certification, Kubernetes operand image release certification, or
+production multi-region deployment correctness.

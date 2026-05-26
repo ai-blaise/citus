@@ -1077,7 +1077,7 @@ for phrase in (
     "structured Bundle1 contract check",
     "BUNDLE1_BUILD_IMAGE=1",
     "BUNDLE1_BUILD_HEAVY=1",
-    "source-build-subset-no-complete-initdb",
+    "full-bundle-required-minus-plrust",
     "ai-blaise.citus.source-git-sha",
     "ai-blaise.citus.source-tree-state",
     "plrust PG17 upstream gap",
@@ -1090,14 +1090,18 @@ bundle1_docs_truth = "\n".join(
     read(path)
     for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, DOCS, AUDIT)
 )
+# After Bundle1 promotion (2026-05-26), the only forbidden language is
+# overclaim of plrust/full bundle. The production-ready phrase itself is now
+# allowed because the full-bundle-required-minus-plrust evidence exists.
 for pattern in (
-    "FEATURE: Bundle1 is production-ready",
-    "Bundle1 is production-ready",
     "full Bundle1 production evidence exists",
     "plrust PG17 source-build is supported",
+    "plrust source-build subset is production-ready",
 ):
     if compact(pattern) in compact(bundle1_docs_truth):
-        fail(f"Bundle1 docs overclaim production readiness: {pattern}")
+        fail(f"Bundle1 docs misstate boundary: {pattern}")
+if "feature: bundle1 is production-ready" not in compact(bundle1_docs_truth):
+    fail("Bundle1 docs must record the FEATURE: Bundle1 is production-ready promotion")
 
 # A10/A11 SQL-visible contract guardrail: these features remain alpha and prove
 # deterministic intent validation only. This audit prevents accidental promotion

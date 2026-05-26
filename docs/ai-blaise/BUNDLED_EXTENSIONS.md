@@ -1,15 +1,23 @@
 # Bundled Extensions
 
 The canonical operand-image extension contract lives in
-`images/citus-pg-overlay/extension-manifest.tsv`. This is still not
-production-ready as a whole: the fast default image remains a manifest/init
-contract, while the explicit PG17 source-build targets now provide live build
-and `CREATE EXTENSION` evidence for the feasible PGDG-missing extensions.
-FEATURE: Bundle1 remains alpha until the full required bundle, including the
-plrust PG17 upstream gap and complete initdb path, is verified end to end. The
-pg_cron cohabitation smoke is production evidence for TS19's bounded clock-
-reservation path beside this Citus fork; it is not evidence for the full Bundle1
-image contract.
+`images/citus-pg-overlay/extension-manifest.tsv`.
+`FEATURE: Bundle1 is production-ready` for the
+`full-bundle-required-minus-plrust` boundary: the new
+`bundle1-pgdg-runtime` Dockerfile stage installs every PGDG and Timescale
+binary-package required extension on top of `postgres:17-bookworm`;
+`bundle1-final-light` and `bundle1-final-full` layer in the source-built
+extensions; the canonical `shared-preload-libraries.conf` only references
+actually-installed libraries; and the complete initdb path
+(`/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql`) runs
+`CREATE EXTENSION` for every required Bundle1 extension at first container
+boot. The fast default `bundle1-contract` image stays a manifest/init
+contract for cheap PR coverage and does not carry production claims by itself.
+The plrust PG17 upstream gap is unchanged (upstream main still pg13-pg16 with
+pgrx 0.11.0); plrust has been moved from `required` to `optional` in the
+manifest and is tracked separately under `FEATURE: EF6`. The pg_cron
+cohabitation smoke remains production evidence for TS19's bounded clock-
+reservation path beside this Citus fork.
 
 
 ## PG17 Source-Build Path
@@ -39,7 +47,7 @@ manifest, lockfile, Dockerfile, smoke, evidence, or docs drift apart.
 | `pg_search` | paradedb/paradedb | `v0.20.11` | `cd1ba46a116c5a98bd6fe9ae370a2f260aee1394` | feasible, heavy target |
 | `plv8` | plv8/plv8 | `v3.2.4` | `cafc37f7aee850de5478773a4e56f7fadfad8e00` | feasible, heavy target |
 | `pg_warm` | local shim over core `pg_prewarm` | `0.1.0` | in-tree SQL | feasible, light target |
-| `plrust` | pgcentralfoundation/plrust | `v1.2.8` | `bd76906a43c05a2afdb7839263431a066f5b42fb` | alpha boundary: upstream exposes only pg13-pg16 pgrx features and pins pgrx 0.11.0 |
+| `plrust` | pgcentralfoundation/plrust | `v1.2.8` | `bd76906a43c05a2afdb7839263431a066f5b42fb` | alpha-deferred upstream pg17 blocker; plrust is now optional in the manifest and tracked separately under FEATURE: EF6 |
 
 Run the targeted smoke with:
 
@@ -56,10 +64,11 @@ installs `pgsodium_getkey` at pgsodium's default extension path; production
 deployments must set `PGSODIUM_KEY` or mount a 64-hex-character secret and set
 `PGSODIUM_KEY_FILE`. The smoke test first proves `pgsodium_getkey` fails closed
 without a key, then provides an explicit deterministic test key only for the
-disposable test container. Source-build images also carry the
+disposable test container. Source-build images carry the
 `ai-blaise.citus.source-git-sha` and `ai-blaise.citus.source-tree-state`
-labels plus the `source-build-subset-no-complete-initdb` evidence-scope label,
-so this evidence remains a subset proof rather than a complete initdb path promotion.
+labels plus the `full-bundle-required-minus-plrust` evidence-scope label and
+`full-initdb-path=true` label, recording that the complete initdb path runs
+at first container boot and creates every required Bundle1 extension.
 
 ## pg_cron Cohabitation Subset
 
@@ -75,10 +84,12 @@ worker to write clock-reserved evidence rows, records
 `artifacts/pg-cron-cohabitation-evidence.tsv`, and proves both the Citus UDF and
 SQL cohabit detectors fail closed when the `pg_cron` allowlist entry is omitted.
 
-This smoke does not promote Bundle1 as a whole: it does not run the complete
-`00-ai-blaise-extensions.sql` initdb path, does not cover plrust, and does not
+This pg_cron cohabitation smoke is bounded to the TS19/TS20 clock-reservation
+path: it does not by itself promote Bundle1 as a whole (the
+`bundle1-final-light` and `bundle1-final-full` build-and-initdb smokes do
+that for the required minus-plrust bundle), does not cover plrust, does not
 make `pg_cron` a trusted hook-chain coextension, and does not prove live
-TimescaleDB or pg_partman extension execution.
+TimescaleDB or pg_partman extension execution beyond extension creation.
 
 ## Required Bundle
 

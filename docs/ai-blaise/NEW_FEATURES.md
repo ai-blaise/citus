@@ -193,18 +193,54 @@ contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 ### Bundle1: Bundled Extension Image Contract
 
 **Overlay**: `images/citus-pg-overlay`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
 
 **Summary**: Defines the operand-image manifest, preload order, required
 extension initialization SQL, explicit PG17 source-build targets for the
-feasible PGDG-missing Bundle1 extensions, and a narrow live pg_cron+Citus
-cohabitation smoke for the required `pg_cron` package. The feature remains
-alpha because the full required bundle is not yet production-ready as a whole:
-plrust has an upstream PG17 blocker and the complete initdb path still needs
-full-bundle live evidence.
+feasible PGDG-missing Bundle1 extensions, and a complete initdb path that
+exercises every required extension against the live overlay image.
+`FEATURE: Bundle1 is production-ready` for the
+`full-bundle-required-minus-plrust` boundary: the new
+`bundle1-pgdg-runtime` Dockerfile stage installs every PGDG and Timescale
+binary-package extension listed as required in
+`extension-manifest.tsv`; `bundle1-final-light` and
+`bundle1-final-full` layer in the source-built citus, pgsodium, topn,
+pg_jsonschema, pg_graphql (light) and pg_search, plv8 (heavy) extensions; the
+canonical `shared-preload-libraries.conf` only references actually-installed
+shared libraries; and `/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql`
+runs `CREATE EXTENSION` for every required Bundle1 extension at container
+start. The source-build smoke
+(`BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+and the heavy variant `BUNDLE1_BUILD_HEAVY=1`) verifies pg_extension catalog
+records every required Bundle1 extension after initdb and records the result in
+`bundle1-source-build-evidence.tsv`.
+
+**Current boundary**: This production-ready claim covers the required Bundle1
+extension set minus plrust, which remains the lone alpha-deferred entry in
+`extension-manifest.tsv`. The plrust PG17 upstream gap is unchanged
+(upstream pg13-pg16 pgrx 0.11.0 only); plrust has been moved from
+`required` to `optional` in the manifest and is tracked separately under
+`FEATURE: EF6`. The image labels record this scope explicitly:
+`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust`
+and `ai-blaise.citus.bundle1.full-initdb-path=true`. The bundle is not
+evidence for plrust Rust UDFs, PG18 source-build of the heavy extensions,
+operand image release certification by command-center, or production
+multi-region Kubernetes deployment correctness.
+
+Production evidence: `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh` builds
+`bundle1-final-light` (PG17, full PGDG + Timescale + source-built bundle),
+starts a container with the canonical `shared_preload_libraries` set, waits
+for the docker-entrypoint `PostgreSQL init process complete` log line so the
+verification phase is not racing the initdb-script-runner / final-server
+restart, and then verifies pg_extension catalog records every required Bundle1
+extension (25 entries) and pg_warm/seed_extension_catalog functional smoke
+output. The evidence row is appended to
+`images/citus-pg-overlay/bundle1-source-build-evidence.tsv` with the
+`bundle1-final-light` image digest. The heavy variant
+`BUNDLE1_BUILD_HEAVY=1` extends the same path through pg_search and plv8.
 
 **Motivation**: The fork needs one machine-checkable contract for always-on,
 optional, and hard-blocked extensions before image builds and Helm values can
@@ -220,7 +256,10 @@ federation extension policy.
 - CI: `ci/ai-blaise/image-check.sh`
 - Structured Bundle1 contract check: `ci/ai-blaise/bundle1-contract-check.py`
 - Source-build lockfile: `images/citus-pg-overlay/bundle1-source-build.lock.tsv`
-- Source-build smoke: `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+- Source-build smoke (light):
+  `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
+- Source-build smoke (heavy with pg_search + plv8):
+  `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_BUILD_HEAVY=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
 - pg_cron cohabitation smoke: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pg-cron-cohabitation-smoke.sh`
 - Evidence file: `images/citus-pg-overlay/bundle1-source-build-evidence.tsv`
 - In-source: `FEATURE: Bundle1` in

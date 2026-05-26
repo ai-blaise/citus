@@ -188,7 +188,50 @@ RUN set -eux; \
     install -d /out/usr/local/share; \
     echo "${CITUS_TAG}" >/out/usr/local/share/ai-blaise-citus-upstream-tag
 
-FROM ${BASE_IMAGE} AS bundle1-source-runtime
+FROM ${BASE_IMAGE} AS bundle1-pgdg-runtime
+ARG PG_MAJOR
+ENV DEBIAN_FRONTEND=noninteractive
+# Bundle1 PGDG + Timescale binary-package layer.
+#
+# PGDG already provides most required Bundle1 extensions for PG17 on Debian
+# bookworm. TimescaleDB ships through its own apt repo. This stage installs
+# every required Bundle1 binary-package extension so the runtime image can
+# pass a complete initdb path. Source-built extensions (citus, pgsodium,
+# topn, pg_jsonschema, pg_graphql, pg_search, plv8, pg_warm) are layered on
+# top of this stage by bundle1-final-light / bundle1-final-full.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg; \
+    install -d -m 0755 /etc/apt/keyrings; \
+    curl -fsSL https://packagecloud.io/timescale/timescaledb/gpgkey \
+      | gpg --dearmor -o /etc/apt/keyrings/timescaledb.gpg; \
+    echo "deb [signed-by=/etc/apt/keyrings/timescaledb.gpg] https://packagecloud.io/timescale/timescaledb/debian/ bookworm main" \
+      > /etc/apt/sources.list.d/timescaledb.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        timescaledb-2-postgresql-${PG_MAJOR} \
+        postgresql-${PG_MAJOR}-cron \
+        postgresql-${PG_MAJOR}-partman \
+        postgresql-${PG_MAJOR}-pgaudit \
+        postgresql-${PG_MAJOR}-pgauditlogtofile \
+        postgresql-${PG_MAJOR}-pgvector \
+        postgresql-${PG_MAJOR}-postgis-3 \
+        postgresql-${PG_MAJOR}-repack \
+        postgresql-${PG_MAJOR}-rum \
+        postgresql-${PG_MAJOR}-hll \
+        postgresql-${PG_MAJOR}-pg-failover-slots \
+        postgresql-${PG_MAJOR}-age \
+        postgresql-${PG_MAJOR}-pg-uuidv7 \
+        postgresql-${PG_MAJOR}-tdigest \
+        postgresql-${PG_MAJOR}-pgnodemx \
+        libsodium23 libicu72 libstdc++6; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/* \
+        /etc/apt/keyrings/timescaledb.gpg \
+        /etc/apt/sources.list.d/timescaledb.list
+
+FROM bundle1-pgdg-runtime AS bundle1-source-runtime
 ARG PG_MAJOR
 ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION
 ARG AI_BLAISE_SOURCE_GIT_SHA
@@ -216,8 +259,8 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       ai-blaise.citus.source-tree-state="${AI_BLAISE_SOURCE_TREE_STATE}" \
       ai-blaise.citus.extension-bundle="${AI_BLAISE_EXTENSION_BUNDLE_VERSION}" \
       ai-blaise.citus.bundle1.contract-lock="images/citus-pg-overlay/bundle1-source-build.lock.tsv" \
-      ai-blaise.citus.bundle1.evidence-scope="source-build-subset-no-complete-initdb" \
-      ai-blaise.citus.bundle1.full-initdb-path="false" \
+      ai-blaise.citus.bundle1.evidence-scope="full-bundle-required-minus-plrust" \
+      ai-blaise.citus.bundle1.full-initdb-path="true" \
       ai-blaise.citus.bundle1.citus.tag="${CITUS_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.tag="${PGSODIUM_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.ref="${PGSODIUM_REF}" \
@@ -236,10 +279,6 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       ai-blaise.citus.bundle1.pg_graphql.ref="${PG_GRAPHQL_REF}"
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends libsodium23 libicu72 libstdc++6; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*; \
     install -d -m 0755 /etc/postgresql/ai-blaise \
       /usr/local/share/ai-blaise/citus \
       /usr/local/share/ai-blaise/citus/extensions \
@@ -255,6 +294,7 @@ COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql /usr/l
 COPY images/citus-pg-overlay/extensions/pg_warm.control /usr/local/share/ai-blaise/citus/extensions/pg_warm.control
 COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql
 COPY images/citus-pg-overlay/bin/pgsodium_getkey /usr/local/share/ai-blaise/citus/pgsodium_getkey
+COPY images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql /docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql
 RUN set -eux; \
     cp /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf /etc/postgresql/ai-blaise/shared-preload-libraries.conf; \
     install -m 0755 /usr/local/share/ai-blaise/citus/pgsodium_getkey "/usr/share/postgresql/${PG_MAJOR}/extension/pgsodium_getkey"; \
