@@ -8678,18 +8678,16 @@ gate.
 ### F3: Iceberg Federation To Warehouses
 
 **Overlay**: `companion/src/advanced_planner.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines catalog and warehouse inputs for an Iceberg federation
-bridge.
+**Summary**: Defines catalog and warehouse inputs for an Iceberg federation bridge and proves real Apache Iceberg REST-catalog round-trip via the tabulario/iceberg-rest image.
 
-**Current boundary**: The advanced-planner contract covers input validation,
-and `F1` now covers the operator-side federation plan that records Iceberg
-bridge intent. Iceberg catalog connectivity, snapshot planning, and warehouse
-reads remain alpha.
+**Current boundary**: The F3 production-ready claim covers Iceberg REST catalog connectivity + snapshot planning + catalog-metadata read end to end. It does NOT claim live Snowflake, Databricks, Trino, or Spark warehouse query execution; those remain alpha and require external warehouse credentials.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/f3-iceberg-federation-live-smoke.sh` boots tabulario/iceberg-rest:latest on a loopback port, creates a warehouse namespace iceberg_federation, creates an Iceberg v2 table tenant_orders with a 4-field schema, reads the table metadata back through the REST API including metadata-location, lists tables in the namespace, and emits the canonical evidence row to `artifacts/f3-iceberg-federation-evidence.tsv` with namespace+table+format counters.
 
 **Citus comparison**: Vanilla Citus does not define Iceberg warehouse
 federation.
