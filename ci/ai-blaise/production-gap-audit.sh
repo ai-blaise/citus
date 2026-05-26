@@ -1104,9 +1104,9 @@ for pattern in (
 if "feature: bundle1 is production-ready" not in compact(bundle1_docs_truth):
     fail("Bundle1 docs must record the FEATURE: Bundle1 is production-ready promotion")
 
-# A10/A11 SQL-visible contract guardrail: these features remain alpha and prove
-# deterministic intent validation only. This audit prevents accidental promotion
-# to live provider/model execution or generated-query execution without evidence.
+# A10/A11 SQL-visible contract guardrail: both features are production-ready
+# under the live-provider-execution-safety-validated boundary. This audit pins
+# their NEW_FEATURES status so a regression to alpha would fail the gate.
 entry_status = {entry["id"]: entry["status"] for entry in entries}
 for feature_id in ("A10", "A11"):
     if entry_status.get(feature_id) != "production-ready":

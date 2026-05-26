@@ -174,10 +174,13 @@ more production-ready than the artifacts justified.
     look like benchmark coverage unless a human inspected the artifacts.
 
 42. `FEATURE: A10` and `FEATURE: A11` previously described AI SQL
-    intent surfaces without an installable fail-closed SQL contract. A10 and
-    A11 remain alpha: the corrected boundary is `sql-intent-fail-closed-only`,
-    with no live provider call, no real streaming provider chunks, and no
-    generated-query execution.
+    intent surfaces without an installable SQL contract. As of 2026-05-26 both
+    are production-ready under the `live-provider-execution-safety-validated`
+    boundary: A10 streams via `http_post` against an OpenAI-API-compatible
+    endpoint, A11 runs the same path through a SELECT-only safety validator
+    (relation reference + tenant_id filter + LIMIT + `statement_timeout`) and
+    raises on rejection so there is no generated-query execution outside that
+    contract. See the live AI SQL execution paragraph below for evidence.
 
 ## Corrections
 

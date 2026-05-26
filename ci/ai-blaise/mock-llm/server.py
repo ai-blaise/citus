@@ -44,7 +44,6 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
-        # Detect 'text-to-SQL' style requests by looking at the last user msg.
         messages = body.get('messages', [])
         user_msg = ''
         for m in reversed(messages):
@@ -52,7 +51,6 @@ class Handler(BaseHTTPRequestHandler):
                 user_msg = m.get('content', '')
                 break
         if 'sql' in user_msg.lower():
-            # Generate a sql response matching the deterministic template
             content = 'SELECT amount_cents, tenant_id FROM orders WHERE tenant_id = $1 LIMIT 100'
         else:
             content = 'mock_response_for_' + user_msg[:30].strip()

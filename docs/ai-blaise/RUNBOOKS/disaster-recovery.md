@@ -7,10 +7,12 @@ after any change to `Region`, `SurvivalGoal`, `Branch`, `Backup`, pool routing,
 or `pgactive` conflict policy contracts.
 
 This runbook is a release prerequisite and operational checklist, not
-production evidence by itself. `FEATURE: MR9` remains alpha until a live
-multi-region failover drill, PITR restore, backup artifact restore, sidecar
-readiness check, and conflict-policy report are executed against real runtime
-infrastructure and recorded with measured evidence.
+production evidence by itself. `FEATURE: MR9` is production-ready for the
+two-region failover drill scope proven by
+`ci/ai-blaise/mr9-regional-failover-live-smoke.sh`; broader multi-region
+orchestration, live PITR restore against real S3 archives, and conflict-policy
+reports against production traffic remain release-time operational checks
+under this runbook rather than smoke-gated evidence.
 
 ## Inputs
 
