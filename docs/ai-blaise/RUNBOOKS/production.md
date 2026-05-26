@@ -192,8 +192,12 @@ admin probe access, and matching selectors for the folded chart labels.
   `ci/ai-blaise/security-sbom-cosign-live-smoke.sh`; public-registry
   publication, keyless transparency-log policy, and admission enforcement stay
   separate release controls.
-- `FEATURE: T6`: PG18 `io_uring` remains alpha intent until the operand image
-  and kernel/runtime compatibility smoke prove it on the target node class.
+- `FEATURE: T6`: PG18 `io_uring` is production-ready for the
+  `io_method=io_uring` policy boundary proven by
+  `ci/ai-blaise/t6-pg18-io-uring-live-smoke.sh` (postgres:18-bookworm,
+  Linux 6.1+ kernel, `pg_stat_io` reads/writes observed under workload);
+  release-time kernel/runtime compatibility on a specific target node class is
+  still verified per cluster.
 - `FEATURE: T7`: pool protocol pipelining remains alpha intent until the pool
   data path enforces it and live SQL traffic proves correctness under pipelined
   clients.

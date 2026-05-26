@@ -51,7 +51,6 @@ docker run -d --name "${mock_container}" --network "${network}" --network-alias 
   -v "$(pwd)/ci/ai-blaise/mock-llm/server.py":/server.py:ro \
   python:3.12-slim python3 /server.py 8765 >/dev/null
 
-# Wait for mock readiness.
 for _ in $(seq 1 60); do
   if docker exec "${mock_container}" python3 -c 'import urllib.request; urllib.request.urlopen("http://localhost:8765/healthz")' >/dev/null 2>&1; then
     break

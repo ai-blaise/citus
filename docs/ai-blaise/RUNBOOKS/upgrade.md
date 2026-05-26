@@ -9,10 +9,11 @@ image.
 
 - Target upstream Citus commit and ai-blaise release branch.
 - Current TS6 source/patch-series compatibility output.
-- Operand image digest with extension manifest and SBOM after `FEATURE:
-  Bundle1` is promoted. While Bundle1 remains alpha, the operand-image contract
-  must not be used as production release evidence without a real operand image
-  build/initdb smoke.
+- Operand image digest with extension manifest and SBOM. `FEATURE: Bundle1` is
+  production-ready for the bundle1-final-light source-build contract proven by
+  the bundle1 source-build smoke; per-release verification of the digest +
+  extension manifest + SBOM against this runbook is still required before
+  promotion.
 - Helm values for the canary namespace.
 - Rollback branch, backup checkpoint, and PITR timestamp.
 - `images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
