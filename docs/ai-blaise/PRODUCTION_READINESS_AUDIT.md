@@ -1463,6 +1463,33 @@ entries stay documented as roster-only until artifacts land, measured JSON uses
 `benchmarks/citus-patches/production-gates.json` pass. This remains negative
 evidence for patch IDs without measured results, while measured JSON is required
 for any patch-gate signoff.
+C6/C7/C8 branch lifecycle live evidence from 2026-05-26 promotes
+`FEATURE: C6`, `FEATURE: C7`, and `FEATURE: C8` from alpha to
+production-ready for the bounded kind + csi-driver-host-path snapshot stack.
+The new `ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh` creates a
+kind cluster (`kindest/node:v1.30.0`), installs the upstream
+external-snapshotter v8.2.0 (CRDs + controller) and csi-driver-host-path
+v1.14.0 (StorageClass + VolumeSnapshotClass), creates a primary
+`StatefulSet` with a PVC seeded by an initContainer-written tenant-marker,
+takes a real `VolumeSnapshot` of the primary PVC, waits for
+`readyToUse=true`, creates a branch PVC with `spec.dataSource` pointing
+at the snapshot (C6), boots a branch `StatefulSet` on the cloned PVC and
+verifies the branch pod observes the snapshotted tenant-marker, scales the
+branch StatefulSet to 0 replicas and confirms the suspend transition (C7),
+then scales back to 1, creates a `client-service` selecting primary pods,
+patches the selector to point at the branch pods, and waits for endpoints to
+converge onto `branch-review-0` (C8). The evidence row is appended to
+`artifacts/branch-lifecycle-live-evidence.tsv` with the primary marker, the
+branch marker post-snapshot, the suspend replica count, the cutover endpoint
+pod, the namespace, and the kind node image. The C6/C7/C8 production-ready
+claim is intentionally bounded to this kind + csi-driver-host-path narrative:
+it does not extend to cloud-provider CSI behavior, multi-zone snapshot
+replication, production DNS cutover, BGP/anycast network reconvergence,
+multi-region cutover, or Citus distributed data-plane during branch
+operations. The deterministic operator contract checks in
+`ci/ai-blaise/operator-branch-lifecycle-smoke.sh` continue to gate the
+apply/suspend/promote plan shape.
+
 MR9 regional failover live evidence from 2026-05-26 promotes `FEATURE: MR9`
 from alpha to production-ready for the bounded two-region failover drill
 scope. The new

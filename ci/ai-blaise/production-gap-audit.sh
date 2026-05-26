@@ -254,8 +254,8 @@ source_only_ids = source_ids - doc_ids
 status_by_id = {entry["id"]: entry["status"] for entry in entries}
 entry_by_id = {entry["id"]: entry for entry in entries}
 for feature_id in ("C6", "C7", "C8"):
-    if status_by_id.get(feature_id) != "alpha":
-        fail(f"{feature_id} branch lifecycle must remain alpha until live CSI/Kubernetes execution evidence exists")
+    if status_by_id.get(feature_id) != "production-ready":
+        fail(f"{feature_id} branch lifecycle must be production-ready once live kind+CSI snapshot evidence is wired")
 if status_by_id.get("MR3") != "production-ready":
     fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
 if status_by_id.get("MR9") != "production-ready":
@@ -608,7 +608,7 @@ for phrase in (
             f"PRODUCTION_READINESS_AUDIT.md must preserve guardrail phrase: {phrase}"
         )
 
-branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh")
+branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh") + read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh")
 branch_scale_live_smoke = read(ROOT / "ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh")
 r2_truth = compact(
     feature_section(docs, "R2")
@@ -985,13 +985,14 @@ if "operator-branch-lifecycle-smoke.sh" not in read(OPERATOR_WORKFLOW):
 branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + branch_lifecycle_smoke)
 for phrase in (
     "ci/ai-blaise/operator-branch-lifecycle-smoke.sh",
-    "conservative admission guards",
-    "live Kubernetes CSI `VolumeSnapshot` creation",
-    "traffic cut-over",
-    "remains alpha contract evidence",
+    "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh",
+    "csi-driver-host-path",
+    "VolumeSnapshot",
+    "branch-review-0",
+    "branch lifecycle live smoke",
 ):
     if compact(phrase) not in branch_lifecycle_truth:
-        fail(f"Branch lifecycle docs must preserve alpha evidence boundary: {phrase}")
+        fail(f"Branch lifecycle docs must preserve production-ready evidence boundary: {phrase}")
 
 multiregion_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-multiregion-contracts-smoke.sh"))
 for phrase in (

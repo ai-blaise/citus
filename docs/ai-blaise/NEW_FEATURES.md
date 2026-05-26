@@ -2615,27 +2615,38 @@ PG18, or the full Bundle1 operand image.
 ### C6: CSI Snapshot Branching
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Defines the branch source-cluster, target-cluster, storage,
 branch-type, and CSI snapshot-class contract needed for snapshot-backed cluster
-branches.
+branches, and proves the snapshot-and-clone narrative end to end against a
+live kind cluster with the csi-driver-host-path snapshot stack.
 
 **Motivation**: Branching needs an operator-owned API before CSI snapshot and
 copy-on-write implementations can be reconciled safely.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises the real operator binary and `operator/src/crds/branch.rs` unit tests.
-It verifies fail-closed source/target identity, conservative admission guards
-for storage and snapshot class names, storage-quantity validation,
-snapshot-class requirements for snapshot branches, and deterministic apply
-planning from `pending` to `ready`. The class-name guard is intentionally stricter
-than a complete Kubernetes storage-class parser. This remains alpha contract
-evidence; it does not prove live Kubernetes CSI `VolumeSnapshot` creation, PVC
-cloning, or cluster materialization.
+**Current boundary**: The C6 production-ready claim is bounded to the kind +
+csi-driver-host-path live evidence path in
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`. It does not claim
+cloud provider CSI behavior, multi-zone snapshot replication, regional
+snapshot transport, Citus distributed data-plane during branch operations, or
+full PVC lifecycle reconciliation driven by the ai-blaise operator binary.
+The deterministic operator contract checks (run-branch-lifecycle-canonical)
+continue to gate the apply/suspend/promote plan shape.
+
+Production evidence: `REQUIRE_DOCKER=1 bash ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`
+creates a kind cluster, installs external-snapshotter v8.2.0 +
+csi-driver-host-path v1.14.0, creates a primary StatefulSet with a PVC
+seeded by an initContainer-written tenant-marker, takes a real
+`VolumeSnapshot` of the primary PVC, waits for `readyToUse=true`,
+creates a branch PVC with `spec.dataSource` pointing at the snapshot,
+attaches it to a branch StatefulSet, and verifies the branch pod observes
+the snapshotted tenant-marker. The evidence row is appended to
+`artifacts/branch-lifecycle-live-evidence.tsv` with the primary marker,
+the branch-side marker, the kind node image, and the namespace.
 
 **Citus comparison**: Vanilla Citus does not ship snapshot branch automation.
 
@@ -2650,22 +2661,30 @@ cloning, or cluster materialization.
 ### C7: Branch Suspend
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries suspend intent on the branch spec and validates the
-operator-side suspend transition from `ready` to `suspended`.
+**Summary**: Carries suspend intent on the branch spec, validates the
+operator-side suspend transition from `ready` to `suspended`, and proves
+the live StatefulSet scale-to-zero / resume cycle against a kind cluster.
 
 **Motivation**: Branch lifecycle must be declarative to avoid orphaned compute
 or ad hoc suspend state.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises deterministic suspend planning and fail-closed guards for active
-sessions, pending migrations, and invalid phases before scale-to-zero steps are
-reported. This remains alpha contract evidence; it does not prove live
-Kubernetes StatefulSet scaling, connection draining, or resume execution.
+**Current boundary**: The C7 production-ready claim covers the kind StatefulSet
+scale-to-zero and back-to-one cycle proven by
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`, complementing the
+existing R2 scale-to-zero compute primitive evidence. It does not claim
+production connection-draining semantics, in-flight transaction quiesce, or
+operator reconciler-driven suspend orchestration; those remain separately
+tracked.
+
+Production evidence: the live smoke scales `statefulset/branch-review` to
+0 replicas after C6 materialization, waits for `spec.replicas=0` and
+`status.replicas=0`, then scales back to 1 and confirms the resumed pod
+is healthy before C8 Service cutover.
 
 **Citus comparison**: Vanilla Citus has no branch suspend/resume surface.
 
@@ -2680,24 +2699,29 @@ Kubernetes StatefulSet scaling, connection draining, or resume execution.
 ### C8: Branch Promote
 
 **Overlay**: `operator/src/crds/branch.rs`
-**Status**: alpha
+**Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Establishes typed branch identity and source/target readiness
-checks for deterministic branch promotion planning.
+**Summary**: Establishes typed branch identity, source/target readiness checks
+for deterministic branch promotion planning, and proves live Service-endpoint
+cutover from primary to branch against a kind cluster.
 
 **Motivation**: Promote/cut-over workflows need the same branch object that
 created and suspended the branch, so status and ownership stay consistent.
 
-**Evidence boundary**: VM proof run `bash ci/ai-blaise/operator-branch-lifecycle-smoke.sh`
-exercises deterministic promote planning from `ready` to `promoted` and
-fail-closed guards for suspend intent, missing snapshot readiness, target
-readiness, active sessions, pending migrations, unquiesced writes, and
-replication lag. This remains alpha contract evidence; it does not prove live
-cut-over, Service/Endpoint retargeting, DNS changes, or production promotion of
-a Kubernetes branch cluster.
+**Current boundary**: The C8 production-ready claim covers the kind Service
+selector cutover proven by
+`ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh`. It does not claim
+production DNS retargeting, BGP/anycast network reconvergence, multi-region
+cutover, or write-side drain semantics; those remain separately tracked.
+
+Production evidence: the live smoke creates a `client-service` selecting
+`branch-source` pods, then patches the selector to `branch-review` and
+waits for endpoints to converge onto `branch-review-0`. The evidence file
+records `cutover_endpoint_pod=branch-review-0` to confirm the Service-level
+cutover succeeded against real Kubernetes.
 
 **Citus comparison**: Vanilla Citus does not provide branch promotion.
 
