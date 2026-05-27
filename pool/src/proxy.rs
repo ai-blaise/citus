@@ -882,14 +882,26 @@ impl ExtQueryCounters {
     }
 }
 
+/// Tag bytes the PostgreSQL v3 wire protocol assigns to frontend frames.
+/// Anything outside this set is either the start of a (second) startup envelope
+/// or non-v3 traffic; the forwarder falls back to byte-transparent copy in
+/// either case so the connection never stalls.
+fn is_known_frontend_tag(tag: u8) -> bool {
+    matches!(
+        tag,
+        b'P' | b'B' | b'D' | b'E' | b'S' | b'H' | b'C' | b'Q' | b'd' | b'c' | b'f' | b'X' | b'F' | b'p'
+    )
+}
+
 /// Client -> upstream forwarder that parses each PostgreSQL v3 wire frame via
 /// `pool/wire`, accounts the frame type into the pool's atomic counters, and
 /// writes the bytes through to the upstream verbatim. Byte-transparency for
 /// every tag is preserved; the codec is observation-only on the hot path.
 ///
-/// Falls back to plain `io::copy` for any byte sequence that cannot be parsed
-/// as a complete frame header (so a misaligned read or a non-v3 client never
-/// stalls the connection).
+/// Falls back to plain `io::copy` when the next byte is not a known v3
+/// frontend tag, so SSL/GSS handshake replies, a second StartupMessage after
+/// an `SSLRequest`/`GSSENCRequest`, or any non-v3 traffic flows through
+/// unchanged without stalling.
 fn forward_client_to_upstream(
     reader: &mut TcpStream,
     writer: &mut TcpStream,
@@ -900,6 +912,19 @@ fn forward_client_to_upstream(
     let mut buffered: Vec<u8> = Vec::with_capacity(4096);
     let mut read_buf = [0u8; 4096];
     let mut total: u64 = 0;
+
+    let fall_back_to_byte_copy = |buffered: &[u8],
+                                  reader: &mut TcpStream,
+                                  writer: &mut TcpStream,
+                                  total: u64|
+     -> io::Result<u64> {
+        if !buffered.is_empty() {
+            writer.write_all(buffered)?;
+        }
+        let copied_after = io::copy(reader, writer)?;
+        let _ = writer.shutdown(Shutdown::Write);
+        Ok(total + buffered.len() as u64 + copied_after)
+    };
 
     loop {
         // Ensure we have a frame header.
@@ -916,29 +941,22 @@ fn forward_client_to_upstream(
             buffered.extend_from_slice(&read_buf[..read]);
         }
 
+        if !is_known_frontend_tag(buffered[0]) {
+            state.record_decode_error();
+            return fall_back_to_byte_copy(&buffered, reader, writer, total);
+        }
+
         let header = match FrameHeader::read(&buffered) {
             Ok(header) => header,
             Err(WireError::InvalidLength { .. })
             | Err(WireError::MessageTooLarge { .. })
             | Err(WireError::Underflow { .. }) => {
                 state.record_decode_error();
-                // Bail to a byte-transparent copy so a non-v3 or framing-
-                // misaligned client never stalls.
-                writer.write_all(&buffered)?;
-                total += buffered.len() as u64;
-                buffered.clear();
-                let copied = io::copy(reader, writer)?;
-                let _ = writer.shutdown(Shutdown::Write);
-                return Ok(total + copied);
+                return fall_back_to_byte_copy(&buffered, reader, writer, total);
             }
             Err(_) => {
                 state.record_decode_error();
-                writer.write_all(&buffered)?;
-                total += buffered.len() as u64;
-                buffered.clear();
-                let copied = io::copy(reader, writer)?;
-                let _ = writer.shutdown(Shutdown::Write);
-                return Ok(total + copied);
+                return fall_back_to_byte_copy(&buffered, reader, writer, total);
             }
         };
 
