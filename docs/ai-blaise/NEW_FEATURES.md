@@ -9643,20 +9643,23 @@ Production evidence:
   pointing at `postgres:17`; the smoke calls `cargo run -p ai_blaise_citus_pool
   -- serve` and waits on `/readyz`). After the example completes, the smoke
   scrapes the pool `/metrics` endpoint and asserts non-zero
-  `ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush"}`
+  `ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush|Close|Query|CopyData|Terminate|Other"}`
   counters with `ai_blaise_citus_pool_ext_query_decode_errors_total=0`. This
   is the data-plane proof that the `pool/wire` codec runs on every client
   -> upstream frame through `pool/src/proxy.rs::forward_client_to_upstream`,
   not only against postgres directly. Evidence row in
   `artifacts/pool-extended-query-through-pool-evidence.tsv`.
-- `cargo test -p ai_blaise_citus_pool_wire` (31 round-trip tests, including
+- `cargo test -p ai_blaise_citus_pool_wire` (46 round-trip tests, including
   frame envelope, frontend `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`/
   `Close`/`Query`/`CopyData`/`CopyDone`/`CopyFail`/`Terminate`, backend
-  `BackendKeyData`/`BindComplete`/`CloseComplete`/`CommandComplete`/`DataRow`/
-  `EmptyQueryResponse`/`ErrorResponse`/`NoData`/`NoticeResponse`/
-  `NotificationResponse`/`ParameterDescription`/`ParameterStatus`/
-  `ParseComplete`/`PortalSuspended`/`ReadyForQuery`/`RowDescription`, and the
-  `StartupMessage`/`CancelRequest`/`SslRequest`/`GssEncRequest` envelopes).
+  `BackendKeyData`/`BindComplete`/`CloseComplete`/`CommandComplete`/
+  `CopyInResponse`/`CopyOutResponse`/`CopyBothResponse`/`DataRow`/
+  `EmptyQueryResponse`/`ErrorResponse`/`NegotiateProtocolVersion`/`NoData`/
+  `NoticeResponse`/`NotificationResponse`/`ParameterDescription`/
+  `ParameterStatus`/`ParseComplete`/`PortalSuspended`/`ReadyForQuery`/
+  `RowDescription`, the `StartupMessage`/`CancelRequest`/`SslRequest`/
+  `GssEncRequest` envelopes, and the 11 `AuthenticationRequest` sub-codes
+  plus `PasswordMessage`/`SaslInitialResponse`/`SaslResponse`/`GssResponse`).
 - `cargo test -p ai_blaise_citus_pool --lib` (136 tests, including the
   `pipeline::tests::append_wire_frame_decodes_real_bytes` round-trip from
   raw wire bytes through `ExtendedPipelineBuffer` and back, the

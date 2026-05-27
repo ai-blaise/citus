@@ -79,7 +79,7 @@ Current implemented surface:
   `forward_client_to_upstream` function in `pool/src/proxy.rs`. Every client
   -> upstream frame is decoded by the codec, accounted into per-pool atomic
   counters exposed at `/metrics`
-  (`ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|...|Close"}`),
+  (`ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush|Close|Query|CopyData|Terminate|Other"}`),
   and forwarded byte-for-byte to the upstream. Shard-aware routing of an
   extended-query pipeline and transaction-aware batching across multiple
   `Sync` boundaries remain alpha-deferred under the same T7 contract.

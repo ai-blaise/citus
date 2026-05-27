@@ -69,7 +69,7 @@ fingerprint), the connection bridges client <-> upstream in two directions:
 The same codec covers cancel-request and FATAL `ErrorResponse` envelopes
 emitted by the pool itself, and the startup-tap parse in
 `pool/src/trace_tap.rs`. The crate ships every PostgreSQL v3 message type
-the pool may need to inspect or rewrite: 12 frontend frames, 19 backend
+the pool may need to inspect or rewrite: 12 frontend frames, 20 backend
 frames, the 4 startup envelopes (Startup/Cancel/SSL/GSSENC), and the 11
 Authentication sub-codes plus the four `p`-tag frontend responses
 (Password / SASL initial / SASL response / GSS). 46 round-trip unit tests
