@@ -279,6 +279,22 @@ pub struct PoolProxyState {
     traceparent_absent: AtomicU64,
     geo_routes: AtomicU64,
     geo_fallback_routes: AtomicU64,
+    // FEATURE: T7 — per-frame-type counters incremented as the client->upstream
+    // forwarder decodes wire frames via pool/wire. Byte-transparency is
+    // preserved: every frame is forwarded verbatim; the counters reflect what
+    // crossed the proxy without rewriting the data path.
+    ext_query_parse_frames: AtomicU64,
+    ext_query_bind_frames: AtomicU64,
+    ext_query_describe_frames: AtomicU64,
+    ext_query_execute_frames: AtomicU64,
+    ext_query_sync_frames: AtomicU64,
+    ext_query_flush_frames: AtomicU64,
+    ext_query_close_frames: AtomicU64,
+    ext_query_simple_query_frames: AtomicU64,
+    ext_query_copy_data_frames: AtomicU64,
+    ext_query_terminate_frames: AtomicU64,
+    ext_query_other_frames: AtomicU64,
+    ext_query_decode_errors: AtomicU64,
 }
 
 impl PoolProxyState {
@@ -334,6 +350,18 @@ impl PoolProxyState {
             traceparent_absent: AtomicU64::new(0),
             geo_routes: AtomicU64::new(0),
             geo_fallback_routes: AtomicU64::new(0),
+            ext_query_parse_frames: AtomicU64::new(0),
+            ext_query_bind_frames: AtomicU64::new(0),
+            ext_query_describe_frames: AtomicU64::new(0),
+            ext_query_execute_frames: AtomicU64::new(0),
+            ext_query_sync_frames: AtomicU64::new(0),
+            ext_query_flush_frames: AtomicU64::new(0),
+            ext_query_close_frames: AtomicU64::new(0),
+            ext_query_simple_query_frames: AtomicU64::new(0),
+            ext_query_copy_data_frames: AtomicU64::new(0),
+            ext_query_terminate_frames: AtomicU64::new(0),
+            ext_query_other_frames: AtomicU64::new(0),
+            ext_query_decode_errors: AtomicU64::new(0),
         })
     }
 
@@ -347,6 +375,45 @@ impl PoolProxyState {
 
     pub fn active_connections(&self) -> u64 {
         self.active_connections.load(Ordering::Relaxed)
+    }
+
+    pub fn ext_query_counters(&self) -> ExtQueryCounters {
+        ExtQueryCounters {
+            parse: self.ext_query_parse_frames.load(Ordering::Relaxed),
+            bind: self.ext_query_bind_frames.load(Ordering::Relaxed),
+            describe: self.ext_query_describe_frames.load(Ordering::Relaxed),
+            execute: self.ext_query_execute_frames.load(Ordering::Relaxed),
+            sync: self.ext_query_sync_frames.load(Ordering::Relaxed),
+            flush: self.ext_query_flush_frames.load(Ordering::Relaxed),
+            close: self.ext_query_close_frames.load(Ordering::Relaxed),
+            simple_query: self.ext_query_simple_query_frames.load(Ordering::Relaxed),
+            copy_data: self.ext_query_copy_data_frames.load(Ordering::Relaxed),
+            terminate: self.ext_query_terminate_frames.load(Ordering::Relaxed),
+            other: self.ext_query_other_frames.load(Ordering::Relaxed),
+            decode_errors: self.ext_query_decode_errors.load(Ordering::Relaxed),
+        }
+    }
+
+    fn record_extended_frame(&self, tag: u8) {
+        let counter = match tag {
+            b'P' => &self.ext_query_parse_frames,
+            b'B' => &self.ext_query_bind_frames,
+            b'D' => &self.ext_query_describe_frames,
+            b'E' => &self.ext_query_execute_frames,
+            b'S' => &self.ext_query_sync_frames,
+            b'H' => &self.ext_query_flush_frames,
+            b'C' => &self.ext_query_close_frames,
+            b'Q' => &self.ext_query_simple_query_frames,
+            b'd' => &self.ext_query_copy_data_frames,
+            b'X' => &self.ext_query_terminate_frames,
+            _ => &self.ext_query_other_frames,
+        };
+        counter.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_decode_error(&self) {
+        self.ext_query_decode_errors
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     fn acquire_settings_bucket(
@@ -737,7 +804,11 @@ fn proxy_connection(
         let upload = scope.spawn(move || -> io::Result<u64> {
             upstream_writer.write_all(&prefix_bytes)?;
             let prefix_len = prefix_bytes.len() as u64;
-            let copied = copy_and_shutdown(&mut client_reader, &mut upstream_writer)?;
+            let copied = forward_client_to_upstream(
+                &mut client_reader,
+                &mut upstream_writer,
+                state,
+            )?;
             Ok(prefix_len + copied)
         });
 
@@ -785,6 +856,109 @@ fn copy_and_shutdown(reader: &mut TcpStream, writer: &mut TcpStream) -> io::Resu
     let bytes = io::copy(reader, writer)?;
     let _ = writer.shutdown(Shutdown::Write);
     Ok(bytes)
+}
+
+/// Snapshot of the per-pool wire-frame counters.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
+pub struct ExtQueryCounters {
+    pub parse: u64,
+    pub bind: u64,
+    pub describe: u64,
+    pub execute: u64,
+    pub sync: u64,
+    pub flush: u64,
+    pub close: u64,
+    pub simple_query: u64,
+    pub copy_data: u64,
+    pub terminate: u64,
+    pub other: u64,
+    pub decode_errors: u64,
+}
+
+impl ExtQueryCounters {
+    /// Total extended-query frames observed (P/B/D/E/S/H/C).
+    pub fn extended_total(&self) -> u64 {
+        self.parse + self.bind + self.describe + self.execute + self.sync + self.flush + self.close
+    }
+}
+
+/// Client -> upstream forwarder that parses each PostgreSQL v3 wire frame via
+/// `pool/wire`, accounts the frame type into the pool's atomic counters, and
+/// writes the bytes through to the upstream verbatim. Byte-transparency for
+/// every tag is preserved; the codec is observation-only on the hot path.
+///
+/// Falls back to plain `io::copy` for any byte sequence that cannot be parsed
+/// as a complete frame header (so a misaligned read or a non-v3 client never
+/// stalls the connection).
+fn forward_client_to_upstream(
+    reader: &mut TcpStream,
+    writer: &mut TcpStream,
+    state: &PoolProxyState,
+) -> io::Result<u64> {
+    use ai_blaise_citus_pool_wire::{FrameHeader, WireError, FRAME_HEADER_LEN};
+
+    let mut buffered: Vec<u8> = Vec::with_capacity(4096);
+    let mut read_buf = [0u8; 4096];
+    let mut total: u64 = 0;
+
+    loop {
+        // Ensure we have a frame header.
+        while buffered.len() < FRAME_HEADER_LEN {
+            let read = reader.read(&mut read_buf)?;
+            if read == 0 {
+                if !buffered.is_empty() {
+                    writer.write_all(&buffered)?;
+                    total += buffered.len() as u64;
+                }
+                let _ = writer.shutdown(Shutdown::Write);
+                return Ok(total);
+            }
+            buffered.extend_from_slice(&read_buf[..read]);
+        }
+
+        let header = match FrameHeader::read(&buffered) {
+            Ok(header) => header,
+            Err(WireError::InvalidLength { .. })
+            | Err(WireError::MessageTooLarge { .. })
+            | Err(WireError::Underflow { .. }) => {
+                state.record_decode_error();
+                // Bail to a byte-transparent copy so a non-v3 or framing-
+                // misaligned client never stalls.
+                writer.write_all(&buffered)?;
+                total += buffered.len() as u64;
+                buffered.clear();
+                let copied = io::copy(reader, writer)?;
+                let _ = writer.shutdown(Shutdown::Write);
+                return Ok(total + copied);
+            }
+            Err(_) => {
+                state.record_decode_error();
+                writer.write_all(&buffered)?;
+                total += buffered.len() as u64;
+                buffered.clear();
+                let copied = io::copy(reader, writer)?;
+                let _ = writer.shutdown(Shutdown::Write);
+                return Ok(total + copied);
+            }
+        };
+
+        let total_frame_len = header.total_frame_len();
+        while buffered.len() < total_frame_len {
+            let read = reader.read(&mut read_buf)?;
+            if read == 0 {
+                writer.write_all(&buffered)?;
+                total += buffered.len() as u64;
+                let _ = writer.shutdown(Shutdown::Write);
+                return Ok(total);
+            }
+            buffered.extend_from_slice(&read_buf[..read]);
+        }
+
+        state.record_extended_frame(header.tag);
+        writer.write_all(&buffered[..total_frame_len])?;
+        total += total_frame_len as u64;
+        buffered.drain(..total_frame_len);
+    }
 }
 
 fn tap_startup_message_with_timeout(
