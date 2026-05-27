@@ -143,7 +143,7 @@ fn run(args: &Args) -> Result<String, String> {
     let mut parse_completes = 0_u32;
     let mut bind_completes = 0_u32;
     let mut command_completes = 0_u32;
-    let mut ready_after_good: Option<ReadyTransactionStatus> = None;
+    let ready_after_good: Option<ReadyTransactionStatus>;
     loop {
         let message = session.read_message()?;
         match message {
@@ -229,7 +229,7 @@ fn run(args: &Args) -> Result<String, String> {
     let mut error_observed = false;
     let mut bind_after_failure = 0_u32;
     let mut execute_after_failure = 0_u32;
-    let mut ready_after_bad: Option<ReadyTransactionStatus> = None;
+    let ready_after_bad: Option<ReadyTransactionStatus>;
     loop {
         let message = session.read_message()?;
         match message {

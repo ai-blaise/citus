@@ -2441,7 +2441,10 @@ if "### T7: Pipelined Client Protocol In Pool" in docs:
         "**Status**: production-ready",
         "Production evidence:",
         "raw PostgreSQL client",
-        "Extended-query `Parse`/`Bind`/`Execute` buffering",
+        "pool/wire",
+        "pool-extended-query-pipeline-live-smoke.sh",
+        "deterministic-failure semantics",
+        "Shard-aware routing of an extended-query pipeline",
         "remain alpha",
     ):
         if required not in t7_section:

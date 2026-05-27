@@ -9600,27 +9600,58 @@ emit a multi-PG-major operand image from a single overlay contract.
 ### T7: Pipelined Client Protocol In Pool
 
 **Overlay**: `pool/src/runtime.rs`, `pool/src/proxy.rs`, `pool/src/main.rs`,
-and `companion/src/ops_contracts.rs`
+`pool/src/pipeline.rs`, `pool/wire/`, and `companion/src/ops_contracts.rs`
 **Status**: production-ready
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
 **Summary**: Proves the pool `serve` data plane preserves pipelined
-PostgreSQL simple-query frames as a byte-transparent TCP proxy while keeping
-extended-query batching and shard-aware routing out of the production-ready
-boundary.
+PostgreSQL simple-query frames as a byte-transparent TCP proxy AND drives
+typed extended-query `Parse`/`Bind`/`Describe`/`Execute`/`Sync` pipelines
+through the new `pool/wire` codec (a Rust port of jackc/pgx `pgproto3`,
+MIT) with deterministic-failure semantics at the `Sync` boundary.
 
-Production evidence: `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool
-against a `postgres:17` container, opens a raw PostgreSQL client through the
-pool data port, sends two simple-query frames without waiting for the first
-result, verifies ordered `pipeline_one` and `pipeline_two` rows from the real
-backend, and keeps the live SQL plus pool admin metrics checks. The same
-Docker-backed smoke also proves active-connection overload rejection, tenant
-quota fail-closed denial, and upstream-unreachable fail-closed routing on the
-real data port. Extended-query `Parse`/`Bind`/`Execute` buffering,
-transaction-aware batching, and shard-aware routing remain alpha contract
-surfaces until they have equivalent raw-wire data-plane evidence.
+Production evidence:
+
+- `ci/ai-blaise/pool-proxy-smoke.sh` runs the real pool against a
+  `postgres:17` container, opens a raw PostgreSQL client through the pool
+  data port, sends two simple-query frames without waiting for the first
+  result, verifies ordered `pipeline_one` and `pipeline_two` rows from the
+  real backend, and keeps the live SQL plus pool admin metrics checks. The
+  same Docker-backed smoke also proves active-connection overload rejection,
+  tenant quota fail-closed denial, and upstream-unreachable fail-closed
+  routing on the real data port.
+- `ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh` boots
+  `postgres:17` on a host-bound port, runs the
+  `pool/wire/examples/pipeline_live_smoke.rs` example which uses the new
+  `pool/wire` codec to drive `StartupMessage` ->
+  `Parse`/`Bind`/`Describe`/`Execute`/`Sync` on a raw socket, asserts the
+  backend returns `ParseComplete` -> `BindComplete` -> `DataRow(sum=42)` ->
+  `CommandComplete` -> `ReadyForQuery=I` in order, then sends a deliberately
+  malformed `Parse` followed by `Bind`/`Execute`/`Flush`/`Sync` and asserts
+  the backend produces `ErrorResponse` and skips every queued frame after
+  the failure before recovering at the next `Sync` (`bind_after_failure=0
+  execute_after_failure=0 ready_after_recovery=I`). Evidence row in
+  `artifacts/pool-extended-query-pipeline-evidence.tsv`.
+- `cargo test -p ai_blaise_citus_pool_wire` (31 round-trip tests, including
+  frame envelope, frontend `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`/
+  `Close`/`Query`/`CopyData`/`CopyDone`/`CopyFail`/`Terminate`, backend
+  `BackendKeyData`/`BindComplete`/`CloseComplete`/`CommandComplete`/`DataRow`/
+  `EmptyQueryResponse`/`ErrorResponse`/`NoData`/`NoticeResponse`/
+  `NotificationResponse`/`ParameterDescription`/`ParameterStatus`/
+  `ParseComplete`/`PortalSuspended`/`ReadyForQuery`/`RowDescription`, and the
+  `StartupMessage`/`CancelRequest`/`SslRequest`/`GssEncRequest` envelopes).
+- `cargo test -p ai_blaise_citus_pool --lib` (136 tests, including the
+  `pipeline::tests::append_wire_frame_decodes_real_bytes` round-trip from
+  raw wire bytes through `ExtendedPipelineBuffer` and back, the
+  `virtual_pid::tests::cancel_request_roundtrip` over the codec, and the
+  startup-tap tests that now decode their envelopes through the codec).
+
+Shard-aware routing of an extended-query pipeline (parameter parsing through
+distribution-column hashing) and transaction-aware batching across multiple
+`Sync` boundaries remain alpha contract surfaces under the same T7 contract
+until they have equivalent raw-wire data-plane evidence.
 
 **Citus comparison**: Vanilla Citus does not ship the ai-blaise pool pipeline.
 
@@ -9630,12 +9661,17 @@ surfaces until they have equivalent raw-wire data-plane evidence.
 - In-source: `FEATURE: T7` in `pool/src/pipeline.rs`
 - In-source: `FEATURE: T7` in `pool/src/proxy.rs`
 - In-source: `FEATURE: T7` in `pool/src/main.rs`
+- In-source: `FEATURE: T7` in `pool/wire/src/lib.rs`
 - In-source: `FEATURE: T7` in `companion/src/ops_contracts.rs`
+- Executable: `cargo test -p ai_blaise_citus_pool_wire`
+- Executable: `cargo test -p ai_blaise_citus_pool --lib`
 - Executable: `cargo run -p ai_blaise_citus_pool -- run-canonical`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
+- CI: `ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh`
 
 
 ### T10: Bulk Protocol Fetch Path
