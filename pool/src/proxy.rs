@@ -1344,6 +1344,22 @@ ai_blaise_citus_pool_traceparent_tapped_total {}
 # HELP ai_blaise_citus_pool_traceparent_absent_total Client connections whose startup envelope did not carry a W3C traceparent.
 # TYPE ai_blaise_citus_pool_traceparent_absent_total counter
 ai_blaise_citus_pool_traceparent_absent_total {}
+# HELP ai_blaise_citus_pool_ext_query_frames_total PostgreSQL v3 wire frames observed by the pool/wire codec on the client->upstream path, by tag.
+# TYPE ai_blaise_citus_pool_ext_query_frames_total counter
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Parse"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Bind"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Describe"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Execute"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Sync"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Flush"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Close"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Query"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="CopyData"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Terminate"}} {}
+ai_blaise_citus_pool_ext_query_frames_total{{frame="Other"}} {}
+# HELP ai_blaise_citus_pool_ext_query_decode_errors_total Wire-frame decode errors that fell back to byte-transparent forwarding.
+# TYPE ai_blaise_citus_pool_ext_query_decode_errors_total counter
+ai_blaise_citus_pool_ext_query_decode_errors_total {}
 "#,
         escape_prometheus_label(upstream_addr),
         upstream_ready,
@@ -1369,6 +1385,18 @@ ai_blaise_citus_pool_traceparent_absent_total {}
         state.upstream_to_client_bytes.load(Ordering::Relaxed),
         state.traceparent_tapped.load(Ordering::Relaxed),
         state.traceparent_absent.load(Ordering::Relaxed),
+        state.ext_query_parse_frames.load(Ordering::Relaxed),
+        state.ext_query_bind_frames.load(Ordering::Relaxed),
+        state.ext_query_describe_frames.load(Ordering::Relaxed),
+        state.ext_query_execute_frames.load(Ordering::Relaxed),
+        state.ext_query_sync_frames.load(Ordering::Relaxed),
+        state.ext_query_flush_frames.load(Ordering::Relaxed),
+        state.ext_query_close_frames.load(Ordering::Relaxed),
+        state.ext_query_simple_query_frames.load(Ordering::Relaxed),
+        state.ext_query_copy_data_frames.load(Ordering::Relaxed),
+        state.ext_query_terminate_frames.load(Ordering::Relaxed),
+        state.ext_query_other_frames.load(Ordering::Relaxed),
+        state.ext_query_decode_errors.load(Ordering::Relaxed),
     )
 }
 
