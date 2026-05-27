@@ -72,7 +72,7 @@ emitted by the pool itself, and the startup-tap parse in
 the pool may need to inspect or rewrite: 12 frontend frames, 20 backend
 frames, the 4 startup envelopes (Startup/Cancel/SSL/GSSENC), and the 11
 Authentication sub-codes plus the four `p`-tag frontend responses
-(Password / SASL initial / SASL response / GSS). 46 round-trip unit tests
+(Password / SASL initial / SASL response / GSS). 48 round-trip unit tests
 keep encode/decode parity, and two live smokes drive the end-to-end path:
 `ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh` (codec direct to
 postgres) and `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh`

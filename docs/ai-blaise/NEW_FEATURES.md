@@ -9649,7 +9649,7 @@ Production evidence:
   -> upstream frame through `pool/src/proxy.rs::forward_client_to_upstream`,
   not only against postgres directly. Evidence row in
   `artifacts/pool-extended-query-through-pool-evidence.tsv`.
-- `cargo test -p ai_blaise_citus_pool_wire` (46 round-trip tests, including
+- `cargo test -p ai_blaise_citus_pool_wire` (48 round-trip tests, including
   frame envelope, frontend `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`/
   `Close`/`Query`/`CopyData`/`CopyDone`/`CopyFail`/`Terminate`, backend
   `BackendKeyData`/`BindComplete`/`CloseComplete`/`CommandComplete`/
@@ -9660,11 +9660,14 @@ Production evidence:
   `RowDescription`, the `StartupMessage`/`CancelRequest`/`SslRequest`/
   `GssEncRequest` envelopes, and the 11 `AuthenticationRequest` sub-codes
   plus `PasswordMessage`/`SaslInitialResponse`/`SaslResponse`/`GssResponse`).
-- `cargo test -p ai_blaise_citus_pool --lib` (136 tests, including the
+- `cargo test -p ai_blaise_citus_pool --lib` (139 tests, including the
   `pipeline::tests::append_wire_frame_decodes_real_bytes` round-trip from
   raw wire bytes through `ExtendedPipelineBuffer` and back, the
-  `virtual_pid::tests::cancel_request_roundtrip` over the codec, and the
-  startup-tap tests that now decode their envelopes through the codec).
+  `virtual_pid::tests::cancel_request_roundtrip` over the codec, the
+  startup-tap tests that now decode their envelopes through the codec, and
+  three `forward_client_to_upstream` regression tests covering the
+  happy-path frame accounting, the byte-copy fallback on unknown frontend
+  tag, and the byte-copy fallback on `FrameHeader::read` `InvalidLength`).
 
 Shard-aware routing of an extended-query pipeline (parameter parsing through
 distribution-column hashing) and transaction-aware batching across multiple

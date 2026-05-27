@@ -1488,7 +1488,7 @@ Upstream rebase 2026-05-26 folded five `citusdata/citus` `main` commits onto `bo
 T7 extended-query pipelining is production-ready under the
 pool/wire-codec-live-extended-query evidence boundary from 2026-05-27. The
 new `pool/wire/` workspace crate ports the message-shape semantics of
-jackc/pgx `pgproto3` (MIT) to Rust with no external dependencies; 46
+jackc/pgx `pgproto3` (MIT) to Rust with no external dependencies; 48
 round-trip unit tests cover every PG v3 frontend message
 (`Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`/`Close`/`Query`/
 `CopyData`/`CopyDone`/`CopyFail`/`Terminate`), every backend message
