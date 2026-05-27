@@ -198,9 +198,17 @@ admin probe access, and matching selectors for the folded chart labels.
   Linux 6.1+ kernel, `pg_stat_io` reads/writes observed under workload);
   release-time kernel/runtime compatibility on a specific target node class is
   still verified per cluster.
-- `FEATURE: T7`: pool protocol pipelining remains alpha intent until the pool
-  data path enforces it and live SQL traffic proves correctness under pipelined
-  clients.
+- `FEATURE: T7`: pool protocol pipelining is production-ready for both raw
+  simple-query frame pipelining and typed extended-query
+  `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush` frame parsing on the live
+  `serve` data plane via the `pool/wire` codec and
+  `pool/src/proxy.rs::forward_client_to_upstream`. Verified end-to-end by
+  `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` (scrapes
+  `/metrics` and asserts non-zero
+  `ai_blaise_citus_pool_ext_query_frames_total{frame=...}` counters with zero
+  decode errors). Shard-aware routing of extended-query pipelines and
+  transaction-aware shard fan-out across multiple `Sync` boundaries remain
+  alpha-deferred under the same T7 contract.
 - `FEATURE: RT5`: realtime compatibility is verified against Phoenix-channel
   client behavior before a release is promoted.
 

@@ -882,21 +882,31 @@ impl ExtQueryCounters {
     }
 }
 
-/// Tag bytes the PostgreSQL v3 wire protocol assigns to frontend frames.
-/// Anything outside this set is either the start of a (second) startup envelope
-/// or non-v3 traffic; the forwarder falls back to byte-transparent copy in
-/// either case so the connection never stalls.
+/// Tag bytes the PostgreSQL v3 wire protocol assigns to frontend frames the
+/// pool currently understands. Anything outside this set - including the
+/// start of a (second) StartupMessage after `SSLRequest`/`GSSENCRequest`, the
+/// long-deprecated `F` (FunctionCall) fast-path that libpq no longer emits,
+/// or any non-v3 traffic - falls back to byte-transparent copy so the
+/// connection never stalls. The `p`-tag covers PasswordMessage and the three
+/// SASL/GSS response frames; the pool counts them as a single tag class and
+/// forwards them verbatim because their interpretation is context-dependent
+/// on the most recent backend `R` (AuthenticationRequest) sub-code.
 fn is_known_frontend_tag(tag: u8) -> bool {
     matches!(
         tag,
-        b'P' | b'B' | b'D' | b'E' | b'S' | b'H' | b'C' | b'Q' | b'd' | b'c' | b'f' | b'X' | b'F' | b'p'
+        b'P' | b'B' | b'D' | b'E' | b'S' | b'H' | b'C' | b'Q' | b'd' | b'c' | b'f' | b'X' | b'p'
     )
 }
 
 /// Client -> upstream forwarder that parses each PostgreSQL v3 wire frame via
-/// `pool/wire`, accounts the frame type into the pool's atomic counters, and
-/// writes the bytes through to the upstream verbatim. Byte-transparency for
-/// every tag is preserved; the codec is observation-only on the hot path.
+/// `pool/wire`, accounts the frame tag into the matching `ExtQueryCounters`
+/// field on `PoolProxyState`, and writes the bytes through to the upstream
+/// verbatim. Byte-transparency for every tag is preserved; the codec is
+/// observation-only on the hot path. The reverse direction
+/// (upstream -> client) keeps the simpler `copy_and_shutdown` byte pump
+/// because backend-frame accounting is not yet wired into the metrics
+/// surface; adding it would symmetric-double the counter set and is tracked
+/// under the alpha-deferred portion of the T7 contract.
 ///
 /// Falls back to plain `io::copy` when the next byte is not a known v3
 /// frontend tag, so SSL/GSS handshake replies, a second StartupMessage after
@@ -1979,5 +1989,157 @@ mod tests {
 
         let _client = TcpStream::connect(proxy_addr).unwrap();
         proxy_thread.join().unwrap();
+    }
+
+    /// Encoded simple-query frame `Q [length] body\0`.
+    fn pack_simple_query(query: &str) -> Vec<u8> {
+        let mut body = query.as_bytes().to_vec();
+        body.push(0);
+        let mut frame = vec![b'Q'];
+        frame.extend_from_slice(&((body.len() + 4) as u32).to_be_bytes());
+        frame.extend_from_slice(&body);
+        frame
+    }
+
+    #[test]
+    fn forward_client_to_upstream_counts_known_frames_and_forwards_bytes() {
+        // Sanity-check the helper that packs simple-query frames matches the
+        // wire crate's QueryFrame encoder (catch silent format drift).
+        let mut codec_buf = ai_blaise_citus_pool_wire::PgWriteBuf::new();
+        ai_blaise_citus_pool_wire::QueryFrame {
+            query: "SELECT 1".to_string(),
+        }
+        .encode(&mut codec_buf);
+        assert_eq!(codec_buf.into_inner(), pack_simple_query("SELECT 1"));
+
+        // Set up a real loopback pair: forwarder reads from one end, writes
+        // to the upstream end. Run it on a thread; main thread sends frames.
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client_addr = client_listener.local_addr().unwrap();
+        let state = Arc::new(
+            PoolProxyState::with_admission_config(PoolAdmissionConfig::default()).unwrap(),
+        );
+        let state_for_thread = Arc::clone(&state);
+
+        let forwarder_thread = thread::spawn(move || {
+            let (client_socket, _) = client_listener.accept().unwrap();
+            let mut upstream_socket = TcpStream::connect(upstream_addr).unwrap();
+            let mut reader = client_socket;
+            forward_client_to_upstream(&mut reader, &mut upstream_socket, &state_for_thread)
+                .unwrap();
+        });
+
+        // Capture every byte the upstream receives.
+        let upstream_capture = thread::spawn(move || {
+            let (mut socket, _) = upstream_listener.accept().unwrap();
+            let mut buf = Vec::new();
+            socket.read_to_end(&mut buf).unwrap();
+            buf
+        });
+
+        let mut client = TcpStream::connect(client_addr).unwrap();
+        // Two Q frames + one X (Terminate) - all known frontend tags.
+        let mut script = pack_simple_query("SELECT 1");
+        script.extend_from_slice(&pack_simple_query("SELECT 2"));
+        // Terminate: 'X' [length=4]
+        script.extend_from_slice(b"X");
+        script.extend_from_slice(&4_u32.to_be_bytes());
+        client.write_all(&script).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        forwarder_thread.join().unwrap();
+        let captured = upstream_capture.join().unwrap();
+
+        assert_eq!(captured, script, "forwarder must preserve byte stream");
+        let counters = state.ext_query_counters();
+        assert_eq!(counters.simple_query, 2, "two Q frames");
+        assert_eq!(counters.terminate, 1, "one X frame");
+        assert_eq!(counters.decode_errors, 0, "no decode errors on known tags");
+    }
+
+    #[test]
+    fn forward_client_to_upstream_falls_back_on_unknown_tag() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client_addr = client_listener.local_addr().unwrap();
+        let state = Arc::new(
+            PoolProxyState::with_admission_config(PoolAdmissionConfig::default()).unwrap(),
+        );
+        let state_for_thread = Arc::clone(&state);
+
+        let forwarder_thread = thread::spawn(move || {
+            let (client_socket, _) = client_listener.accept().unwrap();
+            let mut upstream_socket = TcpStream::connect(upstream_addr).unwrap();
+            let mut reader = client_socket;
+            forward_client_to_upstream(&mut reader, &mut upstream_socket, &state_for_thread)
+                .unwrap();
+        });
+
+        let upstream_capture = thread::spawn(move || {
+            let (mut socket, _) = upstream_listener.accept().unwrap();
+            let mut buf = Vec::new();
+            socket.read_to_end(&mut buf).unwrap();
+            buf
+        });
+
+        let mut client = TcpStream::connect(client_addr).unwrap();
+        // 0x00 is not a known frontend tag - resembles a second StartupMessage
+        // length prefix after an SSL/GSS exchange. The forwarder must fall
+        // back to byte-copy and forward every byte verbatim.
+        let payload = vec![0x00, 0x00, 0x00, 0x08, 0x04, 0xd2, 0x16, 0x2f];
+        client.write_all(&payload).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        forwarder_thread.join().unwrap();
+        let captured = upstream_capture.join().unwrap();
+
+        assert_eq!(captured, payload, "byte-copy fallback must preserve bytes");
+        let counters = state.ext_query_counters();
+        assert_eq!(counters.decode_errors, 1, "one decode error on unknown tag");
+        assert_eq!(counters.parse, 0);
+        assert_eq!(counters.bind, 0);
+    }
+
+    #[test]
+    fn forward_client_to_upstream_falls_back_on_invalid_length() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client_addr = client_listener.local_addr().unwrap();
+        let state = Arc::new(
+            PoolProxyState::with_admission_config(PoolAdmissionConfig::default()).unwrap(),
+        );
+        let state_for_thread = Arc::clone(&state);
+
+        let forwarder_thread = thread::spawn(move || {
+            let (client_socket, _) = client_listener.accept().unwrap();
+            let mut upstream_socket = TcpStream::connect(upstream_addr).unwrap();
+            let mut reader = client_socket;
+            forward_client_to_upstream(&mut reader, &mut upstream_socket, &state_for_thread)
+                .unwrap();
+        });
+
+        let upstream_capture = thread::spawn(move || {
+            let (mut socket, _) = upstream_listener.accept().unwrap();
+            let mut buf = Vec::new();
+            socket.read_to_end(&mut buf).unwrap();
+            buf
+        });
+
+        let mut client = TcpStream::connect(client_addr).unwrap();
+        // Tag 'Q' with declared length 2 (< 4 minimum). FrameHeader::read
+        // rejects this as InvalidLength; the forwarder must fall back to
+        // byte-copy.
+        let payload = vec![b'Q', 0x00, 0x00, 0x00, 0x02, 0xAA, 0xBB];
+        client.write_all(&payload).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        forwarder_thread.join().unwrap();
+        let captured = upstream_capture.join().unwrap();
+
+        assert_eq!(captured, payload, "byte-copy must preserve bytes after invalid length");
+        let counters = state.ext_query_counters();
+        assert_eq!(counters.decode_errors, 1);
+        assert_eq!(counters.simple_query, 0);
     }
 }

@@ -293,6 +293,22 @@ mod tests {
     }
 
     #[test]
+    fn auth_sasl_empty_mechanism_list_roundtrip() {
+        let original = AuthenticationRequest::Sasl {
+            mechanisms: Vec::new(),
+        };
+        assert_eq!(roundtrip_request(&original), original);
+    }
+
+    #[test]
+    fn auth_sasl_single_mechanism_roundtrip() {
+        let original = AuthenticationRequest::Sasl {
+            mechanisms: vec!["SCRAM-SHA-256".to_string()],
+        };
+        assert_eq!(roundtrip_request(&original), original);
+    }
+
+    #[test]
     fn auth_sasl_continue_carries_server_data() {
         let original = AuthenticationRequest::SaslContinue {
             data: vec![1, 2, 3, 4, 5],
