@@ -32,12 +32,17 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod auth;
 pub mod codec;
 pub mod envelope;
 pub mod frontend;
 pub mod backend;
 pub mod startup;
 
+pub use auth::{
+    auth_codes, AuthFrontendFrame, AuthenticationRequest, GssResponseFrame, PasswordMessageFrame,
+    SaslInitialResponseFrame, SaslResponseFrame,
+};
 pub use codec::{PgReader, PgWriteBuf, WireError};
 pub use envelope::{FrameHeader, FRAME_HEADER_LEN};
 pub use frontend::{
@@ -47,10 +52,11 @@ pub use frontend::{
 };
 pub use backend::{
     BackendKeyDataFrame, BackendMessage, BindCompleteFrame, CloseCompleteFrame,
-    CommandCompleteFrame, DataRowFrame, EmptyQueryResponseFrame, ErrorField, ErrorResponseFrame,
-    NoDataFrame, NoticeResponseFrame, NotificationResponseFrame, ParameterDescriptionFrame,
-    ParameterStatusFrame, ParseCompleteFrame, PortalSuspendedFrame, ReadyForQueryFrame,
-    ReadyTransactionStatus, RowDescriptionFrame, RowField,
+    CommandCompleteFrame, CopyBothResponseFrame, CopyInResponseFrame, CopyOutResponseFrame,
+    DataRowFrame, EmptyQueryResponseFrame, ErrorField, ErrorResponseFrame,
+    NegotiateProtocolVersionFrame, NoDataFrame, NoticeResponseFrame, NotificationResponseFrame,
+    ParameterDescriptionFrame, ParameterStatusFrame, ParseCompleteFrame, PortalSuspendedFrame,
+    ReadyForQueryFrame, ReadyTransactionStatus, RowDescriptionFrame, RowField,
 };
 pub use startup::{
     CancelRequest, GssEncRequest, SslRequest, StartupEnvelope, StartupMessage,
