@@ -155,8 +155,13 @@ pub use ai_blaise_citus_pool_wire::CANCEL_REQUEST_CODE as PGWIRE_CANCEL_MAGIC;
 /// secret. Callers should compare the secret against the recorded
 /// `cancel_key` before forwarding.
 pub fn parse_cancel_request(bytes: &[u8]) -> Result<(u32, i32), VirtualPidError> {
-    let envelope = ai_blaise_citus_pool_wire::StartupEnvelope::decode(bytes)
-        .map_err(|_| VirtualPidError::MissingField("cancel-request body"))?;
+    let envelope = match ai_blaise_citus_pool_wire::StartupEnvelope::decode(bytes) {
+        Ok(envelope) => envelope,
+        Err(ai_blaise_citus_pool_wire::WireError::UnknownStartupCode { .. }) => {
+            return Err(VirtualPidError::MissingField("cancel-request magic"))
+        }
+        Err(_) => return Err(VirtualPidError::MissingField("cancel-request body")),
+    };
     match envelope {
         ai_blaise_citus_pool_wire::StartupEnvelope::Cancel(request) => {
             Ok((request.process_id as u32, request.secret_key))
