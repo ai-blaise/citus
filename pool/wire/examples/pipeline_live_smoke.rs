@@ -261,8 +261,116 @@ fn run(args: &Args) -> Result<String, String> {
         ));
     }
 
+    // Third pipeline: statement reuse across multiple Bind/Execute pairs
+    // separated by two Sync boundaries. Parse once with a binary result
+    // format code on the second Bind, then read both result sets.
+    let mut reuse_pipeline = PgWriteBuf::new();
+    ParseFrame {
+        statement_name: "reuse_stmt".to_string(),
+        query: "SELECT $1::int4 * 7".to_string(),
+        parameter_oids: vec![23],
+    }
+    .encode(&mut reuse_pipeline);
+    BindFrame {
+        portal_name: "reuse_p1".to_string(),
+        statement_name: "reuse_stmt".to_string(),
+        parameter_format_codes: vec![0],
+        parameters: vec![Some(b"3".to_vec())],
+        result_format_codes: vec![0],
+    }
+    .encode(&mut reuse_pipeline);
+    ExecuteFrame {
+        portal_name: "reuse_p1".to_string(),
+        max_rows: 0,
+    }
+    .encode(&mut reuse_pipeline);
+    SyncFrame.encode(&mut reuse_pipeline);
+    BindFrame {
+        portal_name: "reuse_p2".to_string(),
+        statement_name: "reuse_stmt".to_string(),
+        parameter_format_codes: vec![0],
+        parameters: vec![Some(b"5".to_vec())],
+        // Binary result format. Postgres returns int4 as 4-byte big-endian.
+        result_format_codes: vec![1],
+    }
+    .encode(&mut reuse_pipeline);
+    ExecuteFrame {
+        portal_name: "reuse_p2".to_string(),
+        max_rows: 0,
+    }
+    .encode(&mut reuse_pipeline);
+    SyncFrame.encode(&mut reuse_pipeline);
+    session.write_all(reuse_pipeline.as_slice())?;
+
+    let mut reuse_text_value: Option<i64> = None;
+    let mut reuse_binary_value: Option<i32> = None;
+    let mut reuse_ready_idle_count = 0_u32;
+    let mut current_format: i16 = 0;
+    loop {
+        let message = session.read_message()?;
+        match message {
+            BackendMessage::BindComplete(_) => {}
+            BackendMessage::ParseComplete(_) => {}
+            BackendMessage::RowDescription(desc) => {
+                current_format = desc
+                    .fields
+                    .first()
+                    .map(|field| field.format_code)
+                    .unwrap_or(0);
+            }
+            BackendMessage::DataRow(row) => {
+                let column = row.columns.first().cloned().flatten().ok_or_else(|| {
+                    "reuse DataRow missing first column".to_string()
+                })?;
+                if current_format == 1 {
+                    if column.len() != 4 {
+                        return Err(format!(
+                            "binary int4 expected 4 bytes, got {}",
+                            column.len()
+                        ));
+                    }
+                    let mut bytes = [0u8; 4];
+                    bytes.copy_from_slice(&column);
+                    reuse_binary_value = Some(i32::from_be_bytes(bytes));
+                } else {
+                    let parsed = std::str::from_utf8(&column)
+                        .map_err(|_| "reuse text column is not UTF-8".to_string())?
+                        .parse::<i64>()
+                        .map_err(|_| "reuse text column is not an integer".to_string())?;
+                    reuse_text_value = Some(parsed);
+                }
+            }
+            BackendMessage::CommandComplete(_) => {}
+            BackendMessage::ReadyForQuery(ready) => {
+                if ready.status == ReadyTransactionStatus::Idle {
+                    reuse_ready_idle_count += 1;
+                }
+                if reuse_ready_idle_count >= 2 {
+                    break;
+                }
+            }
+            BackendMessage::ErrorResponse(frame) => {
+                return Err(format!(
+                    "reuse pipeline failed: {:?}",
+                    frame.field(ErrorField::MESSAGE)
+                ));
+            }
+            _ => {}
+        }
+    }
+    if reuse_text_value != Some(21) {
+        return Err(format!(
+            "reuse first pipeline expected 3*7=21, got {reuse_text_value:?}"
+        ));
+    }
+    if reuse_binary_value != Some(35) {
+        return Err(format!(
+            "reuse second pipeline (binary) expected 5*7=35, got {reuse_binary_value:?}"
+        ));
+    }
+
     Ok(format!(
-        "pipeline_live_smoke\thost={}\tport={}\tuser={}\tdatabase={}\tgood_parse_complete=1\tgood_bind_complete=1\tgood_command_complete=1\tgood_sum=42\tbad_error_observed=true\tbad_bind_after_failure=0\tbad_execute_after_failure=0\tready_after_recovery=I",
+        "pipeline_live_smoke\thost={}\tport={}\tuser={}\tdatabase={}\tgood_parse_complete=1\tgood_bind_complete=1\tgood_command_complete=1\tgood_sum=42\tbad_error_observed=true\tbad_bind_after_failure=0\tbad_execute_after_failure=0\tready_after_recovery=I\treuse_text_value=21\treuse_binary_value=35\treuse_ready_idle_count=2",
         args.host, args.port, args.user, args.database
     ))
 }

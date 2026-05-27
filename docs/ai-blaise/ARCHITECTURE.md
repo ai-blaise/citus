@@ -10,6 +10,7 @@ The fork combines upstream Citus with ai-blaise overlay components.
 | `companion/` | Rust `pgrx` extension for Citus-adjacent SQL surfaces |
 | `sidecar/` | Crash-isolated Rust daemons for analytical, CDC, auth, storage, and coordination work |
 | `pool/` | Shard-aware pgcat fork |
+| `pool/wire/` | PostgreSQL v3 wire-protocol codec (`ai_blaise_citus_pool_wire`), Rust port of jackc/pgx `pgproto3` (MIT); drives extended-query frame parsing on the live `serve` data plane |
 | `operator/` | Rust CRD contract models, apply-plan builders, and probe runtime |
 | `e2e/` | Executable critical-path acceptance contracts |
 | `ai-blaise/command-center (helm/charts/citus-cluster + deploy/citus-cluster)` | ai-blaise Helm chart and CRDs |
@@ -47,6 +48,35 @@ Kubernetes controller/status reconciliation for that same bounded bridge
 surface. Multi-worker fanout, rebalance, background policy completion,
 continuous aggregate refresh correctness, and planner pushdown remain outside
 that claim.
+
+## Pool data plane (`FEATURE: T7`)
+
+The pool listens on the configured `serve` port and proxies traffic to a
+PostgreSQL upstream. After the StartupMessage envelope is admitted (CIDR
+allowlist, auth-sidecar introspection, tenant quota, settings-bucket
+fingerprint), the connection bridges client <-> upstream in two directions:
+
+- **Client -> upstream**: `pool/src/proxy.rs::forward_client_to_upstream`
+  decodes each PostgreSQL v3 wire frame via the `ai_blaise_citus_pool_wire`
+  crate, increments the matching atomic counter on `PoolProxyState`, and
+  forwards the bytes through verbatim. Byte-transparency is preserved on
+  every frame; the codec is observation-only on the hot path. Frame counts
+  are exposed at `/metrics` as
+  `ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush|Close|Query|CopyData|Terminate|Other"}`.
+- **Upstream -> client**: `pool/src/proxy.rs::copy_and_shutdown` is a plain
+  `io::copy`; the pool does not decode backend frames.
+
+The same codec covers cancel-request and FATAL `ErrorResponse` envelopes
+emitted by the pool itself, and the startup-tap parse in
+`pool/src/trace_tap.rs`. The crate ships every PostgreSQL v3 message type
+the pool may need to inspect or rewrite: 12 frontend frames, 19 backend
+frames, the 4 startup envelopes (Startup/Cancel/SSL/GSSENC), and the 11
+Authentication sub-codes plus the four `p`-tag frontend responses
+(Password / SASL initial / SASL response / GSS). 46 round-trip unit tests
+keep encode/decode parity, and two live smokes drive the end-to-end path:
+`ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh` (codec direct to
+postgres) and `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh`
+(codec through the pool, with `/metrics` scrape verification).
 
 ## Architecture Decision Records
 

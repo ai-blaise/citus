@@ -61,9 +61,38 @@ reuse.
   weekly via a label on PRs that touch core; isolate Citus-specific
   logic behind a `routing` module so rebasing is mechanical.
 
+## Addendum 2026-05-27 — pool/wire pgproto3 Rust port
+
+The upstream pgcat fork covers session-mode pooling, prepared-statement
+support, SCRAM, and the simple-query data plane. It does NOT expose a
+reusable, bidirectional PostgreSQL v3 codec to other workspace crates and
+its protocol parsing is private. To graduate `FEATURE: T7` from "byte-
+transparent simple-query only" to "byte-transparent simple-query AND typed
+extended-query `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush` frame
+parsing on the live data plane", `pool/wire/` was added as a no-dep Rust
+workspace crate ported from the message-shape semantics of jackc/pgx
+`pgproto3` (MIT) — the only widely-used codec whose explicit design goal
+is bidirectional use by drivers, proxies, servers, and load balancers.
+
+This is a refinement of the original ADR, not a reversal. The pool itself
+remains a pgcat fork. `pool/wire/` is invoked by `pool/src/proxy.rs`'s
+`forward_client_to_upstream` on the live data path; the pool stays
+byte-transparent for every forwarded frame, with the codec observing and
+counting frames into atomic counters exposed at `/metrics`. Shard-aware
+routing of an extended-query pipeline and multi-`Sync` transaction-aware
+batching remain alpha-deferred under the same T7 contract.
+
+See:
+
+- `pool/wire/src/lib.rs` — codec entry point + MIT attribution to jackc/pgx
+- `docs/ai-blaise/ARCHITECTURE.md` — pool data plane section
+- `ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh` — codec direct
+- `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` — codec through pool
+
 ## References
 
 - Plan §6.4 (`pool/` — Rust pgcat fork)
 - Plan §4.5 (connection amplification)
 - `perplexityai/pgcat` — upstream MIT
 - `pgcat`'s settings-bucket pool design (upstream issue tracker)
+- `jackc/pgx` `pgproto3` (MIT) — reference for the bidirectional v3 codec

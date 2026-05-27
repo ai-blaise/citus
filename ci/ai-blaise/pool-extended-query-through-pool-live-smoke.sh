@@ -141,15 +141,11 @@ smoke_output="$(cargo run --quiet --example pipeline_live_smoke -p ai_blaise_cit
   --host 127.0.0.1 --port "${pool_port}" --user postgres --database postgres 2>&1)"
 printf '%s\n' "${smoke_output}"
 
-if ! printf '%s' "${smoke_output}" | grep -q "good_sum=42"; then
-  fail "pipeline_live_smoke did not return good_sum=42 through the pool"
-fi
-if ! printf '%s' "${smoke_output}" | grep -q "ready_after_recovery=I"; then
-  fail "pipeline_live_smoke did not recover to ReadyForQuery=I through the pool"
-fi
-if ! printf '%s' "${smoke_output}" | grep -q "bad_error_observed=true"; then
-  fail "pipeline_live_smoke did not observe ErrorResponse on the bad pipeline through the pool"
-fi
+for expected in good_sum=42 bad_error_observed=true ready_after_recovery=I reuse_text_value=21 reuse_binary_value=35 reuse_ready_idle_count=2; do
+  if ! printf '%s' "${smoke_output}" | grep -q "${expected}"; then
+    fail "pipeline_live_smoke (through pool) missing required field: ${expected}"
+  fi
+done
 
 log "scraping pool metrics for extended-query frame counters"
 metrics="$(curl -fsS "http://127.0.0.1:${admin_port}/metrics")"
@@ -172,19 +168,22 @@ for frame in Parse Bind Describe Execute Sync Flush Close Terminate; do
   frame_counts["${frame}"]="${value}"
 done
 
-# Expect: at least 1 Parse, 1 Bind, 1 Execute, 1 Sync (good pipeline). The bad
-# pipeline adds another Parse/Bind/Execute/Flush/Sync. So minimums are 2/2/2/2.
-for frame in Parse Bind Execute Sync; do
+# Three pipelines run through the pool:
+#   good: Parse + Bind + Describe + Execute + Sync
+#   bad:  Parse + Bind + Execute + Flush + Sync
+#   reuse: Parse + Bind + Execute + Sync + Bind + Execute + Sync
+# Totals: Parse=3, Bind=4, Describe=1, Execute=4, Sync=4, Flush=1.
+declare -A min_counts=(
+  [Parse]=3 [Bind]=4 [Describe]=1 [Execute]=4 [Sync]=4 [Flush]=1
+)
+for frame in Parse Bind Describe Execute Sync Flush; do
   value="${frame_counts[${frame}]}"
-  if [ "${value}" -lt 2 ]; then
+  min="${min_counts[${frame}]}"
+  if [ "${value}" -lt "${min}" ]; then
     printf '%s\n' "${metrics}" >&2
-    fail "${frame} counter expected >= 2 (two pipelines), got ${value}"
+    fail "${frame} counter expected >= ${min} (three pipelines), got ${value}"
   fi
 done
-
-if [ "${frame_counts[Flush]}" -lt 1 ]; then
-  fail "Flush counter expected >= 1 (bad pipeline has Flush before Sync), got ${frame_counts[Flush]}"
-fi
 
 log "pool ext-query counters: Parse=${frame_counts[Parse]} Bind=${frame_counts[Bind]} Describe=${frame_counts[Describe]} Execute=${frame_counts[Execute]} Sync=${frame_counts[Sync]} Flush=${frame_counts[Flush]}"
 

@@ -71,9 +71,18 @@ Current implemented surface:
   PostgreSQL smoke evidence for tracked-GUC backend-state isolation
 - `SettingsBucketPoolMap` and opaque settings fingerprints
 - `PlacementSubscriber`, `ShardMap`, `PlanCache`, and `PreparedStatementCache`
-- `ExtendedPipelineBuffer` for extended-query protocol batching; the
-  production-ready `FEATURE: T7` boundary is limited to raw simple-query frame
-  pipelining through the live `serve` data plane
+- `ExtendedPipelineBuffer` and the `pool/wire` PostgreSQL v3 codec
+  (`ai_blaise_citus_pool_wire`, ported from jackc/pgx `pgproto3` MIT). The
+  production-ready `FEATURE: T7` boundary now covers raw simple-query frame
+  pipelining AND typed extended-query `Parse`/`Bind`/`Describe`/`Execute`/
+  `Sync`/`Flush` frame parsing on the live `serve` data plane via the new
+  `forward_client_to_upstream` function in `pool/src/proxy.rs`. Every client
+  -> upstream frame is decoded by the codec, accounted into per-pool atomic
+  counters exposed at `/metrics`
+  (`ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|...|Close"}`),
+  and forwarded byte-for-byte to the upstream. Shard-aware routing of an
+  extended-query pipeline and transaction-aware batching across multiple
+  `Sync` boundaries remain alpha-deferred under the same T7 contract.
 - `TenantMirrorPolicy` fail-closed parser/report and HTAP `QueryFeatures` parser/classifier
 - `AuthVerificationCache`, live auth-sidecar introspection, startup-token
   stripping, and verified-claim revocation handling

@@ -559,9 +559,18 @@ more production-ready than the artifacts justified.
   any `unknown` hook rows are measured and updated.
 - The pool proxy smoke now opens a raw PostgreSQL protocol client through the
   real pool `serve` data port, sends two simple-query frames without waiting
-  for the first result, verifies ordered rows from a `postgres:17` backend, and
-  promotes only the `FEATURE: T7` simple-query data-plane pipelining boundary;
-  extended-query batching and broader shard-aware pool routing remain alpha.
+  for the first result, and verifies ordered rows from a `postgres:17` backend.
+  The `FEATURE: T7` boundary covers raw simple-query frame pipelining AND
+  typed extended-query `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`
+  frame parsing on the live `serve` data plane via
+  `pool/src/proxy.rs::forward_client_to_upstream` (codec from the
+  `ai_blaise_citus_pool_wire` crate). The new
+  `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` drives the
+  example pipeline through the real pool data port and verifies the pool's
+  `/metrics` endpoint reports non-zero `Parse`/`Bind`/`Execute`/`Sync` frame
+  counters with zero decode errors. Shard-aware routing of an extended-query
+  pipeline and transaction-aware batching across multiple `Sync` boundaries
+  remain alpha-deferred under the same T7 contract.
 
 - The pool routing/security canonical smoke covers bounded production-ready
   contracts for T9/T12/R10, and MR5 now has a bounded live data-plane proof in
@@ -1506,13 +1515,26 @@ which uses only the codec to drive a real
 is emitted and the queued `Bind`/`Execute` do NOT run before `Sync` recovers
 to `ReadyForQuery=I`). VM-verified 2026-05-27T17:15:14Z on
 `experiment-playground-plus-2` (`wire_unit_tests=31 pool_unit_tests=136
-docker_runtime=true live_pipeline_result=passed`). Evidence row in
-`artifacts/pool-extended-query-pipeline-evidence.tsv`. The claim is bounded
-to the byte-transparent simple-query path AND the typed extended-query
-`Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush` pipeline buffering at a
-single `Sync` boundary; shard-aware routing of an extended-query pipeline
-(parameter parsing through distribution-column hashing) and transaction-aware
-batching across multiple `Sync` boundaries remain alpha contract surfaces
+docker_runtime=true live_pipeline_result=passed`). The data-plane integration
+is proven by the additional
+`ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` which runs the
+same example through the real pool `serve` data port and verifies the pool's
+`/metrics` endpoint reports non-zero
+`ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush"}`
+counters with `ai_blaise_citus_pool_ext_query_decode_errors_total=0`; the
+codec runs in `pool/src/proxy.rs::forward_client_to_upstream` on every
+client -> upstream frame, byte-transparent forward preserved. The example
+now also exercises statement reuse across multiple `Sync` boundaries with
+mixed text and binary result format codes (asserts
+`reuse_text_value=21 reuse_binary_value=35 reuse_ready_idle_count=2`).
+Evidence rows in `artifacts/pool-extended-query-pipeline-evidence.tsv` +
+`artifacts/pool-extended-query-through-pool-evidence.tsv`. The claim is
+bounded to the byte-transparent simple-query path AND the typed
+extended-query `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush` pipeline
+buffering, with frame parsing on the live data plane and metric-counter
+verification; shard-aware routing of an extended-query pipeline (parameter
+parsing through distribution-column hashing) and transaction-aware shard
+fan-out across multiple `Sync` boundaries remain alpha contract surfaces
 under the same T7 contract.
 
 A10 and A11 are production-ready under the live-provider-execution-safety-validated evidence boundary from 2026-05-26 for live AI SQL execution against an OpenAI-API-compatible endpoint. The new `ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh` boots an OpenAI-API-compatible mock provider (`ci/ai-blaise/mock-llm/server.py` serves deterministic `/v1/chat/completions` responses on a loopback port) alongside a `postgres:17` container with the `http` extension and the `ai_blaise_citus` SQL extension, registers an `ollama-provider` binding via `companion_register_ai_provider_binding`, sets the `companion.ai_endpoint_override` GUC, and exercises both surfaces end-to-end. A10 (`companion_ai_chat_stream`) is rewired from fail-closed RAISE to VOLATILE live execution: when `p_allow_provider_execution=true` it POSTs the chat request via `http_post(endpoint, request_body, 'application/json')`, parses the JSON response, and splits the content into word-level chunks via `regexp_split_to_array(choice_content, '[[:space:]]+')`, emitting RETURNS TABLE rows with `evidence_boundary='live-provider-execution'`. A11 (`companion_semantic_text_to_sql_intent`) gates live execution behind `p_allow_query_execution=true` + a non-NULL `companion.ai_endpoint_override` GUC, POSTs the intent prompt, then runs the response through a SQL safety validator that rejects anything that is not `^SELECT `, contains any of `(DROP|ALTER|TRUNCATE|DELETE|INSERT|UPDATE|COPY|GRANT|REVOKE|CALL|VACUUM|REINDEX|CREATE)` matched via PL/pgSQL E-string word boundaries, omits the configured relation name, omits a tenant_id filter, or omits a LIMIT clause; the validated SELECT then runs under `SET LOCAL statement_timeout = '2s'` and returns a count + sample_rows JSONB with `evidence_boundary='live-provider-execution-safety-validated'`. The smoke verifies 5 chunks for A10 and 5 executed_rows for A11. Evidence row in `artifacts/a10-a11-ai-sql-evidence.tsv`. The claim is bounded to the live-provider-execution + safety-validated SQL execution scope against an OpenAI-API-compatible endpoint; if the safety validator rejects the response, A11 raises and there is no generated-query execution, and provider-side hallucination / prompt-injection mitigation beyond this validator + tenant_id filter + LIMIT + statement_timeout stays out of scope for the A10/A11 contract.

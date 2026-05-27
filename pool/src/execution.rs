@@ -8,7 +8,7 @@ use crate::{
     RealtimeHookQueue, RouteDecision, RouteTarget, SessionSetting, SettingsBucketPolicy,
     SettingsBucketPoolMap, ShardMapError, TenantAdmissionPolicy, TenantMirrorPolicy,
     TenantQuotaTable, TicketKey, TlsSessionTicketPolicy, TokenIntrospectionCachePolicy,
-    VirtualPidTable, PGWIRE_CANCEL_MAGIC,
+    VirtualPidTable,
 };
 use std::error::Error;
 use std::fmt;
@@ -277,11 +277,16 @@ impl PoolExecutionReport {
         let virtual_pid = virtual_pid_table
             .allocate(backend.clone())
             .map_err(PoolExecutionError::component)?;
-        let mut client_cancel = Vec::with_capacity(16);
-        client_cancel.extend_from_slice(&16_u32.to_be_bytes());
-        client_cancel.extend_from_slice(&PGWIRE_CANCEL_MAGIC.to_be_bytes());
-        client_cancel.extend_from_slice(&virtual_pid.to_be_bytes());
-        client_cancel.extend_from_slice(&(backend.cancel_key as u32).to_be_bytes());
+        // Encode the client-side cancel envelope via the pool/wire codec so
+        // canonical evidence shares the same bytes path as the live proxy
+        // hot path uses for outgoing cancel forwarding.
+        let mut client_cancel_buf = ai_blaise_citus_pool_wire::PgWriteBuf::with_capacity(16);
+        ai_blaise_citus_pool_wire::CancelRequest {
+            process_id: virtual_pid as i32,
+            secret_key: backend.cancel_key,
+        }
+        .encode(&mut client_cancel_buf);
+        let client_cancel = client_cancel_buf.into_inner();
         let (parsed_virtual_pid, parsed_secret) =
             parse_cancel_request(&client_cancel).map_err(PoolExecutionError::component)?;
         let resolved_backend = virtual_pid_table
