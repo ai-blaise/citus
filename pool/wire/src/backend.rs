@@ -22,9 +22,13 @@ pub enum BackendMessage {
     BindComplete(BindCompleteFrame),
     CloseComplete(CloseCompleteFrame),
     CommandComplete(CommandCompleteFrame),
+    CopyInResponse(CopyInResponseFrame),
+    CopyOutResponse(CopyOutResponseFrame),
+    CopyBothResponse(CopyBothResponseFrame),
     DataRow(DataRowFrame),
     EmptyQueryResponse(EmptyQueryResponseFrame),
     ErrorResponse(ErrorResponseFrame),
+    NegotiateProtocolVersion(NegotiateProtocolVersionFrame),
     NoData(NoDataFrame),
     NoticeResponse(NoticeResponseFrame),
     NotificationResponse(NotificationResponseFrame),
@@ -43,9 +47,13 @@ impl BackendMessage {
             Self::BindComplete(_) => b'2',
             Self::CloseComplete(_) => b'3',
             Self::CommandComplete(_) => b'C',
+            Self::CopyInResponse(_) => b'G',
+            Self::CopyOutResponse(_) => b'H',
+            Self::CopyBothResponse(_) => b'W',
             Self::DataRow(_) => b'D',
             Self::EmptyQueryResponse(_) => b'I',
             Self::ErrorResponse(_) => b'E',
+            Self::NegotiateProtocolVersion(_) => b'v',
             Self::NoData(_) => b'n',
             Self::NoticeResponse(_) => b'N',
             Self::NotificationResponse(_) => b'A',
@@ -64,9 +72,13 @@ impl BackendMessage {
             Self::BindComplete(frame) => frame.encode(buf),
             Self::CloseComplete(frame) => frame.encode(buf),
             Self::CommandComplete(frame) => frame.encode(buf),
+            Self::CopyInResponse(frame) => frame.encode(buf),
+            Self::CopyOutResponse(frame) => frame.encode(buf),
+            Self::CopyBothResponse(frame) => frame.encode(buf),
             Self::DataRow(frame) => frame.encode(buf),
             Self::EmptyQueryResponse(frame) => frame.encode(buf),
             Self::ErrorResponse(frame) => frame.encode(buf),
+            Self::NegotiateProtocolVersion(frame) => frame.encode(buf),
             Self::NoData(frame) => frame.encode(buf),
             Self::NoticeResponse(frame) => frame.encode(buf),
             Self::NotificationResponse(frame) => frame.encode(buf),
@@ -85,9 +97,13 @@ impl BackendMessage {
             b'2' => Self::BindComplete(BindCompleteFrame::decode(body)?),
             b'3' => Self::CloseComplete(CloseCompleteFrame::decode(body)?),
             b'C' => Self::CommandComplete(CommandCompleteFrame::decode(body)?),
+            b'G' => Self::CopyInResponse(CopyInResponseFrame::decode(body)?),
+            b'H' => Self::CopyOutResponse(CopyOutResponseFrame::decode(body)?),
+            b'W' => Self::CopyBothResponse(CopyBothResponseFrame::decode(body)?),
             b'D' => Self::DataRow(DataRowFrame::decode(body)?),
             b'I' => Self::EmptyQueryResponse(EmptyQueryResponseFrame::decode(body)?),
             b'E' => Self::ErrorResponse(ErrorResponseFrame::decode(body)?),
+            b'v' => Self::NegotiateProtocolVersion(NegotiateProtocolVersionFrame::decode(body)?),
             b'n' => Self::NoData(NoDataFrame::decode(body)?),
             b'N' => Self::NoticeResponse(NoticeResponseFrame::decode(body)?),
             b'A' => Self::NotificationResponse(NotificationResponseFrame::decode(body)?),
@@ -549,6 +565,156 @@ impl RowDescriptionFrame {
     }
 }
 
+// --- CopyInResponse (G) / CopyOutResponse (H) / CopyBothResponse (W) -------
+
+fn encode_copy_response(buf: &mut PgWriteBuf, tag: u8, frame: &CopyResponseBody) {
+    buf.write_tagged_frame(tag, |body| {
+        body.write_u8(frame.overall_format);
+        body.write_i16(frame.column_format_codes.len() as i16);
+        for code in &frame.column_format_codes {
+            body.write_i16(*code);
+        }
+    });
+}
+
+fn decode_copy_response(body: &[u8]) -> Result<CopyResponseBody, WireError> {
+    let mut reader = PgReader::new(body);
+    let overall_format = reader.read_u8()?;
+    let count = reader.read_i16()? as usize;
+    let mut column_format_codes = Vec::with_capacity(count);
+    for _ in 0..count {
+        column_format_codes.push(reader.read_i16()?);
+    }
+    Ok(CopyResponseBody {
+        overall_format,
+        column_format_codes,
+    })
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct CopyResponseBody {
+    overall_format: u8,
+    column_format_codes: Vec<i16>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CopyInResponseFrame {
+    pub overall_format: u8,
+    pub column_format_codes: Vec<i16>,
+}
+
+impl CopyInResponseFrame {
+    pub fn encode(&self, buf: &mut PgWriteBuf) {
+        encode_copy_response(
+            buf,
+            b'G',
+            &CopyResponseBody {
+                overall_format: self.overall_format,
+                column_format_codes: self.column_format_codes.clone(),
+            },
+        );
+    }
+
+    pub fn decode(body: &[u8]) -> Result<Self, WireError> {
+        let parsed = decode_copy_response(body)?;
+        Ok(Self {
+            overall_format: parsed.overall_format,
+            column_format_codes: parsed.column_format_codes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CopyOutResponseFrame {
+    pub overall_format: u8,
+    pub column_format_codes: Vec<i16>,
+}
+
+impl CopyOutResponseFrame {
+    pub fn encode(&self, buf: &mut PgWriteBuf) {
+        encode_copy_response(
+            buf,
+            b'H',
+            &CopyResponseBody {
+                overall_format: self.overall_format,
+                column_format_codes: self.column_format_codes.clone(),
+            },
+        );
+    }
+
+    pub fn decode(body: &[u8]) -> Result<Self, WireError> {
+        let parsed = decode_copy_response(body)?;
+        Ok(Self {
+            overall_format: parsed.overall_format,
+            column_format_codes: parsed.column_format_codes,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CopyBothResponseFrame {
+    pub overall_format: u8,
+    pub column_format_codes: Vec<i16>,
+}
+
+impl CopyBothResponseFrame {
+    pub fn encode(&self, buf: &mut PgWriteBuf) {
+        encode_copy_response(
+            buf,
+            b'W',
+            &CopyResponseBody {
+                overall_format: self.overall_format,
+                column_format_codes: self.column_format_codes.clone(),
+            },
+        );
+    }
+
+    pub fn decode(body: &[u8]) -> Result<Self, WireError> {
+        let parsed = decode_copy_response(body)?;
+        Ok(Self {
+            overall_format: parsed.overall_format,
+            column_format_codes: parsed.column_format_codes,
+        })
+    }
+}
+
+// --- NegotiateProtocolVersion (v) ------------------------------------------
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NegotiateProtocolVersionFrame {
+    pub newest_protocol_version: i32,
+    pub unrecognized_options: Vec<String>,
+}
+
+impl NegotiateProtocolVersionFrame {
+    pub fn encode(&self, buf: &mut PgWriteBuf) {
+        buf.write_tagged_frame(b'v', |body| {
+            body.write_i32(self.newest_protocol_version);
+            body.write_i32(self.unrecognized_options.len() as i32);
+            for option in &self.unrecognized_options {
+                body.write_cstring_str(option);
+            }
+        });
+    }
+
+    pub fn decode(body: &[u8]) -> Result<Self, WireError> {
+        let mut reader = PgReader::new(body);
+        let newest_protocol_version = reader.read_i32()?;
+        let count = reader.read_i32()? as usize;
+        let mut unrecognized_options = Vec::with_capacity(count);
+        for _ in 0..count {
+            let option = reader
+                .read_cstring_utf8("negotiate-protocol-option")?
+                .to_string();
+            unrecognized_options.push(option);
+        }
+        Ok(Self {
+            newest_protocol_version,
+            unrecognized_options,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -670,6 +836,42 @@ mod tests {
     fn command_complete_roundtrip() {
         let original = BackendMessage::CommandComplete(CommandCompleteFrame {
             tag: "SELECT 1".to_string(),
+        });
+        assert_eq!(roundtrip(original.clone()), original);
+    }
+
+    #[test]
+    fn copy_in_response_roundtrip() {
+        let original = BackendMessage::CopyInResponse(CopyInResponseFrame {
+            overall_format: 1,
+            column_format_codes: vec![1, 0, 1],
+        });
+        assert_eq!(roundtrip(original.clone()), original);
+    }
+
+    #[test]
+    fn copy_out_response_roundtrip() {
+        let original = BackendMessage::CopyOutResponse(CopyOutResponseFrame {
+            overall_format: 0,
+            column_format_codes: vec![0; 4],
+        });
+        assert_eq!(roundtrip(original.clone()), original);
+    }
+
+    #[test]
+    fn copy_both_response_roundtrip() {
+        let original = BackendMessage::CopyBothResponse(CopyBothResponseFrame {
+            overall_format: 1,
+            column_format_codes: Vec::new(),
+        });
+        assert_eq!(roundtrip(original.clone()), original);
+    }
+
+    #[test]
+    fn negotiate_protocol_version_roundtrip() {
+        let original = BackendMessage::NegotiateProtocolVersion(NegotiateProtocolVersionFrame {
+            newest_protocol_version: 0x00030000,
+            unrecognized_options: vec!["extra_float_digits".to_string()],
         });
         assert_eq!(roundtrip(original.clone()), original);
     }

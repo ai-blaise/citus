@@ -9632,8 +9632,23 @@ Production evidence:
   malformed `Parse` followed by `Bind`/`Execute`/`Flush`/`Sync` and asserts
   the backend produces `ErrorResponse` and skips every queued frame after
   the failure before recovering at the next `Sync` (`bind_after_failure=0
-  execute_after_failure=0 ready_after_recovery=I`). Evidence row in
+  execute_after_failure=0 ready_after_recovery=I`), and finally drives a
+  statement-reuse pipeline that calls `Parse` once and runs two
+  `Bind`/`Execute`/`Sync` pairs over two `Sync` boundaries with mixed text
+  and binary result format codes (asserts `reuse_text_value=21
+  reuse_binary_value=35 reuse_ready_idle_count=2`). Evidence row in
   `artifacts/pool-extended-query-pipeline-evidence.tsv`.
+- `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` runs the same
+  example through the real `pool` `serve` data port (the pool is started
+  pointing at `postgres:17`; the smoke calls `cargo run -p ai_blaise_citus_pool
+  -- serve` and waits on `/readyz`). After the example completes, the smoke
+  scrapes the pool `/metrics` endpoint and asserts non-zero
+  `ai_blaise_citus_pool_ext_query_frames_total{frame="Parse|Bind|Describe|Execute|Sync|Flush"}`
+  counters with `ai_blaise_citus_pool_ext_query_decode_errors_total=0`. This
+  is the data-plane proof that the `pool/wire` codec runs on every client
+  -> upstream frame through `pool/src/proxy.rs::forward_client_to_upstream`,
+  not only against postgres directly. Evidence row in
+  `artifacts/pool-extended-query-through-pool-evidence.tsv`.
 - `cargo test -p ai_blaise_citus_pool_wire` (31 round-trip tests, including
   frame envelope, frontend `Parse`/`Bind`/`Describe`/`Execute`/`Sync`/`Flush`/
   `Close`/`Query`/`CopyData`/`CopyDone`/`CopyFail`/`Terminate`, backend
@@ -9669,9 +9684,11 @@ until they have equivalent raw-wire data-plane evidence.
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh`
+- Executable: `REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
 - CI: `ci/ai-blaise/pool-proxy-smoke.sh`
 - CI: `ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh`
+- CI: `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh`
 
 
 ### T10: Bulk Protocol Fetch Path

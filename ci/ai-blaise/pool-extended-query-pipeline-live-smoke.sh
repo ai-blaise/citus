@@ -73,9 +73,14 @@ if [ "${require_docker}" = "1" ]; then
   log "postgres ready on host port ${host_port}"
 
   log "running pipeline_live_smoke example against 127.0.0.1:${host_port}"
-  cargo run --quiet --example pipeline_live_smoke -p ai_blaise_citus_pool_wire -- \
-    --host 127.0.0.1 --port "${host_port}" --user postgres --database postgres \
-    | tee /tmp/pool-ext-query-smoke-output.txt
+  smoke_out="$(cargo run --quiet --example pipeline_live_smoke -p ai_blaise_citus_pool_wire -- \
+    --host 127.0.0.1 --port "${host_port}" --user postgres --database postgres)"
+  printf '%s\n' "${smoke_out}"
+  for expected in good_sum=42 bad_error_observed=true ready_after_recovery=I reuse_text_value=21 reuse_binary_value=35 reuse_ready_idle_count=2; do
+    if ! printf '%s' "${smoke_out}" | grep -q "${expected}"; then
+      fail "smoke output missing required field: ${expected}"
+    fi
+  done
   phase2_result="passed"
 fi
 
