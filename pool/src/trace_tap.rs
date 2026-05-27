@@ -103,12 +103,13 @@ impl StartupTraceTap {
 /// return both the buffered bytes and the parsed fields.
 ///
 /// The returned bytes MUST be replayed to upstream PostgreSQL in order, in
-/// addition to any subsequent bytes the client sends.
+/// addition to any subsequent bytes the client sends. Envelope framing is
+/// delegated to `ai_blaise_citus_pool_wire::StartupEnvelope`; this function
+/// adds the streaming-read loop plus the higher-level traceparent extraction.
 pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTap> {
     let mut header = [0_u8; 8];
     read_exact_or_eof(reader, &mut header)?;
     let length = u32::from_be_bytes(header[0..4].try_into().unwrap()) as usize;
-    let code = u32::from_be_bytes(header[4..8].try_into().unwrap());
 
     if !(8..=STARTUP_MESSAGE_MAX_BYTES).contains(&length) {
         return Err(io::Error::new(
@@ -127,42 +128,29 @@ pub fn tap_startup_message<R: Read>(reader: &mut R) -> io::Result<StartupTraceTa
         buffered_bytes.extend_from_slice(&body);
     }
 
-    // SSLRequest (80877103), GSSENCRequest (80877104), CancelRequest (80877102)
-    // are special envelopes; they do not carry an application_name. The proxy
-    // still replays them verbatim.
-    if matches!(code, 80877102..=80877104) {
-        return Ok(StartupTraceTap {
-            fields: ApplicationNameFields::default(),
-            buffered_bytes,
-            parameters: Vec::new(),
-            special_envelope: true,
-        });
+    match ai_blaise_citus_pool_wire::StartupEnvelope::decode(&buffered_bytes) {
+        Ok(ai_blaise_citus_pool_wire::StartupEnvelope::Startup(message)) => {
+            let params: Vec<(String, String)> = message.parameters.clone();
+            let fields = derive_fields_from_parameters(&params);
+            Ok(StartupTraceTap {
+                fields,
+                buffered_bytes,
+                parameters: params,
+                special_envelope: false,
+            })
+        }
+        Ok(_) | Err(_) => {
+            // SSLRequest / GSSENCRequest / CancelRequest and any unrecognized
+            // envelope land here; the proxy replays them verbatim and the
+            // traceparent fields stay empty.
+            Ok(StartupTraceTap {
+                fields: ApplicationNameFields::default(),
+                buffered_bytes,
+                parameters: Vec::new(),
+                special_envelope: true,
+            })
+        }
     }
-
-    // The protocol version is the upper 16 bits major, lower 16 bits minor.
-    // We accept anything from 2.0 onwards; the PostgreSQL community has used
-    // 3.0 for two decades but the field is informational here.
-    let major = (code >> 16) as u16;
-    if !(2..=4).contains(&major) {
-        // Not a recognized startup envelope; return an empty parse but keep
-        // the bytes so they can be forwarded.
-        return Ok(StartupTraceTap {
-            fields: ApplicationNameFields::default(),
-            buffered_bytes,
-            parameters: Vec::new(),
-            special_envelope: true,
-        });
-    }
-
-    let body = &buffered_bytes[8..];
-    let params = parse_libpq_startup_parameters(body);
-    let fields = derive_fields_from_parameters(&params);
-    Ok(StartupTraceTap {
-        fields,
-        buffered_bytes,
-        parameters: params,
-        special_envelope: false,
-    })
 }
 
 fn derive_fields_from_parameters(params: &[(String, String)]) -> ApplicationNameFields {
@@ -220,25 +208,6 @@ fn is_pool_only_startup_parameter(key: &str) -> bool {
             | "tenant_id"
             | "tenant"
     )
-}
-
-fn parse_libpq_startup_parameters(body: &[u8]) -> Vec<(String, String)> {
-    let mut params: Vec<(String, String)> = Vec::new();
-    let mut iter = body.split(|byte| *byte == 0);
-    loop {
-        let key = match iter.next() {
-            Some(slice) if !slice.is_empty() => slice,
-            _ => return params,
-        };
-        let value = match iter.next() {
-            Some(slice) => slice,
-            None => return params,
-        };
-        let (Ok(key), Ok(value)) = (std::str::from_utf8(key), std::str::from_utf8(value)) else {
-            continue;
-        };
-        params.push((key.to_string(), value.to_string()));
-    }
 }
 
 fn extract_options_traceparent(options: &str) -> Option<String> {

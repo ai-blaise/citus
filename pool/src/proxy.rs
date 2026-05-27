@@ -807,26 +807,11 @@ fn write_postgres_startup_error(
     sqlstate: &str,
     message: &str,
 ) -> io::Result<()> {
-    let mut payload = Vec::new();
-    payload.extend_from_slice(b"SERROR\0");
-    payload.extend_from_slice(b"VFATAL\0");
-    payload.push(b'C');
-    payload.extend_from_slice(sanitize_pg_error_field(sqlstate).as_bytes());
-    payload.push(0);
-    payload.push(b'M');
-    payload.extend_from_slice(sanitize_pg_error_field(message).as_bytes());
-    payload.push(0);
-    payload.push(0);
-
-    client.write_all(b"E")?;
-    client.write_all(&((payload.len() + 4) as u32).to_be_bytes())?;
-    client.write_all(&payload)?;
+    let mut buf = ai_blaise_citus_pool_wire::PgWriteBuf::new();
+    ai_blaise_citus_pool_wire::ErrorResponseFrame::fatal(sqlstate, message).encode(&mut buf);
+    client.write_all(buf.as_slice())?;
     let _ = client.shutdown(Shutdown::Write);
     Ok(())
-}
-
-fn sanitize_pg_error_field(value: &str) -> String {
-    value.replace('\0', " ")
 }
 
 fn serve_admin(

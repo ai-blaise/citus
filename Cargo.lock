@@ -98,8 +98,13 @@ dependencies = [
 name = "ai_blaise_citus_pool"
 version = "0.1.0"
 dependencies = [
+ "ai_blaise_citus_pool_wire",
  "ai_blaise_citus_sidecar_shared",
 ]
+
+[[package]]
+name = "ai_blaise_citus_pool_wire"
+version = "0.1.0"
 
 [[package]]
 name = "ai_blaise_citus_schema_designer"
