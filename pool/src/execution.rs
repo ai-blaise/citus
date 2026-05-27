@@ -121,25 +121,22 @@ impl PoolExecutionReport {
         let mut pipeline = ExtendedPipelineBuffer::new(&contract.pipeline)
             .map_err(PoolExecutionError::component)?;
         pipeline
-            .append(ExtendedFrame::Parse {
-                statement_name: "orders_by_tenant".to_string(),
-                query: "SELECT count(*) FROM orders WHERE tenant_id = $1".to_string(),
-            })
+            .append(ExtendedFrame::new_parse(
+                "orders_by_tenant",
+                "SELECT count(*) FROM orders WHERE tenant_id = $1",
+            ))
             .map_err(PoolExecutionError::component)?;
         pipeline
-            .append(ExtendedFrame::Bind {
-                portal_name: "orders_portal".to_string(),
-                statement_name: "orders_by_tenant".to_string(),
-            })
+            .append(ExtendedFrame::new_bind(
+                "orders_portal",
+                "orders_by_tenant",
+            ))
             .map_err(PoolExecutionError::component)?;
         pipeline
-            .append(ExtendedFrame::Execute {
-                portal_name: "orders_portal".to_string(),
-                max_rows: 0,
-            })
+            .append(ExtendedFrame::new_execute("orders_portal", 0))
             .map_err(PoolExecutionError::component)?;
         let flushed = pipeline
-            .append(ExtendedFrame::Sync)
+            .append(ExtendedFrame::new_sync())
             .map_err(PoolExecutionError::component)?
             .ok_or(PoolExecutionError::Invariant(
                 "sync frame did not flush pipeline",

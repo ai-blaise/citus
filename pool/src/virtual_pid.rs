@@ -146,38 +146,35 @@ impl Error for VirtualPidError {}
 
 /// pgwire `CancelRequest` payload: 16 bytes, big-endian, with magic = 80877102.
 ///
-/// Layout: `[u32 magic][u32 pid][u32 secret]`.
-pub const PGWIRE_CANCEL_MAGIC: u32 = 80_877_102;
+/// Layout: `[u32 magic][u32 pid][u32 secret]`. Codec lives in the
+/// `ai_blaise_citus_pool_wire` crate; this re-export preserves the historical
+/// constant name for downstream consumers.
+pub use ai_blaise_citus_pool_wire::CANCEL_REQUEST_CODE as PGWIRE_CANCEL_MAGIC;
 
 /// Parse a cancel request, returning the virtual PID and the client-supplied
 /// secret. Callers should compare the secret against the recorded
 /// `cancel_key` before forwarding.
 pub fn parse_cancel_request(bytes: &[u8]) -> Result<(u32, i32), VirtualPidError> {
-    if bytes.len() < 16 {
-        return Err(VirtualPidError::MissingField("cancel-request body"));
+    let envelope = ai_blaise_citus_pool_wire::StartupEnvelope::decode(bytes)
+        .map_err(|_| VirtualPidError::MissingField("cancel-request body"))?;
+    match envelope {
+        ai_blaise_citus_pool_wire::StartupEnvelope::Cancel(request) => {
+            Ok((request.process_id as u32, request.secret_key))
+        }
+        _ => Err(VirtualPidError::MissingField("cancel-request magic")),
     }
-    let length = u32::from_be_bytes(bytes[0..4].try_into().unwrap());
-    if length as usize != 16 {
-        return Err(VirtualPidError::MissingField("cancel-request length"));
-    }
-    let magic = u32::from_be_bytes(bytes[4..8].try_into().unwrap());
-    if magic != PGWIRE_CANCEL_MAGIC {
-        return Err(VirtualPidError::MissingField("cancel-request magic"));
-    }
-    let virtual_pid = u32::from_be_bytes(bytes[8..12].try_into().unwrap());
-    let secret = i32::from_be_bytes(bytes[12..16].try_into().unwrap());
-    Ok((virtual_pid, secret))
 }
 
 /// Encode the upstream-side cancel-request frame for the recorded real PID
 /// and the stored cancel key.
 pub fn encode_cancel_request(real_pid: i32, cancel_key: i32) -> Vec<u8> {
-    let mut out = Vec::with_capacity(16);
-    out.extend_from_slice(&16_u32.to_be_bytes());
-    out.extend_from_slice(&PGWIRE_CANCEL_MAGIC.to_be_bytes());
-    out.extend_from_slice(&(real_pid as u32).to_be_bytes());
-    out.extend_from_slice(&(cancel_key as u32).to_be_bytes());
-    out
+    let mut buf = ai_blaise_citus_pool_wire::PgWriteBuf::with_capacity(16);
+    ai_blaise_citus_pool_wire::CancelRequest {
+        process_id: real_pid,
+        secret_key: cancel_key,
+    }
+    .encode(&mut buf);
+    buf.into_inner()
 }
 
 #[cfg(test)]
