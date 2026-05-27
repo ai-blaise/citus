@@ -137,7 +137,7 @@ fn run(args: &Args) -> Result<String, String> {
     }
     .encode(&mut pipeline);
     SyncFrame.encode(&mut pipeline);
-    session.write_all(&pipeline)?;
+    session.write_all(pipeline.as_slice())?;
 
     let mut sums: Vec<i64> = Vec::new();
     let mut parse_completes = 0_u32;
@@ -224,7 +224,7 @@ fn run(args: &Args) -> Result<String, String> {
     .encode(&mut bad_pipeline);
     FlushFrame.encode(&mut bad_pipeline);
     SyncFrame.encode(&mut bad_pipeline);
-    session.write_all(&bad_pipeline)?;
+    session.write_all(bad_pipeline.as_slice())?;
 
     let mut error_observed = false;
     let mut bind_after_failure = 0_u32;
