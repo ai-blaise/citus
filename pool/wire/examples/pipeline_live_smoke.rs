@@ -279,6 +279,14 @@ fn run(args: &Args) -> Result<String, String> {
         result_format_codes: vec![0],
     }
     .encode(&mut reuse_pipeline);
+    // Describe the portal so postgres emits RowDescription with the actual
+    // format code chosen in this Bind; without Describe, RowDescription is
+    // suppressed and the example would not see the format-code switch.
+    DescribeFrame {
+        target: DescribeTarget::Portal,
+        name: "reuse_p1".to_string(),
+    }
+    .encode(&mut reuse_pipeline);
     ExecuteFrame {
         portal_name: "reuse_p1".to_string(),
         max_rows: 0,
@@ -292,6 +300,11 @@ fn run(args: &Args) -> Result<String, String> {
         parameters: vec![Some(b"5".to_vec())],
         // Binary result format. Postgres returns int4 as 4-byte big-endian.
         result_format_codes: vec![1],
+    }
+    .encode(&mut reuse_pipeline);
+    DescribeFrame {
+        target: DescribeTarget::Portal,
+        name: "reuse_p2".to_string(),
     }
     .encode(&mut reuse_pipeline);
     ExecuteFrame {
