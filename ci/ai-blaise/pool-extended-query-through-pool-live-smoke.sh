@@ -169,12 +169,12 @@ for frame in Parse Bind Describe Execute Sync Flush Close Terminate; do
 done
 
 # Three pipelines run through the pool:
-#   good: Parse + Bind + Describe + Execute + Sync
-#   bad:  Parse + Bind + Execute + Flush + Sync
-#   reuse: Parse + Bind + Execute + Sync + Bind + Execute + Sync
-# Totals: Parse=3, Bind=4, Describe=1, Execute=4, Sync=4, Flush=1.
+#   good:  Parse + Bind + Describe + Execute + Sync
+#   bad:   Parse + Bind + Execute + Flush + Sync
+#   reuse: Parse + Bind + Describe + Execute + Sync + Bind + Describe + Execute + Sync
+# Totals: Parse=3, Bind=4, Describe=3, Execute=4, Sync=4, Flush=1.
 declare -A min_counts=(
-  [Parse]=3 [Bind]=4 [Describe]=1 [Execute]=4 [Sync]=4 [Flush]=1
+  [Parse]=3 [Bind]=4 [Describe]=3 [Execute]=4 [Sync]=4 [Flush]=1
 )
 for frame in Parse Bind Describe Execute Sync Flush; do
   value="${frame_counts[${frame}]}"
