@@ -420,8 +420,7 @@ impl PoolProxyState {
     }
 
     fn record_decode_error(&self) {
-        self.ext_query_decode_errors
-            .fetch_add(1, Ordering::Relaxed);
+        self.ext_query_decode_errors.fetch_add(1, Ordering::Relaxed);
     }
 
     fn acquire_settings_bucket(
@@ -812,11 +811,8 @@ fn proxy_connection(
         let upload = scope.spawn(move || -> io::Result<u64> {
             upstream_writer.write_all(&prefix_bytes)?;
             let prefix_len = prefix_bytes.len() as u64;
-            let copied = forward_client_to_upstream(
-                &mut client_reader,
-                &mut upstream_writer,
-                state,
-            )?;
+            let copied =
+                forward_client_to_upstream(&mut client_reader, &mut upstream_writer, state)?;
             Ok(prefix_len + copied)
         });
 
@@ -2145,7 +2141,10 @@ mod tests {
         forwarder_thread.join().unwrap();
         let captured = upstream_capture.join().unwrap();
 
-        assert_eq!(captured, payload, "byte-copy must preserve bytes after invalid length");
+        assert_eq!(
+            captured, payload,
+            "byte-copy must preserve bytes after invalid length"
+        );
         let counters = state.ext_query_counters();
         assert_eq!(counters.decode_errors, 1);
         assert_eq!(counters.simple_query, 0);

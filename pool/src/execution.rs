@@ -127,10 +127,7 @@ impl PoolExecutionReport {
             ))
             .map_err(PoolExecutionError::component)?;
         pipeline
-            .append(ExtendedFrame::new_bind(
-                "orders_portal",
-                "orders_by_tenant",
-            ))
+            .append(ExtendedFrame::new_bind("orders_portal", "orders_by_tenant"))
             .map_err(PoolExecutionError::component)?;
         pipeline
             .append(ExtendedFrame::new_execute("orders_portal", 0))

@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Low-level read/write helpers used by every message implementation.
 //!
@@ -13,45 +14,24 @@ use std::fmt;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum WireError {
     /// Body declared more bytes than the reader has remaining.
-    Underflow {
-        wanted: usize,
-        remaining: usize,
-    },
+    Underflow { wanted: usize, remaining: usize },
     /// A cstring field was missing its trailing NUL terminator.
-    UnterminatedCString {
-        field: &'static str,
-    },
+    UnterminatedCString { field: &'static str },
     /// A length-prefixed field claimed more bytes than fit in the body.
-    InvalidLength {
-        field: &'static str,
-        value: i32,
-    },
+    InvalidLength { field: &'static str, value: i32 },
     /// A field that should be UTF-8 contained invalid sequences. The peer
     /// is technically allowed to send non-UTF-8 client_encoding, but the
     /// fields the pool inspects (statement_name, portal_name, query text,
     /// error fields) are always UTF-8 in practice.
-    InvalidUtf8 {
-        field: &'static str,
-    },
+    InvalidUtf8 { field: &'static str },
     /// A message tag byte did not match the expected value.
-    UnexpectedTag {
-        wanted: u8,
-        got: u8,
-    },
+    UnexpectedTag { wanted: u8, got: u8 },
     /// The total declared length exceeds the configured maximum.
-    MessageTooLarge {
-        limit: usize,
-        declared: usize,
-    },
+    MessageTooLarge { limit: usize, declared: usize },
     /// A startup envelope code was not one of the known magic values.
-    UnknownStartupCode {
-        code: u32,
-    },
+    UnknownStartupCode { code: u32 },
     /// Reserved value (e.g. ReadyForQuery transaction status byte).
-    InvalidEnumValue {
-        field: &'static str,
-        value: u8,
-    },
+    InvalidEnumValue { field: &'static str, value: u8 },
 }
 
 impl fmt::Display for WireError {

@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Live extended-query pipeline smoke. Compiles the `pool/wire` codec into a
 //! small binary that opens a raw TCP connection to a postgres backend, drives
@@ -150,9 +151,12 @@ fn run(args: &Args) -> Result<String, String> {
             BackendMessage::ParseComplete(_) => parse_completes += 1,
             BackendMessage::BindComplete(_) => bind_completes += 1,
             BackendMessage::DataRow(row) => {
-                let column = row.columns.first().cloned().flatten().ok_or_else(|| {
-                    "good DataRow missing first column".to_string()
-                })?;
+                let column = row
+                    .columns
+                    .first()
+                    .cloned()
+                    .flatten()
+                    .ok_or_else(|| "good DataRow missing first column".to_string())?;
                 let parsed = std::str::from_utf8(&column)
                     .map_err(|_| "DataRow column is not UTF-8".to_string())?
                     .parse::<i64>()
@@ -185,7 +189,9 @@ fn run(args: &Args) -> Result<String, String> {
         return Err(format!("expected 1 BindComplete, got {bind_completes}"));
     }
     if command_completes != 1 {
-        return Err(format!("expected 1 CommandComplete, got {command_completes}"));
+        return Err(format!(
+            "expected 1 CommandComplete, got {command_completes}"
+        ));
     }
     if sums != vec![42] {
         return Err(format!("expected DataRow sum=[42], got {sums:?}"));
@@ -254,7 +260,8 @@ fn run(args: &Args) -> Result<String, String> {
              bind_after_failure={bind_after_failure} execute_after_failure={execute_after_failure}"
         ));
     }
-    let ready_status = ready_after_bad.ok_or_else(|| "missing ReadyForQuery after Sync".to_string())?;
+    let ready_status =
+        ready_after_bad.ok_or_else(|| "missing ReadyForQuery after Sync".to_string())?;
     if ready_status != ReadyTransactionStatus::Idle {
         return Err(format!(
             "expected ReadyForQuery=I after Sync recovery, got {ready_status:?}"
@@ -332,9 +339,12 @@ fn run(args: &Args) -> Result<String, String> {
                     .unwrap_or(0);
             }
             BackendMessage::DataRow(row) => {
-                let column = row.columns.first().cloned().flatten().ok_or_else(|| {
-                    "reuse DataRow missing first column".to_string()
-                })?;
+                let column = row
+                    .columns
+                    .first()
+                    .cloned()
+                    .flatten()
+                    .ok_or_else(|| "reuse DataRow missing first column".to_string())?;
                 if current_format == 1 {
                     if column.len() != 4 {
                         return Err(format!(

@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Authentication-phase message types (tag `R` backend, tag `p` frontend).
 //!
@@ -111,8 +112,10 @@ impl AuthenticationRequest {
                         }
                         bytes.push(byte);
                     }
-                    let mechanism = String::from_utf8(bytes)
-                        .map_err(|_| WireError::InvalidUtf8 { field: "sasl-mechanism" })?;
+                    let mechanism =
+                        String::from_utf8(bytes).map_err(|_| WireError::InvalidUtf8 {
+                            field: "sasl-mechanism",
+                        })?;
                     mechanisms.push(mechanism);
                 }
                 Ok(Self::Sasl { mechanisms })
@@ -287,7 +290,10 @@ mod tests {
     #[test]
     fn auth_sasl_mechanism_list_roundtrip() {
         let original = AuthenticationRequest::Sasl {
-            mechanisms: vec!["SCRAM-SHA-256".to_string(), "SCRAM-SHA-256-PLUS".to_string()],
+            mechanisms: vec![
+                "SCRAM-SHA-256".to_string(),
+                "SCRAM-SHA-256-PLUS".to_string(),
+            ],
         };
         assert_eq!(roundtrip_request(&original), original);
     }
