@@ -1,0 +1,8 @@
+# Pin the workspace rustc/clippy/rustfmt versions so a CI runner that
+# happens to roll forward to a newer stable cannot silently introduce
+# new clippy lints that turn workspace builds red. Bump intentionally
+# via PR.
+[toolchain]
+channel = "1.95.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

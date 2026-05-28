@@ -1,0 +1,44 @@
+# Dependabot config for ai-blaise/citus. Bumps Cargo deps + GitHub Actions
+# workflow dependencies on the same cadence so security advisories surface
+# without a manual sweep.
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    target-branch: "bootstrap-v2"
+    commit-message:
+      prefix: "cargo"
+    labels:
+      - "deps"
+      - "rust"
+    groups:
+      tokio-stack:
+        patterns:
+          - "tokio*"
+          - "hyper*"
+          - "tonic*"
+          - "tower*"
+      rustls-stack:
+        patterns:
+          - "rustls*"
+          - "webpki*"
+      datafusion-stack:
+        patterns:
+          - "datafusion*"
+          - "arrow*"
+          - "parquet*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    target-branch: "bootstrap-v2"
+    commit-message:
+      prefix: "actions"
+    labels:
+      - "deps"
+      - "ci"

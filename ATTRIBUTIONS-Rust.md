@@ -6,6 +6,20 @@ license declared in each crate's `Cargo.toml` and the upstream
 repository URL. It is generated from `cargo metadata` and kept in
 sync by `ci/ai-blaise/license-check.sh`.
 
+## Ported source attributions
+
+The `ai_blaise_citus_pool_wire` crate is a Rust port (not a Cargo
+dependency) of upstream PostgreSQL v3 wire-protocol parsing code from
+`jackc/pgx` (`pgproto3`), MIT licensed. The upstream copyright
+notice is preserved in [pool/wire/THIRD_PARTY_NOTICES.md](pool/wire/THIRD_PARTY_NOTICES.md).
+The Rust code itself is original work; only the wire-message shapes,
+tag bytes, and encode/decode call surface mirror the upstream Go
+implementation. No Cargo dependency on `pgx` exists.
+
+| Ported source | Upstream | License | Local files |
+|---|---|---|---|
+| `pgproto3` | https://github.com/jackc/pgx | MIT | `pool/wire/src/{lib,codec,envelope,frontend,backend,startup,auth}.rs` + `pool/wire/examples/pipeline_live_smoke.rs` |
+
 ## License boundary
 
 The workspace crates published from this repository are licensed

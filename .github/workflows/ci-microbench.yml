@@ -9,6 +9,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - bootstrap-v2
   pull_request:
     paths:
       - "benchmarks/microbenches/**"

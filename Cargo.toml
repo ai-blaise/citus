@@ -38,3 +38,4 @@ resolver = "2"
 edition = "2021"
 license = "AGPL-3.0"
 repository = "https://github.com/ai-blaise/citus"
+publish = false
