@@ -37,7 +37,7 @@ fi
 log "phase 1: cargo test pool/wire + pool"
 cargo test -p ai_blaise_citus_pool_wire 2>&1 | tail -3
 cargo test -p ai_blaise_citus_pool --lib 2>&1 | tail -3
-log "ok: pool/wire (48 tests) + pool (140 tests) pass"
+log "ok: pool/wire + pool unit tests pass"
 
 phase2_result="skipped"
 

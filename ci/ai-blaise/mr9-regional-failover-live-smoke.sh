@@ -87,7 +87,13 @@ echo "surviving region:  us-west-2 (${west_container})"
 echo "backup volume:     ${backup_dir}"
 echo "postgres image:    ${postgres_image}"
 
-docker pull "${postgres_image}" >/dev/null
+for attempt in 1 2 3; do
+  if docker pull "${postgres_image}" >/dev/null; then break; fi
+  if [ "${attempt}" = "3" ]; then
+    echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
+  fi
+  sleep 5
+done
 
 # Phase 1: boot us-east-1 with a shared backup volume.
 docker run -d --name "${east_container}" \

@@ -8,6 +8,9 @@ on:
       - ai-blaise/dev
       - bootstrap-v2
 
+permissions:
+  contents: read
+
 jobs:
   scan:
     runs-on: ubuntu-latest

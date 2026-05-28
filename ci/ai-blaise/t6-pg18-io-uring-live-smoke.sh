@@ -50,7 +50,13 @@ echo "image:     ${postgres_image}"
 echo "container: ${container}"
 echo "kernel:    $(uname -r)"
 
-docker pull "${postgres_image}" >/dev/null
+for attempt in 1 2 3; do
+  if docker pull "${postgres_image}" >/dev/null; then break; fi
+  if [ "${attempt}" = "3" ]; then
+    echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
+  fi
+  sleep 5
+done
 
 docker run -d --name "${container}" \
   -e POSTGRES_PASSWORD=postgres \
