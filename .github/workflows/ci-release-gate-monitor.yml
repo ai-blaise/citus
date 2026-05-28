@@ -13,6 +13,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Install benchmark format tooling
         run: python -m pip install black==24.10.0
       - name: Run release gate monitor

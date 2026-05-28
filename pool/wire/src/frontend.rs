@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Frontend message types (client -> server) for the PostgreSQL v3 wire
 //! protocol. The pool buffers a subset of these between `Sync` points so
