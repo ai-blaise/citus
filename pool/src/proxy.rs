@@ -395,6 +395,14 @@ impl PoolProxyState {
     }
 
     fn record_extended_frame(&self, tag: u8) {
+        // CopyDone (b'c') and CopyFail (b'f') deliberately land in the
+        // "Other" bucket: they are 1-per-COPY-stream terminators (the bulk of
+        // COPY traffic is CopyData / b'd'), so giving them their own metric
+        // labels would explode label cardinality without informing routing
+        // decisions. The Password / SASL / GSS frontend frame (b'p') is
+        // also routed to "Other" because its meaning is context-dependent on
+        // the most recent backend R sub-code and the pool does not interpret
+        // auth state today.
         let counter = match tag {
             b'P' => &self.ext_query_parse_frames,
             b'B' => &self.ext_query_bind_frames,
@@ -2141,5 +2149,59 @@ mod tests {
         let counters = state.ext_query_counters();
         assert_eq!(counters.decode_errors, 1);
         assert_eq!(counters.simple_query, 0);
+    }
+
+    #[test]
+    fn forward_client_to_upstream_coalesces_partial_frame_across_reads() {
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client_addr = client_listener.local_addr().unwrap();
+        let state = Arc::new(
+            PoolProxyState::with_admission_config(PoolAdmissionConfig::default()).unwrap(),
+        );
+        let state_for_thread = Arc::clone(&state);
+
+        let forwarder_thread = thread::spawn(move || {
+            let (client_socket, _) = client_listener.accept().unwrap();
+            let mut upstream_socket = TcpStream::connect(upstream_addr).unwrap();
+            let mut reader = client_socket;
+            forward_client_to_upstream(&mut reader, &mut upstream_socket, &state_for_thread)
+                .unwrap();
+        });
+
+        let upstream_capture = thread::spawn(move || {
+            let (mut socket, _) = upstream_listener.accept().unwrap();
+            let mut buf = Vec::new();
+            socket.read_to_end(&mut buf).unwrap();
+            buf
+        });
+
+        // Send a single Q frame split across three writes with a sleep between
+        // each so the receiver definitely sees three separate reads on the
+        // header path AND on the body path. forward_client_to_upstream must
+        // coalesce them and forward the complete frame.
+        let frame = pack_simple_query("SELECT 1");
+        assert_eq!(frame.len(), 14, "Q frame should be 14 bytes for SELECT 1");
+        let mut client = TcpStream::connect(client_addr).unwrap();
+        client.set_nodelay(true).unwrap();
+        client.write_all(&frame[0..3]).unwrap();
+        client.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        client.write_all(&frame[3..5]).unwrap();
+        client.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        client.write_all(&frame[5..]).unwrap();
+        client.shutdown(Shutdown::Write).unwrap();
+        forwarder_thread.join().unwrap();
+        let captured = upstream_capture.join().unwrap();
+
+        assert_eq!(
+            captured, frame,
+            "partial-frame coalescing must reconstruct full frame to upstream"
+        );
+        let counters = state.ext_query_counters();
+        assert_eq!(counters.simple_query, 1, "one Q frame seen end-to-end");
+        assert_eq!(counters.decode_errors, 0, "no decode errors on slow writes");
     }
 }

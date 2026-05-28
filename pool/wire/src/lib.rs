@@ -39,6 +39,10 @@ pub mod frontend;
 pub mod backend;
 pub mod startup;
 
+// Auth + COPY-stream message types are forward-facing public surface: T7
+// only counts them at the tag granularity, but T8 work (auth-state-aware
+// pool routing, shard-aware COPY routing, COPY-stream-level observability)
+// will consume the typed variants. Keep them re-exported.
 pub use auth::{
     auth_codes, AuthFrontendFrame, AuthenticationRequest, GssResponseFrame, PasswordMessageFrame,
     SaslInitialResponseFrame, SaslResponseFrame,
@@ -50,6 +54,10 @@ pub use frontend::{
     DescribeFrame, DescribeTarget, ExecuteFrame, FlushFrame, FrontendMessage, ParseFrame,
     QueryFrame, SyncFrame, TerminateFrame,
 };
+// CopyBothResponse / CopyInResponse / CopyOutResponse + NegotiateProtocolVersion
+// are forward-facing alongside the auth + COPY exports above. T7 today emits
+// only frontend frame counters; backend-direction parsing will plug in here
+// when T7's reverse-direction symmetric counter set graduates from alpha.
 pub use backend::{
     BackendKeyDataFrame, BackendMessage, BindCompleteFrame, CloseCompleteFrame,
     CommandCompleteFrame, CopyBothResponseFrame, CopyInResponseFrame, CopyOutResponseFrame,

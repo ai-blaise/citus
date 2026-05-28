@@ -1517,7 +1517,7 @@ which uses only the codec to drive a real
 `Parse` followed by `Bind`/`Execute`/`Flush`/`Sync` (asserts `ErrorResponse`
 is emitted and the queued `Bind`/`Execute` do NOT run before `Sync` recovers
 to `ReadyForQuery=I`). VM-verified 2026-05-27T17:15:14Z on
-`experiment-playground-plus-2` (`wire_unit_tests=31 pool_unit_tests=136
+`experiment-playground-plus-2` (`wire_unit_tests=48 pool_unit_tests=140
 docker_runtime=true live_pipeline_result=passed`). The data-plane integration
 is proven by the additional
 `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` which runs the
