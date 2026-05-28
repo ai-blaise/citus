@@ -71,6 +71,16 @@ run_smoke_for_pg_major() {
     postgres_args+=(-c "io_method=${pg18_io_method}")
   fi
 
+  # Pre-pull with bounded retry — registry-1.docker.io transients
+  # have flaked sibling smokes (sidecar-cdc, pool-*). Matches the
+  # 3-attempt/5s pattern applied across smokes in PRs #170/#171.
+  for attempt in 1 2 3; do
+    if docker pull "${postgres_image}" >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker run \
     --name "${container}" \
     -e POSTGRES_PASSWORD=postgres \
@@ -2256,6 +2266,15 @@ run_bundle1_source_build_smoke() {
   if [[ -n "$(git status --porcelain)" ]]; then
     source_tree_state="dirty"
   fi
+  # Pre-pull the build base image with bounded retry so the FROM step
+  # in docker build does not flake on registry-1.docker.io transients.
+  for attempt in 1 2 3; do
+    if docker pull postgres:17-bookworm >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull postgres:17-bookworm failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker build \
     -f images/citus-pg-overlay/Dockerfile \
     --target "${target}" \
