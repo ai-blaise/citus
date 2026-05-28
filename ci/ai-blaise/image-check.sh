@@ -626,8 +626,15 @@ grep -Fq "CREATE FUNCTION companion_ai_chat_stream" "${image_dir}/extensions/ai_
 grep -Fq "CREATE FUNCTION companion_internal.register_semantic_catalog_object" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_semantic_text_to_sql_intent" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "sql-intent-fail-closed-only" "${ai_sql_contract_smoke}"
-grep -Fq "AI provider runtime is unavailable" "${ai_sql_contract_smoke}"
-grep -Fq "text-to-SQL execution is unavailable" "${ai_sql_contract_smoke}"
+# A10/A11 were promoted to live-provider-execution in 99515df34 (no more
+# fail-closed exception messages). Live coverage is in the new live smoke;
+# verify it exists, exercises both live evidence boundaries, and is wired
+# into ci-image.yml so we cannot regress to "contract-only".
+a10_a11_ai_sql_live_smoke="ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh"
+test -r "${a10_a11_ai_sql_live_smoke}"
+grep -Fq "live-provider-execution" "${a10_a11_ai_sql_live_smoke}"
+grep -Fq "live-provider-execution-safety-validated" "${a10_a11_ai_sql_live_smoke}"
+grep -Fq "a10-a11-ai-sql-live-smoke.sh" ".github/workflows/ci-image.yml"
 grep -Fq "CREATE FUNCTION companion_internal.assert_shared_preload_libraries" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.get_violations" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "CREATE FUNCTION companion_internal.register_toolkit_aggregate_plan" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
