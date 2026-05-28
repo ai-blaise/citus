@@ -28,8 +28,6 @@ jobs:
       - name: Check production gap guardrails
         run: bash ci/ai-blaise/production-gap-audit.sh
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
       - name: Run release gate monitor static contract
         run: RELEASE_GATE_MONITOR_STATIC=1 bash ci/ai-blaise/release-gate-monitor.sh --local-only
       - name: Check runbook command examples

@@ -222,6 +222,15 @@ require_status 401 "${oidc_replay}"
 if [[ "${REQUIRE_DOCKER:-0}" == "1" ]]; then
   command -v docker >/dev/null
   pg_container="auth-sidecar-smoke-${RANDOM}-${RANDOM}"
+  # Pre-pull with bounded retry — matches the pattern applied across
+  # sibling smokes (sidecar-cdc, sql-extension, pool-*) in PRs #170/#171.
+  for attempt in 1 2 3; do
+    if docker pull postgres:17 >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull postgres:17 failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker run -d --name "${pg_container}" -e POSTGRES_PASSWORD=postgres postgres:17 >/dev/null
   pg_ready=0
   init_complete=0

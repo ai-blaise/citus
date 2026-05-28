@@ -222,8 +222,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: clippy, rustfmt
       - name: Run API sidecar runtime smoke
         run: bash ci/ai-blaise/sidecar-api-runtime-smoke.sh
 
