@@ -362,7 +362,7 @@ fn days_in_month(year: u32, month: u32) -> u32 {
 }
 
 fn is_leap_year(year: u32) -> bool {
-    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1362,9 +1362,7 @@ fn json_optional_u16(body: &str, key: &str) -> Result<Option<u16>, BackupSidecar
 }
 
 fn json_u32(body: &str, key: &str) -> Option<u32> {
-    let Some((digits, trailing)) = json_unsigned_number(body, key).ok().flatten() else {
-        return None;
-    };
+    let (digits, trailing) = json_unsigned_number(body, key).ok().flatten()?;
     if validate_json_number_trailing(trailing).is_err() {
         return None;
     }

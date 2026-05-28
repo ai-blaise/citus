@@ -208,10 +208,7 @@ fn serve_lsp_stdio<R: Read, W: Write>(
         shutdown_requested: false,
     };
 
-    loop {
-        let Some(body) = read_lsp_frame(&mut reader)? else {
-            break;
-        };
+    while let Some(body) = read_lsp_frame(&mut reader)? {
         let messages = match serde_json::from_str::<Value>(&body) {
             Ok(message) => handle_lsp_message(&mut state, message),
             Err(error) => vec![jsonrpc_error(

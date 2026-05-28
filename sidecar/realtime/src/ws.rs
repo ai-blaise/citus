@@ -5,6 +5,7 @@
 //! sidecar only speaks Phoenix-channel JSON text frames over the wire.
 //! Compression, extensions, and binary frames are not implemented; the
 //! handshake refuses any client that requires them.
+#![allow(clippy::doc_lazy_continuation)]
 
 // FEATURE: RT1
 // FEATURE: RT2
@@ -404,7 +405,7 @@ fn sha1(message: &[u8]) -> [u8; 20] {
 
 fn base64_encode(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut output = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut index = 0;
     while index + 3 <= bytes.len() {
         let a = bytes[index];

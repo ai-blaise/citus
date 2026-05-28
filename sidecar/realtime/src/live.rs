@@ -491,7 +491,7 @@ pub fn handle_cdc_ingest_stream<R: Read>(
 ) -> std::io::Result<()> {
     let mut header = [0_u8; 4];
     loop {
-        if let Err(_) = stream.read_exact(&mut header) {
+        if stream.read_exact(&mut header).is_err() {
             return Ok(());
         }
         let length = u32::from_be_bytes(header) as usize;

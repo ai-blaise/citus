@@ -2201,11 +2201,11 @@ fn utc_timestamp_epoch_seconds(value: &str) -> Result<i64, CitusCtlError> {
         return Err(CitusCtlError::InvalidTimestamp);
     }
     let year = parse_fixed_digits(&value[0..4])? as i32;
-    let month = parse_fixed_digits(&value[5..7])? as u32;
-    let day = parse_fixed_digits(&value[8..10])? as u32;
-    let hour = parse_fixed_digits(&value[11..13])? as u32;
-    let minute = parse_fixed_digits(&value[14..16])? as u32;
-    let second = parse_fixed_digits(&value[17..19])? as u32;
+    let month = parse_fixed_digits(&value[5..7])?;
+    let day = parse_fixed_digits(&value[8..10])?;
+    let hour = parse_fixed_digits(&value[11..13])?;
+    let minute = parse_fixed_digits(&value[14..16])?;
+    let second = parse_fixed_digits(&value[17..19])?;
 
     if !(1..=12).contains(&month) || hour > 23 || minute > 59 || second > 59 {
         return Err(CitusCtlError::InvalidTimestamp);

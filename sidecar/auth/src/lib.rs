@@ -723,7 +723,7 @@ impl AuthEngine {
             ));
         }
         let secret_bytes = match std::env::var("AI_BLAISE_AUTH_HS256_SECRET") {
-            Ok(value) if value.as_bytes().len() >= 32 => value.into_bytes(),
+            Ok(value) if value.len() >= 32 => value.into_bytes(),
             Ok(_) => {
                 return Err(AuthSidecarError::Runtime(
                     "AI_BLAISE_AUTH_HS256_SECRET must be at least 32 bytes".to_string(),
@@ -1504,7 +1504,7 @@ fn sha256(message: &[u8]) -> [u8; 32] {
     ];
 
     let bit_len = (message.len() as u64).wrapping_mul(8);
-    let mut padded = Vec::with_capacity(((message.len() + 9 + 63) / 64) * 64);
+    let mut padded = Vec::with_capacity((message.len() + 9).div_ceil(64) * 64);
     padded.extend_from_slice(message);
     padded.push(0x80);
     while padded.len() % 64 != 56 {
@@ -1741,7 +1741,7 @@ fn verify_password(stored: &PasswordHash, password: &str) -> Result<bool, AuthSi
 /// Pure-Rust PBKDF2-HMAC-SHA256, matching RFC 2898.
 fn pbkdf2_sha256(password: &[u8], salt: &[u8], iterations: u32, output_len: usize) -> Vec<u8> {
     let hash_len = 32_usize;
-    let blocks = (output_len + hash_len - 1) / hash_len;
+    let blocks = output_len.div_ceil(hash_len);
     let mut output = Vec::with_capacity(output_len);
     for block in 1..=blocks {
         let mut salt_block = Vec::with_capacity(salt.len() + 4);
@@ -1836,7 +1836,7 @@ fn sha1(message: &[u8]) -> [u8; 20] {
     let mut h4: u32 = 0xC3D2_E1F0;
 
     let bit_len = (message.len() as u64).wrapping_mul(8);
-    let mut padded = Vec::with_capacity(((message.len() + 9 + 63) / 64) * 64);
+    let mut padded = Vec::with_capacity((message.len() + 9).div_ceil(64) * 64);
     padded.extend_from_slice(message);
     padded.push(0x80);
     while padded.len() % 64 != 56 {
@@ -1860,6 +1860,7 @@ fn sha1(message: &[u8]) -> [u8; 20] {
         let mut c = h2;
         let mut d = h3;
         let mut e = h4;
+        #[allow(clippy::needless_range_loop)] // SHA-1 round-mixing: index access is the textbook form
         for i in 0..80 {
             let (f, k) = if i < 20 {
                 ((b & c) | ((!b) & d), 0x5A82_7999)
@@ -1900,7 +1901,7 @@ fn sha1(message: &[u8]) -> [u8; 20] {
 /// Base32 (RFC 4648) encoder used for authenticator-app secrets.
 fn base32_encode(input: &[u8]) -> String {
     const ALPHABET: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let mut output = String::with_capacity((input.len() + 4) / 5 * 8);
+    let mut output = String::with_capacity(input.len().div_ceil(5) * 8);
     let mut buffer: u64 = 0;
     let mut bits = 0_u32;
     for byte in input {

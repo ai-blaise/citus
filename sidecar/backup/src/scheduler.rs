@@ -124,7 +124,7 @@ impl ScheduleField {
     fn matches(&self, value: u32) -> bool {
         match self {
             Self::Wildcard => true,
-            Self::Step(step) => value % step == 0,
+            Self::Step(step) => value.is_multiple_of(*step),
             Self::Values(values) => values.contains(&value),
         }
     }
