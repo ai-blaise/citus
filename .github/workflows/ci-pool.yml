@@ -13,13 +13,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
         run: cargo check -p ai_blaise_citus_pool --all-targets
-      - name: Test
+      - name: Check pool/wire tests
+        run: cargo check -p ai_blaise_citus_pool_wire --all-targets
+      - name: Clippy pool + pool/wire (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_pool -p ai_blaise_citus_pool_wire --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_pool -p ai_blaise_citus_pool_wire --no-deps
+      - name: Test pool
         run: cargo test -p ai_blaise_citus_pool
+      - name: Test pool/wire
+        run: cargo test -p ai_blaise_citus_pool_wire
       - name: Smoke PostgreSQL traffic through pool proxy
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-proxy-smoke.sh
+      - name: Smoke extended-query pipeline against postgres
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-extended-query-pipeline-live-smoke.sh
+      - name: Smoke extended-query pipeline through pool data port
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh
       - name: Run canonical pool execution report
         run: cargo run -q -p ai_blaise_citus_pool -- run-canonical

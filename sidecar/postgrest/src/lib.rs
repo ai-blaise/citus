@@ -1003,7 +1003,7 @@ fn proxy_postgrest_request(
     }
     outbound.push_str(&format!(
         "Content-Length: {}\r\n\r\n{}",
-        request.body.as_bytes().len(),
+        request.body.len(),
         request.body
     ));
 

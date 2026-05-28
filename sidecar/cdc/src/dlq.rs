@@ -2,7 +2,7 @@
 //!
 //! The DLQ is intentionally minimal: it owns an append-only in-memory log
 //! plus an optional on-disk sidecar file. The runtime calls [`Dlq::enqueue`]
-//! when a sink dispatch exceeds [`DeliveryRetryPolicy::max_attempts`].
+//! when a sink dispatch exceeds the retry policy max attempts.
 //! Operators drain the DLQ by reading the file (one JSON record per line)
 //! or by querying the in-memory log through `GET /dlq` on the control plane.
 

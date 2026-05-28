@@ -36,20 +36,19 @@ impl CitusLspPlan {
                     columns,
                     distribution_column,
                     tenant_column,
-                } if self.rule_enabled(LspRule::MissingDistributionColumnQuickFix) => {
-                    if distribution_column
+                } if self.rule_enabled(LspRule::MissingDistributionColumnQuickFix)
+                    && distribution_column
                         .as_deref()
                         .unwrap_or("")
                         .trim()
                         .is_empty()
-                    {
+                    => {
                         diagnostics.push(missing_distribution_column_diagnostic(
                             table,
                             columns,
                             tenant_column.as_deref(),
                         )?);
                     }
-                }
                 SqlIntent::Join {
                     left_table,
                     right_table,
@@ -160,8 +159,8 @@ impl CitusLspPlan {
                     index_name,
                     table,
                     analyzer,
-                } if self.rule_enabled(LspRule::MissingSearchAnalyzer) => {
-                    if analyzer.as_deref().unwrap_or("").trim().is_empty() {
+                } if self.rule_enabled(LspRule::MissingSearchAnalyzer)
+                    && analyzer.as_deref().unwrap_or("").trim().is_empty() => {
                         diagnostics.push(LspDiagnostic {
                             code: LspDiagnosticCode::MissingSearchAnalyzer,
                             severity: DiagnosticSeverity::Warning,
@@ -178,7 +177,6 @@ impl CitusLspPlan {
                             }),
                         });
                     }
-                }
                 _ => {}
             }
         }
@@ -1061,7 +1059,7 @@ fn where_columns(statement: &str) -> Vec<String> {
     };
     let where_clause = &normalized[where_offset + " where ".len()..];
     let mut columns = Vec::new();
-    for predicate in where_clause.split(|ch| matches!(ch, '=' | '<' | '>' | ',' | ')' | '(')) {
+    for predicate in where_clause.split(['=', '<', '>', ',', ')', '(']) {
         let Some(identifier) = first_identifier(predicate) else {
             continue;
         };

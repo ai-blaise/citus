@@ -782,7 +782,7 @@ impl EdgeFunctionRuntimeHost {
             self.state.db_callbacks += 1;
         }
     }
-
+    #[allow(clippy::too_many_arguments)] // internal helper consumed by render_invocation; refactor planned with the EF6 alpha follow-up
     fn render_invocation_execution(
         &self,
         request: &InvocationRequest,

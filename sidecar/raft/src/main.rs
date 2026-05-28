@@ -678,7 +678,7 @@ fn encode_hex(bytes: &[u8]) -> String {
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err("hex payload has odd length".to_string());
     }
     let mut decoded = Vec::with_capacity(value.len() / 2);
@@ -734,6 +734,16 @@ fn error_response(status_code: u16, detail: &str) -> HttpProbeResponse {
     )
 }
 
+fn decision_fields(decision: &FailoverDecision) -> (&'static str, &str, &str) {
+    match decision {
+        FailoverDecision::KeepLeader { node_id } => ("keep_leader", node_id.as_str(), "none"),
+        FailoverDecision::Promote { node_id, cnpg_pod } => {
+            ("promote", node_id.as_str(), cnpg_pod.as_str())
+        }
+        FailoverDecision::WaitForQuorum => ("wait_for_quorum", "none", "none"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,15 +783,5 @@ mod tests {
         let messages = parse_routed_messages(&body).unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].0, "worker-a");
-    }
-}
-
-fn decision_fields(decision: &FailoverDecision) -> (&'static str, &str, &str) {
-    match decision {
-        FailoverDecision::KeepLeader { node_id } => ("keep_leader", node_id.as_str(), "none"),
-        FailoverDecision::Promote { node_id, cnpg_pod } => {
-            ("promote", node_id.as_str(), cnpg_pod.as_str())
-        }
-        FailoverDecision::WaitForQuorum => ("wait_for_quorum", "none", "none"),
     }
 }

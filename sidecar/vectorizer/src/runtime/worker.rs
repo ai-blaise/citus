@@ -427,7 +427,7 @@ impl VectorizerRuntime {
         metrics.rows_failed += rows.len() as u64;
     }
 
-    /// Run the poll loop until [`shutdown_handle`] is notified.
+    /// Run the poll loop until the worker shutdown signal is notified.
     pub async fn run_until_shutdown(&self) -> Result<(), RuntimeError> {
         let shutdown = self.shutdown.clone();
         loop {

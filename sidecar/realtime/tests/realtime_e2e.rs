@@ -19,9 +19,11 @@ use std::time::Duration;
 
 #[test]
 fn realtime_e2e_join_and_broadcast() {
-    let mut config = RealtimeLiveConfig::default();
-    config.ws_listen_addr = ephemeral_addr();
-    config.cdc_ingest_addr = ephemeral_addr();
+    let config = RealtimeLiveConfig {
+        ws_listen_addr: ephemeral_addr(),
+        cdc_ingest_addr: ephemeral_addr(),
+        ..Default::default()
+    };
     let runtime = RealtimeLiveRuntime::new(config.clone());
     let _ws_thread = runtime.spawn_ws_listener().expect("ws bind");
     let _cdc_thread = runtime
@@ -38,14 +40,12 @@ fn realtime_e2e_join_and_broadcast() {
         .expect("wt");
 
     // Send WS upgrade request.
-    let request = format!(
-        "GET /realtime/v1/websocket?vsn=2.0.0 HTTP/1.1\r\n\
+    let request = "GET /realtime/v1/websocket?vsn=2.0.0 HTTP/1.1\r\n\
          Host: localhost\r\n\
          Upgrade: websocket\r\n\
          Connection: Upgrade\r\n\
          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-         Sec-WebSocket-Version: 13\r\n\r\n"
-    );
+         Sec-WebSocket-Version: 13\r\n\r\n".to_string();
     client.write_all(request.as_bytes()).expect("write upgrade");
 
     // Read handshake response.
