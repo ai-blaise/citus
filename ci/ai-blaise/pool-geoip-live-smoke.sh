@@ -78,6 +78,17 @@ trap cleanup EXIT
 start_regional_postgres() {
   local container="$1"
   local port="$2"
+  # Pre-pull with bounded retry to keep the 60s ready-wait
+  # budget for actual init time, not for registry-1.docker.io
+  # pulls. Matches the retry pattern used in t6-pg18-io-uring,
+  # mr9-regional-failover, and sidecar-cdc smokes.
+  for attempt in 1 2 3; do
+    if docker pull "${postgres_image}" >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker run -d --name "${container}" \
     -p "127.0.0.1:${port}:5432" \
     -e POSTGRES_PASSWORD=postgres \

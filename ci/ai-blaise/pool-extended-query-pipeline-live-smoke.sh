@@ -51,6 +51,17 @@ if [ "${require_docker}" = "1" ]; then
   trap cleanup EXIT
 
   log "phase 2: boot ${postgres_image}"
+  # Pre-pull with bounded retry to keep the 60s ready-wait
+  # budget for actual init time, not for registry-1.docker.io
+  # pulls. Matches the retry pattern used in t6-pg18-io-uring,
+  # mr9-regional-failover, and sidecar-cdc smokes.
+  for attempt in 1 2 3; do
+    if docker pull "${postgres_image}" >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker run -d --name "${pg_container}" \
     -e POSTGRES_PASSWORD=postgres \
     -e POSTGRES_HOST_AUTH_METHOD=trust \

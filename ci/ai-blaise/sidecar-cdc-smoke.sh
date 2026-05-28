@@ -154,6 +154,16 @@ PY
 
 if command -v docker >/dev/null 2>&1; then
   pg_container="ai-blaise-cdc-ddl-${RANDOM}-$$"
+  # Pre-pull with bounded retry — registry-1.docker.io unknown: transients
+  # have hit this smoke on bootstrap-v2 merges; matches the same 3-attempt
+  # 5s backoff applied to t6-pg18-io-uring and mr9-regional-failover in PR #170.
+  for attempt in 1 2 3; do
+    if docker pull postgres:17-bookworm >/dev/null; then break; fi
+    if [ "${attempt}" = "3" ]; then
+      echo "docker pull postgres:17-bookworm failed after 3 attempts" >&2; exit 1
+    fi
+    sleep 5
+  done
   docker run \
     --name "${pg_container}" \
     -e POSTGRES_HOST_AUTH_METHOD=trust \
