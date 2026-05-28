@@ -14,8 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_companion (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_companion --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_companion
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_companion --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_companion --all-targets
       - name: Test

@@ -45,7 +45,8 @@ fn realtime_e2e_join_and_broadcast() {
          Upgrade: websocket\r\n\
          Connection: Upgrade\r\n\
          Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
-         Sec-WebSocket-Version: 13\r\n\r\n".to_string();
+         Sec-WebSocket-Version: 13\r\n\r\n"
+        .to_string();
     client.write_all(request.as_bytes()).expect("write upgrade");
 
     // Read handshake response.

@@ -67,7 +67,8 @@ pub use execution::{
 };
 pub use proxy::{
     handle_admin_request, handle_proxy_connection, run_pool_service, run_pool_service_from_env,
-    AdminRequest, ClientCidrAllowlist, ExtQueryCounters, PoolProxyConfig, PoolProxyError, PoolProxyState,
+    AdminRequest, ClientCidrAllowlist, ExtQueryCounters, PoolProxyConfig, PoolProxyError,
+    PoolProxyState,
 };
 pub use runtime::{
     FastPathRouterPolicy, GeoRoutingPolicy, GeoRoutingRule, HtapRoutingPolicy, MirrorTrafficPolicy,

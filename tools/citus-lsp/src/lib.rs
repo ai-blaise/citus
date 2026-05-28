@@ -41,14 +41,14 @@ impl CitusLspPlan {
                         .as_deref()
                         .unwrap_or("")
                         .trim()
-                        .is_empty()
-                    => {
-                        diagnostics.push(missing_distribution_column_diagnostic(
-                            table,
-                            columns,
-                            tenant_column.as_deref(),
-                        )?);
-                    }
+                        .is_empty() =>
+                {
+                    diagnostics.push(missing_distribution_column_diagnostic(
+                        table,
+                        columns,
+                        tenant_column.as_deref(),
+                    )?);
+                }
                 SqlIntent::Join {
                     left_table,
                     right_table,
@@ -160,23 +160,24 @@ impl CitusLspPlan {
                     table,
                     analyzer,
                 } if self.rule_enabled(LspRule::MissingSearchAnalyzer)
-                    && analyzer.as_deref().unwrap_or("").trim().is_empty() => {
-                        diagnostics.push(LspDiagnostic {
-                            code: LspDiagnosticCode::MissingSearchAnalyzer,
-                            severity: DiagnosticSeverity::Warning,
-                            message: format!(
-                                "search index {} on {} should declare an analyzer",
-                                index_name, table
-                            ),
-                            quick_fix: Some(LspQuickFix {
-                                title: "Use default analyzer".to_string(),
-                                action: LspQuickFixAction::SetSearchAnalyzer {
-                                    index_name: index_name.clone(),
-                                    analyzer: "english".to_string(),
-                                },
-                            }),
-                        });
-                    }
+                    && analyzer.as_deref().unwrap_or("").trim().is_empty() =>
+                {
+                    diagnostics.push(LspDiagnostic {
+                        code: LspDiagnosticCode::MissingSearchAnalyzer,
+                        severity: DiagnosticSeverity::Warning,
+                        message: format!(
+                            "search index {} on {} should declare an analyzer",
+                            index_name, table
+                        ),
+                        quick_fix: Some(LspQuickFix {
+                            title: "Use default analyzer".to_string(),
+                            action: LspQuickFixAction::SetSearchAnalyzer {
+                                index_name: index_name.clone(),
+                                analyzer: "english".to_string(),
+                            },
+                        }),
+                    });
+                }
                 _ => {}
             }
         }

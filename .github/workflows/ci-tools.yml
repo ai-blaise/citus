@@ -13,8 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_mcp (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_mcp --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_mcp
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_mcp --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_mcp --all-targets
       - name: Test
@@ -31,6 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
@@ -49,8 +57,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_lsp (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_lsp --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_lsp
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_lsp --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_lsp --all-targets
       - name: Test
@@ -63,6 +77,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
       - name: Check tests
@@ -83,8 +99,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_watch (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_watch --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_watch
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_watch --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_watch --all-targets
       - name: Test
@@ -97,8 +119,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_schema_designer (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_schema_designer --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_schema_designer
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_schema_designer --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_schema_designer --all-targets
       - name: Test
@@ -111,8 +139,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_tui (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_tui --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_tui
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_tui --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_tui --all-targets
       - name: Test
@@ -125,8 +159,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_admin (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_admin --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_admin
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_admin --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_admin --all-targets
       - name: Test

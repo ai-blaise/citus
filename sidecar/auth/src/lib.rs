@@ -1860,7 +1860,8 @@ fn sha1(message: &[u8]) -> [u8; 20] {
         let mut c = h2;
         let mut d = h3;
         let mut e = h4;
-        #[allow(clippy::needless_range_loop)] // SHA-1 round-mixing: index access is the textbook form
+        #[allow(clippy::needless_range_loop)]
+        // SHA-1 round-mixing: index access is the textbook form
         for i in 0..80 {
             let (f, k) = if i < 20 {
                 ((b & c) | ((!b) & d), 0x5A82_7999)

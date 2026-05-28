@@ -33,10 +33,10 @@
 #![deny(missing_debug_implementations)]
 
 pub mod auth;
+pub mod backend;
 pub mod codec;
 pub mod envelope;
 pub mod frontend;
-pub mod backend;
 pub mod startup;
 
 // Auth + COPY-stream message types are forward-facing public surface: T7
@@ -50,9 +50,9 @@ pub use auth::{
 pub use codec::{PgReader, PgWriteBuf, WireError};
 pub use envelope::{FrameHeader, FRAME_HEADER_LEN};
 pub use frontend::{
-    BindFrame, CloseFrame, CloseTarget, CopyDataFrame, CopyDoneFrame, CopyFailFrame,
-    DescribeFrame, DescribeTarget, ExecuteFrame, FlushFrame, FrontendMessage, ParseFrame,
-    QueryFrame, SyncFrame, TerminateFrame,
+    BindFrame, CloseFrame, CloseTarget, CopyDataFrame, CopyDoneFrame, CopyFailFrame, DescribeFrame,
+    DescribeTarget, ExecuteFrame, FlushFrame, FrontendMessage, ParseFrame, QueryFrame, SyncFrame,
+    TerminateFrame,
 };
 // CopyBothResponse / CopyInResponse / CopyOutResponse + NegotiateProtocolVersion
 // are forward-facing alongside the auth + COPY exports above. T7 today emits
@@ -67,8 +67,8 @@ pub use backend::{
     ReadyForQueryFrame, ReadyTransactionStatus, RowDescriptionFrame, RowField,
 };
 pub use startup::{
-    CancelRequest, GssEncRequest, SslRequest, StartupEnvelope, StartupMessage,
-    CANCEL_REQUEST_CODE, GSSENC_REQUEST_CODE, PROTOCOL_VERSION_3_0, SSL_REQUEST_CODE,
+    CancelRequest, GssEncRequest, SslRequest, StartupEnvelope, StartupMessage, CANCEL_REQUEST_CODE,
+    GSSENC_REQUEST_CODE, PROTOCOL_VERSION_3_0, SSL_REQUEST_CODE,
 };
 
 /// Maximum number of bytes the codec will accept for any single message body.

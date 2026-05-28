@@ -282,10 +282,9 @@ impl fmt::Display for PipelineError {
             ),
             Self::Runtime(error) => write!(formatter, "{error}"),
             Self::Wire(error) => write!(formatter, "{error}"),
-            Self::NonExtendedTag { tag } => write!(
-                formatter,
-                "tag 0x{tag:02x} is not an extended-query frame"
-            ),
+            Self::NonExtendedTag { tag } => {
+                write!(formatter, "tag 0x{tag:02x} is not an extended-query frame")
+            }
         }
     }
 }

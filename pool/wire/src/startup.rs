@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Startup-phase envelopes for the PostgreSQL v3 wire protocol.
 //!
@@ -130,11 +131,8 @@ impl StartupMessage {
             // hand to keep `PgReader` simple.
             let key = decode_startup_cstring(next, &mut reader, "startup-parameter-key")?;
             let value_first = reader.read_u8()?;
-            let value = decode_startup_cstring(
-                value_first,
-                &mut reader,
-                "startup-parameter-value",
-            )?;
+            let value =
+                decode_startup_cstring(value_first, &mut reader, "startup-parameter-value")?;
             parameters.push((key, value));
         }
         Ok(Self {
@@ -234,7 +232,10 @@ mod tests {
         assert_eq!(round, original);
         if let StartupEnvelope::Startup(message) = round {
             assert_eq!(message.parameter("user"), Some("tenant_a"));
-            assert_eq!(message.parameter("application_name"), Some("ai-blaise-test"));
+            assert_eq!(
+                message.parameter("application_name"),
+                Some("ai-blaise-test")
+            );
         } else {
             unreachable!()
         }
@@ -255,10 +256,7 @@ mod tests {
         StartupEnvelope::Ssl(SslRequest).encode(&mut buf);
         let bytes = buf.into_inner();
         assert_eq!(bytes.len(), 8);
-        assert_eq!(
-            u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
-            8
-        );
+        assert_eq!(u32::from_be_bytes(bytes[0..4].try_into().unwrap()), 8);
         assert_eq!(
             u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
             SSL_REQUEST_CODE

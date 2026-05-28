@@ -4,6 +4,10 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
+if ! command -v cargo >/dev/null 2>&1 && [ -x "${HOME}/.cargo/bin/cargo" ]; then
+  export PATH="${HOME}/.cargo/bin:${PATH}"
+fi
+
 report="$(cargo run -q -p ai_blaise_citus_pool -- run-canonical)"
 
 REPORT="${report}" python3 - <<PY

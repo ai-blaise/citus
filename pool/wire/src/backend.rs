@@ -1,4 +1,5 @@
 // FEATURE: T7
+// Derived from jackc/pgx pgproto3 (MIT).
 
 //! Backend message types (server -> client) for the PostgreSQL v3 wire
 //! protocol. The pool produces a handful of these directly (`ErrorResponse`
@@ -206,7 +207,9 @@ impl CommandCompleteFrame {
 
     pub fn decode(body: &[u8]) -> Result<Self, WireError> {
         let mut reader = PgReader::new(body);
-        let tag = reader.read_cstring_utf8("command-complete-tag")?.to_string();
+        let tag = reader
+            .read_cstring_utf8("command-complete-tag")?
+            .to_string();
         Ok(Self { tag })
     }
 }
@@ -393,8 +396,12 @@ impl NotificationResponseFrame {
     pub fn decode(body: &[u8]) -> Result<Self, WireError> {
         let mut reader = PgReader::new(body);
         let process_id = reader.read_i32()?;
-        let channel = reader.read_cstring_utf8("notification-channel")?.to_string();
-        let payload = reader.read_cstring_utf8("notification-payload")?.to_string();
+        let channel = reader
+            .read_cstring_utf8("notification-channel")?
+            .to_string();
+        let payload = reader
+            .read_cstring_utf8("notification-payload")?
+            .to_string();
         Ok(Self {
             process_id,
             channel,
@@ -449,8 +456,12 @@ impl ParameterStatusFrame {
 
     pub fn decode(body: &[u8]) -> Result<Self, WireError> {
         let mut reader = PgReader::new(body);
-        let name = reader.read_cstring_utf8("parameter-status-name")?.to_string();
-        let value = reader.read_cstring_utf8("parameter-status-value")?.to_string();
+        let name = reader
+            .read_cstring_utf8("parameter-status-name")?
+            .to_string();
+        let value = reader
+            .read_cstring_utf8("parameter-status-value")?
+            .to_string();
         Ok(Self { name, value })
     }
 }

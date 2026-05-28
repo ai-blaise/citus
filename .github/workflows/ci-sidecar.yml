@@ -14,8 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_analytical (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_analytical --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_analytical
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_analytical --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_analytical --all-targets
       - name: Test
@@ -42,8 +48,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_shared (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_shared --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_shared
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_shared --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_shared --all-targets
       - name: Test
@@ -56,8 +68,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_vectorizer (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_vectorizer --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_vectorizer
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_vectorizer --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_vectorizer --all-targets
       - name: Test
@@ -72,8 +90,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_auth (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_auth --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_auth
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_auth --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_auth --all-targets
       - name: Test
@@ -88,8 +112,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_backup (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_backup --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_backup
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_backup --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_backup --all-targets
       - name: Test
@@ -106,8 +136,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_cdc (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_cdc --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_cdc
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_cdc --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_cdc --all-targets
       - name: Test
@@ -124,8 +160,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_coldtier (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_coldtier --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_coldtier
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_coldtier --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_coldtier --all-targets
       - name: Test
@@ -142,8 +184,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_edge_functions (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_edge_functions --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_edge_functions
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_edge_functions --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_edge_functions --all-targets
       - name: Test
@@ -168,6 +216,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Run API sidecar runtime smoke
         run: bash ci/ai-blaise/sidecar-api-runtime-smoke.sh
 
@@ -176,8 +226,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_graphql (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_graphql --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_graphql
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_graphql --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
       - name: Test
@@ -190,8 +246,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_hlc (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_hlc --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_hlc
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_hlc --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_hlc --all-targets
       - name: Test
@@ -204,8 +266,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_mcp (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_mcp --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_mcp
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_mcp --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_mcp --all-targets
       - name: Test
@@ -222,8 +290,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_postgrest (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_postgrest --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_postgrest
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_postgrest --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_postgrest --all-targets
       - name: Test
@@ -238,8 +312,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_raft (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_raft --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_raft
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_raft --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_raft --all-targets
       - name: Test
@@ -252,8 +332,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_realtime (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_realtime --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_realtime
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_realtime --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_realtime --all-targets
       - name: Test
@@ -270,8 +356,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_repack (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_repack --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_repack
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_repack --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_repack --all-targets
       - name: Test
@@ -286,8 +378,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_schema_job (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_schema_job --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_schema_job
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_schema_job --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_schema_job --all-targets
       - name: Test
@@ -302,8 +400,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_storage (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_storage --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_storage
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_storage --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_storage --all-targets
       - name: Test
@@ -320,8 +424,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citus_sidecar_txn_status (warnings denied)
+        run: cargo clippy -p ai_blaise_citus_sidecar_txn_status --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_txn_status
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_txn_status --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citus_sidecar_txn_status --all-targets
       - name: Test
