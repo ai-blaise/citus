@@ -6,9 +6,9 @@
     "reference_branch": "bootstrap-v2-intermediate",
     "reference_branch_use": "reference only; do not base merge-order work on this branch",
     "pr_number_min": 70,
-    "captured_at": "2026-05-24T06:14:25Z",
+    "captured_at": "2026-05-28T15:30:00Z",
     "generated_with": "gh pr list --repo ai-blaise/citus --state open --base bootstrap-v2 --limit 200 --json number,title,baseRefName,headRefName,isDraft,mergeStateStatus,reviewDecision,labels,author,updatedAt,url",
-    "post_landing_note": "All open bootstrap-v2 PRs in the post-runtime-durability manifest (#97, #99, #100, #102, #103, #105, and draft #109) are recorded as landed by the direct final release/patch integration batch. Earlier direct bootstrap-v2 batches landed PRs #70-#96, #98, #101, #104, and #106-#108."
+    "post_landing_note": "All PRs in the original post-runtime-durability manifest (#97, #99, #100, #102, #103, #105, draft #109) landed in earlier direct batches. Subsequent T7 sweeps PR #160-#172 landed pgproto3 Rust port, workspace CI hardening, RUSTSEC fixes, workflow toolchain pin, docker pull retries, Node 24 opt-in (2026-06-02 deadline), and CI cleanup. bootstrap-v2 HEAD is now consistently all-18-workflows-green; the merge-plan manifest is closed. Re-snapshot via `ci/ai-blaise/bootstrap-v2-merge-plan-check.py --live` before any future batch."
   },
   "checklist": [
     {

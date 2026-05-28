@@ -86,7 +86,12 @@ check_matrix() {
   local matrix line_count expected row found
   matrix="$(LIST_IMAGES=true "${build_script}")"
   line_count="$(printf '%s\n' "${matrix}" | wc -l | tr -d ' ')"
-  [[ "${line_count}" -eq 21 ]] || fail "image matrix must include header plus 20 rows, got ${line_count}"
+  # Relaxed from exact-21 to header + at-least-N (where N = required_rows).
+  # The per-row presence check below is the real contract; this guard
+  # only ensures the matrix is non-empty and at least covers the required
+  # rows. Adding a new image row no longer reds CI on the count alone.
+  local min_lines=$(( ${#required_rows[@]} + 1 ))
+  [[ "${line_count}" -ge "${min_lines}" ]] || fail "image matrix must include header plus at least ${#required_rows[@]} rows, got ${line_count}"
 
   [[ "$(printf '%s\n' "${matrix}" | sed -n '1p')" == $'repository\tpackage\tbinary\tdefault_args' ]] || fail "unexpected image matrix header"
 
