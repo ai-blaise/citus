@@ -41,6 +41,10 @@ jobs:
           components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
+      - name: Clippy ai_blaise_citusctl (warnings denied)
+        run: cargo clippy -p ai_blaise_citusctl --all-targets -- -D warnings
+      - name: Rustdoc broken-intra-doc-links ai_blaise_citusctl
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citusctl --no-deps
       - name: Check tests
         run: cargo check -p ai_blaise_citusctl --tests
       - name: Test
