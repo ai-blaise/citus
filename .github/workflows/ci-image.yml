@@ -18,7 +18,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check image extension contract
         run: bash ci/ai-blaise/image-check.sh
       - name: Check Bundle1 source-build contract
@@ -61,7 +61,7 @@ jobs:
       matrix:
         pg_major: ["17", "18"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build overlay image for PG${{ matrix.pg_major }}
         run: |
           docker build \
