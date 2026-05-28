@@ -9660,7 +9660,7 @@ Production evidence:
   `RowDescription`, the `StartupMessage`/`CancelRequest`/`SslRequest`/
   `GssEncRequest` envelopes, and the 11 `AuthenticationRequest` sub-codes
   plus `PasswordMessage`/`SaslInitialResponse`/`SaslResponse`/`GssResponse`).
-- `cargo test -p ai_blaise_citus_pool --lib` (139 tests, including the
+- `cargo test -p ai_blaise_citus_pool --lib` (140 tests, including the
   `pipeline::tests::append_wire_frame_decodes_real_bytes` round-trip from
   raw wire bytes through `ExtendedPipelineBuffer` and back, the
   `virtual_pid::tests::cancel_request_roundtrip` over the codec, the
