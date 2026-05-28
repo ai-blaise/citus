@@ -859,17 +859,42 @@ impl K8sManifestRuntime {
     }
 
     fn run_kubectl(&self, arguments: &[String]) -> Result<String, CitusCtlError> {
-        let mut command = Command::new(&self.kubectl);
-        if let Some(context) = &self.context {
-            command.arg("--context").arg(context);
-        }
-        let output = command.args(arguments).output().map_err(|error| {
-            CitusCtlError::KubernetesCommand(format!(
-                "kubectl {} spawn failed: {}",
-                arguments.join(" "),
-                error
-            ))
-        })?;
+        // Bounded ETXTBSY (errno 26 "Text file busy") retry. Linux raises
+        // ETXTBSY at exec() time if any process anywhere on the system still
+        // holds a writer FD on the binary. In multi-threaded test runners a
+        // sibling thread that just fs::write's a fake kubectl can race a
+        // parallel fork-then-exec elsewhere and produce a transient ETXTBSY
+        // even after the writer is dropped in user space. Real users see
+        // the same race when kubectl is installed/upgraded moments before
+        // running citusctl. Retry the spawn up to 3 times with 50ms backoff;
+        // every other spawn error is returned on first occurrence.
+        let output = {
+            let mut attempts: u32 = 0;
+            loop {
+                let mut command = Command::new(&self.kubectl);
+                if let Some(context) = &self.context {
+                    command.arg("--context").arg(context);
+                }
+                match command.args(arguments).output() {
+                    Ok(output) => break output,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                            && attempts < 3 =>
+                    {
+                        attempts += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        continue;
+                    }
+                    Err(error) => {
+                        return Err(CitusCtlError::KubernetesCommand(format!(
+                            "kubectl {} spawn failed: {}",
+                            arguments.join(" "),
+                            error
+                        )));
+                    }
+                }
+            }
+        };
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(CitusCtlError::KubernetesCommand(format!(

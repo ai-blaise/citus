@@ -8,6 +8,11 @@ on:
       - ai-blaise/dev
       - bootstrap-v2
 
+permissions:
+  contents: read
+  # rustsec/audit-check@v2 creates a check run with the audit results.
+  checks: write
+
 jobs:
   rust:
     runs-on: ubuntu-latest
