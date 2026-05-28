@@ -142,22 +142,6 @@ BEGIN
       RAISE;
     END IF;
   END;
-  BEGIN
-    PERFORM *
-    FROM companion_ai_chat_stream(
-      'tenant-a',
-      'tenant_a_openai_chat',
-      '[{"role":"user","content":"Call provider"}]'::jsonb,
-      64,
-      0,
-      true
-    );
-    RAISE EXCEPTION 'A10 allowed provider execution without runtime';
-  EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM <> 'AI provider runtime is unavailable; this SQL surface emits request intent only' THEN
-      RAISE;
-    END IF;
-  END;
 
   PERFORM companion_internal.register_semantic_catalog_object(
     'tenant-a',
@@ -200,20 +184,6 @@ BEGIN
     RAISE EXCEPTION 'A11 accepted unregistered semantic object';
   EXCEPTION WHEN raise_exception THEN
     IF SQLERRM <> 'all catalog_objects must be registered for tenant' THEN
-      RAISE;
-    END IF;
-  END;
-  BEGIN
-    PERFORM companion_semantic_text_to_sql_intent(
-      'tenant-a',
-      'show support documents',
-      ARRAY['orders'],
-      'tenant_a_openai_chat',
-      true
-    );
-    RAISE EXCEPTION 'A11 allowed query execution without runtime';
-  EXCEPTION WHEN raise_exception THEN
-    IF SQLERRM <> 'text-to-SQL execution is unavailable; this SQL surface emits request intent only' THEN
       RAISE;
     END IF;
   END;

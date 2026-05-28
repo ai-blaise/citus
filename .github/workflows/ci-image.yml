@@ -25,6 +25,8 @@ jobs:
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
       - name: Smoke AI SQL contract surface
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/ai-sql-contract-smoke.sh
+      - name: Smoke A10/A11 AI SQL live execution against mock LLM
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh
       - name: Smoke migration durability invariants
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/migration-invariants-smoke.sh
       - name: Smoke Timescale bridge against real TimescaleDB

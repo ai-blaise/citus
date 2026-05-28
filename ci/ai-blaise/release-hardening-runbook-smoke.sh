@@ -47,26 +47,48 @@ release_check="$(mktemp)"
 release_record="$(mktemp)"
 trap 'rm -f "${release_check}" "${release_record}"' EXIT
 
-if ci/ai-blaise/production-readiness-check.sh production-release >"${release_check}" 2>&1; then
-  echo "production release mode unexpectedly passed while alpha features remain in release scope" >&2
-  exit 1
-fi
-grep -Fq "production release blocked: non-production feature statuses remain" "${release_check}"
-if grep -Eq '(^|[,[:space:]])D10([,[:space:]]|$)' "${release_check}"; then
-  echo "D10 must not be listed as a production-release blocker after this promotion" >&2
-  cat "${release_check}" >&2
-  exit 1
+# When alpha-headings exist, production-release mode must FAIL with the
+# documented "production release blocked" message; otherwise (all 276
+# features production-ready) the mode is expected to PASS. The post-2026-05-26
+# state of bootstrap-v2 has alpha_headings=0, so the positive-path branch is
+# the live one. The negative path is preserved for the regression scenario in
+# which a future alpha is re-introduced.
+alpha_headings="$(bash ci/ai-blaise/production-gap-audit.sh 2>&1 | awk -F'	' '/^production_gap_audit/ {for(i=1;i<=NF;i++) if($i ~ /^alpha_headings=/){split($i,p,"="); print p[2]}}')"
+if [ "${alpha_headings:-0}" != "0" ]; then
+  if ci/ai-blaise/production-readiness-check.sh production-release >"${release_check}" 2>&1; then
+    echo "production release mode unexpectedly passed while alpha features remain in release scope" >&2
+    exit 1
+  fi
+  grep -Fq "production release blocked: non-production feature statuses remain" "${release_check}"
+  if grep -Eq '(^|[,[:space:]])D10([,[:space:]]|$)' "${release_check}"; then
+    echo "D10 must not be listed as a production-release blocker after this promotion" >&2
+    cat "${release_check}" >&2
+    exit 1
+  fi
+else
+  if ! ci/ai-blaise/production-readiness-check.sh production-release >"${release_check}" 2>&1; then
+    echo "production release mode unexpectedly failed with alpha_headings=0" >&2
+    cat "${release_check}" >&2
+    exit 1
+  fi
 fi
 
+if [ "${alpha_headings:-0}" != "0" ]; then
+  readiness_state=production-release-blocked
+  block_state=blocked-while-alpha-remains
+else
+  readiness_state=production-release-passed
+  block_state=passed-without-alpha
+fi
 source_revision="$(git rev-parse --verify HEAD)"
 {
   printf 'source_revision=%s\n' "${source_revision}"
   printf 'image_digest_manifest=required\n'
-  printf 'production_readiness_audit=production-release-blocked\n'
+  printf 'production_readiness_audit=%s\n' "${readiness_state}"
   printf 'production_gap_audit=passed\n'
   printf 'docs_evidence_boundary_audit=passed\n'
   printf 'runbook_command_check=passed\n'
-  printf 'release_block_status=blocked-while-alpha-remains\n'
+  printf 'release_block_status=%s\n' "${block_state}"
   printf 'alpha_feature_scope=explicit\n'
   printf 'rollback_checkpoint=required-before-promotion\n'
   printf 'owner_signoff=required-before-promotion\n'
