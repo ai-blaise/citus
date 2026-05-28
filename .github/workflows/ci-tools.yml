@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - bootstrap-v2
 
 jobs:
   mcp:

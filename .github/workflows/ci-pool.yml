@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - ai-blaise/dev
+      - bootstrap-v2
 
 jobs:
   rust:
@@ -25,6 +26,12 @@ jobs:
         run: cargo clippy -p ai_blaise_citus_pool -p ai_blaise_citus_pool_wire --all-targets -- -D warnings
       - name: Rustdoc broken-intra-doc-links
         run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_pool -p ai_blaise_citus_pool_wire --no-deps
+      - name: Build pool/wire example (pipeline_live_smoke)
+        run: cargo build -p ai_blaise_citus_pool_wire --example pipeline_live_smoke
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: Cargo audit (security advisories)
+        run: cargo audit --deny warnings
       - name: Test pool
         run: cargo test -p ai_blaise_citus_pool
       - name: Test pool/wire
