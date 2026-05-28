@@ -53,6 +53,7 @@ RUN set -eux; \
     test "${PG_MAJOR}" = "17"; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+      autoconf \
       bison \
       build-essential \
       ca-certificates \
