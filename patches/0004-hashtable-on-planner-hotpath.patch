@@ -46,7 +46,7 @@ the externally observable result ordering, and the legacy duplicate
 semantics are preserved.
 ---
 diff --git a/src/backend/distributed/planner/multi_router_planner.c b/src/backend/distributed/planner/multi_router_planner.c
-index 313d2674d..eb281679d 100644
+index abd3bce..99f06f3 100644
 --- a/src/backend/distributed/planner/multi_router_planner.c
 +++ b/src/backend/distributed/planner/multi_router_planner.c
 @@ -22,6 +22,7 @@
@@ -57,15 +57,15 @@ index 313d2674d..eb281679d 100644
  #include "executor/execdesc.h"
  #include "lib/stringinfo.h"
  #include "nodes/makefuncs.h"
-@@ -42,6 +42,7 @@
- #include "parser/parsetree.h"
- #include "postmaster/postmaster.h"
- #include "storage/lock.h"
-+#include "utils/hsearch.h"
+@@ -45,6 +46,7 @@
  #include "utils/builtins.h"
  #include "utils/elog.h"
  #include "utils/errcodes.h"
-@@ -86,6 +87,45 @@
++#include "utils/hsearch.h"
+ #include "utils/lsyscache.h"
+ #include "utils/rel.h"
+ #include "utils/typcache.h"
+@@ -86,6 +88,45 @@
  #include "distributed/shard_pruning.h"
  #include "distributed/shard_utils.h"
  #include "distributed/shardinterval_utils.h"
@@ -111,7 +111,7 @@ index 313d2674d..eb281679d 100644
  
  /* intermediate value for INSERT processing */
  typedef struct InsertValues
-@@ -3782,32 +3822,133 @@ MakeDummyColumnString(int dummyColumnId)
+@@ -3956,32 +3997,134 @@ MakeDummyColumnString(int dummyColumnId)
  List *
  IntersectPlacementList(List *lhsPlacementList, List *rhsPlacementList)
  {
@@ -150,7 +150,8 @@ index 313d2674d..eb281679d 100644
 +			foreach(rhsPlacementCell, rhsPlacementList)
  			{
 -				placementList = lappend(placementList, rhsPlacement);
-+				ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
++				ShardPlacement *rhsPlacement =
++					(ShardPlacement *) lfirst(rhsPlacementCell);
 +				if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
 +					strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
 +							WORKER_LENGTH) == 0)
@@ -262,5 +263,3 @@ index 313d2674d..eb281679d 100644
  	return placementList;
  }
  
--- 
-2.39.5

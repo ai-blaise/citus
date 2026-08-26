@@ -1,4 +1,7 @@
-import sys, json, re
+import json
+import re
+import sys
+
 m = re.search(r"\{.*\}", sys.stdin.read(), re.S)
 if m:
     obj = json.loads(m.group(0))

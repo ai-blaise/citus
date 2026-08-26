@@ -1,5 +1,5 @@
 remote=citusdata/citus
 branch=main
-base=dee8ec140aff84d8769bdcd859c39c379180fe06
-capturedAt=2026-05-26
+base=008b391a75fc46464450a6ff4b5d34132e63f410
+capturedAt=2026-08-26
 rebaseCadence=quarterly

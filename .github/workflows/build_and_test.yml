@@ -35,12 +35,12 @@ jobs:
       pgupgrade_image_name: "ghcr.io/citusdata/pgupgradetester"
       style_checker_image_name: "ghcr.io/citusdata/stylechecker"
       style_checker_tools_version: "0.8.33"
-      sql_snapshot_pg_version: "18.3"
-      image_suffix: "-v5bd970c"
-      pg16_version: '{ "major": "16", "full": "16.13" }'
-      pg17_version: '{ "major": "17", "full": "17.9" }'
-      pg18_version: '{ "major": "18", "full": "18.3" }'
-      upgrade_pg_versions: "16.13-17.9-18.3"
+      sql_snapshot_pg_version: "18.4"
+      image_suffix: "-ve11b596"
+      pg16_version: '{ "major": "16", "full": "16.14" }'
+      pg17_version: '{ "major": "17", "full": "17.10" }'
+      pg18_version: '{ "major": "18", "full": "18.4" }'
+      upgrade_pg_versions: "16.14-17.10-18.4"
     steps:
       # Since GHA jobs need at least one step we use a noop step here.
       - name: Set up parameters
@@ -416,18 +416,32 @@ jobs:
     - name: Detect regression tests need to be ran
       id: detect-regression-tests
       run: |-
-        detected_changes=$(git diff origin/main... --name-only --diff-filter=AM | (grep 'src/test/regress/sql/.*\.sql\|src/test/regress/spec/.*\.spec\|src/test/regress/citus_tests/test/test_.*\.py' || true))
+        # ai-blaise: diff against the PR base branch, not origin/main. The
+        # fork's integration branch is bootstrap-v2 while main lags behind, so
+        # an origin/main... diff sweeps in months of already-merged sql changes
+        # and every flakyness leg re-runs (and fails on) tests this PR never
+        # touched. Fall back to origin/main for pushes without a base ref.
+        base_ref="${{ github.base_ref }}"
+        base_ref="${base_ref:-main}"
+        git fetch --quiet origin "$base_ref"
+        detected_changes=$(git diff "origin/${base_ref}..." --name-only --diff-filter=AM | (grep 'src/test/regress/sql/.*\.sql\|src/test/regress/spec/.*\.spec\|src/test/regress/citus_tests/test/test_.*\.py' || true))
         tests=${detected_changes}
 
-        # split the tests to be skipped --today we only skip upgrade tests
-        # and snapshot based node addition tests.
+        # split the tests to be skipped --today we only skip upgrade tests,
+        # snapshot based node addition tests, and multi_extension.
         # snapshot based node addition tests are not flaky, as they promote
         # the streaming replica (clone) to a PostgreSQL primary node that is one way
         # operation
+        # ai-blaise: multi_extension is repeatable=False in run_test.py DEPS
+        # (it drops and recreates the citus extension), and appending it after
+        # its own create schedule runs it against a cluster whose public
+        # schema already carries the test-helper objects, so the repeat run
+        # can only fail; the canonical check-multi-1-create-citus suites cover
+        # it on every PG major.
         skipped_tests=""
         not_skipped_tests=""
         for test in $tests; do
-            if [[ $test =~ ^src/test/regress/sql/upgrade_ ]] || [[ $test =~ ^src/test/regress/sql/multi_add_node_from_backup ]]; then
+            if [[ $test =~ ^src/test/regress/sql/upgrade_ ]] || [[ $test =~ ^src/test/regress/sql/multi_add_node_from_backup ]] || [[ $test =~ ^src/test/regress/sql/multi_extension\.sql$ ]]; then
                 skipped_tests="$skipped_tests $test"
             else
                 not_skipped_tests="$not_skipped_tests $test"

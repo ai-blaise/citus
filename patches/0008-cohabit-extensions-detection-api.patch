@@ -134,7 +134,7 @@ index 6601d4071..31687922d 100644
  /*
   * Define "pass-through" functions so that a SQL function defined as one of
   * these symbols in the citus module can use the definition in the columnar
-@@ -1157,6 +1161,84 @@ CitusCohabitExtensionConfigured(const char *extensionName)
+@@ -1157,6 +1161,77 @@ CitusCohabitExtensionConfigured(const char *extensionName)
  }
  
  
@@ -178,15 +178,11 @@ index 6601d4071..31687922d 100644
 +Datum
 +citus_cohabit_extension_role(PG_FUNCTION_ARGS)
 +{
-+	char *extensionName = NULL;
-+	CitusCohabitExtensionKind kind = CITUS_COHABIT_EXTENSION_UNSUPPORTED;
-+	const char *roleName = NULL;
-+
 +	CheckCitusVersion(ERROR);
 +
-+	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-+	kind = ClassifyCitusCohabitExtension(extensionName);
-+	roleName = CitusCohabitExtensionKindName(kind);
++	char *extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
++	CitusCohabitExtensionKind kind = ClassifyCitusCohabitExtension(extensionName);
++	const char *roleName = CitusCohabitExtensionKindName(kind);
 +	pfree(extensionName);
 +
 +	PG_RETURN_TEXT_P(cstring_to_text(roleName));
@@ -203,13 +199,10 @@ index 6601d4071..31687922d 100644
 +Datum
 +citus_cohabit_extension_configured(PG_FUNCTION_ARGS)
 +{
-+	char *extensionName = NULL;
-+	bool configured = false;
-+
 +	CheckCitusVersion(ERROR);
 +
-+	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-+	configured = CitusCohabitExtensionConfigured(extensionName);
++	char *extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
++	bool configured = CitusCohabitExtensionConfigured(extensionName);
 +	pfree(extensionName);
 +
 +	PG_RETURN_BOOL(configured);

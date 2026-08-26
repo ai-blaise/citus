@@ -35,19 +35,23 @@ image and the row still says `unknown`, `compare-hook-claims.sh` fails the
 matrix gate unless `TS_VERSION_MATRIX_ALLOW_UNKNOWN=1` is set for an explicit
 exploratory local probe. CI and release gates must not set that escape hatch.
 
-## Status As Of 2026-05-24
+## Status As Of 2026-08-26
 
 - `2.27/` is load-bearing. The pinned image is
   `timescale/timescaledb-ha:pg17-ts2.27`, and the VM registry probe confirmed it
   exists. This is also the line currently covered by the single-version
   `timescale/timescaledb-ha:pg17-ts2.27` cohabitation smoke.
-- `2.28/` is a forward-compatibility row, not production evidence. The pinned
-  image is `timescale/timescaledb-ha:pg17-ts2.28`; the VM registry probe on
-  2026-05-24 confirmed that `timescale/timescaledb-ha:pg17-ts2.28`, `timescale/timescaledb-ha:pg17-ts2.28.0`, and `timescale/timescaledb-ha:pg17-ts2.28.1` are
-  not published. The matrix records `skip-with-note` while the tag is absent
-  and does not promote TS 2.28 to production-ready.
+- `2.28/` runs live: `timescale/timescaledb-ha:pg17-ts2.28` is published and
+  the matrix executes the same non-stubbed Citus+TimescaleDB cohabitation
+  smoke against it (both legs passed on the 2026-08-26 upstream-sync run).
+  The former `unknown` ExecutorStart_hook forecast row is resolved by source
+  measurement: the timescale/timescaledb 2.28.0 tag tarball contains zero
+  ExecutorStart_hook references, so the hook freed by the 2.22 hypercore TAM
+  removal remains unclaimed. The same measurement pass corrected the stale
+  ExplainOneQuery_hook rows (zero references in 2.27.2 and 2.28.0). The
+  cohabitation-smoke pass plus measured hook rows keep the matrix green but
+  this alone does not promote TS 2.28 to production-ready.
 
-When the 2.28 image appears, the matrix will run the same non-stubbed
-Citus+TimescaleDB cohabitation smoke against that image. Any remaining
-`unknown` hook rows must be resolved to measured `claimed` or `not_claimed`
-rows before the gate passes.
+Any future TS version directory must land with measured `claimed` or
+`not_claimed` rows before the gate passes; `unknown` rows are rejected for
+every live image.
