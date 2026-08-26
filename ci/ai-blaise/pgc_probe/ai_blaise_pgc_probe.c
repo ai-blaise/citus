@@ -25,6 +25,7 @@ ai_blaise_pgc_logical_clock_roundtrip(PG_FUNCTION_ARGS)
 	PG_RETURN_TIMESTAMPTZ(XLogGetLastTransactionStopTimestamp());
 }
 
+
 Datum
 ai_blaise_pgc_subtrans_override(PG_FUNCTION_ARGS)
 {
@@ -35,9 +36,11 @@ ai_blaise_pgc_subtrans_override(PG_FUNCTION_ARGS)
 	char xid_text[32];
 
 	if (nodeid_arg < 0 || nodeid_arg > 65535)
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),
 				 errmsg("nodeid must fit in uint16")));
+	}
 
 	nodeid = (RepOriginId) nodeid_arg;
 	xid = GetCurrentTransactionId();
