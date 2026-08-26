@@ -1205,15 +1205,11 @@ CitusCohabitExtensionKindName(CitusCohabitExtensionKind kind)
 Datum
 citus_cohabit_extension_role(PG_FUNCTION_ARGS)
 {
-	char *extensionName = NULL;
-	CitusCohabitExtensionKind kind = CITUS_COHABIT_EXTENSION_UNSUPPORTED;
-	const char *roleName = NULL;
-
 	CheckCitusVersion(ERROR);
 
-	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	kind = ClassifyCitusCohabitExtension(extensionName);
-	roleName = CitusCohabitExtensionKindName(kind);
+	char *extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	CitusCohabitExtensionKind kind = ClassifyCitusCohabitExtension(extensionName);
+	const char *roleName = CitusCohabitExtensionKindName(kind);
 	pfree(extensionName);
 
 	PG_RETURN_TEXT_P(cstring_to_text(roleName));
@@ -1230,13 +1226,10 @@ citus_cohabit_extension_role(PG_FUNCTION_ARGS)
 Datum
 citus_cohabit_extension_configured(PG_FUNCTION_ARGS)
 {
-	char *extensionName = NULL;
-	bool configured = false;
-
 	CheckCitusVersion(ERROR);
 
-	extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	configured = CitusCohabitExtensionConfigured(extensionName);
+	char *extensionName = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	bool configured = CitusCohabitExtensionConfigured(extensionName);
 	pfree(extensionName);
 
 	PG_RETURN_BOOL(configured);

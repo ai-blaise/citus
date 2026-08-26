@@ -15,7 +15,6 @@ import subprocess
 import sys
 from typing import Any
 
-
 DEFAULT_PLAN = pathlib.Path("docs/ai-blaise/bootstrap-v2-merge-plan.json")
 LIVE_FIELDS = [
     "number",
@@ -77,7 +76,9 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
         errors.append("metadata.pr_number_min must be an integer")
         pr_number_min = 0
 
-    batches = require_list(plan.get("integration_batches"), "integration_batches", errors)
+    batches = require_list(
+        plan.get("integration_batches"), "integration_batches", errors
+    )
     batch_ids: set[str] = set()
     batch_prs: list[int] = []
     batch_order_by_id: dict[str, int] = {}
@@ -95,9 +96,13 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
             errors.append(
                 f"integration_batches[{index}].run_expensive_citus_matrix_after must be boolean"
             )
-        for number in require_list(batch.get("prs"), f"integration_batches[{index}].prs", errors):
+        for number in require_list(
+            batch.get("prs"), f"integration_batches[{index}].prs", errors
+        ):
             if not isinstance(number, int):
-                errors.append(f"integration_batches[{index}].prs entries must be integers")
+                errors.append(
+                    f"integration_batches[{index}].prs entries must be integers"
+                )
             else:
                 batch_prs.append(number)
 
@@ -106,8 +111,14 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
         "expensive_citus_matrix_policy",
         errors,
     )
-    for key in ["run_full_matrix_after_batches", "run_immediately_when", "do_not_run_when"]:
-        require_list(matrix_policy.get(key), f"expensive_citus_matrix_policy.{key}", errors)
+    for key in [
+        "run_full_matrix_after_batches",
+        "run_immediately_when",
+        "do_not_run_when",
+    ]:
+        require_list(
+            matrix_policy.get(key), f"expensive_citus_matrix_policy.{key}", errors
+        )
     for batch_id in matrix_policy.get("run_full_matrix_after_batches", []):
         if batch_id not in batch_ids:
             errors.append(
@@ -145,7 +156,9 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
             errors.append(f"pull_requests[{index}].number must be an integer")
             continue
         if number < pr_number_min:
-            errors.append(f"PR #{number} is below metadata.pr_number_min={pr_number_min}")
+            errors.append(
+                f"PR #{number} is below metadata.pr_number_min={pr_number_min}"
+            )
         if number in numbers:
             errors.append(f"duplicate PR number: {number}")
         numbers[number] = pr
@@ -154,7 +167,9 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
         if not isinstance(order, int):
             errors.append(f"pull_requests[{index}].order must be an integer")
         elif order in orders:
-            errors.append(f"duplicate merge order {order}: PR #{orders[order]} and PR #{number}")
+            errors.append(
+                f"duplicate merge order {order}: PR #{orders[order]} and PR #{number}"
+            )
         else:
             orders[order] = number
 
@@ -167,8 +182,12 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
         if not isinstance(pr.get("is_draft"), bool):
             errors.append(f"PR #{number}.is_draft must be boolean")
 
-        dependencies = require_list(pr.get("dependency_hints"), f"PR #{number}.dependency_hints", errors)
-        blockers = require_list(pr.get("known_blockers"), f"PR #{number}.known_blockers", errors)
+        dependencies = require_list(
+            pr.get("dependency_hints"), f"PR #{number}.dependency_hints", errors
+        )
+        blockers = require_list(
+            pr.get("known_blockers"), f"PR #{number}.known_blockers", errors
+        )
         require_list(pr.get("watch_paths"), f"PR #{number}.watch_paths", errors)
         if pr.get("status") in {"draft-blocked", "blocked"} and not blockers:
             errors.append(
@@ -191,13 +210,22 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
     missing_from_batches = sorted(planned_prs - planned_batch_prs)
     extra_in_batches = sorted(planned_batch_prs - planned_prs)
     if missing_from_batches:
-        errors.append("PRs missing from integration_batches: " + comma_prs(missing_from_batches))
+        errors.append(
+            "PRs missing from integration_batches: " + comma_prs(missing_from_batches)
+        )
     if extra_in_batches:
-        errors.append("integration_batches references unknown PRs: " + comma_prs(extra_in_batches))
+        errors.append(
+            "integration_batches references unknown PRs: " + comma_prs(extra_in_batches)
+        )
 
-    duplicate_batch_prs = sorted({number for number in batch_prs if batch_prs.count(number) > 1})
+    duplicate_batch_prs = sorted(
+        {number for number in batch_prs if batch_prs.count(number) > 1}
+    )
     if duplicate_batch_prs:
-        errors.append("PRs listed in multiple integration batches: " + comma_prs(duplicate_batch_prs))
+        errors.append(
+            "PRs listed in multiple integration batches: "
+            + comma_prs(duplicate_batch_prs)
+        )
 
     for number, pr in sorted(numbers.items()):
         order = pr.get("order")
@@ -212,7 +240,10 @@ def validate_plan_shape(plan: dict[str, Any]) -> list[str]:
                     f"PR #{number} depends on PR #{dependency}, but dependency order "
                     f"{dependency_pr.get('order')} is not before {order}"
                 )
-            if batch in batch_order_by_id and dependency_pr.get("batch") in batch_order_by_id:
+            if (
+                batch in batch_order_by_id
+                and dependency_pr.get("batch") in batch_order_by_id
+            ):
                 if batch_order_by_id[dependency_pr["batch"]] > batch_order_by_id[batch]:
                     errors.append(
                         f"PR #{number} batch {batch!r} is before dependency "
@@ -341,9 +372,15 @@ def summarize(plan: dict[str, Any], live_checked: bool) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--plan", default=str(DEFAULT_PLAN), help="path to merge plan JSON")
-    parser.add_argument("--offline", action="store_true", help="validate the local JSON plan only")
-    parser.add_argument("--live", action="store_true", help="query gh for live open PR metadata")
+    parser.add_argument(
+        "--plan", default=str(DEFAULT_PLAN), help="path to merge plan JSON"
+    )
+    parser.add_argument(
+        "--offline", action="store_true", help="validate the local JSON plan only"
+    )
+    parser.add_argument(
+        "--live", action="store_true", help="query gh for live open PR metadata"
+    )
     parser.add_argument(
         "--strict-open-set",
         action="store_true",
@@ -358,7 +395,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="fail if any planned or live PR is still draft",
     )
-    parser.add_argument("--print-order", action="store_true", help="print the planned order as TSV")
+    parser.add_argument(
+        "--print-order", action="store_true", help="print the planned order as TSV"
+    )
     return parser.parse_args()
 
 
@@ -377,7 +416,11 @@ def main() -> int:
     warnings: list[str] = []
     live_checked = False
     if args.live or args.metadata_json:
-        live_metadata = fetch_live_metadata(plan) if args.live else load_metadata_json(args.metadata_json)
+        live_metadata = (
+            fetch_live_metadata(plan)
+            if args.live
+            else load_metadata_json(args.metadata_json)
+        )
         live_errors, live_warnings = validate_live_metadata(
             plan, live_metadata, args.strict_open_set
         )
@@ -386,7 +429,9 @@ def main() -> int:
         live_checked = True
 
     if args.require_no_drafts:
-        drafts = [pr["number"] for pr in plan.get("pull_requests", []) if pr.get("is_draft")]
+        drafts = [
+            pr["number"] for pr in plan.get("pull_requests", []) if pr.get("is_draft")
+        ]
         if drafts:
             errors.append("draft blockers remain: " + comma_prs(sorted(drafts)))
 

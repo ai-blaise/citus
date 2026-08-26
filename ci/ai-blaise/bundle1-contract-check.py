@@ -6,6 +6,7 @@ than promoting the whole feature. It cross-checks the manifest, lockfile,
 Dockerfile, SQL smoke, tracked evidence file, and docs so Bundle1 cannot drift
 into a prose-only production claim.
 """
+
 from __future__ import annotations
 
 import csv
@@ -80,7 +81,10 @@ def fail(message: str) -> None:
 
 
 def read(path: pathlib.Path) -> str:
-    if not path.exists() or not path.read_text(encoding="utf-8", errors="ignore").strip():
+    if (
+        not path.exists()
+        or not path.read_text(encoding="utf-8", errors="ignore").strip()
+    ):
         fail(f"missing or empty Bundle1 contract artifact: {path.relative_to(ROOT)}")
     return path.read_text(encoding="utf-8", errors="ignore")
 
@@ -154,7 +158,9 @@ def main() -> None:
     sql_smoke = read(SQL_SMOKE)
     image_check = read(IMAGE_CHECK)
     initdb = read(INITDB)
-    docs = "\n".join(read(path) for path in (README, BUNDLED_DOC, FEATURES_DOC, AUDIT_DOC))
+    docs = "\n".join(
+        read(path) for path in (README, BUNDLED_DOC, FEATURES_DOC, AUDIT_DOC)
+    )
 
     for row in lock_rows:
         extension = row["extension"]
@@ -171,10 +177,17 @@ def main() -> None:
                 f"Bundle1 pg_versions mismatch for {extension}: "
                 f"manifest={manifest_row['pg_versions']} lock={row['pg_versions']}"
             )
-        if row["tag"] not in manifest_row["policy"] and row["tag"] not in {"in-tree", "0.1.0"}:
-            fail(f"manifest policy for {extension} does not mention locked tag {row['tag']}")
+        if row["tag"] not in manifest_row["policy"] and row["tag"] not in {
+            "in-tree",
+            "0.1.0",
+        }:
+            fail(
+                f"manifest policy for {extension} does not mention locked tag {row['tag']}"
+            )
         if row["ref"] not in manifest_row["policy"] and row["ref"] != "in-tree":
-            fail(f"manifest policy for {extension} does not mention locked ref {row['ref']}")
+            fail(
+                f"manifest policy for {extension} does not mention locked ref {row['ref']}"
+            )
 
     for row in lock_rows:
         extension = row["extension"]
@@ -190,7 +203,9 @@ def main() -> None:
                 f"COPY --from={stage}",
             ):
                 if phrase not in dockerfile:
-                    fail(f"Dockerfile missing locked source-build contract for {extension}: {phrase}")
+                    fail(
+                        f"Dockerfile missing locked source-build contract for {extension}: {phrase}"
+                    )
         elif extension == "citus":
             for phrase in (
                 "ARG CITUS_TAG=v13.3.0",
@@ -212,7 +227,9 @@ def main() -> None:
                 "CREATE EXTENSION pg_warm;" not in sql_smoke
                 and "CREATE EXTENSION IF NOT EXISTS pg_warm;" not in initdb
             ):
-                fail("Bundle1 pg_warm local shim must be created by either smoke or initdb")
+                fail(
+                    "Bundle1 pg_warm local shim must be created by either smoke or initdb"
+                )
         elif extension == "plrust":
             for phrase in (
                 "ARG PLRUST_TAG=v1.2.8",
@@ -220,7 +237,9 @@ def main() -> None:
                 "alpha-upstream-pg17-blocked",
                 "source-build-deferred|EF6|none",
             ):
-                if phrase not in (dockerfile + "\n" + MANIFEST.read_text(encoding="utf-8")):
+                if phrase not in (
+                    dockerfile + "\n" + MANIFEST.read_text(encoding="utf-8")
+                ):
                     fail(f"Bundle1 plrust deferred boundary missing: {phrase}")
 
     # Bundle1 production-ready: every required extension created by initdb or smoke.
@@ -254,7 +273,9 @@ def main() -> None:
 
     # pg_failover_slots has no SQL extension surface (shared_preload_libraries-only).
     preload_only_extensions = {"pg_failover_slots"}
-    required_extensions = [name for name, row in manifest.items() if row["tier"] == "required"]
+    required_extensions = [
+        name for name, row in manifest.items() if row["tier"] == "required"
+    ]
     for extension in required_extensions:
         if extension in preload_only_extensions:
             continue
@@ -264,20 +285,34 @@ def main() -> None:
         if extension == "plrust":
             continue
         if extension not in required_extensions:
-            fail(f"source-build lock extension must remain required until policy changes: {extension}")
+            fail(
+                f"source-build lock extension must remain required until policy changes: {extension}"
+            )
 
     if EVIDENCE.exists():
         with EVIDENCE.open(encoding="utf-8", newline="") as fh:
             evidence_rows = list(csv.DictReader(fh, delimiter="\t"))
-        if evidence_rows and list(evidence_rows[0].keys()) != ["observed_at", "git_sha", "target", "image_id", "extensions"]:
+        if evidence_rows and list(evidence_rows[0].keys()) != [
+            "observed_at",
+            "git_sha",
+            "target",
+            "image_id",
+            "extensions",
+        ]:
             fail("Bundle1 evidence TSV header changed")
-        light_rows = [row for row in evidence_rows if row["target"] == "bundle1-final-light"]
+        light_rows = [
+            row for row in evidence_rows if row["target"] == "bundle1-final-light"
+        ]
         if not light_rows:
-            fail("Bundle1 evidence TSV must keep at least one light source-build proof row")
+            fail(
+                "Bundle1 evidence TSV must keep at least one light source-build proof row"
+            )
         latest_light_extensions = set(light_rows[-1]["extensions"].split())
         missing = REQUIRED_PRODUCTION_EXTENSIONS - latest_light_extensions
         if missing:
-            fail(f"latest Bundle1 light evidence row missing required production extensions: {sorted(missing)}")
+            fail(
+                f"latest Bundle1 light evidence row missing required production extensions: {sorted(missing)}"
+            )
         if "plrust" in latest_light_extensions:
             fail("Bundle1 light evidence must not imply plrust PG17 support")
 

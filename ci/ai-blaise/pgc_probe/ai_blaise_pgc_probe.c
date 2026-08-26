@@ -1,11 +1,12 @@
 /* FEATURE: PGC1 PGC2 */
 #include "postgres.h"
 
+#include "fmgr.h"
+
 #include "access/commit_ts.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "access/xlog.h"
-#include "fmgr.h"
 #include "utils/builtins.h"
 #include "utils/timestamp.h"
 

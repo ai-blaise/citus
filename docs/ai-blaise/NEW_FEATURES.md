@@ -188,6 +188,19 @@ contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 `ci/ai-blaise/citusctl-smoke.sh` exercises the real `citusctl` binary for the
 `FEATURE: D2` plan-id guard.
 
+## Maintenance Notes
+
+2026-08-26 upstream sync (citusdata/citus `008b391a7`): no feature status
+changes. Style and hygiene fixes touched feature-bearing surfaces without
+altering behavior or contracts — `patches/0004` (`FEATURE: T4`) rewrapped one
+over-long declaration and re-sorted its `utils/hsearch.h` include,
+`patches/0008` (`FEATURE: TS20`) folded the SQL-wrapper declarations into
+initializations, `ci/ai-blaise/pgc_probe` (`FEATURE: PGC1`/`PGC2`) regrouped
+its `fmgr.h` include, and the four ai-blaise CI python helpers were
+reformatted by black/isort. All changes are byte-mirrored between the tree
+and the patch series (`patches-check` green) and exist to keep the upstream
+`check-style` gate green.
+
 ## Operand Image
 
 ### Bundle1: Bundled Extension Image Contract
