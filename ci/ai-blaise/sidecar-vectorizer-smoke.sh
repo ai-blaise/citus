@@ -67,6 +67,27 @@ if [[ -z "${postgres_port}" ]]; then
   exit 1
 fi
 postgres_url="postgres://postgres@127.0.0.1:${postgres_port}/postgres"
+
+# The docker-exec readiness probe above connects over the container's unix
+# socket, which the initdb-phase temporary server also serves; the sidecar
+# connects over host TCP, which only the final server answers. Gate on host
+# TCP too so the sidecar cannot land in the restart window between the two
+# (observed once in CI as "serve failed: error communicating with the
+# server" right after a cold image pull).
+ready=0
+for _ in $(seq 1 60); do
+  if PGPASSWORD="" psql -h 127.0.0.1 -p "${postgres_port}" -U postgres -d postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+    ready=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "${ready}" != "1" ]]; then
+  echo "postgres host port did not become ready in time" >&2
+  docker logs "${container}" >&2 || true
+  exit 1
+fi
+
 listen_port="$(python3 - <<'ENDPORT'
 import socket
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
