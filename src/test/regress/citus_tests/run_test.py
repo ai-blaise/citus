@@ -73,6 +73,8 @@ def parse_arguments():
 
 
 class TestDeps:
+    # None means this test requires no prerequisite setup schedule. Other tests
+    # on the same schedule line can still require one.
     schedule: Optional[str]
     direct_extra_tests: list[str]
 
@@ -83,12 +85,14 @@ class TestDeps:
         repeatable=True,
         worker_count=2,
         citus_upgrade_infra=False,
+        follower_cluster=False,
     ):
         self.schedule = schedule
         self.direct_extra_tests = extra_tests or []
         self.repeatable = repeatable
         self.worker_count = worker_count
         self.citus_upgrade_infra = citus_upgrade_infra
+        self.follower_cluster = follower_cluster
 
     def extra_tests(self):
         all_deps = OrderedDict()
@@ -112,13 +116,35 @@ DEPS = {
         "minimal_schedule", ["multi_test_helpers_superuser"], repeatable=False
     ),
     "create_role_propagation": TestDeps(None, ["multi_cluster_management"]),
+    # multi_copy uses test_user which requires CREATE on schema public;
+    # base_schedule's multi_cluster_management issues the compensating GRANT
+    # that PostgreSQL 15+ no longer grants by default. Using base_schedule
+    # (rather than an extra_tests=[multi_cluster_management] override) avoids
+    # duplicating multi_cluster_management in downstream tests' setup
+    # (e.g. multi_size_queries) whose DEPS pull multi_copy in as an extra_test.
+    "multi_copy": TestDeps("base_schedule"),
+    # fast_path_router_modify shares its schedule line with multi_copy, so
+    # --use-whole-schedule-line drags multi_copy along; mirror the same base
+    # for the same reason.
+    "fast_path_router_modify": TestDeps("base_schedule"),
     "single_node_enterprise": TestDeps(None),
     "multi_add_node_from_backup": TestDeps(None, repeatable=False, worker_count=5),
     "multi_add_node_from_backup_negative": TestDeps(
         None, ["multi_add_node_from_backup"], worker_count=5, repeatable=False
     ),
+    "multi_add_node_from_backup_coordinator": TestDeps(
+        None, ["multi_add_node_from_backup_negative"], worker_count=5, repeatable=False
+    ),
     "multi_add_node_from_backup_sync_replica": TestDeps(
         None, repeatable=False, worker_count=5
+    ),
+    "multi_add_node_from_backup_sequences": TestDeps(
+        None, ["multi_add_node_from_backup_negative"], worker_count=5, repeatable=False
+    ),
+    # Prepares coordinator metadata and registers follower workers as secondaries.
+    "multi_follower_dml": TestDeps(
+        None,
+        ["follower_single_node", "multi_follower_select_statements"],
     ),
     "single_node": TestDeps(None, ["multi_test_helpers"]),
     "single_node_truncate": TestDeps(None),
@@ -381,7 +407,9 @@ def run_schedule_with_multiregress(test_name, schedule, dependencies, args):
     worker_count = needed_worker_count(test_name, dependencies)
 
     # find suitable make recipe
-    if dependencies.schedule == "base_isolation_schedule" or test_name.startswith(
+    if dependencies.follower_cluster:
+        make_recipe = "check-follower-custom-schedule"
+    elif dependencies.schedule == "base_isolation_schedule" or test_name.startswith(
         "isolation"
     ):
         make_recipe = "check-isolation-custom-schedule"
@@ -414,6 +442,9 @@ def run_schedule_with_multiregress(test_name, schedule, dependencies, args):
 
 
 def default_base_schedule(test_schedule, args):
+    if test_schedule == "multi_follower_schedule":
+        return None
+
     if "isolation" in test_schedule:
         if "columnar" in test_schedule:
             # we don't have pre-requisites for columnar isolation tests
@@ -495,6 +526,24 @@ def find_test_schedule_and_line(test_name, args):
 
 
 def test_dependencies(test_name, test_schedule, schedule_line, args):
+    if args["use_whole_schedule_line"]:
+        test_names = schedule_line.split()[1:]
+        dependencies = [
+            single_test_dependencies(name, test_schedule, schedule_line, args)
+            for name in test_names
+        ]
+    else:
+        dependencies = [
+            single_test_dependencies(test_name, test_schedule, schedule_line, args)
+        ]
+
+    if test_schedule == "multi_follower_schedule":
+        dependencies.append(TestDeps(None, follower_cluster=True))
+
+    return merge_test_dependencies(dependencies)
+
+
+def single_test_dependencies(test_name, test_schedule, schedule_line, args):
     if test_name in DEPS:
         return DEPS[test_name]
 
@@ -525,6 +574,50 @@ def test_dependencies(test_name, test_schedule, schedule_line, args):
         repeatable = True
 
     return TestDeps(default_base_schedule(test_schedule, args), repeatable=repeatable)
+
+
+def merge_test_dependencies(dependencies):
+    schedules = list(
+        OrderedDict.fromkeys(
+            dependency.schedule
+            for dependency in dependencies
+            if dependency.schedule is not None
+        )
+    )
+
+    if len(schedules) > 1:
+        compatible_schedule_families = (("minimal_schedule", "base_schedule"),)
+        for schedule_family in compatible_schedule_families:
+            if set(schedules).issubset(schedule_family):
+                schedules = [
+                    schedule
+                    for schedule in reversed(schedule_family)
+                    if schedule in schedules
+                ]
+                break
+        else:
+            raise Exception(
+                f"Tests on the same schedule line require incompatible setup schedules: "
+                f"{', '.join(schedules)}"
+            )
+
+    extra_tests = OrderedDict()
+    for dependency in dependencies:
+        for extra_test in dependency.direct_extra_tests:
+            extra_tests[extra_test] = True
+
+    return TestDeps(
+        schedules[0] if schedules else None,
+        list(extra_tests.keys()),
+        repeatable=all(dependency.repeatable for dependency in dependencies),
+        worker_count=max(dependency.worker_count for dependency in dependencies),
+        citus_upgrade_infra=any(
+            dependency.citus_upgrade_infra for dependency in dependencies
+        ),
+        follower_cluster=any(
+            dependency.follower_cluster for dependency in dependencies
+        ),
+    )
 
 
 # Returns true if given test_schedule_line is of the form:
@@ -565,7 +658,7 @@ def tmp_schedule(test_name, dependencies, schedule_line, args):
 
 
 def needed_worker_count(test_name, dependencies):
-    worker_count = worker_count_for(test_name)
+    worker_count = max(worker_count_for(test_name), dependencies.worker_count)
     for dependency in dependencies.extra_tests():
         worker_count = max(worker_count_for(dependency), worker_count)
     return worker_count
