@@ -42,7 +42,13 @@ proxy with a separate admin health port:
 - `AI_BLAISE_POOL_SETTINGS_BUCKET_GUCS`: optional comma-separated tracked GUC
   list; when set, the live proxy fingerprints startup parameters and libpq
   `options` assignments into settings buckets before opening the upstream
-  backend
+  backend. Any planner- or executor-affecting `citus.*` USERSET GUC belongs
+  here; patch 0003 marks them all `GUC_REPORT`, so tracked entries stay
+  observable through ParameterStatus. As of upstream 008b391a7 the list worth
+  tracking beyond `citus.enable_repartition_joins` includes
+  `citus.executor_batch_size`, `citus.executor_chunk_size`,
+  `citus.enable_or_clause_arm_pruning`, and
+  `citus.allow_unsafe_insert_select_pushdown`
 - `AI_BLAISE_POOL_SETTINGS_BUCKET_NAME`: optional settings-bucket namespace,
   default `startup-gucs`
 - `AI_BLAISE_POOL_SETTINGS_BUCKET_MAX_CONNECTIONS`: optional per-fingerprint
