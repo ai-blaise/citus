@@ -10,8 +10,6 @@ on:
 
 permissions:
   contents: read
-  # rustsec/audit-check@v2 creates a check run with the audit results.
-  checks: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -37,9 +35,15 @@ jobs:
       - name: Build pool/wire example (pipeline_live_smoke)
         run: cargo build -p ai_blaise_citus_pool_wire --example pipeline_live_smoke
       - name: Cargo audit (security advisories)
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        # rustsec/audit-check@v2 compiles the latest cargo-audit with a fresh
+        # dependency resolution, which broke against the pinned workspace
+        # toolchain on 2026-08-26 (cargo-audit v0.22.2 failed to compile).
+        # Install a pinned cargo-audit with its own lockfile instead so the
+        # gate stays deterministic under the rust-toolchain.toml pin.
+        run: |
+          cargo install cargo-audit --locked --version 0.21.2
+          cargo audit
+
       - name: Test pool
         run: cargo test -p ai_blaise_citus_pool
       - name: Test pool/wire

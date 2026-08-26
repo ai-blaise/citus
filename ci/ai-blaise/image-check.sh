@@ -839,12 +839,14 @@ grep -Fq "skip-with-note" "${ts_version_matrix_smoke}"
 grep -Fq "TS_VERSION_MATRIX_ALLOW_UNKNOWN=1 only for exploratory local probes" "${cohab_matrix_compare}"
 grep -Fxq "timescale/timescaledb-ha:pg17-ts2.27" "${cohab_matrix_dir}/2.27/image-tag.txt"
 grep -Fxq "timescale/timescaledb-ha:pg17-ts2.28" "${cohab_matrix_dir}/2.28/image-tag.txt"
-grep -Fq $'ExecutorStart_hook\tunknown\t' "${cohab_matrix_dir}/2.28/expected-hook-claims.tsv"
+grep -Fq $'ExecutorStart_hook\tnot_claimed\tSource-measured' "${cohab_matrix_dir}/2.28/expected-hook-claims.tsv"
 grep -Fq "does not promote TS 2.28 to production-ready" "${cohab_matrix_dir}/README.md"
-if grep -Fq $'\tunknown\t' "${cohab_matrix_dir}/2.27/expected-hook-claims.tsv"; then
-  echo "load-bearing TS 2.27 matrix must not contain unknown hook claims" >&2
-  exit 1
-fi
+for cohab_matrix_version in 2.27 2.28; do
+  if grep -Fq $'\tunknown\t' "${cohab_matrix_dir}/${cohab_matrix_version}/expected-hook-claims.tsv"; then
+    echo "load-bearing TS ${cohab_matrix_version} matrix must not contain unknown hook claims" >&2
+    exit 1
+  fi
+done
 if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_cohabitation_smoke}"; then
   echo "real Timescale/Citus cohabitation smoke must not stub create_distributed_table" >&2
   exit 1

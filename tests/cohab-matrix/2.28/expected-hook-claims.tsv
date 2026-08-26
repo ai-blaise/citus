@@ -1,6 +1,6 @@
 hook_symbol	claim_status	notes
 planner_hook	not_claimed	TimescaleDB 2.28 forecast: still not claimed.
 ProcessUtility_hook	claimed	TimescaleDB 2.28 forecast: still claimed for DDL interception.
-ExecutorStart_hook	unknown	TimescaleDB 2.28 may reclaim ExecutorStart_hook now that the hypercore TAM removal in 2.22 has settled; treated as unknown until live evidence lands.
+ExecutorStart_hook	not_claimed	Source-measured 2026-08-26: zero ExecutorStart_hook references in the timescale/timescaledb 2.28.0 tag tarball (src/ and loader included); the hook freed by the 2.22 hypercore TAM removal remains unclaimed.
 ExecutorRun_hook	not_claimed	TimescaleDB 2.28 forecast: still not claimed.
-ExplainOneQuery_hook	claimed	TimescaleDB 2.28 forecast: still claimed for chunk-aware EXPLAIN.
+ExplainOneQuery_hook	not_claimed	Source-measured 2026-08-26: zero ExplainOneQuery_hook references in the 2.28.0 tag tarball; the prior "claimed for chunk-aware EXPLAIN" row was a stale forecast.

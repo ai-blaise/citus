@@ -80,6 +80,7 @@ ORDER BY 1;
  function citus_drop_trigger()
  function citus_executor_name(integer)
  function citus_extradata_container(internal)
+ function citus_fast_path_router_can_skip_coordinator(bigint)
  function citus_finalize_upgrade_to_citus11(boolean)
  function citus_finish_citus_upgrade()
  function citus_finish_pg_upgrade()
@@ -419,6 +420,6 @@ ORDER BY 1;
  view citus_tables
  view pg_dist_shard_placement
  view time_partitions
-(383 rows)
+(388 rows)
 
 DROP TABLE extension_basic_types;

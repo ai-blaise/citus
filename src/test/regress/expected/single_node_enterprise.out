@@ -472,7 +472,6 @@ NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90730502 tes
 NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90730503 test WHERE true
 NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90731504 test WHERE true
 NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90731505 test WHERE true
-NOTICE:  issuing BEGIN TRANSACTION ISOLATION LEVEL READ COMMITTED;SELECT assign_distributed_transaction_id(xx, xx, 'xxxxxxx');
 NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90731506 test WHERE true
  count
 ---------------------------------------------------------------------
@@ -480,7 +479,6 @@ NOTICE:  issuing SELECT count(*) AS count FROM single_node_ent.test_90731506 tes
 (1 row)
 
 ROLLBACK;
-NOTICE:  issuing ROLLBACK
 NOTICE:  issuing ROLLBACK
 -- should fail as only read access is allowed
 SET ROLE read_access_single_node;

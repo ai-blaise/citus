@@ -3,4 +3,4 @@ planner_hook	not_claimed	TimescaleDB 2.27.x does not claim planner_hook; Citus o
 ProcessUtility_hook	claimed	TimescaleDB 2.27.x claims ProcessUtility_hook for DDL interception; cohabitation requires Citus to chain through the captured prior hook.
 ExecutorStart_hook	not_claimed	Freed in TS 2.22 when the hypercore TAM was removed; remains free in 2.27.x.
 ExecutorRun_hook	not_claimed	TimescaleDB 2.27.x does not claim ExecutorRun_hook.
-ExplainOneQuery_hook	claimed	TimescaleDB 2.27.x claims ExplainOneQuery_hook for chunk-aware EXPLAIN; Citus delegates non-distributed statements to the captured prior hook.
+ExplainOneQuery_hook	not_claimed	Source-measured 2026-08-26: zero ExplainOneQuery_hook references in the timescale/timescaledb 2.27.2 tag tarball; the prior "claimed for chunk-aware EXPLAIN" row was stale folklore.
