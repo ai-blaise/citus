@@ -74,6 +74,12 @@ do
     # shellcheck disable=SC2207
     versions=($(grep --only-matching --extended-regexp "[0-9]+\.[0-9]+[-.][0-9]+" <<< "$file"))
 
+    # ai-blaise: same single-version guard as the upgrade loop above; a
+    # non-pair file in downgrades/ must not trip set -u on versions[1].
+    if [[ ${#versions[@]} -lt 2 ]]; then
+        continue
+    fi
+
     # downgrade file is named citus--<to>--<from>.sql; flip back to upgrade.
     to_version=${versions[0]};
     from_version=${versions[1]};
