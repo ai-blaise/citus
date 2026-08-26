@@ -52,6 +52,14 @@ do
     # shellcheck disable=SC2207
     versions=($(grep --only-matching --extended-regexp "[0-9]+\.[0-9]+[-.][0-9]+" <<< "$file"))
 
+    # ai-blaise: bootstrap scripts such as citus--8.0-1.sql carry a single
+    # version token and have no downgrade counterpart by definition; the fork
+    # extends the 8.0-1 bootstrap, so skip non-pair files instead of tripping
+    # set -u on versions[1].
+    if [[ ${#versions[@]} -lt 2 ]]; then
+        continue
+    fi
+
     from_version=${versions[0]};
     to_version=${versions[1]};
 
