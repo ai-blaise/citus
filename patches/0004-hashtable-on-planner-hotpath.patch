@@ -111,7 +111,7 @@ index 313d2674d..eb281679d 100644
  
  /* intermediate value for INSERT processing */
  typedef struct InsertValues
-@@ -3782,32 +3822,133 @@ MakeDummyColumnString(int dummyColumnId)
+@@ -3782,32 +3822,134 @@ MakeDummyColumnString(int dummyColumnId)
  List *
  IntersectPlacementList(List *lhsPlacementList, List *rhsPlacementList)
  {
@@ -150,7 +150,8 @@ index 313d2674d..eb281679d 100644
 +			foreach(rhsPlacementCell, rhsPlacementList)
  			{
 -				placementList = lappend(placementList, rhsPlacement);
-+				ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
++				ShardPlacement *rhsPlacement =
++					(ShardPlacement *) lfirst(rhsPlacementCell);
 +				if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
 +					strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
 +							WORKER_LENGTH) == 0)

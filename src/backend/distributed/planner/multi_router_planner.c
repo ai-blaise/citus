@@ -4035,7 +4035,8 @@ IntersectPlacementList(List *lhsPlacementList, List *rhsPlacementList)
 			ListCell *rhsPlacementCell = NULL;
 			foreach(rhsPlacementCell, rhsPlacementList)
 			{
-				ShardPlacement *rhsPlacement = (ShardPlacement *) lfirst(rhsPlacementCell);
+				ShardPlacement *rhsPlacement =
+					(ShardPlacement *) lfirst(rhsPlacementCell);
 				if (rhsPlacement->nodePort == lhsPlacement->nodePort &&
 					strncmp(rhsPlacement->nodeName, lhsPlacement->nodeName,
 							WORKER_LENGTH) == 0)
