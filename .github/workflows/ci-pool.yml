@@ -37,11 +37,13 @@ jobs:
       - name: Cargo audit (security advisories)
         # rustsec/audit-check@v2 compiles the latest cargo-audit with a fresh
         # dependency resolution, which broke against the pinned workspace
-        # toolchain on 2026-08-26 (cargo-audit v0.22.2 failed to compile).
-        # Install a pinned cargo-audit with its own lockfile instead so the
-        # gate stays deterministic under the rust-toolchain.toml pin.
+        # toolchain on 2026-08-26 (cargo-audit v0.22.2 failed to compile
+        # unlocked; with --locked it builds cleanly on 1.95.0 and, unlike the
+        # 0.21.x line, parses CVSS 4.0 advisory-db entries). Install the
+        # pinned build so the gate stays deterministic under
+        # rust-toolchain.toml.
         run: |
-          cargo install cargo-audit --locked --version 0.21.2
+          cargo install cargo-audit --locked --version 0.22.2
           cargo audit
 
       - name: Test pool
