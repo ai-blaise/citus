@@ -46,3 +46,7 @@ jobs:
         run: bash ci/ai-blaise/security-enforcement-smoke.sh
       - name: Run security supply-chain smoke
         run: bash ci/ai-blaise/security-supply-chain-smoke.sh
+      - name: Cargo audit (warnings denied; reviewed policy enforced)
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          bash ci/ai-blaise/cargo-audit-policy-smoke.sh

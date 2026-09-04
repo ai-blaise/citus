@@ -36,6 +36,7 @@ use ai_blaise_citus_operator::controllers::boundary::{
     execution_mode_from_env, BoundaryOperation, BoundaryOperationKind, ControllerBoundaryPlan,
     ExecutionMode,
 };
+use ai_blaise_citus_operator::controllers::citus_cluster::CitusCluster;
 use ai_blaise_citus_operator::controllers::hypertable::Hypertable;
 use ai_blaise_citus_operator::controllers::sidecar::Sidecar;
 use ai_blaise_citus_operator::{
@@ -109,6 +110,7 @@ fn main() {
         }
         [command] if command == "print-sidecar-crd" => print_sidecar_crd(),
         [command] if command == "print-hypertable-crd" => print_hypertable_crd(),
+        [command] if command == "print-citus-cluster-crd" => print_citus_cluster_crd(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -145,7 +147,15 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-sidecar-crd|print-hypertable-crd]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-citus-cluster-crd|print-sidecar-crd|print-hypertable-crd]");
+}
+
+fn print_citus_cluster_crd() {
+    let crd = serde_yaml::to_string(&CitusCluster::crd()).unwrap_or_else(|error| {
+        eprintln!("operator: CitusCluster CRD render failed: {error}");
+        process::exit(1);
+    });
+    print!("{crd}");
 }
 
 fn print_sidecar_crd() {
@@ -780,11 +790,11 @@ fn canonical_controller_boundary_plans_for_mode(
             mode,
             vec![
                 BoundaryOperation::render_plan("render_citus_cluster_plan"),
-                BoundaryOperation::alpha(
+                BoundaryOperation::implemented(
                     "apply_citus_cluster_children",
                     BoundaryOperationKind::KubernetesApply,
                 ),
-                BoundaryOperation::alpha(
+                BoundaryOperation::implemented(
                     "patch_citus_cluster_status",
                     BoundaryOperationKind::StatusMutation,
                 ),
@@ -938,6 +948,7 @@ fn canonical_cluster_spec() -> CitusClusterSpec {
                 replicas: 1,
             },
         ],
+        production: None,
     }
 }
 
@@ -1425,12 +1436,43 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                "CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
+                "CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations	none	30".to_string(),
                 "Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations	none	30".to_string(),
                 "Migration	users-display-name	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
                 "Tenant	tenant-a	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn citus_cluster_crd_exposes_production_and_status_contracts() {
+        let crd = serde_json::to_value(CitusCluster::crd()).expect("serialize CitusCluster CRD");
+        assert!(crd
+            .pointer("/spec/versions/0/subresources/status")
+            .is_some());
+        let spec = crd
+            .pointer("/spec/versions/0/schema/openAPIV3Schema/properties/spec/properties")
+            .expect("spec properties");
+        assert!(spec.get("production").is_some());
+        assert!(spec
+            .pointer("/production/properties/nodeTls/properties/sslMode")
+            .is_some());
+        let status = crd
+            .pointer("/spec/versions/0/schema/openAPIV3Schema/properties/status/properties")
+            .expect("status properties");
+        for field in [
+            "phase",
+            "observedGeneration",
+            "appliedSpecHash",
+            "cnpgClusters",
+            "bootstrapJob",
+            "expectedExtensions",
+            "nodeConninfo",
+            "lastError",
+            "conditions",
+        ] {
+            assert!(status.get(field).is_some(), "missing status field {field}");
+        }
     }
 
     #[test]
@@ -1440,6 +1482,6 @@ mod tests {
             .to_string();
 
         assert!(error.contains("apply mode blocked"));
-        assert!(error.contains("apply_citus_cluster_children"));
+        assert!(error.contains("invoke_schema_job_sidecar"));
     }
 }

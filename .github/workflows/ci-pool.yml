@@ -44,7 +44,7 @@ jobs:
         # rust-toolchain.toml.
         run: |
           cargo install cargo-audit --locked --version 0.22.2
-          cargo audit
+          bash ci/ai-blaise/cargo-audit-policy-smoke.sh
 
       - name: Test pool
         run: cargo test -p ai_blaise_citus_pool

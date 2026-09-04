@@ -28,6 +28,10 @@ jobs:
       - name: Check production gap guardrails
         run: bash ci/ai-blaise/production-gap-audit.sh
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Cargo audit (warnings denied; reviewed policy enforced)
+        run: |
+          cargo install cargo-audit --locked --version 0.22.2
+          bash ci/ai-blaise/cargo-audit-policy-smoke.sh
       - name: Run release gate monitor static contract
         run: RELEASE_GATE_MONITOR_STATIC=1 bash ci/ai-blaise/release-gate-monitor.sh --local-only
       - name: Check runbook command examples

@@ -19,10 +19,40 @@ controller startup failure instead of claiming a live reconciliation surface.
 Implemented kube-rs controller modules currently cover `CitusCluster`,
 `Migration`, `Tenant`, `Region`, `SurvivalGoal`, `Backup`, `Hypertable`,
 `Federation`, `SearchIndex`, `Webhook`, `Function`, `ScheduledRepack`,
-`ConflictPolicy`, and `Sidecar`. They build typed reconcile/apply plans and log the intended work;
-they do not yet mutate Kubernetes status or execute companion SQL directly from
-the operator. SQL execution remains delegated to the companion/sidecar boundary
-called out in the feature docs.
+`ConflictPolicy`, and `Sidecar`. Most build typed reconcile/apply plans and log
+the intended work. `CitusCluster`, `Hypertable`, and `Sidecar` have bounded live
+apply paths with status mutation. SQL execution remains delegated to a bounded
+Job or companion/sidecar boundary called out in the feature docs.
+
+The production `CitusCluster` path is deliberately coordinator-worker only. It
+requires a digest-pinned operand image, exact Citus and companion extension
+versions, explicit PostgreSQL UID/GID and storage, at least two worker groups,
+and pre-provisioned CA, CA-signed server TLS, and superuser Secrets. It server-side
+manages one CNPG coordinator group, one CNPG cluster per logical worker group,
+and a namespaced CNPG `ImageCatalog`. After every CNPG group reports all desired
+instances ready on the requested image in CNPG's healthy/Ready state with no
+PVC resize pending, the controller directly proves that every exact
+owner-UID instance Pod serves the current server Secret leaf under verify-full
+TLS. An immutable, hash-named, bounded Job then first proves the live
+password, verify-full TLS, and exact node configuration, then installs and verifies
+the exact extensions, configures `pg_dist_authinfo`, registers workers, checks
+TLS transport, and proves byte-equal `pg_dist_node` topology. `.status` records
+the reconcile revision (including CR generation, rendered apply contracts, and
+referenced Secret resource versions),
+`observedGeneration`, CNPG readiness, bootstrap Job, expected versions, exact
+`citus.node_conninfo`, errors, and conditions. CNPG-group removal fails closed
+until a separate shard-evacuation workflow supplies evidence; both status and
+the live owner-UID CNPG inventory participate in that guard. Owner UID and
+optimistic preconditions prevent force-adoption, and older runnable bootstrap
+generations are foreground-quiesced before a replacement starts. See
+`operator/CITUS_CLUSTER_PRODUCTION.md` for the CR, certificate, RBAC, and
+promotion-evidence contracts. This bounded path accepts exactly `citus` and
+`ai_blaise_citus`; TimescaleDB cohabitation remains on its separately evidenced
+controller/runtime path. CNPG v1 does not publish observed generation for its
+Cluster status, so storage/class, PostgreSQL major/UID/GID, and initdb-database
+changes are fail-closed after create and require reviewed reprovision/migration.
+Extension-version changes likewise require the reviewed upgrade path rather
+than being inferred from an idempotent bootstrap verification Job.
 
 The implemented specs are `CitusCluster` for `FEATURE: S4` topology
 selection, `ShardGroup` for `FEATURE: S2` placement policy, `Hypertable` for
@@ -79,8 +109,10 @@ guards that contract in addition to the Rust tests.
 
 `cargo run -p ai_blaise_citus_operator -- run-controller-boundary` emits typed
 controller boundary Conditions for dry-run mode, and
-`ci/ai-blaise/operator-boundary-smoke.sh` proves apply mode fails closed while
-Kubernetes apply, direct SQL execution, and `.status` mutation are still alpha.
+`ci/ai-blaise/operator-boundary-smoke.sh` guards which controller operations are
+implemented. The `CitusCluster` row includes Kubernetes apply and status
+mutation; unsupported direct SQL remains fail-closed behind the bootstrap Job
+boundary.
 
 `ci/ai-blaise/sidecar-controller-live-smoke.sh` is the live O5 apply-mode gate.
 It builds real operator and realtime sidecar containers, pushes digest-pinned
@@ -94,7 +126,7 @@ Deployment.
 `cargo run -p ai_blaise_citus_operator -- run-security-canonical` validates the
 operator-owned security boundary for generated operator, pool, built-in
 sidecar, and custom sidecar workloads. The runner fails closed on inline
-secrets, Secret API RBAC, wildcard RBAC, weak TLS settings, auth policies that
+secrets, Secret API listing or mutation, wildcard RBAC, weak TLS settings, auth policies that
 do not fail closed, root or privilege-escalating containers, writable root
 filesystems, missing `RuntimeDefault` seccomp, and retained Linux capabilities.
 This is model/smoke evidence only; live certificate issuance, mounts, and mTLS

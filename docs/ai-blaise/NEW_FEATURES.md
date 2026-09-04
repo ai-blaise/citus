@@ -1771,9 +1771,11 @@ fan embedding jobs across Citus workers safely.
 (`set_shard_count`, `set_shard_replication_factor`, `create_distributed_table`,
 optional `update_distributed_table_colocation`, and a `pg_dist_shard`
 post-condition guard) plus Kubernetes-style topology-spread constraints. The
-`CitusClusterReconcilePlan` plan-builder renders the CloudNativePG cluster
-manifest, pool Deployment intent, and one Deployment intent per declared
-sidecar so the operator-owned reconcile contract is executable end-to-end. The
+`CitusClusterReconcilePlan` plan-builder renders a distinct CloudNativePG
+coordinator group, one CloudNativePG cluster per logical worker group, the
+digest-pinned `ImageCatalog`, exact node-TLS parameters, bootstrap verification
+intent, pool Deployment intent, and one Deployment intent per declared sidecar.
+The
 controller boundary model renders typed Conditions and retry classification for
 `CitusCluster`, `Hypertable`, `Migration`, and `Tenant` so dry-run planning is
 explicit and alpha mutation paths cannot be mistaken for implemented apply
@@ -1786,16 +1788,28 @@ run-reconcile-plans`, which emits the canonical reconcile-plan TSV row
 `ai-blaise-citus\t4\t4\ttrue\tfalse\t5\t1\t3\ttrue`. `cargo run -p
 ai_blaise_citus_operator -- run-controller-boundary` emits the canonical
 dry-run boundary TSV and `ci/ai-blaise/operator-boundary-smoke.sh` proves
-`AI_BLAISE_OPERATOR_EXECUTION_MODE=apply` fails closed while Kubernetes apply,
-direct SQL execution, and `.status` mutation are still `AlphaNotImplemented`.
-The matching SQL apply plan and CloudNativePG cluster manifest are produced
-from the canonical `CitusClusterSpec` and `ShardGroupSpec` without external
-Kubernetes dependencies. Live in-cluster reconciliation (a Kubernetes
-controller loop that watches the CRDs, applies the manifests, and updates
-`.status`) remains gated behind the alpha `operator.controllerRbac.enabled`
-profile because the operator runtime currently exposes only
-health/readiness/metrics, plan-builder helpers, and non-mutating boundary
-reports.
+the bounded `CitusCluster` Kubernetes apply and status operations remain
+implemented while unsupported direct SQL remains `AlphaNotImplemented`. The
+production apply source requires a digest-pinned image, exact extension
+versions, explicit CNPG/node-TLS settings, and a bounded bootstrap verification
+Job; it rejects topology contraction without prior shard-evacuation evidence.
+The reconcile revision includes CR generation plus the rendered child/script
+contract, existing children require the exact controller owner UID and
+optimistic identity preconditions, CNPG readiness is bound to the requested
+image/healthy condition, and older runnable bootstrap generations are
+foreground-quiesced before replacement.
+The contraction guard inventories live owner-UID CNPG children as well as
+status, closing the reconcile-crash window before status persistence.
+Malformed production/planning inputs return typed errors without controller
+panics, and topology verification requires distinct expected node names so a
+duplicate catalog row cannot mask a missing worker.
+The operator runtime was upgraded to maintained `kube`/`kube-runtime` 4.2 and
+its resolved package graph contains none of the workspace audit findings; the
+only remaining workspace warning is the upstream-only `serde_cbor` dependency
+behind the companion's optional pgrx extension feature, governed by the narrow
+warnings-denied policy in `docs/ai-blaise/DEPENDENCY_AUDIT_POLICY.md`.
+This source implementation does not add live S2 placement or rebalance evidence
+and does not expand this feature's existing production claim.
 
 **Motivation**: Placement decisions need an operator-owned policy before the
 fork can prove zone-aware replication and survival-goal behavior.
@@ -1845,8 +1859,21 @@ dedicated coordinators at zero.
 
 The S4 production-ready boundary does not claim coordinator bootstrap removal,
 dynamic shard-aware pool routing, multi-shard plan-leader execution,
-Kubernetes reconciliation, WAN or cross-region behavior, or every Citus query
-shape.
+Kubernetes reconciliation for coordinator-less topology, WAN or cross-region
+behavior, or every Citus query shape. A separate,
+tightly-scoped production `CitusCluster` reconcile path now implements
+server-side apply, owner/finalizer lifecycle, CNPG readiness, exact extension
+version checks, and `verify-full` node configuration for coordinator-worker
+topology only. It also fail-closes CNPG fields that lack a live post-update
+acknowledgement, and its bootstrap preflight verifies the current endpoint
+password, TLS, and node configuration before any SQL mutation. Because CNPG
+also lacks a certificate-reload acknowledgement, the controller directly
+checks every exact owner-UID instance Pod and requires verify-full TLS plus an
+exact peer-leaf hash match with the current server Secret before bootstrap or
+Ready. It deliberately rejects coordinator-less apply, so this source
+work does not broaden the bounded coordinator-less S4 evidence above. Cluster
+promotion still requires independent review of all eight live evidence
+artifacts documented in `operator/CITUS_CLUSTER_PRODUCTION.md`.
 
 **Motivation**: The classic coordinator is a throughput and availability
 bottleneck.
@@ -1857,9 +1884,13 @@ not ship ai-blaise's pool/operator topology mode.
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
-- In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`
+- In-source: `FEATURE: S4` in `operator/src/crds/citus_cluster.rs`,
+  `operator/src/reconcile/citus_cluster.rs`, and
+  `operator/src/controllers/citus_cluster.rs`
+- Operations: `operator/CITUS_CLUSTER_PRODUCTION.md`
 - Acceptance: `e2e/src/timescale_on_citus.rs`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-canonical`
+- Executable: `cargo run -p ai_blaise_citus_operator -- print-citus-cluster-crd`
 - CI: `ci/ai-blaise/coordinatorless-mx-live-smoke.sh`
 - CI: `ci/ai-blaise/topology-consensus-smoke.sh`
 

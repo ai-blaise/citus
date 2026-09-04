@@ -1,0 +1,7 @@
+# RUSTSEC-2021-0127 is an unmaintained-only advisory for serde_cbor 0.11.2.
+# It is present solely through companion's optional pg18 -> pgrx dependency;
+# it is not reachable from the operator. pgrx 0.19.2, the newest published
+# release as of 2026-09-04, still depends directly on serde_cbor 0.11.2 and
+# therefore offers no fixed upgrade. See docs/ai-blaise/DEPENDENCY_AUDIT_POLICY.md.
+[advisories]
+ignore = ["RUSTSEC-2021-0127"]

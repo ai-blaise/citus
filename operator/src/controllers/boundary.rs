@@ -384,7 +384,9 @@ pub fn retry_class_for_error(error: &ControllerError) -> RetryClass {
             RetryClass::AlphaBlocked
         }
         ControllerError::Boundary(_) => RetryClass::SpecTerminal,
-        ControllerError::Kube(_) | ControllerError::Companion(_) => RetryClass::Transient,
+        ControllerError::Kube(_)
+        | ControllerError::Companion(_)
+        | ControllerError::Finalizer(_) => RetryClass::Transient,
     }
 }
 

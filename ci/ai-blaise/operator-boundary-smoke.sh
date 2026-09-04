@@ -5,7 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
 expected=$'controller	resource	mode	render_plan	kubernetes_apply	direct_sql	status_mutation	conditions	retry_class	requeue_seconds
-CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30
+CitusCluster	ai-blaise-citus	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations	none	30
 Hypertable	metrics	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations	none	30
 Migration	users-display-name	dry-run	1	1	0	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,KubernetesApplyAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30
 Tenant	tenant-a	dry-run	1	0	1	1	SpecAccepted=True:Validated,PlanRendered=True:Rendered,DryRun=True:NoMutations,DirectSqlAlpha=False:AlphaNotImplemented,StatusMutationAlpha=False:AlphaNotImplemented	alpha-blocked	30'

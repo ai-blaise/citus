@@ -221,9 +221,11 @@ impl RbacPolicyPlan {
             access: KubernetesApiAccess::Scoped,
             rules: vec![
                 RbacRulePlan {
-                    api_group: "ai-blaise.com".to_string(),
+                    api_group: "citus.ai-blaise.io".to_string(),
                     resources: vec![
                         "citusclusters".to_string(),
+                        "citusclusters/status".to_string(),
+                        "citusclusters/finalizers".to_string(),
                         "hypertables".to_string(),
                         "migrations".to_string(),
                         "shardgroups".to_string(),
@@ -235,6 +237,48 @@ impl RbacPolicyPlan {
                         "watch".to_string(),
                         "patch".to_string(),
                         "update".to_string(),
+                    ],
+                },
+                RbacRulePlan {
+                    api_group: "postgresql.cnpg.io".to_string(),
+                    resources: vec!["clusters".to_string(), "imagecatalogs".to_string()],
+                    verbs: vec![
+                        "get".to_string(),
+                        "list".to_string(),
+                        "create".to_string(),
+                        "patch".to_string(),
+                    ],
+                },
+                RbacRulePlan {
+                    api_group: "".to_string(),
+                    resources: vec!["configmaps".to_string()],
+                    verbs: vec![
+                        "get".to_string(),
+                        "list".to_string(),
+                        "create".to_string(),
+                        "patch".to_string(),
+                        "delete".to_string(),
+                    ],
+                },
+                RbacRulePlan {
+                    api_group: "".to_string(),
+                    resources: vec!["secrets".to_string()],
+                    verbs: vec!["get".to_string()],
+                },
+                RbacRulePlan {
+                    api_group: "".to_string(),
+                    resources: vec!["pods".to_string()],
+                    verbs: vec!["get".to_string(), "list".to_string()],
+                },
+                RbacRulePlan {
+                    api_group: "batch".to_string(),
+                    resources: vec!["jobs".to_string()],
+                    verbs: vec![
+                        "get".to_string(),
+                        "list".to_string(),
+                        "create".to_string(),
+                        "patch".to_string(),
+                        "delete".to_string(),
                     ],
                 },
                 RbacRulePlan {
@@ -292,6 +336,7 @@ impl RbacRulePlan {
             .resources
             .iter()
             .any(|resource| resource.eq_ignore_ascii_case("secrets"))
+            && (!self.api_group.is_empty() || self.verbs.iter().any(|verb| verb != "get"))
         {
             return Err(WorkloadSecurityError::SecretRbacForbidden);
         }
@@ -1226,7 +1271,7 @@ mod tests {
                 auth_boundaries: 5,
                 secret_refs: 20,
                 external_secret_bindings: 5,
-                rbac_rules: 2,
+                rbac_rules: 7,
                 kube_api_denied: 5,
                 run_as_non_root: 6,
                 read_only_rootfs: 6,
@@ -1255,13 +1300,13 @@ mod tests {
     }
 
     #[test]
-    fn rbac_rejects_secret_and_wildcard_grants() {
+    fn rbac_rejects_secret_mutation_and_wildcard_grants() {
         let secret_grant = RbacPolicyPlan {
             access: KubernetesApiAccess::Scoped,
             rules: vec![RbacRulePlan {
                 api_group: "".to_string(),
                 resources: vec!["secrets".to_string()],
-                verbs: vec!["get".to_string()],
+                verbs: vec!["list".to_string()],
             }],
         };
         let wildcard_grant = RbacPolicyPlan {

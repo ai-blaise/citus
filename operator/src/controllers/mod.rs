@@ -60,6 +60,8 @@ pub enum ControllerError {
     InvalidSpec(String),
     #[error("controller boundary error: {0}")]
     Boundary(#[from] BoundaryError),
+    #[error("finalizer error: {0}")]
+    Finalizer(String),
 }
 
 /// Spawn each catalog controller concurrently. Returns when any controller's
@@ -82,6 +84,15 @@ pub async fn serve_all(client: Client) -> Result<(), ControllerError> {
             "operator serving Hypertable controller only"
         );
         hypertable::run(ctx).await?;
+        return Ok(());
+    }
+
+    if single_controller_selection("citus_cluster") || single_controller_selection("cituscluster") {
+        info!(
+            mode = ctx.execution_mode.as_str(),
+            "operator serving CitusCluster controller only"
+        );
+        citus_cluster::run(ctx).await?;
         return Ok(());
     }
 

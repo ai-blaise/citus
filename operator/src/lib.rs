@@ -13,7 +13,10 @@ pub use crds::branch::{
     BranchStorageSpec, BranchType,
 };
 pub use crds::citus_cluster::{
-    CitusClusterSpec, CitusClusterSpecError, CitusTopology, PoolSpec, SidecarSpec, SidecarType,
+    BootstrapJobSpec, CitusClusterSpec, CitusClusterSpecError, CitusProductionSpec, CitusTopology,
+    ExactExtensionVersions, NodeTlsSpec, PoolSpec, SidecarSpec, SidecarType, CNPG_SERVER_CA_PATH,
+    COMPANION_EXTENSION, MAX_PRODUCTION_DATABASES, MAX_PRODUCTION_GROUP_REPLICAS,
+    MAX_PRODUCTION_WORKER_GROUPS,
 };
 pub use crds::conflict_policy::{
     ConflictClass, ConflictPolicySpec, ConflictPolicySpecError, ConflictResolution,
@@ -57,8 +60,10 @@ pub use reconcile::backup::{
     BackupReconcilePlan,
 };
 pub use reconcile::citus_cluster::{
-    CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan, CnpgClusterPlan,
-    PoolDeploymentPlan, SidecarDeploymentPlan, CNPG_CLUSTER_NAME_SUFFIX,
+    CitusBootstrapPlan, CitusClusterReconcileError, CitusClusterReconcilePlan, ClusterTopologyPlan,
+    CnpgClusterPlan, CnpgClusterRole, CnpgImageCatalogPlan, PoolDeploymentPlan,
+    SidecarDeploymentPlan, BOOTSTRAP_CONFIG_MAP_NAME_SUFFIX, CNPG_CLUSTER_NAME_SUFFIX,
+    CNPG_COORDINATOR_NAME_SUFFIX, CNPG_IMAGE_CATALOG_NAME_SUFFIX, CNPG_WORKER_NAME_INFIX,
     POOL_DEPLOYMENT_NAME_SUFFIX, POSTGRES_SHARED_PRELOAD_LIBRARIES,
 };
 pub use reconcile::conflict_policy::{

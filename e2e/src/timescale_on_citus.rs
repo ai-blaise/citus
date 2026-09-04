@@ -69,6 +69,7 @@ impl TimescaleOnCitusAcceptance {
                     sidecar_type: SidecarType::Vectorizer,
                     replicas: 1,
                 }],
+                production: None,
             },
             shard_group: ShardGroupSpec {
                 parent_table: "public.metrics".to_string(),

@@ -9,12 +9,15 @@
 
 Implemented CRD surface from the V2 plan. `operator/src/main.rs` validates the
 canonical catalog and emits the CI-gated `run-canonical` TSV summary. The
-controller boundary runner also emits typed Conditions for the alpha mutation
-edge: direct SQL execution and `.status` updates remain non-executable unless a
-separate implementation moves them out of `AlphaNotImplemented` and updates the
-smoke expectations.
+controller boundary runner also emits typed Conditions at the mutation edge.
+Unsupported direct SQL execution remains non-executable unless a separate
+implementation moves it out of `AlphaNotImplemented`; `CitusCluster`,
+`Hypertable`, and `Sidecar` have explicitly bounded live status/apply paths.
 
-- `CitusCluster` (`FEATURE: S4`, canonical Rust spec implemented)
+- `CitusCluster` (`FEATURE: S4`, spec, digest-pinned coordinator-worker CNPG
+  apply path, exact node-TLS/version bootstrap verification, finalizer, owner
+  references, and status conditions implemented; see
+  `operator/CITUS_CLUSTER_PRODUCTION.md`)
 - `ShardGroup` (`FEATURE: S2`, canonical Rust spec implemented)
 - `Hypertable` (`FEATURE: TS7`, Rust spec and guarded apply plan implemented)
 - `Branch` (`FEATURE: R2`, `FEATURE: C6`, `FEATURE: C7`, `FEATURE: C8`,
