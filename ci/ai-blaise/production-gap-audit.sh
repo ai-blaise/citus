@@ -3619,7 +3619,7 @@ analytical_truth = compact(
 )
 for phrase in (
     "**Status**: production-ready",
-    "datafusion = \"48.0.1\"",
+    "datafusion = \"55.0.0\"",
     "query_engine_executed=true",
     "datafusion_output_rows=2",
     "datafusion_output_total=3000",
@@ -3652,7 +3652,7 @@ if "sidecar-analytical-smoke.sh" not in read(SIDECAR_WORKFLOW):
 for phrase in (
     "run-local-parquet-read-canonical",
     "sidecar-analytical-parquet-read-smoke.sh",
-    "parquet = \"55.2.0\"",
+    "parquet = \"59.2.0\"",
     "ArrowWriter",
     "ParquetReadOptions",
     "register_parquet",
