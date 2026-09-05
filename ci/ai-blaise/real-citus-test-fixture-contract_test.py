@@ -17,6 +17,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fixture_git_env import isolated_fixture_git_environment
+
 ROOT = Path(__file__).resolve().parents[2]
 CHECK = ROOT / "ci/ai-blaise/real-citus-test-fixture-contract.py"
 CONTEXT_BUILDER = ROOT / "ci/ai-blaise/materialize-real-citus-test-fixture.py"
@@ -229,6 +231,7 @@ class RealCitusFixtureContractTests(unittest.TestCase):
             "must not use a floating parent tag",
         )
 
+    @isolated_fixture_git_environment()
     def test_http_builder_builds_the_prehashed_snapshot_after_checkout_drift(self):
         with tempfile.TemporaryDirectory(prefix="real-citus-http-snapshot-") as root:
             fixture_root = Path(root)
@@ -1162,6 +1165,7 @@ raise SystemExit(95)
                     "must contain exactly one occurrence",
                 )
 
+    @isolated_fixture_git_environment()
     def test_context_fingerprint_binds_bytes_modes_and_symlinks(self):
         module = load_materializer()
 
@@ -1246,6 +1250,15 @@ raise SystemExit(95)
             ),
             "must contain exactly one occurrence",
         )
+
+
+def load_tests(loader, tests, pattern):
+    # Keep the isolation regression in this existing CI entry point as well as
+    # independently runnable; it invokes only the named disposable-repo cases.
+    from fixture_git_env_test import FixtureGitEnvironmentTests
+
+    tests.addTests(loader.loadTestsFromTestCase(FixtureGitEnvironmentTests))
+    return tests
 
 
 if __name__ == "__main__":

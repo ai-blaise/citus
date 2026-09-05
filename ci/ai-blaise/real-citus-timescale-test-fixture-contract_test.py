@@ -15,6 +15,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from fixture_git_env import isolated_fixture_git_environment
+
 ROOT = Path(__file__).resolve().parents[2]
 CHECK = ROOT / "ci/ai-blaise/real-citus-timescale-test-fixture-contract.py"
 BUILDER = ROOT / "ci/ai-blaise/build-real-citus-timescale-test-fixture.sh"
@@ -437,6 +439,7 @@ class RealCitusTimescaleFixtureContractTests(unittest.TestCase):
             "must state its non-runtime hook boundary",
         )
 
+    @isolated_fixture_git_environment()
     def test_materializer_excludes_ignored_objects_and_binds_local_source(self):
         module = load_materializer()
         with tempfile.TemporaryDirectory(prefix="timescale-fixture-context-") as root:

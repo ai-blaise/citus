@@ -98,3 +98,24 @@ It is not a clean rebuild of this checkpoint. Mutable external dependencies,
 trusted release provenance, full release publication, cluster recovery/rolling
 upgrade, complete feature qualification, and Chimera's M gates remain open.
 Neither these security fixtures nor the static checks close those requirements.
+
+## Fixture-test Git isolation follow-up
+
+A test invocation against the exported candidate inherited `GIT_DIR` and
+`GIT_WORK_TREE`. A nested fixture `git init` consequently persisted the candidate
+path as the live repository's `core.worktree`. Publication used an explicit live
+worktree and verified every staged blob; the task-created configuration override
+was then removed, and the live top-level and empty index were verified. The
+Git-backed static snapshot tests described above did not rely on that override.
+
+Disposable-repository test scopes now remove inherited `GIT_*` overrides and
+disable global/system Git configuration, while preserving ordinary environment
+settings and restoring the complete environment afterward. Production
+source-provenance operations are unchanged. A regression runs the three actual
+temporary-repository cases with overrides pointing only at a disposable parent
+sentinel; its configuration, index, refs, objects, and source bytes and modes
+must remain identical. The existing CI test entry point includes this regression.
+
+The Citus fixture suite passed all 55 tests and the Timescale suite passed all
+16 after this test-only follow-up. These tests do not add native release evidence
+or change the checkpoint's alpha boundary.
