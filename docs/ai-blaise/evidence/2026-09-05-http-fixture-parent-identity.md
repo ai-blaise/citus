@@ -2,8 +2,9 @@
 
 This is a test-fixture correction, not a production image or feature-readiness
 promotion. The four-path candidate starts at Citus
-`43e7b309ff3fdfdc82bf6d18107490393b125ce0`; its source tree is
-`b940a99696b43b0cec5f800627a4d50bfc00abf1`. This receipt is additional metadata.
+`43e7b309ff3fdfdc82bf6d18107490393b125ce0`; that base commit's Git tree is
+`b940a99696b43b0cec5f800627a4d50bfc00abf1`. The four changed-path hashes below
+bind the tested overlay separately. This receipt is additional metadata.
 
 ## Defect and correction
 
