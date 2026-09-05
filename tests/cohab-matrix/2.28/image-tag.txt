@@ -1,1 +1,1 @@
-timescale/timescaledb-ha:pg17-ts2.28
+docker.io/timescale/timescaledb-ha:pg17-ts2.28@sha256:bc9e09875460aa69fb536362fef7c8e92c51ad6aab3d13f91a2487d3547dc71a

@@ -38,7 +38,7 @@ spec:
     databases: [app]
     extensionVersions:
       citus: 13.2-1
-      companion: 0.1.0
+      companion: 0.1.2
     nodeTls:
       serverCaSecret: production-server-ca
       serverTlsSecret: production-server-tls

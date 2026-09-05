@@ -2,17 +2,17 @@
 
 The canonical operand-image extension contract lives in
 `images/citus-pg-overlay/extension-manifest.tsv`.
-`FEATURE: Bundle1 is production-ready` for the
-`full-bundle-required-minus-plrust` boundary: the new
+`FEATURE: Bundle1 remains alpha` for its declared required manifest. The new
 `bundle1-pgdg-runtime` Dockerfile stage installs every PGDG and Timescale
 binary-package required extension on top of `postgres:17-bookworm`;
 `bundle1-final-light` and `bundle1-final-full` layer in the source-built
-extensions; the canonical `shared-preload-libraries.conf` only references
-actually-installed libraries; and the complete initdb path
-(`/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql`) runs
-`CREATE EXTENSION` for every required Bundle1 extension at first container
-boot. The fast default `bundle1-contract` image stays a manifest/init
-contract for cheap PR coverage and does not carry production claims by itself.
+extensions. The light target is partial B1/PR evidence and excludes the
+lockfile's `full` rows; only the full target may claim
+`full-bundle-required-minus-plrust` and release eligibility. There is no
+current release-qualified full-target default-boot receipt from a reviewed
+clean commit, so release/publishing stays blocked.
+The fast default `bundle1-contract` image stays a manifest/init contract for
+cheap PR coverage and does not carry production claims by itself.
 The plrust PG17 upstream gap is unchanged (upstream main still pg13-pg16 with
 pgrx 0.11.0); plrust has been moved from `required` to `optional` in the
 manifest and is tracked separately under `FEATURE: EF6`. The pg_cron
@@ -49,6 +49,12 @@ manifest, lockfile, Dockerfile, smoke, evidence, or docs drift apart.
 | `pg_warm` | local shim over core `pg_prewarm` | `0.1.0` | in-tree SQL | feasible, light target |
 | `plrust` | pgcentralfoundation/plrust | `v1.2.8` | `bd76906a43c05a2afdb7839263431a066f5b42fb` | alpha-deferred upstream pg17 blocker; plrust is now optional in the manifest and tracked separately under FEATURE: EF6 |
 
+The Citus `v13.3.0` value is historical tracking metadata, not the runtime
+extension version and not Chimera's separately selected latest-upstream pin.
+The image compiles the in-tree fork, binds it to the source Git SHA/tree-state
+labels, and the default-boot smoke requires its observed `pg_extension`
+version to equal `src/backend/distributed/citus.control` (currently `15.0-1`).
+
 Run the targeted smoke with:
 
 ```bash
@@ -66,9 +72,23 @@ deployments must set `PGSODIUM_KEY` or mount a 64-hex-character secret and set
 without a key, then provides an explicit deterministic test key only for the
 disposable test container. Source-build images carry the
 `ai-blaise.citus.source-git-sha` and `ai-blaise.citus.source-tree-state`
-labels plus the `full-bundle-required-minus-plrust` evidence-scope label and
-`full-initdb-path=true` label, recording that the complete initdb path runs
-at first container boot and creates every required Bundle1 extension.
+labels plus target-specific scope and release-target labels. Light carries
+`light-required-subset-minus-heavy-and-plrust` and `release-target=false`;
+only full carries `full-bundle-required-minus-plrust` and
+`release-target=true`.
+
+Both source-build targets copy the canonical preload file to
+`/etc/postgresql/ai-blaise/shared-preload-libraries.conf` and append a
+fail-closed `include` to the `postgresql.conf.sample` used by initdb. The
+`ci-image.yml` PG17 leg explicitly builds `bundle1-final-light` and invokes
+`ci/ai-blaise/bundle1-default-boot-smoke.sh` without a postgres command or
+`-c` override. Light expectations are derived from required manifest rows
+minus source-build lock rows marked `full`. A separate push-time full build
+runs the same smoke against every required manifest entry. Both modes check
+the applied `pg_file_settings.sourcefile`, preload GUCs, init completion,
+readiness, installed Citus control version and `ai_blaise_citus` version
+`0.1.2`, target/scope/release labels, and expected source Git SHA/tree-state.
+The workflow does not publish an image.
 
 ## pg_cron Cohabitation Subset
 
@@ -85,9 +105,7 @@ worker to write clock-reserved evidence rows, records
 SQL cohabit detectors fail closed when the `pg_cron` allowlist entry is omitted.
 
 This pg_cron cohabitation smoke is bounded to the TS19/TS20 clock-reservation
-path: it does not by itself promote Bundle1 as a whole (the
-`bundle1-final-light` and `bundle1-final-full` build-and-initdb smokes do
-that for the required minus-plrust bundle), does not cover plrust, does not
+path: it does not promote Bundle1 as a whole, does not cover plrust, does not
 make `pg_cron` a trusted hook-chain coextension, and does not prove live
 TimescaleDB or pg_partman extension execution beyond extension creation.
 
@@ -101,8 +119,9 @@ online-maintenance substrates.
 Required entries are statically validated by `ci/ai-blaise/image-check.sh`.
 Cluster initialization uses
 `images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql` as the
-deterministic extension creation order and intentionally fails when a required
-extension control file is absent.
+deterministic extension creation order. The two lockfile `full` entries are
+conditional so light can boot; the full default-boot smoke fails closed unless
+all required manifest entries are present.
 
 The overlay also installs `ai_blaise_citus`, a local SQL fallback companion
 extension. It exposes `companion_feature_status()` plus pgrx-compatible

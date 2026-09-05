@@ -24,11 +24,26 @@ observability_replication_smoke="ci/ai-blaise/observability-replication-smoke.sh
 app_digest_smoke="ci/ai-blaise/app-image-digest-manifest-smoke.sh"
 observability_contracts_check="ci/ai-blaise/observability-contracts-check.sh"
 ai_sql_contract_smoke="ci/ai-blaise/ai-sql-contract-smoke.sh"
+real_citus_fixture_dockerfile="images/citus-test-fixture/Dockerfile"
+real_citus_fixture_base_lock="images/citus-test-fixture/base-images.lock.tsv"
+real_citus_http_fixture_dockerfile="images/citus-test-fixture/Dockerfile.http"
+real_citus_http_fixture_package_lock="images/citus-test-fixture/http-packages.lock.tsv"
+real_citus_fixture_builder="ci/ai-blaise/build-real-citus-test-fixture.sh"
+real_citus_http_fixture_builder="ci/ai-blaise/build-real-citus-http-test-fixture.sh"
+real_citus_fixture_context_builder="ci/ai-blaise/materialize-real-citus-test-fixture.py"
+real_citus_fixture_contract="ci/ai-blaise/real-citus-test-fixture-contract.py"
+real_citus_fixture_contract_test="ci/ai-blaise/real-citus-test-fixture-contract_test.py"
+real_citus_timescale_fixture_base_lock="images/citus-timescale-cohabitation/base-image.lock.tsv"
+real_citus_timescale_fixture_builder="ci/ai-blaise/build-real-citus-timescale-test-fixture.sh"
+real_citus_timescale_fixture_context_builder="ci/ai-blaise/materialize-real-citus-timescale-test-fixture.py"
+real_citus_timescale_fixture_contract="ci/ai-blaise/real-citus-timescale-test-fixture-contract.py"
+real_citus_timescale_fixture_contract_test="ci/ai-blaise/real-citus-timescale-test-fixture-contract_test.py"
 bundle1_contract_check="ci/ai-blaise/bundle1-contract-check.py"
 bundle1_source_lock="${image_dir}/bundle1-source-build.lock.tsv"
 security_supply_chain_smoke="ci/ai-blaise/security-supply-chain-smoke.sh"
 operator_reconcilers_batch_c_smoke="ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh"
 companion_runtime_depth_a_smoke="ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
+bundle1_default_boot_smoke="ci/ai-blaise/bundle1-default-boot-smoke.sh"
 
 for file in \
   "${dockerignore}" \
@@ -60,16 +75,49 @@ for file in \
   "${app_digest_smoke}" \
   "${observability_contracts_check}" \
   "${ai_sql_contract_smoke}" \
+  "${real_citus_fixture_dockerfile}" \
+  "${real_citus_fixture_base_lock}" \
+  "${real_citus_http_fixture_dockerfile}" \
+  "${real_citus_http_fixture_package_lock}" \
+  "${real_citus_fixture_builder}" \
+  "${real_citus_http_fixture_builder}" \
+  "${real_citus_fixture_context_builder}" \
+  "${real_citus_fixture_contract}" \
+  "${real_citus_fixture_contract_test}" \
+  "${real_citus_timescale_fixture_base_lock}" \
+  "${real_citus_timescale_fixture_builder}" \
+  "${real_citus_timescale_fixture_context_builder}" \
+  "${real_citus_timescale_fixture_contract}" \
+  "${real_citus_timescale_fixture_contract_test}" \
   "${bundle1_contract_check}" \
   "${bundle1_source_lock}" \
   "${security_supply_chain_smoke}" \
   "${operator_reconcilers_batch_c_smoke}" \
-  "${companion_runtime_depth_a_smoke}"; do
+  "${companion_runtime_depth_a_smoke}" \
+  "${bundle1_default_boot_smoke}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing image contract artifact: ${file}" >&2
     exit 1
   fi
 done
+
+if [[ ! -x "${real_citus_fixture_builder}" ]]; then
+  echo "missing executable real-Citus test fixture builder: ${real_citus_fixture_builder}" >&2
+  exit 1
+fi
+if [[ ! -x "${real_citus_http_fixture_builder}" ]]; then
+  echo "missing executable real-Citus HTTP test fixture builder: ${real_citus_http_fixture_builder}" >&2
+  exit 1
+fi
+if [[ ! -x "${real_citus_timescale_fixture_builder}" ]]; then
+  echo "missing executable real-Citus Timescale test fixture builder: ${real_citus_timescale_fixture_builder}" >&2
+  exit 1
+fi
+
+if [[ ! -x "${bundle1_default_boot_smoke}" ]]; then
+  echo "missing executable Bundle1 default-boot smoke: ${bundle1_default_boot_smoke}" >&2
+  exit 1
+fi
 
 if [[ ! -x "${build_app_images}" ]]; then
   echo "missing executable app image build matrix: ${build_app_images}" >&2
@@ -214,7 +262,7 @@ if [[ "${hard_block_count}" -ne "${#hard_blocked_extensions[@]}" ]]; then
   exit 1
 fi
 
-grep -Fq "shared_preload_libraries = 'citus,timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx'" "${load_order}"
+grep -Fq "shared_preload_libraries = 'timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx,citus'" "${load_order}"
 grep -Fq "citus.cohabit_extensions = 'timescaledb,pg_cron'" "${load_order}"
 grep -Fq "COPY images/citus-pg-overlay/extension-manifest.tsv" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control" "${dockerfile}"
@@ -222,6 +270,24 @@ grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manife
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql" "${dockerfile}"
+grep -Fq "COPY images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql" "${dockerfile}"
+if [[ "$(grep -Fc "COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql" "${dockerfile}")" -ne 2 ]]; then
+  echo "both Bundle1 runtime targets must package the 0.1.1--0.1.2 transition" >&2
+  exit 1
+fi
+if [[ "$(grep -Fc "COPY images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql" "${dockerfile}")" -ne 2 ]]; then
+  echo "both Bundle1 runtime targets must package the transactional 0.1.2 wrapper" >&2
+  exit 1
+fi
+if [[ "$(grep -Fc 'cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.2.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.1--0.1.2.sql"' "${dockerfile}")" -ne 2 ]]; then
+  echo "both Bundle1 runtime targets must install the 0.1.1--0.1.2 transition" >&2
+  exit 1
+fi
+if [[ "$(grep -Fc "test -s /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql" "${dockerfile}")" -ne 2 ]]; then
+  echo "both Bundle1 runtime targets must verify the transactional 0.1.2 wrapper" >&2
+  exit 1
+fi
 grep -Fq "00-ai-blaise-extensions.sql" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm.control" "${dockerfile}"
 grep -Fq "COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql" "${dockerfile}"
@@ -260,11 +326,35 @@ grep -Fq "alpha-upstream-pg17-blocked" "${dockerfile}"
 grep -Fq "ARG PLV8_TAG=v3.2.4" "${dockerfile}"
 grep -Fq "ARG PLV8_REF=cafc37f7aee850de5478773a4e56f7fadfad8e00" "${dockerfile}"
 grep -Fq "ARG CITUS_TAG=v13.3.0" "${dockerfile}"
+if grep -Fq -- "--without-pg-version-check" "${dockerfile}"; then
+  echo "Bundle1 Citus build must not bypass its supported PostgreSQL version check" >&2
+  exit 1
+fi
+grep -Fq 'postgresql-server-dev-${PG_MAJOR}' "${dockerfile}"
+build_base_packages="$(
+  sed -n '/^FROM ${BASE_IMAGE} AS build-base$/,/^FROM build-base AS rust-pgrx-base$/p' \
+    "${dockerfile}"
+)"
+if grep -Eq '^[[:space:]]+(clang|llvm-dev)[[:space:]]*\\' <<<"${build_base_packages}"; then
+  echo "build-base must use the PGDG LLVM toolchain pulled by postgresql-server-dev, not duplicate Debian generic LLVM packages" >&2
+  exit 1
+fi
+grep -Fq "ai-blaise-citus-historical-tracking-tag" "${dockerfile}"
+grep -Fq "ai-blaise.citus.bundle1.citus.historical-tracking-tag" "${dockerfile}"
 grep -Fq "AI_BLAISE_SOURCE_GIT_SHA" "${dockerfile}"
 grep -Fq "ai-blaise.citus.source-git-sha" "${dockerfile}"
 grep -Fq "ai-blaise.citus.source-tree-state" "${dockerfile}"
 grep -Fq "bundle1-source-build.lock.tsv" "${dockerfile}"
 grep -Fq "full-bundle-required-minus-plrust" "${dockerfile}"
+python3 "${real_citus_fixture_contract}"
+python3 "${real_citus_timescale_fixture_contract}"
+grep -Fq "light-required-subset-minus-heavy-and-plrust" "${dockerfile}"
+grep -Fq 'ai-blaise.citus.bundle1.target="bundle1-final-light"' "${dockerfile}"
+grep -Fq 'ai-blaise.citus.bundle1.target="bundle1-final-full"' "${dockerfile}"
+grep -Fq 'ai-blaise.citus.bundle1.release-target="false"' "${dockerfile}"
+grep -Fq 'ai-blaise.citus.bundle1.release-target="true"' "${dockerfile}"
+grep -Fq "postgresql.conf.sample" "${dockerfile}"
+grep -Fq "include = '/etc/postgresql/ai-blaise/shared-preload-libraries.conf'" "${dockerfile}"
 python3 "${bundle1_contract_check}"
 grep -Fq "AS bundle1-final-light" "${dockerfile}"
 grep -Fq "AS bundle1-final-full" "${dockerfile}"
@@ -272,6 +362,29 @@ grep -Fq "BUNDLE1_BUILD_IMAGE" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "BUNDLE1_BUILD_HEAVY" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "BUNDLE1_EVIDENCE_FILE" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq -- "--target \${{ matrix.target }}" .github/workflows/ci-image.yml
+grep -Fq "target: bundle1-final-light" .github/workflows/ci-image.yml
+grep -Fq -- "--target bundle1-final-full" .github/workflows/ci-image.yml
+grep -Fq "bundle1-default-boot-smoke.sh" .github/workflows/ci-image.yml
+grep -Fq "BUNDLE1_EXPECTED_TARGET: bundle1-final-light" .github/workflows/ci-image.yml
+grep -Fq "BUNDLE1_EXPECTED_TARGET: bundle1-final-full" .github/workflows/ci-image.yml
+grep -Fq 'BUNDLE1_EXPECTED_SOURCE_GIT_SHA: ${{ github.sha }}' .github/workflows/ci-image.yml
+grep -Fq "BUNDLE1_EXPECTED_SOURCE_TREE_STATE: clean" .github/workflows/ci-image.yml
+grep -Fq "postgres:17-bookworm@sha256:7bade6d532592ca8ce7ee32def7399dad2607c4ea5583839fc4352a095a11ea6" .github/workflows/ci-image.yml
+grep -Fq -- "--pull=false" .github/workflows/ci-image.yml
+grep -Fq -- "--iidfile" .github/workflows/ci-image.yml
+grep -Fq 'BUNDLE1_IMAGE="$(cat' .github/workflows/ci-image.yml
+grep -Fq "Deliberately pass no postgres command or -c override" "${bundle1_default_boot_smoke}"
+grep -Fq "SHOW shared_preload_libraries" "${bundle1_default_boot_smoke}"
+grep -Fq "pg_file_settings" "${bundle1_default_boot_smoke}"
+grep -Fq 'expected_companion_version="0.1.2"' "${bundle1_default_boot_smoke}"
+grep -Fq "observed_citus_version" "${bundle1_default_boot_smoke}"
+grep -Fq "SELECT companion_internal.assert_citus_cohabit_extension_order();" "${bundle1_default_boot_smoke}"
+grep -Fq "Bundle1 negative order control accepted Citus-first preload" "${bundle1_default_boot_smoke}"
+grep -Fq "Bundle1 negative required-library control accepted a missing library" "${bundle1_default_boot_smoke}"
+grep -Fq "full Bundle1 check did not cover every required manifest entry" "${bundle1_default_boot_smoke}"
+grep -Fq "observed_source_git_sha" "${bundle1_default_boot_smoke}"
+grep -Fq "observed_source_tree_state" "${bundle1_default_boot_smoke}"
 grep -Fq "source-build-deferred|EF6|none" "${manifest}"
 grep -Fq "local pg_prewarm-backed shim" "${manifest}"
 grep -Fq "FEATURE: Bundle1" "${image_overview}"
@@ -281,7 +394,7 @@ grep -Fq "not production evidence" "${image_dir}/README.md"
 grep -Fq "ai_blaise_citus-upgrade-manifest.tsv" "${image_dir}/README.md"
 grep -Fq "bundle1-source-build.lock.tsv" "${image_dir}/README.md"
 grep -Fq "structured Bundle1 contract check" "${image_dir}/README.md"
-grep -Fq "every required extension" "${image_dir}/README.md"
+grep -Fq "full-target default-boot receipt" "${image_dir}/README.md"
 grep -Fq "FEATURE: D13" "${runtime_dockerfile}"
 if [[ "$(grep -Fc "ARG DEFAULT_ARGS=serve" "${runtime_dockerfile}")" -lt 2 ]]; then
   echo "runtime Dockerfile must declare DEFAULT_ARGS in both builder and runtime stages" >&2
@@ -494,7 +607,9 @@ for file in \
   "${image_dir}/extensions/ai_blaise_citus.control" \
   "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql" \
   "${image_dir}/extensions/ai_blaise_citus--0.1.0--0.1.1.sql" \
-  "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.0.sql"; do
+  "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.0.sql" \
+  "${image_dir}/extensions/ai_blaise_citus--0.1.1--0.1.2.sql" \
+  "${image_dir}/upgrades/ai_blaise_citus--0.1.2.sql"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing companion SQL extension artifact: ${file}" >&2
     exit 1
@@ -670,7 +785,8 @@ grep -Fq "pack_simple_query(\"SELECT 'pipeline_one'::text\")" "${pool_proxy_smok
 grep -Fq "pack_simple_query(\"SELECT 'pipeline_two'::text\")" "${pool_proxy_smoke}"
 grep -Fq 'expected = [["pipeline_one"], ["pipeline_two"]]' "${pool_proxy_smoke}"
 grep -Fq 'docker exec -i "${container}" psql' ci/ai-blaise/sql-extension-smoke.sh
-grep -Fq "shared_preload_libraries=pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "shared_preload_libraries=citus,pg_stat_statements" ci/ai-blaise/sql-extension-smoke.sh
+grep -Fq "CREATE EXTENSION citus" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "PostgreSQL init process complete" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "CREATE EXTENSION pgcrypto" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "ai_blaise_pg_stat_statements_seed" ci/ai-blaise/sql-extension-smoke.sh
@@ -752,10 +868,13 @@ grep -Fq "apply_time_range_shard_pruner" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_compression_policy_distributed must require TimescaleDB dependency" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "apply_continuous_aggregate_distributed must require TimescaleDB dependency" ci/ai-blaise/sql-extension-smoke.sh
 grep -Fq "companion_idle_transactions('100 milliseconds'::interval)" ci/ai-blaise/sql-extension-smoke.sh
-grep -Fq "timescale/timescaledb-ha:pg17-ts2.27" "${timescale_bridge_smoke}"
+grep -Fq "build-real-citus-timescale-test-fixture.sh" "${timescale_bridge_smoke}"
+grep -Fq "TIMESCALE_BRIDGE_EXPECTED_TS_MINOR" "${timescale_bridge_smoke}"
+grep -Fq "timescale_bridge_positive" "${timescale_bridge_smoke}"
 grep -Fq "PostgreSQL init process complete" "${timescale_bridge_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS citus" "${timescale_bridge_smoke}"
 grep -Fq "CREATE EXTENSION IF NOT EXISTS timescaledb" "${timescale_bridge_smoke}"
-grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_bridge_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS pgcrypto" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_distribute_hypertable" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_compression_policy_distributed" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_retention_policy_distributed" "${timescale_bridge_smoke}"
@@ -763,19 +882,24 @@ grep -Fq "SELECT apply_reorder_policy_distributed" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_continuous_aggregate_distributed" "${timescale_bridge_smoke}"
 grep -Fq "SELECT apply_time_range_shard_pruner" "${timescale_bridge_smoke}"
 grep -Fq "_timescaledb_catalog.hypertable" "${timescale_bridge_smoke}"
+grep -Fq "pg_dist_partition" "${timescale_bridge_smoke}"
+grep -Fq "pg_dist_shard" "${timescale_bridge_smoke}"
 grep -Fq "companion_timescale_bridge_state" "${timescale_bridge_smoke}"
 grep -Fq "FEATURE: TS6 TS18" "${timescale_cohabitation_dockerfile}"
-grep -Fq "timescale/timescaledb-ha:pg17-ts2.27" "${timescale_cohabitation_dockerfile}"
-grep -Fq "make install" "${timescale_cohabitation_dockerfile}"
+grep -Fq "docker.io/timescale/timescaledb-ha:pg17-ts2.27@sha256:4f61167e11c7c95bedf96433c720d671a53aa29ad7f52b142b529a6d0e9f0b20" "${timescale_cohabitation_dockerfile}"
+grep -Fq "docker.io/timescale/timescaledb-ha:pg17-ts2.28@sha256:bc9e09875460aa69fb536362fef7c8e92c51ad6aab3d13f91a2487d3547dc71a" "${timescale_cohabitation_dockerfile}"
+grep -Fq 'make install-all with_llvm="${WITH_LLVM}"' "${timescale_cohabitation_dockerfile}"
 grep -Fq 'with_llvm="${WITH_LLVM}"' "${timescale_cohabitation_dockerfile}"
-grep -Fq "postgresql-server-dev-17" "${timescale_cohabitation_dockerfile}"
+grep -Fq '"postgresql-server-dev-${PG_MAJOR}=${postgresql_package_version}"' "${timescale_cohabitation_dockerfile}"
 grep -Fq "ai_blaise_citus--0.1.0.sql" "${timescale_cohabitation_dockerfile}"
 grep -Fq "FEATURE: TS6 TS18" "${timescale_cohabitation_smoke}"
-grep -Fq "TIMESCALE_COHABITATION_BASE_IMAGE" "${timescale_cohabitation_smoke}"
+grep -Fq "build-real-citus-timescale-test-fixture.sh" "${timescale_cohabitation_smoke}"
+grep -Fq "TIMESCALE_COHABITATION_EXPECTED_TS_MINOR" "${timescale_cohabitation_smoke}"
 grep -Fq "shared_preload_libraries=timescaledb,citus" "${timescale_cohabitation_smoke}"
 grep -Fq "citus.cohabit_extensions=timescaledb" "${timescale_cohabitation_smoke}"
 grep -Fq "CREATE EXTENSION IF NOT EXISTS citus" "${timescale_cohabitation_smoke}"
 grep -Fq "CREATE EXTENSION IF NOT EXISTS timescaledb" "${timescale_cohabitation_smoke}"
+grep -Fq "CREATE EXTENSION IF NOT EXISTS pgcrypto" "${timescale_cohabitation_smoke}"
 grep -Fq "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus" "${timescale_cohabitation_smoke}"
 grep -Fq "SELECT create_distributed_table('citus_smoke_events', 'tenant_id')" "${timescale_cohabitation_smoke}"
 grep -Fq "SELECT apply_distribute_hypertable" "${timescale_cohabitation_smoke}"
@@ -790,7 +914,7 @@ grep -Fq "timescale-cohabitation-evidence.tsv" "${timescale_cohabitation_smoke}"
 grep -Fq "FEATURE: Bundle1 TS19 TS20" "${pg_cron_cohabitation_dockerfile}"
 grep -Fq "postgres:17-bookworm" "${pg_cron_cohabitation_dockerfile}"
 grep -Fq "postgresql-17-cron" "${pg_cron_cohabitation_dockerfile}"
-grep -Fq "make install" "${pg_cron_cohabitation_dockerfile}"
+grep -Fq "make install-all" "${pg_cron_cohabitation_dockerfile}"
 grep -Fq "ai_blaise_citus--0.1.0.sql" "${pg_cron_cohabitation_dockerfile}"
 grep -Fq "FEATURE: Bundle1 T2 TS19 TS20" "${pg_cron_cohabitation_smoke}"
 grep -Fq "placement_generation_after_first_distribution" "${pg_cron_cohabitation_smoke}"
@@ -828,19 +952,19 @@ grep -Fq "companion.replication_conflict_audit" companion/src/replication_confli
 grep -Fq "cohabit_extension_detection_report" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "assert_cohabit_extension_ready" "${image_dir}/extensions/ai_blaise_citus--0.1.0.sql"
 grep -Fq "stable image identity" "${timescale_cohabitation_smoke}"
-grep -Fq "docker buildx imagetools inspect" "${timescale_cohabitation_smoke}"
+grep -Fq "ai-blaise.citus.test-fixture.base-image" "${timescale_cohabitation_smoke}"
 grep -Fq "git_sha" "${timescale_cohabitation_smoke}"
 grep -Fq "command_path" "${timescale_cohabitation_smoke}"
 grep -Fq "TS_VERSION_MATRIX_REQUIRED" "${ts_version_matrix_smoke}"
-grep -Fq "docker manifest inspect" "${ts_version_matrix_smoke}"
+grep -Fq '"${fixture_builder}" --timescaledb-minor "${ts_version}"' "${ts_version_matrix_smoke}"
 grep -Fq "TIMESCALE_COHABITATION_EVIDENCE" "${ts_version_matrix_smoke}"
 grep -Fq "compare-hook-claims.sh" "${ts_version_matrix_smoke}"
 grep -Fq "skip-with-note" "${ts_version_matrix_smoke}"
 grep -Fq "TS_VERSION_MATRIX_ALLOW_UNKNOWN=1 only for exploratory local probes" "${cohab_matrix_compare}"
-grep -Fxq "timescale/timescaledb-ha:pg17-ts2.27" "${cohab_matrix_dir}/2.27/image-tag.txt"
-grep -Fxq "timescale/timescaledb-ha:pg17-ts2.28" "${cohab_matrix_dir}/2.28/image-tag.txt"
+grep -Fxq "docker.io/timescale/timescaledb-ha:pg17-ts2.27@sha256:4f61167e11c7c95bedf96433c720d671a53aa29ad7f52b142b529a6d0e9f0b20" "${cohab_matrix_dir}/2.27/image-tag.txt"
+grep -Fxq "docker.io/timescale/timescaledb-ha:pg17-ts2.28@sha256:bc9e09875460aa69fb536362fef7c8e92c51ad6aab3d13f91a2487d3547dc71a" "${cohab_matrix_dir}/2.28/image-tag.txt"
 grep -Fq $'ExecutorStart_hook\tnot_claimed\tSource-measured' "${cohab_matrix_dir}/2.28/expected-hook-claims.tsv"
-grep -Fq "does not promote TS 2.28 to production-ready" "${cohab_matrix_dir}/README.md"
+grep -Fq "neither row alone is release" "${cohab_matrix_dir}/README.md"
 for cohab_matrix_version in 2.27 2.28; do
   if grep -Fq $'\tunknown\t' "${cohab_matrix_dir}/${cohab_matrix_version}/expected-hook-claims.tsv"; then
     echo "load-bearing TS ${cohab_matrix_version} matrix must not contain unknown hook claims" >&2
@@ -849,6 +973,10 @@ for cohab_matrix_version in 2.27 2.28; do
 done
 if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_cohabitation_smoke}"; then
   echo "real Timescale/Citus cohabitation smoke must not stub create_distributed_table" >&2
+  exit 1
+fi
+if grep -Fq "CREATE FUNCTION create_distributed_table" "${timescale_bridge_smoke}"; then
+  echo "real Timescale/Citus bridge smoke must not stub create_distributed_table" >&2
   exit 1
 fi
 grep -Fq "citus.cohabit_extensions" src/backend/distributed/shared_library_init.c

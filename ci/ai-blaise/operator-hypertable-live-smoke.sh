@@ -164,6 +164,13 @@ spec:
               CREATE EXTENSION IF NOT EXISTS citus;
               CREATE EXTENSION IF NOT EXISTS timescaledb;
               CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+              DO \$\$
+              BEGIN
+                IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+                    IS DISTINCT FROM '0.1.2' THEN
+                  RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+                END IF;
+              END \$\$;
               CREATE TABLE IF NOT EXISTS operator_metrics (
                 metric_time timestamptz NOT NULL,
                 tenant_id integer NOT NULL,

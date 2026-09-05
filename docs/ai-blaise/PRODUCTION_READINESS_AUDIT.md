@@ -512,15 +512,26 @@ more production-ready than the artifacts justified.
   optional kind/Jaeger mode remains a synthetic correlation harness; this does
   not claim automatic OTLP span export from every component or dashboard/SLO
   certification.
-- D9 canary upgrade runbook is now production-ready for the local companion SQL
-  extension upgrade/rollback path. `canary-upgrade-rollback-smoke.sh` starts a
-  real PostgreSQL container, installs `ai_blaise_citus` at `0.1.0`, upgrades to
-  `0.1.1`, records `companion_internal.extension_upgrade_events`, rolls back to
-  `0.1.0`, and proves the 0.1.1 event table and recorder are absent after
-  rollback. `upgrade-rollback-guardrails.sh` keeps the reverse manifest row,
+- D9 canary upgrade runbook is alpha for the current release candidate. The
+  current candidate defaults the companion extension to `0.1.2`. On both PG17 and PG18,
+  `canary-upgrade-rollback-smoke.sh` installs `ai_blaise_citus` at `0.1.0`,
+  explicitly upgrades to historical `0.1.1`, records
+  `companion_internal.extension_upgrade_events`, rolls back to `0.1.0`, and
+  proves the 0.1.1 event table and recorder are absent after rollback. It then
+  checks bare `ALTER EXTENSION ... UPDATE` to `0.1.2`, then separately checks
+  bare `CREATE EXTENSION` and explicit `VERSION '0.1.2'`
+  creation at the shipped default, using the exact
+  `ai_blaise_citus--0.1.0--0.1.1.sql` and
+  `ai_blaise_citus--0.1.1--0.1.0.sql` paths.
+  `upgrade-rollback-guardrails.sh` keeps those paths, the reverse manifest row,
   Dockerfile packaging, runbook, release docs, Make target, and workflow wiring
-  fail-closed. This does not claim full upstream Citus upgrade-matrix evidence,
-  operand image release certification, or human production promotion.
+  fail-closed. `extension-security-backup-smoke.sh` has proved populated
+  logical recovery of 44 tables and 24 sequences and explicit routine grants
+  on PG17 and PG18. The 0.1.2 security floor is forward-only: rollback requires
+  a pre-upgrade backup/PITR into a separate cluster. Historical 0.1.1 evidence
+  does not certify the current image or its provenance. This does not
+  claim full upstream Citus upgrade-matrix evidence, operand image release
+  certification, or human production promotion.
 - D10 release hardening is now production-ready for the fail-closed runbook and
   release-record contract. `release-hardening-runbook-smoke.sh` executes the
   companion `run-release-hardening-canonical` report, verifies 19 release gates
@@ -1618,9 +1629,11 @@ reads across regions (MR6), or regional row movement (MR3). PITR restore
 depth keeps its separate evidence path under
 `ci/ai-blaise/dr-restore-depth-check.sh`.
 
-Bundle1 production-ready evidence from 2026-05-26 promotes `FEATURE: Bundle1`
-from alpha to production-ready for the `full-bundle-required-minus-plrust`
-boundary. The new `bundle1-pgdg-runtime` Dockerfile stage layers PGDG and
+Historical Bundle1 evidence from 2026-05-26 is retained as a bounded
+`bundle1-final-light` observation; it does not promote the authoritative
+required manifest. `FEATURE: Bundle1` is alpha until
+`bundle1-final-full` has current-source stock-entrypoint evidence for every
+required entry. The `bundle1-pgdg-runtime` Dockerfile stage layers PGDG and
 TimescaleDB binary-package extensions on top of `postgres:17-bookworm`
 (timescaledb-2-postgresql-17, postgresql-17-cron, postgresql-17-partman,
 postgresql-17-pgaudit, postgresql-17-pgauditlogtofile, postgresql-17-pgvector,
@@ -1634,19 +1647,38 @@ actually-installed shared libraries (citus, timescaledb, pgaudit,
 pgauditlogtofile, pgsodium, pg_cron, age, pg_failover_slots, pgnodemx) and the
 `/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql` script runs
 `CREATE EXTENSION` for every required Bundle1 extension at first container
-start. The image labels record the new scope:
-`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust` and
-`ai-blaise.citus.bundle1.full-initdb-path=true`. The
+start when the relevant target supplies their control files. Target labels now
+separate the partial light subset from the full release boundary: light carries
+`light-required-subset-minus-heavy-and-plrust` and `release-target=false`;
+only full carries `full-bundle-required-minus-plrust` and
+`release-target=true`. The
 `BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1` and
 `BUNDLE1_BUILD_HEAVY=1` variants of
-`ci/ai-blaise/sql-extension-smoke.sh` verify pg_extension catalog records
-every required Bundle1 extension after initdb and record the proof in
+`ci/ai-blaise/sql-extension-smoke.sh` verify the derived light set and the
+full required set, respectively, after initdb and record observations in
 `images/citus-pg-overlay/bundle1-source-build-evidence.tsv`. plrust has been
 moved from `required` to `optional` in
 `images/citus-pg-overlay/extension-manifest.tsv`; the plrust PG17 upstream
 gap (upstream main still pg13-pg16 with pgrx 0.11.0 as of 2026-02-27) is
-tracked separately under `FEATURE: EF6` and does not block the Bundle1
-required-extension production-ready claim. This is not evidence for plrust
+tracked separately under `FEATURE: EF6`. There is no current release-qualified
+full-target default-boot receipt from a reviewed clean commit, so
+release/publishing remains blocked. This is not
+evidence for plrust
 Rust UDFs, PG18 source-build of the heavy extensions, command-center release
 chart certification, Kubernetes operand image release certification, or
 production multi-region deployment correctness.
+
+Default-command correction (2026-09-04): the historical Bundle1 receipt above
+passed an explicit `-c shared_preload_libraries=...` server argument. It remains
+evidence for that configured extension-set boundary, but it is not evidence
+that the image's default command sourced the checked-in preload file. The
+current Dockerfile now inserts a fail-closed include into the PostgreSQL sample
+configuration before initdb; the PG17 image workflow explicitly builds
+`bundle1-final-light` and runs `bundle1-default-boot-smoke.sh` without a server
+override. A push-only job builds `bundle1-final-full` and runs the same smoke
+against every required manifest capability. The smoke also requires exact
+target/scope/release and source Git SHA/tree-state labels, observes the Citus
+extversion declared by the in-tree control file, and observes the installed
+companion version `0.1.2`. The historical `v13.3.0` value is tracking metadata,
+not the compiled runtime version or Chimera's selected upstream. This workflow
+does not publish an image; full release evidence remains unproven.

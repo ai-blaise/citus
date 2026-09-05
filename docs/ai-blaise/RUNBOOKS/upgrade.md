@@ -9,11 +9,10 @@ image.
 
 - Target upstream Citus commit and ai-blaise release branch.
 - Current TS6 source/patch-series compatibility output.
-- Operand image digest with extension manifest and SBOM. `FEATURE: Bundle1` is
-  production-ready for the bundle1-final-light source-build contract proven by
-  the bundle1 source-build smoke; per-release verification of the digest +
-  extension manifest + SBOM against this runbook is still required before
-  promotion.
+- Operand image digest with extension manifest and SBOM. `FEATURE: Bundle1`
+  remains alpha until the exact-current full bundle passes stock-entrypoint
+  initialization and its release provenance is verified. A light-target or
+  earlier-source build is not that evidence.
 - Helm values for the canary namespace.
 - Rollback branch, backup checkpoint, and PITR timestamp.
 - `images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
@@ -34,9 +33,17 @@ The gate executes `ci/ai-blaise/upgrade-rollback-guardrails.sh`. It fails
 closed when:
 
 - the companion SQL control files disagree on `default_version`;
+- the operator test fixture's shipped companion-version constant or production
+  example disagrees with that control default;
+- the released `0.1.0` install-root SQL differs from its frozen
+  `sha256:c23c0887753118915c12b40ee6058ddd8920d95c33258353448c68b4e6c0ddb5`
+  identity (future SQL changes require a new versioned file and transition);
 - an `ai_blaise_citus--*.sql` install or transition file exists without a
   manifest row;
-- a transition row lacks a reverse SQL contract, rollback statement, or
+- the control default is not the sole terminal version reachable through one
+  unambiguous, acyclic upgrade path from the single install root;
+- a transition row lacks its reverse SQL contract or the explicitly reviewed
+  0.1.1→0.1.2 forward-only security-floor backup/PITR contract, or lacks a
   version-skew statement;
 - the bounded upstream Citus edge from `14.0-1` to the current
   `src/backend/distributed/citus.control` default lacks both upgrade and
@@ -55,17 +62,34 @@ upgrade matrix remains a separate release gate.
 `ci/ai-blaise/canary-upgrade-rollback-smoke.sh` is the executable canary drill
 for the local companion SQL extension. It mounts the shipped
 `ai_blaise_citus.control`, `ai_blaise_citus--0.1.0.sql`,
-`ai_blaise_citus--0.1.0--0.1.1.sql`, and
-`ai_blaise_citus--0.1.1--0.1.0.sql` files into a real PostgreSQL extension
-directory, creates the extension at `0.1.0`, upgrades to `0.1.1`, records a
-canary event, downgrades to `0.1.0`, and asserts that the 0.1.1 event surface is
-removed. Release evidence must retain the smoke output row and the
+`ai_blaise_citus--0.1.0--0.1.1.sql`,
+`ai_blaise_citus--0.1.1--0.1.0.sql`, and
+`ai_blaise_citus--0.1.1--0.1.2.sql` files into a real PostgreSQL extension
+directory. On both PostgreSQL 17 and PostgreSQL 18, it creates the extension at
+the install root `0.1.0`, verifies PostgreSQL selected the exact manifested
+`0.1.0--0.1.1` path, explicitly updates to historical version `0.1.1`,
+records a canary event, explicitly downgrades to
+`0.1.0`, and verifies the exact reverse path and removal of the 0.1.1 event
+surface. It then checks bare `ALTER EXTENSION ai_blaise_citus UPDATE` to
+the shipped `0.1.2` default. Separate databases prove both bare
+`CREATE EXTENSION ai_blaise_citus` and explicit
+`CREATE EXTENSION ai_blaise_citus VERSION '0.1.2'` resolve the
+base-install-plus-update chain to `0.1.2`. Release evidence must retain both
+major-version smoke output rows, the selected paths, and the
 `pg_extension.extversion` observations before and after rollback.
+
+The default command runs both PostgreSQL majors. For a bounded diagnostic rerun
+of one major, set `CANARY_UPGRADE_PG_MAJOR=17` or
+`CANARY_UPGRADE_PG_MAJOR=18`; a custom `CANARY_UPGRADE_IMAGE` is accepted only
+with one explicit major so an image cannot accidentally stand in for both
+matrix entries.
 
 This smoke is intentionally local to the ai-blaise companion SQL surface. It
 does not replace upstream Citus `check-citus-upgrade`, mixed-version Citus
 upgrade tests, or production canary traffic observation for a release
-candidate.
+candidate. It also does not prove the operator's digest-pinned rolling image and
+extension-version update across a coordinator and two real workers; that
+separate live operation and its rollback evidence remain release prerequisites.
 
 ## SQL Preflight
 
@@ -79,8 +103,12 @@ WHERE extname IN ('citus', 'ai_blaise_citus')
 ORDER BY extname;
 ```
 
-If the target image contains a newer local companion SQL transition, run it in
-the canary before deploying binaries that require new catalog objects:
+The current release candidate declares companion `0.1.2` as the control
+default. Before any update, follow the
+[security and backup runbook](companion-security-backup.md). Existing explicit
+routine grants require its transactional administrative upgrade from 0.1.1;
+bare UPDATE rejects them to prevent loss of grants after logical restore.
+Only after confirming no such grants exist, the default-targeting update is:
 
 ```sql
 ALTER EXTENSION ai_blaise_citus UPDATE;
@@ -137,7 +165,8 @@ smoked, and recorded for the exact release candidate.
    remains alpha, run the static image contract and SQL runtime smokes, but do
    not treat them as production evidence for the full operand image.
 4. Record current `pg_extension` versions, run any companion SQL transition in
-   the canary, and record target versions after `ALTER EXTENSION
+   the canary, verify `pg_extension_update_paths('ai_blaise_citus')` selected
+   the manifested edge, and record target versions after `ALTER EXTENSION
    ai_blaise_citus UPDATE`.
 5. Render Helm with production values and apply it to the canary namespace.
 6. Run real Citus+TimescaleDB cohabitation, plan-cache, latency, branch,

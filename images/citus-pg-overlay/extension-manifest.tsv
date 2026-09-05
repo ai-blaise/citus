@@ -1,7 +1,7 @@
 # FEATURE: Bundle1 Search1 G1 JS1 PM1 IA1 WF1 F2
 # name|tier|license|source|feature_ids|pg_versions|policy
 timescaledb|required|Apache-2.0+TSL|binary-package|TS1,TS2,TS3,TS4,TS5,TS10,TS11,TS12|17,18|Mandatory cohabitation target; TSL source is never patched or vendored.
-citus|required|AGPL-3.0|source-tree|TS6|17,18|Base fork source in this repository; Bundle1 PG17 source-build target compiles the in-tree fork while tracking upstream tag v13.3.0.
+citus|required|AGPL-3.0|source-tree|TS6|17,18|Base fork source in this repository; Bundle1 PG17 source-build target compiles the exact in-tree fork. v13.3.0 is historical tracking metadata, not the runtime extversion or Chimera latest-upstream selection.
 ai_blaise_citus|required|AGPL-3.0|local-sql-extension|TS1,TS2,TS3,TS4,TS5,M7|17,18|Companion SQL fallback extension installed by the overlay image.
 vector|required|PostgreSQL|binary-package|A7|17,18|Vector similarity extension. PGDG package postgresql-17-pgvector installs control file vector.control; CREATE EXTENSION vector is the SQL surface.
 pg_cron|required|PostgreSQL|binary-package|EF5|17,18|Cron-style scheduling for policy jobs.
@@ -18,7 +18,7 @@ pg_search|required|AGPL-3.0|source-build|Search1,Search2,Search3|17|BM25 and hyb
 pg_graphql|required|Apache-2.0|source-build|API3,API4|17|GraphQL schema endpoint substrate; Bundle1 PG17 source-build target pins supabase/pg_graphql v1.6.1 at 66d4c551db213000506fd858676269ba8f801a44. PG18 build pending upstream verification.
 pg_jsonschema|required|Apache-2.0|source-build|JS1,JS2,M13|17|JSON Schema validation substrate; Bundle1 PG17 source-build target pins supabase/pg_jsonschema v0.3.4 at cbe74b570d38aa0c4d42914e7a118bcb3adaee7a. PG18 build pending upstream verification.
 age|required|Apache-2.0|binary-package|G1,G2,G3|17|Apache AGE graph query substrate. PG18 build pending upstream verification.
-plrust|optional|PostgreSQL|source-build-deferred|EF6|none|Rust UDF substrate deferred: upstream plrust v1.2.8 at bd76906a43c05a2afdb7839263431a066f5b42fb exposes only pg13-pg16 pgrx features and pins pgrx 0.11.0, so PG17 source-build is blocked without a non-minimal fork patch. Bundle1 is production-ready without plrust; EF6 Rust UDF gap is tracked separately and stays alpha until upstream pgrx 0.12+ and a pg17 feature land.
+plrust|optional|PostgreSQL|source-build-deferred|EF6|none|Rust UDF substrate deferred: upstream plrust v1.2.8 at bd76906a43c05a2afdb7839263431a066f5b42fb exposes only pg13-pg16 pgrx features and pins pgrx 0.11.0, so PG17 source-build is blocked without a non-minimal fork patch. The full Bundle1 target excludes plrust and Bundle1 remains alpha; EF6 Rust UDF gap is tracked separately and stays alpha until upstream pgrx 0.12+ and a pg17 feature land.
 plv8|required|PostgreSQL|source-build|EF6|17|In-database JavaScript UDF substrate; Bundle1 heavy PG17 source-build target pins plv8/plv8 v3.2.4 at cafc37f7aee850de5478773a4e56f7fadfad8e00. PG18 build pending upstream verification.
 pg_uuidv7|required|PostgreSQL|binary-package|M12|17,18|Monotonic UUID helper.
 pg_repack|required|BSD-style|binary-package|R7|17,18|Online repack until PG19 REPACK CONCURRENTLY.

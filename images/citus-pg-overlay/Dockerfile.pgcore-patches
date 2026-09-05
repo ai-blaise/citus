@@ -76,7 +76,7 @@ COPY vendor /src/citus/vendor
 RUN set -eux; \
     ./configure PG_CONFIG="${POSTGRES_CORE_PREFIX}/bin/pg_config" --without-pg-version-check; \
     make -j2; \
-    make install; \
+    make install-all; \
     install -d -o postgres -g postgres /var/lib/postgresql
 USER postgres
 WORKDIR /home/postgres

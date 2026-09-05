@@ -117,6 +117,10 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'ai_blaise_citus') THEN
     CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+    IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+        IS DISTINCT FROM '0.1.2' THEN
+      RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+    END IF;
     IF EXISTS (SELECT 1 FROM companion_feature_status() WHERE status = 'planned') THEN
       RAISE EXCEPTION 'companion_feature_status must not report planned features';
     END IF;

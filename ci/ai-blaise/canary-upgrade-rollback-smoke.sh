@@ -8,23 +8,49 @@ set -euo pipefail
 # evidence, and roll back through PostgreSQL's ALTER EXTENSION mechanism.
 
 repo_root="$(git rev-parse --show-toplevel)"
-extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
-control_file="${extension_dir}/ai_blaise_citus.control"
-install_sql="${extension_dir}/ai_blaise_citus--0.1.0.sql"
-upgrade_sql="${extension_dir}/ai_blaise_citus--0.1.0--0.1.1.sql"
-downgrade_sql="${extension_dir}/ai_blaise_citus--0.1.1--0.1.0.sql"
+fixture_builder="${repo_root}/ci/ai-blaise/build-real-citus-test-fixture.sh"
+fixture_contract="${repo_root}/ci/ai-blaise/real-citus-test-fixture-contract.py"
+install_version="0.1.0"
+reversible_version="0.1.1"
+current_version="0.1.2"
 release_mode="${AI_BLAISE_RELEASE_MODE:-0}"
 require_docker="${REQUIRE_DOCKER:-${release_mode}}"
-pg_major="${CANARY_UPGRADE_PG_MAJOR:-17}"
-postgres_image="${CANARY_UPGRADE_IMAGE:-postgres:${pg_major}}"
 release_id="${CANARY_UPGRADE_RELEASE_ID:-canary-drill-001}"
 
-for file in "${control_file}" "${install_sql}" "${upgrade_sql}" "${downgrade_sql}"; do
+if [[ -n "${CANARY_UPGRADE_PG_MAJOR:-}" ]]; then
+  pg_majors=("${CANARY_UPGRADE_PG_MAJOR}")
+else
+  pg_majors=(17 18)
+fi
+
+if [[ -n "${CANARY_UPGRADE_IMAGE:-}" || -n "${CANARY_UPGRADE_IMAGE_17:-}" || -n "${CANARY_UPGRADE_IMAGE_18:-}" ]]; then
+  echo "CANARY_UPGRADE_IMAGE overrides are retired; use source-verified CITUS_TEST_FIXTURE_IMAGE with CANARY_UPGRADE_PG_MAJOR" >&2
+  exit 1
+fi
+if [[ -n "${CITUS_TEST_FIXTURE_IMAGE:-}" && "${#pg_majors[@]}" -ne 1 ]]; then
+  echo "CITUS_TEST_FIXTURE_IMAGE requires one explicit CANARY_UPGRADE_PG_MAJOR" >&2
+  exit 1
+fi
+
+for pg_major in "${pg_majors[@]}"; do
+  if [[ "${pg_major}" != "17" && "${pg_major}" != "18" ]]; then
+    echo "CANARY_UPGRADE_PG_MAJOR must be 17 or 18, got ${pg_major}" >&2
+    exit 1
+  fi
+done
+
+for file in "${fixture_builder}" "${fixture_contract}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing canary upgrade artifact: ${file}" >&2
     exit 1
   fi
 done
+if [[ ! -x "${fixture_builder}" ]]; then
+  echo "real-Citus test fixture builder is not executable: ${fixture_builder}" >&2
+  exit 1
+fi
+
+python3 "${fixture_contract}"
 
 if ! command -v docker >/dev/null 2>&1; then
   if [[ "${require_docker}" == "1" ]]; then
@@ -35,60 +61,92 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 0
 fi
 
-container="ai-blaise-canary-upgrade-pg${pg_major}-${RANDOM}-$$"
-evidence_file="$(mktemp -t ai-blaise-canary-upgrade-evidence.XXXXXX)"
+active_container=""
+active_evidence_file=""
 cleanup() {
-  docker rm -f "${container}" >/dev/null 2>&1 || true
-  rm -f "${evidence_file}"
+  if [[ -n "${active_container}" ]]; then
+    docker rm --force --volumes "${active_container}" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${active_evidence_file}" ]]; then
+    rm -f "${active_evidence_file}"
+  fi
 }
 trap cleanup EXIT
 
-echo "=== canary-upgrade-rollback-smoke vs ${postgres_image} ==="
+run_canary() {
+  local pg_major="$1"
+  local fixture_image
+  fixture_image="$("${fixture_builder}" --pg-major "${pg_major}")"
 
-docker run \
-  --name "${container}" \
-  -e POSTGRES_PASSWORD=postgres \
-  -v "${control_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus.control:ro" \
-  -v "${install_sql}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0.sql:ro" \
-  -v "${upgrade_sql}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0--0.1.1.sql:ro" \
-  -v "${downgrade_sql}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.1--0.1.0.sql:ro" \
-  -d "${postgres_image}" >/dev/null
+  active_container="ai-blaise-canary-upgrade-pg${pg_major}-${RANDOM}-$$"
+  active_evidence_file="$(mktemp -t ai-blaise-canary-upgrade-evidence.XXXXXX)"
 
-init_complete=0
-for _ in $(seq 1 120); do
-  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
-    init_complete=1
-    break
+  echo "=== canary-upgrade-rollback-smoke on immutable real-Citus PG${pg_major} fixture ==="
+
+  docker run \
+    --name "${active_container}" \
+    --network none \
+    -e POSTGRES_PASSWORD=postgres \
+    -d "${fixture_image}" >/dev/null
+
+  local container_logs
+  local init_complete=0
+  for _ in $(seq 1 120); do
+    container_logs="$(docker logs "${active_container}" 2>&1 || true)"
+    if [[ "${container_logs}" == *"PostgreSQL init process complete"* ]]; then
+      init_complete=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${init_complete}" != "1" ]]; then
+    docker logs "${active_container}" >&2 || true
+    echo "postgres container did not finish init scripts" >&2
+    exit 1
   fi
-  sleep 1
-done
-if [[ "${init_complete}" != "1" ]]; then
-  docker logs "${container}" >&2 || true
-  echo "postgres container did not finish init scripts" >&2
-  exit 1
-fi
 
-ready=0
-for _ in $(seq 1 60); do
-  if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
-    ready=1
-    break
+  local ready=0
+  for _ in $(seq 1 60); do
+    if docker exec "${active_container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ready}" != "1" ]]; then
+    docker logs "${active_container}" >&2 || true
+    echo "postgres container did not become ready" >&2
+    exit 1
   fi
-  sleep 1
-done
-if [[ "${ready}" != "1" ]]; then
-  docker logs "${container}" >&2 || true
-  echo "postgres container did not become ready" >&2
-  exit 1
-fi
 
-docker exec -i "${container}" \
-  psql -U postgres -Atq -v ON_ERROR_STOP=1 -v release_id="${release_id}" <<'SQL' \
-  | tee "${evidence_file}"
-CREATE EXTENSION ai_blaise_citus;
+  local actual_pg_major
+  actual_pg_major="$(docker exec "${active_container}" \
+    psql -U postgres -Atqc "SELECT current_setting('server_version_num')::integer / 10000")"
+  if [[ "${actual_pg_major}" != "${pg_major}" ]]; then
+    echo "canary image major mismatch: expected ${pg_major}, got ${actual_pg_major}" >&2
+    exit 1
+  fi
+
+  docker exec -i "${active_container}" \
+    psql -U postgres -Atq -v ON_ERROR_STOP=1 -v release_id="${release_id}" <<'SQL' \
+    | tee "${active_evidence_file}"
+CREATE DATABASE upgrade_path;
+CREATE DATABASE default_install;
+CREATE DATABASE explicit_current_install;
+
+\connect upgrade_path
+CREATE EXTENSION citus;
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION ai_blaise_citus VERSION '0.1.0';
 SELECT 'version_before_upgrade' || E'\t' || extversion
 FROM pg_extension
 WHERE extname = 'ai_blaise_citus';
+SELECT 'selected_upgrade_path' || E'\t' || COALESCE(path, 'absent')
+FROM pg_extension_update_paths('ai_blaise_citus')
+WHERE source = '0.1.0' AND target = '0.1.1';
+SELECT 'selected_downgrade_path' || E'\t' || COALESCE(path, 'absent')
+FROM pg_extension_update_paths('ai_blaise_citus')
+WHERE source = '0.1.1' AND target = '0.1.0';
 
 ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.1';
 SELECT 'version_after_upgrade' || E'\t' || extversion
@@ -140,15 +198,66 @@ BEGIN
     END IF;
 END;
 $$;
+
+ALTER EXTENSION ai_blaise_citus UPDATE;
+SELECT 'version_after_default_update' || E'\t' || extversion
+FROM pg_extension
+WHERE extname = 'ai_blaise_citus';
+
+\connect default_install
+CREATE EXTENSION citus;
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION ai_blaise_citus;
+SELECT 'version_after_bare_create' || E'\t' || extversion
+FROM pg_extension
+WHERE extname = 'ai_blaise_citus';
+SELECT 'event_table_after_bare_create' || E'\t' || COALESCE(
+    to_regclass('companion_internal.extension_upgrade_events')::text,
+    'absent'
+);
+
+\connect explicit_current_install
+CREATE EXTENSION citus;
+CREATE EXTENSION pgcrypto;
+CREATE EXTENSION ai_blaise_citus VERSION '0.1.2';
+SELECT 'version_after_explicit_current_create' || E'\t' || extversion
+FROM pg_extension
+WHERE extname = 'ai_blaise_citus';
+SELECT 'event_table_after_explicit_current_create' || E'\t' || COALESCE(
+    to_regclass('companion_internal.extension_upgrade_events')::text,
+    'absent'
+);
 SQL
 
-grep -Fq $'version_before_upgrade\t0.1.0' "${evidence_file}"
-grep -Fq $'version_after_upgrade\t0.1.1' "${evidence_file}"
-grep -Eq $'^upgrade_event_id\t[1-9][0-9]*$' "${evidence_file}"
-grep -Fq $'event_count_after_upgrade\t1' "${evidence_file}"
-grep -Fq $'version_after_rollback\t0.1.0' "${evidence_file}"
-grep -Fq $'event_table_after_rollback\tabsent' "${evidence_file}"
-grep -Fq $'event_function_after_rollback\tabsent' "${evidence_file}"
+  grep -Fq $'version_before_upgrade\t'"${install_version}" "${active_evidence_file}"
+  grep -Fq $'selected_upgrade_path\t'"${install_version}--${reversible_version}" "${active_evidence_file}"
+  grep -Fq $'selected_downgrade_path\t'"${reversible_version}--${install_version}" "${active_evidence_file}"
+  grep -Fq $'version_after_upgrade\t'"${reversible_version}" "${active_evidence_file}"
+  grep -Eq $'^upgrade_event_id\t[1-9][0-9]*$' "${active_evidence_file}"
+  grep -Fq $'event_count_after_upgrade\t1' "${active_evidence_file}"
+  grep -Fq $'version_after_rollback\t'"${install_version}" "${active_evidence_file}"
+  grep -Fq $'event_table_after_rollback\tabsent' "${active_evidence_file}"
+  grep -Fq $'event_function_after_rollback\tabsent' "${active_evidence_file}"
+  grep -Fq $'version_after_default_update\t'"${current_version}" "${active_evidence_file}"
+  grep -Fq $'version_after_bare_create\t'"${current_version}" "${active_evidence_file}"
+  grep -Fq $'event_table_after_bare_create\tcompanion_internal.extension_upgrade_events' "${active_evidence_file}"
+  grep -Fq $'version_after_explicit_current_create\t'"${current_version}" "${active_evidence_file}"
+  grep -Fq $'event_table_after_explicit_current_create\tcompanion_internal.extension_upgrade_events' "${active_evidence_file}"
 
-printf 'canary_upgrade_rollback_smoke\tpg_major=%s\tupgrade=0.1.0->0.1.1\trollback=0.1.1->0.1.0\tevidence=recorded\n' \
-  "${pg_major}"
+  printf 'canary_upgrade_rollback_smoke\tpg_major=%s\tdefault=%s\tupgrade=%s->%s\trollback=%s->%s\tpaths=exact\tevidence=recorded\n' \
+    "${pg_major}" \
+    "${current_version}" \
+    "${install_version}" \
+    "${reversible_version}" \
+    "${reversible_version}" \
+    "${install_version}"
+
+  docker rm --force --volumes "${active_container}" >/dev/null
+  rm -f "${active_evidence_file}"
+  active_container=""
+  active_evidence_file=""
+}
+
+for pg_major in "${pg_majors[@]}"; do
+  run_canary "${pg_major}"
+done

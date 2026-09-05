@@ -1,3 +1,4 @@
+// FEATURE: D9
 // FEATURE: S4
 
 use std::error::Error;
@@ -6,6 +7,8 @@ use std::fmt;
 pub const TIMESCALEDB_EXTENSION: &str = "timescaledb";
 pub const CITUS_EXTENSION: &str = "citus";
 pub const COMPANION_EXTENSION: &str = "ai_blaise_citus";
+#[cfg(test)]
+pub(crate) const SHIPPED_COMPANION_EXTENSION_VERSION: &str = "0.1.2";
 pub const CNPG_SERVER_CA_PATH: &str = "/controller/certificates/server-ca.crt";
 pub const MAX_PRODUCTION_WORKER_GROUPS: u32 = 32;
 pub const MAX_PRODUCTION_GROUP_REPLICAS: u32 = 9;
@@ -578,6 +581,21 @@ fn validate_exact_version(field: &'static str, value: &str) -> Result<(), CitusC
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shipped_companion_version_matches_both_control_files() {
+        let overlay_control =
+            include_str!("../../../images/citus-pg-overlay/extensions/ai_blaise_citus.control");
+        let companion_control = include_str!("../../../companion/ai_blaise_citus.control");
+
+        for control in [overlay_control, companion_control] {
+            let default_version = control
+                .lines()
+                .find_map(|line| line.strip_prefix("default_version = '")?.strip_suffix('\''))
+                .expect("control default_version");
+            assert_eq!(default_version, SHIPPED_COMPANION_EXTENSION_VERSION);
+        }
+    }
 
     #[test]
     fn coordinator_worker_cluster_with_timescale_passes() {

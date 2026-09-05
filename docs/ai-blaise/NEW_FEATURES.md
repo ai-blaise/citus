@@ -206,54 +206,46 @@ and the patch series (`patches-check` green) and exist to keep the upstream
 ### Bundle1: Bundled Extension Image Contract
 
 **Overlay**: `images/citus-pg-overlay`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
 
-**Summary**: Defines the operand-image manifest, preload order, required
-extension initialization SQL, explicit PG17 source-build targets for the
-feasible PGDG-missing Bundle1 extensions, and a complete initdb path that
-exercises every required extension against the live overlay image.
-`FEATURE: Bundle1 is production-ready` for the
-`full-bundle-required-minus-plrust` boundary: the new
-`bundle1-pgdg-runtime` Dockerfile stage installs every PGDG and Timescale
-binary-package extension listed as required in
-`extension-manifest.tsv`; `bundle1-final-light` and
-`bundle1-final-full` layer in the source-built citus, pgsodium, topn,
-pg_jsonschema, pg_graphql (light) and pg_search, plv8 (heavy) extensions; the
-canonical `shared-preload-libraries.conf` only references actually-installed
-shared libraries; and `/docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql`
-runs `CREATE EXTENSION` for every required Bundle1 extension at container
-start. The source-build smoke
-(`BUNDLE1_BUILD_IMAGE=1 REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`
-and the heavy variant `BUNDLE1_BUILD_HEAVY=1`) verifies pg_extension catalog
-records every required Bundle1 extension after initdb and records the result in
-`bundle1-source-build-evidence.tsv`.
+**Summary**: `FEATURE: Bundle1 remains alpha`. The manifest, source-build
+lock, canonical preload configuration, and complete initdb path define two
+closed PG17 targets. `bundle1-final-light` is a bounded feedback operand;
+only `bundle1-final-full` may carry
+`full-bundle-required-minus-plrust` and `release-target=true`.
 
-**Current boundary**: This production-ready claim covers the required Bundle1
-extension set minus plrust, which remains the lone alpha-deferred entry in
-`extension-manifest.tsv`. The plrust PG17 upstream gap is unchanged
-(upstream pg13-pg16 pgrx 0.11.0 only); plrust has been moved from
-`required` to `optional` in the manifest and is tracked separately under
-`FEATURE: EF6`. The image labels record this scope explicitly:
-`ai-blaise.citus.bundle1.evidence-scope=full-bundle-required-minus-plrust`
-and `ai-blaise.citus.bundle1.full-initdb-path=true`. The bundle is not
-evidence for plrust Rust UDFs, PG18 source-build of the heavy extensions,
-operand image release certification by command-center, or production
-multi-region Kubernetes deployment correctness.
+The trusted Bundle1 configuration loads TimescaleDB and the other reviewed
+hook users before a final Citus entry. This matches the installed zero-argument
+cohabitation-order assertion without changing plain upstream Citus's first-load
+rule outside the explicit cohabitation policy. The default-boot smoke passes no
+PostgreSQL command override, checks the applied preload source and every
+required manifest capability, and exercises Citus-first and missing-library
+negative controls. The Dockerfile retains Citus's native PostgreSQL 17 version
+check and uses `install-all` so downgrade SQL is packaged without a fallback to
+plain `install`. The `v13.3.0` value remains historical tracking metadata, not
+the compiled runtime version or the selected Chimera upstream pin.
 
-Production evidence: `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh` builds
-`bundle1-final-light` (PG17, full PGDG + Timescale + source-built bundle),
-starts a container with the canonical `shared_preload_libraries` set, waits
-for the docker-entrypoint `PostgreSQL init process complete` log line so the
-verification phase is not racing the initdb-script-runner / final-server
-restart, and then verifies pg_extension catalog records every required Bundle1
-extension (25 entries) and pg_warm/seed_extension_catalog functional smoke
-output. The evidence row is appended to
-`images/citus-pg-overlay/bundle1-source-build-evidence.tsv` with the
-`bundle1-final-light` image digest. The heavy variant
-`BUNDLE1_BUILD_HEAVY=1` extends the same path through pg_search and plv8.
+Image CI binds the reviewed PostgreSQL 17 base digest, records an IID, and
+runs both light and full default-boot checks through that immutable image ID.
+The workflow does not publish an image. The plrust PG17 upstream gap remains
+unchanged, and there is no current full-target default-boot receipt from a
+reviewed clean commit.
+
+On 2026-09-05, a content-sealed dirty overlay over `e1060703` built the full
+target and passed the stock-entrypoint smoke by image ID. The exact input,
+toolchain, package, image, and log identities are recorded in
+`docs/ai-blaise/evidence/2026-09-05-bundle1-full-default-boot-dirty-candidate.md`.
+That observation is not clean-source release evidence, W1 completion, or an
+M0/M1/M2 promotion because its overlay was dirty and several dependency
+resolutions remain mutable.
+
+Historical light evidence remains available through
+`BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`;
+`BUNDLE1_BUILD_HEAVY=1` selects its historical heavy path. Those rows do not
+substitute for the new full-target default-boot requirement.
 
 **Motivation**: The fork needs one machine-checkable contract for always-on,
 optional, and hard-blocked extensions before image builds and Helm values can
@@ -8490,50 +8482,62 @@ catalog.
 
 ### D9: Canary Upgrade Runbook
 
-**Overlay**: `companion/src/ops_contracts.rs`,
-`docs/ai-blaise/RUNBOOKS/upgrade.md`, and
+**Overlay**: `docs/ai-blaise/RUNBOOKS/upgrade.md` and
 `images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Tracks the canary-upgrade rehearsal artifact as a required
-operations contract, validates the local companion extension transition
-manifest, and now executes a live reversible PostgreSQL canary drill for the
-`ai_blaise_citus` SQL extension.
+**Summary**: Versioned companion SQL upgrade, bounded historical rollback, and
+populated security/backup recovery contracts. The current candidate defaults
+to `0.1.2`, a forward-only security floor with no in-place downgrade.
 
-Production evidence: VM proof run
-`REQUIRE_DOCKER=1 bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh` starts a
-real `postgres:17` container with the shipped control, install, upgrade, and
-downgrade SQL files mounted into the PostgreSQL extension directory. The smoke
-creates `ai_blaise_citus` at `0.1.0`, runs `ALTER EXTENSION ai_blaise_citus
-UPDATE TO '0.1.1'`, records a canary event through
-`companion_internal.record_extension_upgrade_event`, verifies
-`companion_extension_upgrade_events`, rolls back with `ALTER EXTENSION
-ai_blaise_citus UPDATE TO '0.1.0'`, and proves the 0.1.1 event table and
-recorder are removed after rollback. `ci/ai-blaise/upgrade-rollback-guardrails.sh`
-keeps the manifest, reverse SQL, Dockerfile packaging, Make target, release
-docs, and runbook wiring fail-closed. This production-ready boundary is the
-local companion-extension canary upgrade/rollback path and runbook gate; it is
-not full upstream Citus upgrade-matrix evidence, does not certify an operand
-image release, and does not perform human production promotion.
+`canary-upgrade-rollback-smoke.sh` now uses the source-bound real-Citus
+PostgreSQL 17 and PostgreSQL 18 fixtures. It creates Citus and `pgcrypto` in
+each exercised database before the companion, checks the exact
+`0.1.0--0.1.1` path, explicitly updates to
+0.1.1, records `companion_internal.record_extension_upgrade_event`, verifies
+`companion_extension_upgrade_events`, and runs
+`ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.0'`. The 0.1.1 event table
+and recorder are removed after rollback. It then tests bare
+`ALTER EXTENSION ai_blaise_citus UPDATE` to 0.1.2, bare creation at the control
+default, and explicit creation at version `0.1.2`.
 
-**Citus comparison**: Vanilla Citus does not include this canary upgrade
-runbook or ai-blaise companion-extension rollback contract.
+`extension-security-backup-smoke.sh` uses the same source-bound fixtures and
+verifies all 153 routine ACLs, all 44 tables and 24 serial sequences, explicit
+grant-option preservation across a populated logical restore, transaction
+rollback on injected failures, and rejection of delegated grant chains. The
+migration rejects unsafe bare updates
+with explicit routine grants; the separate administrative upgrade script
+preserves reviewed owner-issued grants in one transaction.
+
+Historical 0.1.1 canary receipts do not certify 0.1.2. The 0.1.2 SQL recovery
+tests passed on PG17 and PG18 using pinned stock images on an existing
+development VM, but those observations predate the source-built Citus fixture
+migration and do not qualify its current bytes. Fresh native PG17/PG18
+canary/restore execution, exact-current packaging, and release-host provenance
+remain required. This is not full upstream Citus upgrade-matrix evidence,
+does not certify an operand image release, and does not perform human
+production promotion. Digest-pinned operator rolling updates across a
+coordinator and two real workers remain a separate release prerequisite.
+
+The guardrail preserves the frozen 0.1.0 install SQL
+(`sha256:c23c0887753118915c12b40ee6058ddd8920d95c33258353448c68b4e6c0ddb5`),
+a unique acyclic forward graph, and exact reverse contracts for the historical
+edge. The sole reviewed forward-only edge requires pre-upgrade backup/PITR
+into a separate cluster; it cannot silently gain a security-reopening reverse.
 
 **References**:
 
-- In-source: `FEATURE: D9` in `companion/src/ops_contracts.rs`
-- SQL transition: `FEATURE: D9` in
-  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql`
-- SQL rollback: `FEATURE: D9` in
-  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql`
+- SQL migration: `FEATURE: D9` in
+  `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql`
+- Privilege-preserving upgrade:
+  `images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql`
+- Runbook: `docs/ai-blaise/RUNBOOKS/companion-security-backup.md`
 - CI: `ci/ai-blaise/upgrade-rollback-guardrails.sh`
 - CI: `ci/ai-blaise/canary-upgrade-rollback-smoke.sh`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
-- Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
-- CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`
+- CI: `ci/ai-blaise/extension-security-backup-smoke.sh`
 
 ### D10: Release Hardening Runbook
 

@@ -22,6 +22,7 @@
 .PHONY: sidecar-analytical-parquet-read-smoke
 .PHONY: sidecar-analytical-iceberg-snapshot-smoke
 .PHONY: run-companion-libsql-read-tier-guard-canonical companion-edge2-libsql-research-guard-smoke
+.PHONY: bundle1-default-boot-smoke extension-security-backup-smoke
 .NOTPARALLEL: gate-close
 
 preflight-local:
@@ -713,6 +714,12 @@ upgrade-rollback-guardrails:
 canary-upgrade-rollback-smoke:
 	@bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh
 
+extension-security-backup-smoke:
+	@EXTENSION_SECURITY_PG_MAJOR=17 bash ci/ai-blaise/extension-security-backup-smoke.sh
+	@EXTENSION_SECURITY_PG_MAJOR=18 bash ci/ai-blaise/extension-security-backup-smoke.sh
+
+gate-close: extension-security-backup-smoke
+
 image-check:
 	@bash ci/ai-blaise/image-check.sh
 
@@ -931,6 +938,11 @@ microbench-compare:
 # CI smoke runner for all 26 microbenches (quick mode).
 microbench-smoke:
 	@bash ci/ai-blaise/bundled-ext-microbenches-smoke.sh
+
+# Build target is supplied through BUNDLE1_IMAGE; the smoke deliberately boots
+# the image through its default postgres command with no -c configuration.
+bundle1-default-boot-smoke:
+	@bash ci/ai-blaise/bundle1-default-boot-smoke.sh
 
 # Validate benchmark result artifacts against explicit SLO thresholds. The
 # default is exploratory so local/PR smoke artifacts may be scaffolded but are

@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compare a running cohabiting PostgreSQL container's observed PostgreSQL
-# extension claims and Citus cohabit state against the per-TS-version expected
-# table at `tests/cohab-matrix/<TS_VERSION>/expected-hook-claims.tsv`.
+# Validate a running cohabiting PostgreSQL container's extension/Citus-admission
+# state and the per-TS-version static hook inventory at
+# `tests/cohab-matrix/<TS_VERSION>/expected-hook-claims.tsv`.
 #
 # This script does not directly probe symbol-level C hook claims; PostgreSQL
 # does not expose `planner_hook` / `ExecutorStart_hook` etc. through SQL.
-# Instead it uses `pg_extension` introspection plus the Citus cohabit GUCs as
-# a tractable production proxy: TimescaleDB is loaded, Citus is loaded, the
-# trusted-coextension allowlist contains `timescaledb`, and the cohabitation
-# smoke has already proven the chained hook behavior end to end against this
-# image. The expected-claim TSV is the durable per-version record of which
-# hooks the matrix expects each TS line to take; mismatches flag a regression
-# for human review against `src/backend/distributed/shared_library_init.c`.
+# Instead it uses `pg_extension` introspection plus the Citus cohabit GUCs to
+# prove that TimescaleDB and Citus loaded together and that the exact runtime
+# admits `timescaledb`. The expected-claim TSV is a separate static inventory;
+# each row documents whether it is source-measured or a carry-forward
+# expectation. This script validates only its schema/status vocabulary and
+# rejects unresolved rows; it cannot observe or compare live C hook pointers.
 #
 # Usage:
 #   tests/cohab-matrix/compare-hook-claims.sh <TS_VERSION> <CONTAINER_NAME>
 #
-# Exits 0 on a clean comparison, non-zero on a structural drift.
+# Exits 0 when runtime admission and static inventory structure pass, non-zero
+# on runtime admission or inventory-structure drift.
 
 if [[ $# -ne 2 ]]; then
   echo "usage: $0 <TS_VERSION> <CONTAINER_NAME>" >&2
@@ -42,8 +42,8 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 # Verify both extensions are installed in the running container and that the
-# Citus cohabit GUC trusts `timescaledb`. These three facts together are the
-# production proxy for "the trusted-hook chain is wired".
+# Citus cohabit GUC admits `timescaledb`. These facts do not measure hook
+# pointer ownership; the source-measured TSV remains a static input.
 ext_rows="$(docker exec "${container}" psql -U postgres -At -F $'\t' -c "
   SELECT extname, extversion
   FROM pg_extension
@@ -91,6 +91,10 @@ while IFS=$'\t' read -r hook_symbol claim_status notes; do
   if [[ -z "${hook_symbol}" ]]; then
     continue
   fi
+  if [[ -z "${notes}" ]]; then
+    echo "matrix validator: TS ${ts_version} row for ${hook_symbol} has empty source-measurement notes" >&2
+    exit 1
+  fi
   total_rows=$((total_rows + 1))
   case "${claim_status}" in
     claimed|not_claimed)
@@ -116,4 +120,4 @@ if [[ "${unknown_rows}" -ne 0 && "${TS_VERSION_MATRIX_ALLOW_UNKNOWN:-0}" != "1" 
   exit 1
 fi
 
-echo "matrix comparator: TS ${ts_version} cohabitation seam matches expected hook-claim table (${total_rows} rows, ${unknown_rows} unknown)"
+echo "matrix validator: TS ${ts_version} runtime admission passed; static hook inventory is structurally closed (${total_rows} rows, ${unknown_rows} unknown; hook_runtime_comparison=unavailable)"

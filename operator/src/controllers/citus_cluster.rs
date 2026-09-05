@@ -2281,6 +2281,7 @@ fn error_policy(_cluster: Arc<CitusCluster>, error: &ControllerError, ctx: Arc<C
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crds::citus_cluster::SHIPPED_COMPANION_EXTENSION_VERSION;
 
     fn production_cr() -> CitusClusterCrSpec {
         CitusClusterCrSpec {
@@ -2303,7 +2304,7 @@ mod tests {
                 databases: vec!["app".to_string()],
                 extension_versions: ExactExtensionVersionsCr {
                     citus: "13.2-1".to_string(),
-                    companion: "1.0".to_string(),
+                    companion: SHIPPED_COMPANION_EXTENSION_VERSION.to_string(),
                 },
                 node_tls: NodeTlsSpecCr {
                     server_ca_secret: "citus-ca".to_string(),

@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# FEATURE: A10 A11
+
+# Test-only HTTP variant layered on the already content-addressed real-Citus
+# fixture. The builder supplies the expected local fixture tag pinned by its
+# verified digest and refuses engines that cannot resolve that compound parent.
+ARG REAL_CITUS_FIXTURE_PARENT
+FROM ${REAL_CITUS_FIXTURE_PARENT} AS companion-http-test-fixture
+
+ARG PG_MAJOR
+ARG PG_HTTP_PACKAGE
+ARG PG_HTTP_PACKAGE_VERSION
+ARG AI_BLAISE_HTTP_FIXTURE_ID
+ARG REAL_CITUS_FIXTURE_IMAGE_ID
+ARG REAL_CITUS_FIXTURE_ID
+
+LABEL ai-blaise.citus.test-fixture.http="true" \
+      ai-blaise.citus.test-fixture.scope="source-built-companion-http-test-only" \
+      ai-blaise.citus.test-fixture.release-target="false" \
+      ai-blaise.citus.test-fixture.pg-major="${PG_MAJOR}" \
+      ai-blaise.citus.test-fixture.http-package="${PG_HTTP_PACKAGE}" \
+      ai-blaise.citus.test-fixture.http-package-version="${PG_HTTP_PACKAGE_VERSION}" \
+      ai-blaise.citus.test-fixture.http-parent-image-id="${REAL_CITUS_FIXTURE_IMAGE_ID}" \
+      ai-blaise.citus.test-fixture.http-parent-fixture-id="${REAL_CITUS_FIXTURE_ID}" \
+      ai-blaise.citus.test-fixture.http-id="${AI_BLAISE_HTTP_FIXTURE_ID}"
+
+RUN set -eux; \
+    test "${PG_MAJOR}" = "17"; \
+    test "${PG_HTTP_PACKAGE}" = "postgresql-17-http"; \
+    postgres_server_version="$(postgres --version)"; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends "${PG_HTTP_PACKAGE}=${PG_HTTP_PACKAGE_VERSION}"; \
+    test "$(postgres --version)" = "${postgres_server_version}"; \
+    test "$(dpkg-query -W -f='${Version}' "${PG_HTTP_PACKAGE}")" = "${PG_HTTP_PACKAGE_VERSION}"; \
+    test -s "/usr/share/postgresql/${PG_MAJOR}/extension/http.control"; \
+    rm -rf /var/lib/apt/lists/*

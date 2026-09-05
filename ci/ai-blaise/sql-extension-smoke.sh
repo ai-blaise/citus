@@ -6,11 +6,11 @@ set -euo pipefail
 # against PG16, PG17, and PG18 operand bases. PG18 adds `io_method` as a
 # configured GUC; this harness asserts it accepts the contract value without
 # breaking Citus or any bundled extension.
+# FEATURE: Bundle1
 
 repo_root="$(git rev-parse --show-toplevel)"
-extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
-control_file="${extension_dir}/ai_blaise_citus.control"
-sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
+fixture_builder="${repo_root}/ci/ai-blaise/build-real-citus-test-fixture.sh"
+fixture_contract="${repo_root}/ci/ai-blaise/real-citus-test-fixture-contract.py"
 bundle1_lock_file="${repo_root}/images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 require_docker="${REQUIRE_DOCKER:-0}"
 
@@ -20,6 +20,14 @@ require_docker="${REQUIRE_DOCKER:-0}"
 #   SQL_EXTENSION_SMOKE_PG_MAJORS=18 bash ci/ai-blaise/sql-extension-smoke.sh
 pg_majors_default="16 17 18"
 read -r -a pg_majors <<<"${SQL_EXTENSION_SMOKE_PG_MAJORS:-${pg_majors_default}}"
+if [[ -n "${SQL_EXTENSION_SMOKE_IMAGE:-}" ]]; then
+  echo "SQL_EXTENSION_SMOKE_IMAGE is retired; use source-verified CITUS_TEST_FIXTURE_IMAGE with one SQL_EXTENSION_SMOKE_PG_MAJORS major" >&2
+  exit 1
+fi
+if [[ -n "${CITUS_TEST_FIXTURE_IMAGE:-}" && "${#pg_majors[@]}" -ne 1 ]]; then
+  echo "CITUS_TEST_FIXTURE_IMAGE requires exactly one SQL_EXTENSION_SMOKE_PG_MAJORS major" >&2
+  exit 1
+fi
 
 # PG18 ships io_method as a real GUC. Default to the safe `worker` value (also
 # the upstream PG18 default) so the smoke matches stock container kernels.
@@ -30,12 +38,21 @@ bundle1_build_heavy="${BUNDLE1_BUILD_HEAVY:-0}"
 bundle1_image="${BUNDLE1_IMAGE:-ai-blaise-citus-overlay:bundle1-source-smoke-pg17}"
 bundle1_evidence_file="${BUNDLE1_EVIDENCE_FILE:-}"
 
-for file in "${control_file}" "${sql_file}" "${bundle1_lock_file}"; do
+for file in \
+  "${fixture_builder}" \
+  "${fixture_contract}" \
+  "${bundle1_lock_file}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing SQL extension smoke artifact: ${file}" >&2
     exit 1
   fi
 done
+if [[ ! -x "${fixture_builder}" ]]; then
+  echo "real-Citus test fixture builder is not executable: ${fixture_builder}" >&2
+  exit 1
+fi
+
+python3 "${fixture_contract}"
 
 if ! command -v docker >/dev/null 2>&1; then
   if [[ "${require_docker}" == "1" ]]; then
@@ -49,50 +66,42 @@ fi
 active_container=""
 cleanup() {
   if [[ -n "${active_container}" ]]; then
-    docker rm -f "${active_container}" >/dev/null 2>&1 || true
+    docker rm --force --volumes "${active_container}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 run_smoke_for_pg_major() {
   local pg_major="$1"
-  local postgres_image="${SQL_EXTENSION_SMOKE_IMAGE:-postgres:${pg_major}}"
+  local fixture_image
+  fixture_image="$("${fixture_builder}" --pg-major "${pg_major}")"
   local container="ai-blaise-sql-extension-smoke-pg${pg_major}-${RANDOM}-$$"
   active_container="${container}"
 
-  echo "=== sql-extension-smoke vs ${postgres_image} (PG${pg_major}) ==="
+  echo "=== sql-extension-smoke on immutable real-Citus PG${pg_major} fixture ==="
 
   # PG18 introduces io_method. Verify the GUC accepts the contract value and
   # does not break Citus or any bundled extension. PG17 does not expose
   # io_method, so the run-args stay version-conditioned.
   local -a postgres_args
-  postgres_args=(-c "shared_preload_libraries=pg_stat_statements")
+  postgres_args=(-c "shared_preload_libraries=citus,pg_stat_statements")
   if [[ "${pg_major}" -ge 18 ]]; then
     postgres_args+=(-c "io_method=${pg18_io_method}")
   fi
 
-  # Pre-pull with bounded retry — registry-1.docker.io transients
-  # have flaked sibling smokes (sidecar-cdc, pool-*). Matches the
-  # 3-attempt/5s pattern applied across smokes in PRs #170/#171.
-  for attempt in 1 2 3; do
-    if docker pull "${postgres_image}" >/dev/null; then break; fi
-    if [ "${attempt}" = "3" ]; then
-      echo "docker pull ${postgres_image} failed after 3 attempts" >&2; exit 1
-    fi
-    sleep 5
-  done
   docker run \
     --name "${container}" \
+    --network none \
     -e POSTGRES_PASSWORD=postgres \
-    -v "${control_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus.control:ro" \
-    -v "${sql_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0.sql:ro" \
-    -d "${postgres_image}" \
+    -d "${fixture_image}" \
     "${postgres_args[@]}" >/dev/null
 
   local init_complete=0
+  local container_logs
   local _
   for _ in $(seq 1 120); do
-    if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    container_logs="$(docker logs "${container}" 2>&1 || true)"
+    if [[ "${container_logs}" == *"PostgreSQL init process complete"* ]]; then
       init_complete=1
       break
     fi
@@ -133,6 +142,7 @@ run_smoke_for_pg_major() {
   fi
 
   docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION citus;
 CREATE EXTENSION pg_stat_statements;
 CREATE EXTENSION pgcrypto;
 SELECT pg_stat_statements_reset();
@@ -140,6 +150,10 @@ SELECT 1 AS ai_blaise_pg_stat_statements_seed;
 CREATE EXTENSION ai_blaise_citus;
 DO $$
 BEGIN
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus') <> '0.1.2' THEN
+    RAISE EXCEPTION 'bare CREATE EXTENSION did not install shipped default 0.1.2';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM companion_internal.cohabit_extension_detection_report(
@@ -306,27 +320,6 @@ BEGIN
       'time_column', time_column,
       'chunk_time_interval', chunk_time_interval::text,
       'if_not_exists', if_not_exists
-    )
-  );
-END;
-$$;
-
-CREATE FUNCTION create_distributed_table(
-  table_name regclass,
-  distribution_column text,
-  shard_count integer DEFAULT 32
-)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  INSERT INTO timescale_bridge_call_log(function_name, relation_name, argument_summary)
-  VALUES (
-    'create_distributed_table',
-    table_name::text,
-    jsonb_build_object(
-      'distribution_column', distribution_column,
-      'shard_count', shard_count
     )
   );
 END;
@@ -1804,9 +1797,34 @@ BEGIN
   IF (
     SELECT count(*)
     FROM timescale_bridge_call_log
-    WHERE function_name IN ('create_hypertable', 'create_distributed_table')
+    WHERE function_name = 'create_hypertable'
+      AND relation_name = 'timescale_smoke_metrics'
+  ) <> 1 THEN
+    RAISE EXCEPTION 'apply_distribute_hypertable did not call the Timescale contract fixture';
+  END IF;
+  -- Timescale is a call-contract fixture in this lane; Citus is installed and
+  -- must perform real distribution. The cohabitation lane tests real Timescale.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_dist_partition
+    WHERE logicalrelid = 'timescale_smoke_metrics'::regclass
+      AND partmethod = 'h'
+      AND pg_catalog.column_to_column_name(logicalrelid, partkey) = 'metric_time'
+  ) THEN
+    RAISE EXCEPTION 'apply_distribute_hypertable did not create real Citus distribution';
+  END IF;
+  IF (
+    SELECT count(*)
+    FROM pg_catalog.pg_dist_shard
+    WHERE logicalrelid = 'timescale_smoke_metrics'::regclass
   ) <> 2 THEN
-    RAISE EXCEPTION 'apply_distribute_hypertable did not call both dependency entrypoints';
+    RAISE EXCEPTION 'apply_distribute_hypertable did not create exactly two real Citus shards';
+  END IF;
+  INSERT INTO timescale_smoke_metrics(metric_time, value)
+  VALUES (clock_timestamp(), 42.0);
+  IF (SELECT count(*) FROM timescale_smoke_metrics) <> 1 OR
+     (SELECT sum(value) FROM timescale_smoke_metrics) IS DISTINCT FROM 42.0 THEN
+    RAISE EXCEPTION 'real Citus bridge insert/readback failed';
   END IF;
 
   PERFORM companion_internal.create_worker_hypertables(
@@ -2120,6 +2138,11 @@ CREATE POLICY rls_smoke_tenant_isolation ON rls_smoke_orders
 USING (companion_tenant_id_matches(tenant_id))
 WITH CHECK (companion_tenant_id_matches(tenant_id));
 GRANT SELECT, INSERT ON rls_smoke_orders TO ai_blaise_rls_smoke;
+-- The 0.1.2 security floor requires explicit runtime grants, including helpers
+-- called by an invoker-rights RLS predicate. Claim mutation remains ungranted.
+GRANT EXECUTE ON FUNCTION companion_tenant_id_matches(text),
+  companion_current_tenant_id(), companion_require_tenant_id()
+TO ai_blaise_rls_smoke;
 
 SELECT companion_set_session_claims('user-123', 'authenticated', 'tenant-a', 'jti-123');
 SET ROLE ai_blaise_rls_smoke;
@@ -2127,6 +2150,10 @@ DO $$
 DECLARE
   visible_count integer;
 BEGIN
+  IF has_function_privilege(current_user,
+      'companion_set_session_claims(text,text,text,text,boolean)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'Sec1 RLS runtime role must not receive claim mutation authority';
+  END IF;
   SELECT count(*) INTO visible_count FROM rls_smoke_orders;
   IF visible_count <> 1 THEN
     RAISE EXCEPTION 'Sec1 RLS tenant-a should see exactly one row, got %',
@@ -2213,19 +2240,21 @@ SQL
     exit 1
   fi
 
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  docker rm --force --volumes "${container}" >/dev/null 2>&1 || true
   active_container=""
-  echo "ai_blaise_citus SQL extension smoke passed with ${postgres_image}"
+  echo "ai_blaise_citus SQL extension smoke passed on immutable PG${pg_major} fixture ${fixture_image}"
 }
 
 
 run_bundle1_source_build_smoke() {
-  # Bundle1 production-ready smoke: light target ships a complete PGDG +
-  # source-build bundle. shared_preload_libraries matches the canonical
-  # shared-preload-libraries.conf so initdb exercises the full required
-  # cohabitation set.
+  # Bundle1 source-build smoke: light proves the B1 subset; full adds every
+  # required source-build extension and is the release/publish boundary.
+  # shared_preload_libraries matches the canonical configuration so initdb
+  # exercises the same cohabitation path in both targets.
   local target="bundle1-final-light"
-  local preload_libraries="citus,timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx"
+  local expected_evidence_scope="light-required-subset-minus-heavy-and-plrust"
+  local expected_release_target="false"
+  local preload_libraries="timescaledb,pgaudit,pgauditlogtofile,pgsodium,pg_cron,age,pg_failover_slots,pgnodemx,citus"
   local -a expected_extensions=(
     ai_blaise_citus
     citus
@@ -2255,6 +2284,8 @@ run_bundle1_source_build_smoke() {
   )
   if [[ "${bundle1_build_heavy}" == "1" ]]; then
     target="bundle1-final-full"
+    expected_evidence_scope="full-bundle-required-minus-plrust"
+    expected_release_target="true"
     expected_extensions+=(pg_search plv8)
   fi
 
@@ -2300,8 +2331,20 @@ run_bundle1_source_build_smoke() {
   fi
   local evidence_scope
   evidence_scope="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.evidence-scope" }}' "${bundle1_image}")"
-  if [[ "${evidence_scope}" != "full-bundle-required-minus-plrust" ]]; then
-    echo "bundle1 image evidence-scope label mismatch: ${evidence_scope} (expected full-bundle-required-minus-plrust)" >&2
+  if [[ "${evidence_scope}" != "${expected_evidence_scope}" ]]; then
+    echo "bundle1 image evidence-scope label mismatch: ${evidence_scope} (expected ${expected_evidence_scope})" >&2
+    exit 1
+  fi
+  local observed_target
+  observed_target="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.target" }}' "${bundle1_image}")"
+  if [[ "${observed_target}" != "${target}" ]]; then
+    echo "bundle1 image target label mismatch: ${observed_target} (expected ${target})" >&2
+    exit 1
+  fi
+  local observed_release_target
+  observed_release_target="$(docker image inspect -f '{{ index .Config.Labels "ai-blaise.citus.bundle1.release-target" }}' "${bundle1_image}")"
+  if [[ "${observed_release_target}" != "${expected_release_target}" ]]; then
+    echo "bundle1 image release-target label mismatch: ${observed_release_target} (expected ${expected_release_target})" >&2
     exit 1
   fi
   local full_initdb_path
@@ -2347,20 +2390,23 @@ run_bundle1_source_build_smoke() {
     --name "${container}" \
     -e POSTGRES_PASSWORD=postgres \
     -e PGSODIUM_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-    -d "${bundle1_image}" \
-    -c "shared_preload_libraries=${preload_libraries}" >/dev/null
+    -d "${bundle1_image}" >/dev/null
 
   # Wait for docker-entrypoint to finish initdb + run init scripts + restart
   # postgres. The temporary postgres during init responds to SELECT 1 too,
   # so a bare ready check races the shutdown/restart transition.
   local init_complete=0
+  local container_logs
+  local container_running
   local _
   for _ in $(seq 1 240); do
-    if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    container_logs="$(docker logs "${container}" 2>&1 || true)"
+    if [[ "${container_logs}" == *"PostgreSQL init process complete"* ]]; then
       init_complete=1
       break
     fi
-    if ! docker inspect -f '{{.State.Running}}' "${container}" 2>/dev/null | grep -q true; then
+    container_running="$(docker inspect -f '{{.State.Running}}' "${container}" 2>/dev/null || true)"
+    if [[ "${container_running}" != "true" ]]; then
       docker logs "${container}" >&2 || true
       echo "bundle1 source-build container exited during init" >&2
       exit 1
@@ -2384,6 +2430,26 @@ run_bundle1_source_build_smoke() {
   if [[ "${ready}" != "1" ]]; then
     docker logs "${container}" >&2 || true
     echo "bundle1 source-build container did not become ready" >&2
+    exit 1
+  fi
+
+  local observed_preload
+  observed_preload="$(
+    docker exec "${container}" psql -U postgres -Atqc 'SHOW shared_preload_libraries'
+  )"
+  if [[ "${observed_preload}" != "${preload_libraries}" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "bundle1 default preload mismatch: expected ${preload_libraries}, observed ${observed_preload}" >&2
+    exit 1
+  fi
+  local observed_preload_source
+  observed_preload_source="$(
+    docker exec "${container}" psql -U postgres -Atqc \
+      "SELECT sourcefile FROM pg_file_settings WHERE name = 'shared_preload_libraries' AND applied ORDER BY seqno DESC LIMIT 1"
+  )"
+  if [[ "${observed_preload_source}" != "/etc/postgresql/ai-blaise/shared-preload-libraries.conf" ]]; then
+    docker logs "${container}" >&2 || true
+    echo "bundle1 default preload source mismatch: ${observed_preload_source}" >&2
     exit 1
   fi
 
@@ -2461,7 +2527,7 @@ SQL
       "${expected_extensions[*]}" >>"${bundle1_evidence_file}"
   fi
 
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  docker rm -fv "${container}" >/dev/null 2>&1 || true
   active_container=""
   echo "bundle1 source-build smoke passed for ${target}: ${expected_extensions[*]}"
 }

@@ -4,31 +4,47 @@ set -euo pipefail
 # FEATURE: TS6 TS18
 
 repo_root="$(git rev-parse --show-toplevel)"
-dockerfile="${repo_root}/images/citus-timescale-cohabitation/Dockerfile"
-base_image="${TIMESCALE_COHABITATION_BASE_IMAGE:-timescale/timescaledb-ha:pg17-ts2.27}"
+fixture_builder="${repo_root}/ci/ai-blaise/build-real-citus-timescale-test-fixture.sh"
+fixture_contract="${repo_root}/ci/ai-blaise/real-citus-timescale-test-fixture-contract.py"
 image="${TIMESCALE_COHABITATION_IMAGE:-}"
-tag="${TIMESCALE_COHABITATION_TAG:-ai-blaise-citus-timescale-cohabitation:local}"
 make_jobs="${TIMESCALE_COHABITATION_MAKE_JOBS:-4}"
 require_docker="${REQUIRE_DOCKER:-0}"
 evidence_file="${TIMESCALE_COHABITATION_EVIDENCE:-artifacts/timescale-cohabitation-evidence.tsv}"
-expected_ts_minor="${TIMESCALE_COHABITATION_EXPECTED_TS_MINOR:-}"
-expected_pg_major="${TIMESCALE_COHABITATION_EXPECTED_PG_MAJOR:-}"
+expected_ts_minor="${TIMESCALE_COHABITATION_EXPECTED_TS_MINOR:-${CITUS_TIMESCALE_TEST_FIXTURE_MINOR:-2.27}}"
+expected_pg_major="${TIMESCALE_COHABITATION_EXPECTED_PG_MAJOR:-17}"
 
-if [[ -z "${expected_ts_minor}" && "${base_image}" =~ :([0-9]+\.[0-9]+)(\.[0-9]+)?-pg[0-9]+$ ]]; then
-  expected_ts_minor="${BASH_REMATCH[1]}"
-elif [[ -z "${expected_ts_minor}" && "${base_image}" =~ [:/-]pg[0-9]+-ts([0-9]+\.[0-9]+)(\.[0-9]+)?$ ]]; then
-  expected_ts_minor="${BASH_REMATCH[1]}"
-fi
-if [[ -z "${expected_pg_major}" && "${base_image}" =~ -pg([0-9]+)$ ]]; then
-  expected_pg_major="${BASH_REMATCH[1]}"
-elif [[ -z "${expected_pg_major}" && "${base_image}" =~ [:/-]pg([0-9]+)-ts[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-  expected_pg_major="${BASH_REMATCH[1]}"
-fi
-
-if [[ ! -s "${dockerfile}" ]]; then
-  echo "missing Timescale cohabitation Dockerfile: ${dockerfile}" >&2
+if [[ -n "${TIMESCALE_COHABITATION_BASE_IMAGE:-}" || -n "${TIMESCALE_COHABITATION_TAG:-}" ]]; then
+  echo "TIMESCALE_COHABITATION_BASE_IMAGE/TAG are retired; use the source-verified fixture builder" >&2
   exit 1
 fi
+case "${expected_ts_minor}" in
+  2.27)
+    expected_base_image="docker.io/timescale/timescaledb-ha:pg17-ts2.27@sha256:4f61167e11c7c95bedf96433c720d671a53aa29ad7f52b142b529a6d0e9f0b20"
+    ;;
+  2.28)
+    expected_base_image="docker.io/timescale/timescaledb-ha:pg17-ts2.28@sha256:bc9e09875460aa69fb536362fef7c8e92c51ad6aab3d13f91a2487d3547dc71a"
+    ;;
+  *)
+    echo "Timescale cohabitation smoke supports only the locked 2.27 and 2.28 lines" >&2
+    exit 1
+    ;;
+esac
+if [[ "${expected_pg_major}" != "17" ]]; then
+  echo "Timescale cohabitation smoke supports only the locked PG17 fixture" >&2
+  exit 1
+fi
+for file in "${fixture_builder}" "${fixture_contract}"; do
+  if [[ ! -s "${file}" ]]; then
+    echo "missing Timescale cohabitation fixture artifact: ${file}" >&2
+    exit 1
+  fi
+done
+if [[ ! -x "${fixture_builder}" ]]; then
+  echo "Timescale cohabitation fixture builder is not executable: ${fixture_builder}" >&2
+  exit 1
+fi
+
+python3 "${fixture_contract}"
 
 if ! command -v docker >/dev/null 2>&1; then
   if [[ "${require_docker}" == "1" ]]; then
@@ -39,24 +55,28 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 0
 fi
 
-if [[ -z "${image}" ]]; then
-  docker build \
-    --file "${dockerfile}" \
-    --build-arg "BASE_IMAGE=${base_image}" \
-    --build-arg "MAKE_JOBS=${make_jobs}" \
-    --tag "${tag}" \
-    "${repo_root}"
-  image="${tag}"
+builder_args=(--timescaledb-minor "${expected_ts_minor}")
+if [[ -n "${image}" ]]; then
+  builder_args+=(--image "${image}")
+fi
+image="$(
+  CITUS_TIMESCALE_TEST_FIXTURE_MAKE_JOBS="${make_jobs}" \
+    "${fixture_builder}" "${builder_args[@]}"
+)"
+if [[ ! "${image}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  echo "Timescale cohabitation fixture builder did not return an immutable image ID" >&2
+  exit 1
 fi
 
 container="ai-blaise-timescale-cohabitation-smoke-${RANDOM}-$$"
 cleanup() {
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  docker rm --force --volumes "${container}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
 docker run \
   --name "${container}" \
+  --network none \
   -e POSTGRES_PASSWORD=postgres \
   -d "${image}" \
   postgres \
@@ -65,7 +85,8 @@ docker run \
 
 init_complete=0
 for _ in $(seq 1 180); do
-  if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+  container_logs="$(docker logs --tail 200 "${container}" 2>&1 || true)"
+  if [[ "${container_logs}" == *"PostgreSQL init process complete"* ]]; then
     init_complete=1
     break
   fi
@@ -99,7 +120,15 @@ SELECT current_setting('citus.cohabit_extensions', true) AS cohabit_extensions;
 
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+DO $$
+BEGIN
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+      IS DISTINCT FROM '0.1.2' THEN
+    RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+  END IF;
+END $$;
 
 SELECT extname, extversion
 FROM pg_extension
@@ -192,6 +221,11 @@ if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
   echo "Timescale/Citus cohabitation image did not report a stable image identity: ${image_id}" >&2
   exit 1
 fi
+base_image="$(docker image inspect --format '{{ index .Config.Labels "ai-blaise.citus.test-fixture.base-image" }}' "${image_id}")"
+if [[ "${base_image}" != "${expected_base_image}" ]]; then
+  echo "Timescale/Citus cohabitation fixture base label did not match the selected minor" >&2
+  exit 1
+fi
 
 runtime_metadata="$(docker exec -i "${container}" psql -U postgres -AtX -v ON_ERROR_STOP=1 -F $'\t' <<'SQL'
 SELECT
@@ -220,16 +254,7 @@ if [[ -n "${expected_ts_minor}" && "${timescaledb_extversion}" != "${expected_ts
   exit 1
 fi
 
-base_digest="$(
-  { docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${base_image}" 2>/dev/null || true; } |
-    awk 'NR == 1 { print; exit }'
-)"
-if [[ -z "${base_digest}" ]]; then
-  base_digest="$(
-    docker buildx imagetools inspect "${base_image}" 2>/dev/null |
-      awk '/^Digest:/ { print $2; exit }'
-  )" || base_digest=""
-fi
+base_digest="${base_image##*@}"
 git_sha="$(git -C "${repo_root}" rev-parse --short=12 HEAD)"
 command_path="postgres -c shared_preload_libraries=timescaledb,citus -c citus.cohabit_extensions=timescaledb"
 {

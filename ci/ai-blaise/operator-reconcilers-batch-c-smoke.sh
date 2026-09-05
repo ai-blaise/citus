@@ -129,11 +129,16 @@ SQL
 printf '%s\n' "${conflict_sql}" | docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1
 
 extension_name="$(docker exec "${container}" psql -U postgres -Atqc "SELECT extname FROM pg_extension WHERE extname = 'ai_blaise_citus'")"
+extension_version="$(docker exec "${container}" psql -U postgres -Atqc "SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus'")"
 status_table="$(docker exec "${container}" psql -U postgres -Atqc "SELECT CASE WHEN to_regclass('companion_internal.replication_conflict_status') IS NOT NULL THEN 'true' ELSE 'false' END")"
 policy_rows="$(docker exec "${container}" psql -U postgres -AtX -F $'\t' -c "SELECT policy_name, table_name, conflict_class, resolution, coalesce(custom_function, '<NULL>') FROM companion_internal.replication_conflict_policies ORDER BY policy_name")"
 
 if [[ "${extension_name}" != "ai_blaise_citus" ]]; then
   echo "ai_blaise_citus extension was not installed in conflict-policy runtime smoke" >&2
+  exit 1
+fi
+if [[ "${extension_version}" != "0.1.2" ]]; then
+  echo "expected shipped ai_blaise_citus version 0.1.2, got ${extension_version}" >&2
   exit 1
 fi
 if [[ "${status_table}" != "true" ]]; then
@@ -145,6 +150,7 @@ grep -Fxq $'accounts-merge\tpublic.reference_accounts\tupdate_exists\tmerge_func
 
 printf 'operator_reconcilers_batch_c\t%s\n' "${output}"
 printf 'conflict_policy_live_extension\t%s\n' "${extension_name}"
+printf 'conflict_policy_live_extension_version\t%s\n' "${extension_version}"
 printf 'conflict_policy_live_status_table\t%s\n' "${status_table}"
 while IFS= read -r row; do
   printf 'conflict_policy_live_row\t%s\n' "${row}"

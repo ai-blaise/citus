@@ -1,32 +1,30 @@
 # TimescaleDB 2.28.x Cohabitation Notes
 
-TimescaleDB 2.28 is tracked here as a forward-compatibility row, not production
-evidence. A VM registry probe on 2026-05-24 found no published PG17 image for
-`timescale/timescaledb-ha:pg17-ts2.28`, `timescale/timescaledb-ha:pg17-ts2.28.0`, or
-`timescale/timescaledb-ha:pg17-ts2.28.1`. The pinned candidate is recorded in
-`image-tag.txt` as `timescale/timescaledb-ha:pg17-ts2.28` so CI can detect the
-line as soon as Docker publishes it.
+TimescaleDB 2.28 is tracked here as a required forward-compatibility row, not
+production evidence. `image-tag.txt` and the shared fixture lock select the
+published `docker.io/timescale/timescaledb-ha:pg17-ts2.28` operand by the exact
+reviewed manifest digest. The source-bound builder must install the selected
+Citus checkout and companion into that base before the matrix can execute it.
 
-## Forecasted Hook Seam
+## Static Hook Inventory
 
-The `expected-hook-claims.tsv` file is a forecast based on TimescaleDB
-2.22-2.27 hook usage history:
+The `expected-hook-claims.tsv` file records a static 2.28 inventory. Individual
+rows state whether they are source-measured or carry-forward expectations:
 
 - `planner_hook`, `ExecutorRun_hook`: not claimed (carry-forward from 2.27).
-- `ProcessUtility_hook`, `ExplainOneQuery_hook`: claimed (carry-forward).
-- `ExecutorStart_hook`: `unknown`. TimescaleDB 2.22 freed this hook when the
-  hypercore TAM was removed; TS 2.28 may keep it free or reclaim it.
+- `ProcessUtility_hook`: claimed for DDL interception.
+- `ExplainOneQuery_hook`: not claimed in the measured 2.28 source.
+- `ExecutorStart_hook`: not claimed. TimescaleDB 2.22 freed this hook when the
+  hypercore TAM was removed and the measured 2.28 source keeps it free.
 
-The `unknown` row is intentional while the image is absent. Once the image is
-published, `compare-hook-claims.sh` fails on any remaining `unknown` rows so TS
-2.28 cannot be treated as production-ready until the hook claim is measured.
+`compare-hook-claims.sh` fails on any `unknown` row in the load-bearing matrix.
 
 ## Promotion Checklist
 
-1. Pull the pinned image and verify the installed extension still reports the
-   canonical `timescaledb` extension name.
+1. Build or verify the exact source-bound fixture and require the installed
+   extension to report the canonical `timescaledb` extension name.
 2. Run `REQUIRE_DOCKER=1 TS_VERSION_MATRIX=2.28 bash ci/ai-blaise/ts-version-matrix-smoke.sh`.
-3. Update `expected-hook-claims.tsv` from `unknown` to measured `claimed` or
-   `not_claimed` rows. If a previously free hook is now claimed, audit the
-   matching capture/chaining path in `src/backend/distributed/shared_library_init.c`.
-4. Only then may docs cite TS 2.28 as live cohabitation evidence.
+3. If a hook differs from the measured table, audit the matching
+   capture/chaining path in `src/backend/distributed/shared_library_init.c`.
+4. Only a fresh exact-source native receipt may qualify this fixture revision;
+   the source contract alone is not release evidence.

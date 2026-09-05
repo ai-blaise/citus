@@ -30,6 +30,8 @@ ARG AI_BLAISE_EXTENSION_BUNDLE_VERSION=0.1.0
 ARG AI_BLAISE_SOURCE_GIT_SHA=unknown
 ARG AI_BLAISE_SOURCE_TREE_STATE=unknown
 
+# Historical tracking metadata only. build-citus compiles the in-tree source;
+# this value is neither its runtime extversion nor Chimera's upstream pin.
 ARG CITUS_TAG=v13.3.0
 ARG PGSODIUM_TAG=v3.1.9
 ARG PGSODIUM_REF=7222ebc5ed87084a68d526aef977be0f4eb319a2
@@ -57,7 +59,6 @@ RUN set -eux; \
       bison \
       build-essential \
       ca-certificates \
-      clang \
       cmake \
       curl \
       flex \
@@ -72,7 +73,6 @@ RUN set -eux; \
       libxml2-dev \
       libxslt-dev \
       libzstd-dev \
-      llvm-dev \
       lz4 \
       pkg-config \
       postgresql-server-dev-${PG_MAJOR} \
@@ -183,11 +183,11 @@ COPY config /src/citus/config
 COPY vendor /src/citus/vendor
 COPY prep_buildtree /src/citus/prep_buildtree
 RUN set -eux; \
-    ./configure PG_CONFIG=/usr/bin/pg_config --without-pg-version-check; \
+    ./configure PG_CONFIG=/usr/bin/pg_config; \
     make -j2; \
-    make install DESTDIR=/out; \
+    make install-all DESTDIR=/out; \
     install -d /out/usr/local/share; \
-    echo "${CITUS_TAG}" >/out/usr/local/share/ai-blaise-citus-upstream-tag
+    echo "${CITUS_TAG}" >/out/usr/local/share/ai-blaise-citus-historical-tracking-tag
 
 FROM ${BASE_IMAGE} AS bundle1-pgdg-runtime
 ARG PG_MAJOR
@@ -260,9 +260,11 @@ LABEL org.opencontainers.image.source="https://github.com/ai-blaise/citus" \
       ai-blaise.citus.source-tree-state="${AI_BLAISE_SOURCE_TREE_STATE}" \
       ai-blaise.citus.extension-bundle="${AI_BLAISE_EXTENSION_BUNDLE_VERSION}" \
       ai-blaise.citus.bundle1.contract-lock="images/citus-pg-overlay/bundle1-source-build.lock.tsv" \
-      ai-blaise.citus.bundle1.evidence-scope="full-bundle-required-minus-plrust" \
-      ai-blaise.citus.bundle1.full-initdb-path="true" \
-      ai-blaise.citus.bundle1.citus.tag="${CITUS_TAG}" \
+      ai-blaise.citus.bundle1.target="source-runtime-intermediate" \
+      ai-blaise.citus.bundle1.evidence-scope="unattested-source-runtime-intermediate" \
+      ai-blaise.citus.bundle1.full-initdb-path="unverified" \
+      ai-blaise.citus.bundle1.release-target="false" \
+      ai-blaise.citus.bundle1.citus.historical-tracking-tag="${CITUS_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.tag="${PGSODIUM_TAG}" \
       ai-blaise.citus.bundle1.pgsodium.ref="${PGSODIUM_REF}" \
       ai-blaise.citus.bundle1.topn.tag="${TOPN_TAG}" \
@@ -283,6 +285,7 @@ RUN set -eux; \
     install -d -m 0755 /etc/postgresql/ai-blaise \
       /usr/local/share/ai-blaise/citus \
       /usr/local/share/ai-blaise/citus/extensions \
+      /usr/local/share/ai-blaise/citus/upgrades \
       "/usr/share/postgresql/${PG_MAJOR}/extension"
 COPY images/citus-pg-overlay/extension-manifest.tsv /usr/local/share/ai-blaise/citus/extension-manifest.tsv
 COPY images/citus-pg-overlay/bundle1-source-build.lock.tsv /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv
@@ -292,18 +295,30 @@ COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control /usr/local/share
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0--0.1.1.sql
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.0.sql
+COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.2.sql
+COPY images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql
 COPY images/citus-pg-overlay/extensions/pg_warm.control /usr/local/share/ai-blaise/citus/extensions/pg_warm.control
 COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql
 COPY images/citus-pg-overlay/bin/pgsodium_getkey /usr/local/share/ai-blaise/citus/pgsodium_getkey
 COPY images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql /docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql
+# FEATURE: Bundle1 -- initdb copies this sample before the stock entrypoint
+# starts its temporary server, so Citus is preloaded before the first extension
+# creation. Keeping the include in the sample also preserves the default
+# postgres entrypoint and makes a missing canonical file fail closed.
 RUN set -eux; \
     cp /usr/local/share/ai-blaise/citus/shared-preload-libraries.conf /etc/postgresql/ai-blaise/shared-preload-libraries.conf; \
+    postgres_sample="$(pg_config --sharedir)/postgresql.conf.sample"; \
+    test -s "${postgres_sample}"; \
+    printf "\ninclude = '/etc/postgresql/ai-blaise/shared-preload-libraries.conf'\n" >>"${postgres_sample}"; \
+    grep -Fxq "include = '/etc/postgresql/ai-blaise/shared-preload-libraries.conf'" "${postgres_sample}"; \
     install -m 0755 /usr/local/share/ai-blaise/citus/pgsodium_getkey "/usr/share/postgresql/${PG_MAJOR}/extension/pgsodium_getkey"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus.control "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0--0.1.1.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0--0.1.1.sql"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.1--0.1.0.sql"; \
+    cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.2.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.1--0.1.2.sql"; \
     test -s /usr/local/share/ai-blaise/citus/ai_blaise_citus-upgrade-manifest.tsv; \
+    test -s /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql; \
     test -s /usr/local/share/ai-blaise/citus/bundle1-source-build.lock.tsv; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm.control "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm--0.1.0.sql"; \
@@ -312,6 +327,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD pg_isready -U "${POSTGRES_USER:-postgres}" || exit 1
 
 FROM bundle1-source-runtime AS bundle1-final-light
+LABEL ai-blaise.citus.bundle1.target="bundle1-final-light" \
+      ai-blaise.citus.bundle1.evidence-scope="light-required-subset-minus-heavy-and-plrust" \
+      ai-blaise.citus.bundle1.full-initdb-path="true" \
+      ai-blaise.citus.bundle1.release-target="false"
 COPY --from=build-pgsodium      /out/ /
 COPY --from=build-topn          /out/ /
 COPY --from=build-pg-jsonschema /out/ /
@@ -319,6 +338,10 @@ COPY --from=build-pg-graphql    /out/ /
 COPY --from=build-citus         /out/ /
 
 FROM bundle1-final-light AS bundle1-final-full
+LABEL ai-blaise.citus.bundle1.target="bundle1-final-full" \
+      ai-blaise.citus.bundle1.evidence-scope="full-bundle-required-minus-plrust" \
+      ai-blaise.citus.bundle1.full-initdb-path="true" \
+      ai-blaise.citus.bundle1.release-target="true"
 COPY --from=build-pg-search /out/ /
 COPY --from=build-plv8      /out/ /
 
@@ -346,6 +369,8 @@ COPY images/citus-pg-overlay/extensions/ai_blaise_citus.control /usr/local/share
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0--0.1.1.sql
 COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.0.sql
+COPY images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.2.sql
+COPY images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql
 COPY images/citus-pg-overlay/extensions/pg_warm.control /usr/local/share/ai-blaise/citus/extensions/pg_warm.control
 COPY images/citus-pg-overlay/extensions/pg_warm--0.1.0.sql /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql
 COPY images/citus-pg-overlay/initdb.d/00-ai-blaise-extensions.sql /docker-entrypoint-initdb.d/00-ai-blaise-extensions.sql
@@ -358,6 +383,8 @@ RUN set -eux; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0.sql"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.0--0.1.1.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.0--0.1.1.sql"; \
     cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.1--0.1.0.sql"; \
+    cp /usr/local/share/ai-blaise/citus/extensions/ai_blaise_citus--0.1.1--0.1.2.sql "/usr/share/postgresql/${PG_MAJOR}/extension/ai_blaise_citus--0.1.1--0.1.2.sql"; \
+    test -s /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm.control "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm.control"; \
     cp /usr/local/share/ai-blaise/citus/extensions/pg_warm--0.1.0.sql "/usr/share/postgresql/${PG_MAJOR}/extension/pg_warm--0.1.0.sql"; \
     sed -n 1,120p /usr/local/share/ai-blaise/citus/extension-manifest.tsv >/usr/local/share/ai-blaise/citus/required-extension-preview.tsv

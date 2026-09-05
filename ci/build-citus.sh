@@ -11,6 +11,7 @@ source ci/ci_helpers.sh
 PG_MAJOR=${PG_MAJOR:?please provide the postgres major version}
 
 # get codename from release file
+# shellcheck disable=SC1091
 . /etc/os-release
 codename=${VERSION#*(}
 codename=${codename%)*}
@@ -33,10 +34,12 @@ build_ext() {
   CFLAGS=-Werror "${basedir}/configure" PG_CONFIG="/usr/lib/postgresql/${pg_major}/bin/pg_config" --enable-coverage --with-security-flags
 
   installdir="${builddir}/install"
-  make -j$(nproc) && mkdir -p "${installdir}" && { make DESTDIR="${installdir}" install-all || make DESTDIR="${installdir}" install ; }
+  make -j"$(nproc)"
+  mkdir -p "${installdir}"
+  make DESTDIR="${installdir}" install-all
 
   cd "${installdir}" && find . -type f -print > "${builddir}/files.lst"
-  tar cvf "${basedir}/install-${pg_major}.tar" `cat ${builddir}/files.lst`
+  tar cvf "${basedir}/install-${pg_major}.tar" --files-from="${builddir}/files.lst"
 
   cd "${builddir}" && rm -rf install files.lst && make clean
 }

@@ -15,6 +15,22 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  extension-security-backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - major: 17
+          - major: 18
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prove privilege-preserving upgrade and populated logical restore
+        env:
+          EXTENSION_SECURITY_PG_MAJOR: ${{ matrix.major }}
+        run: bash ci/ai-blaise/extension-security-backup-smoke.sh
+
   audit:
     runs-on: ubuntu-latest
     steps:

@@ -728,6 +728,7 @@ mod tests {
     use super::*;
     use crate::crds::citus_cluster::{
         BootstrapJobSpec, ExactExtensionVersions, NodeTlsSpec, CNPG_SERVER_CA_PATH,
+        SHIPPED_COMPANION_EXTENSION_VERSION,
     };
 
     fn production() -> CitusProductionSpec {
@@ -741,7 +742,7 @@ mod tests {
             databases: vec!["app".to_string(), "analytics".to_string()],
             extension_versions: ExactExtensionVersions {
                 citus: "13.2-1".to_string(),
-                companion: "1.0".to_string(),
+                companion: SHIPPED_COMPANION_EXTENSION_VERSION.to_string(),
             },
             node_tls: NodeTlsSpec {
                 server_ca_secret: "citus-ca".to_string(),
@@ -815,7 +816,9 @@ mod tests {
         let script = bootstrap.script();
 
         assert!(script.contains("CREATE EXTENSION IF NOT EXISTS citus WITH VERSION '13.2-1'"));
-        assert!(script.contains("ai_blaise_citus WITH VERSION '1.0'"));
+        let companion_create =
+            format!("ai_blaise_citus WITH VERSION '{SHIPPED_COMPANION_EXTENSION_VERSION}'");
+        assert!(script.contains(&companion_create));
         assert!(script.contains("current_setting('citus.node_conninfo')"));
         assert!(script.contains("sslmode=verify-full sslrootcert=/tls/ca.crt"));
         assert!(script.contains("pg_dist_authinfo"));

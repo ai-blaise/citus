@@ -8,7 +8,8 @@ set -euo pipefail
 # Runs in two modes:
 #
 #   * Default mode (docker available, kind not required): starts a real
-#     PostgreSQL container with ai_blaise_citus installed, runs the pool proxy
+#     source-built real-Citus PG17 fixture with ai_blaise_citus installed,
+#     runs the pool proxy
 #     against it, connects with traceparent-bearing PGOPTIONS through psql,
 #     asserts the pool's stderr log line and Prometheus counters reflect the
 #     tap, verifies companion SQL projection, and checks sidecar `/tracez`.
@@ -28,11 +29,9 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
-pg_major="${OTEL_SMOKE_PG_MAJOR:-17}"
-postgres_image="${OTEL_SMOKE_POSTGRES_IMAGE:-postgres:${pg_major}}"
-extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
-control_file="${extension_dir}/ai_blaise_citus.control"
-sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
+pg_major=17
+fixture_builder="${repo_root}/ci/ai-blaise/build-real-citus-test-fixture.sh"
+fixture_contract="${repo_root}/ci/ai-blaise/real-citus-test-fixture-contract.py"
 release_mode="${AI_BLAISE_RELEASE_MODE:-0}"
 require_docker="${REQUIRE_DOCKER:-${release_mode}}"
 require_kind="${REQUIRE_KIND:-0}"
@@ -60,12 +59,19 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
-for file in "${control_file}" "${sql_file}"; do
+for file in "${fixture_builder}" "${fixture_contract}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing otel trace propagation artifact: ${file}" >&2
     exit 1
   fi
 done
+if [[ ! -x "${fixture_builder}" ]]; then
+  echo "real-Citus test fixture builder is not executable: ${fixture_builder}" >&2
+  exit 1
+fi
+
+python3 "${fixture_contract}"
+fixture_image="$("${fixture_builder}" --pg-major "${pg_major}")"
 
 choose_port() {
   python3 - <<'PY'
@@ -97,7 +103,7 @@ cleanup() {
     kill "${pool_pid}" >/dev/null 2>&1 || true
     wait "${pool_pid}" >/dev/null 2>&1 || true
   fi
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  docker rm --force --volumes "${container}" >/dev/null 2>&1 || true
   rm -f "${pool_log}" "${shared_log}" "${trace_sql_output}"
 }
 trap cleanup EXIT
@@ -107,9 +113,7 @@ docker run \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_HOST_AUTH_METHOD=trust \
   -p "127.0.0.1:${postgres_port}:5432" \
-  -v "${control_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus.control:ro" \
-  -v "${sql_file}:/usr/share/postgresql/${pg_major}/extension/ai_blaise_citus--0.1.0.sql:ro" \
-  -d "${postgres_image}" >/dev/null
+  -d "${fixture_image}" >/dev/null
 
 postgres_init_complete=0
 for _ in $(seq 1 120); do
@@ -142,7 +146,16 @@ if [[ "${postgres_ready}" != "1" ]]; then
 fi
 
 docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL' >/dev/null
+CREATE EXTENSION citus;
+CREATE EXTENSION pgcrypto;
 CREATE EXTENSION ai_blaise_citus;
+DO $$
+BEGIN
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+      IS DISTINCT FROM '0.1.2' THEN
+    RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+  END IF;
+END $$;
 SQL
 
 AI_BLAISE_POOL_LISTEN_ADDR="127.0.0.1:${pool_port}" \
@@ -180,7 +193,7 @@ if ! docker run --rm \
   -e PGAPPNAME="${application_name}" \
   -e PGOPTIONS="${libpq_options}" \
   -e PGSSLMODE=disable \
-  "${postgres_image}" \
+  "${fixture_image}" \
   psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 >"${trace_sql_output}" <<SQL
 SELECT 'postgres_traceparent' || E'\t' || current_setting('trace.parent', true);
 SELECT 'postgres_tracestate' || E'\t' || current_setting('trace.state', true);
@@ -249,7 +262,7 @@ if ! docker run --rm \
   --network host \
   -e PGPASSWORD=postgres \
   -e PGSSLMODE=disable \
-  "${postgres_image}" \
+  "${fixture_image}" \
   psql -h 127.0.0.1 -p "${pool_port}" -U postgres -d postgres -Atqv ON_ERROR_STOP=1 >"${trace_sql_output}" <<SQL
 SELECT 1;
 SQL
@@ -334,6 +347,7 @@ done
 
 kind_cluster="ai-blaise-otel-smoke-${RANDOM}"
 kind_config="$(mktemp -t kind-otel.XXXXXX.yaml)"
+kind_fixture_image="ai-blaise-citus-test-fixture:kind-${kind_cluster}"
 
 cat >"${kind_config}" <<KIND
 kind: Cluster
@@ -353,10 +367,18 @@ kind_cleanup() {
     rm -f "${otlp_payload}"
   fi
   kind delete cluster --name "${kind_cluster}" >/dev/null 2>&1 || true
+  docker image rm "${kind_fixture_image}" >/dev/null 2>&1 || true
 }
 trap kind_cleanup EXIT
 
 kind create cluster --name "${kind_cluster}" --config "${kind_config}" >/dev/null
+
+docker image tag "${fixture_image}" "${kind_fixture_image}"
+if [[ "$(docker image inspect --format '{{.Id}}' "${kind_fixture_image}")" != "${fixture_image}" ]]; then
+  echo "run-scoped kind fixture tag does not resolve to the immutable fixture image" >&2
+  exit 1
+fi
+kind load docker-image "${kind_fixture_image}" --name "${kind_cluster}" >/dev/null
 
 kubectl --context "kind-${kind_cluster}" apply -f - <<'JAEGER' >/dev/null
 apiVersion: apps/v1
@@ -398,13 +420,29 @@ kubectl --context "kind-${kind_cluster}" wait deployment/jaeger --for condition=
 # assertion surfaces. The synthetic OTLP span keeps this bounded to a
 # correlation-harness proof; automatic span export remains outside this smoke.
 kubectl --context "kind-${kind_cluster}" run otel-smoke-postgres \
-  --image="${postgres_image}" \
+  --image="${kind_fixture_image}" \
+  --image-pull-policy=Never \
   --env=POSTGRES_PASSWORD=postgres \
   --env=POSTGRES_HOST_AUTH_METHOD=trust \
   --port=5432 \
   --restart=Never >/dev/null
 kubectl --context "kind-${kind_cluster}" wait pod/otel-smoke-postgres \
   --for=condition=Ready --timeout=120s >/dev/null
+
+kind_postgres_init_complete=0
+for _ in $(seq 1 120); do
+  if kubectl --context "kind-${kind_cluster}" logs otel-smoke-postgres 2>&1 |
+    grep -q "PostgreSQL init process complete"; then
+    kind_postgres_init_complete=1
+    break
+  fi
+  sleep 1
+done
+if [[ "${kind_postgres_init_complete}" != "1" ]]; then
+  kubectl --context "kind-${kind_cluster}" logs otel-smoke-postgres >&2 || true
+  echo "kind real-Citus fixture did not complete PostgreSQL initialization" >&2
+  exit 1
+fi
 
 kind_postgres_ready=0
 for _ in $(seq 1 120); do
@@ -422,7 +460,8 @@ if [[ "${kind_postgres_ready}" != "1" ]]; then
 fi
 
 kubectl --context "kind-${kind_cluster}" exec otel-smoke-postgres -- \
-  psql -U postgres -d postgres -c "SET trace.parent TO '${traceparent}'; SELECT current_setting('trace.parent', true);" >/dev/null
+  psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c \
+  "CREATE EXTENSION citus; CREATE EXTENSION pgcrypto; CREATE EXTENSION ai_blaise_citus; SET trace.parent TO '${traceparent}'; SELECT current_setting('trace.parent', true);" >/dev/null
 
 otlp_payload="$(mktemp -t ai-blaise-otel-jaeger.XXXXXX.json)"
 start_ns="$(date +%s%N)"

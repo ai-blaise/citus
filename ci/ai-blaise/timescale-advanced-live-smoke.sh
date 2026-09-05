@@ -71,6 +71,13 @@ docker exec -i "${container}" psql -v ON_ERROR_STOP=1 -U postgres -d postgres <<
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+DO $$
+BEGIN
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+      IS DISTINCT FROM '0.1.2' THEN
+    RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+  END IF;
+END $$;
 DROP MATERIALIZED VIEW IF EXISTS public.ts10_daily CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS public.ts10_hourly CASCADE;
 DROP TABLE IF EXISTS public.ts11_segmentby_bloom_filters;

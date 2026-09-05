@@ -46,10 +46,18 @@ COPY . /build/citus
 RUN set -eux; \
     ./configure PG_CONFIG="$(command -v pg_config)" --without-pg-version-check; \
     make -j"${MAKE_JOBS}"; \
-    make install; \
+    make install-all; \
     extension_dir="$(pg_config --sharedir)/extension"; \
+    install -D -m 0644 images/citus-pg-overlay/upgrades/ai_blaise_citus--0.1.2.sql \
+      /usr/local/share/ai-blaise/citus/upgrades/ai_blaise_citus--0.1.2.sql; \
     install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus.control \
       "${extension_dir}/ai_blaise_citus.control"; \
     install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql \
       "${extension_dir}/ai_blaise_citus--0.1.0.sql"; \
+    install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql \
+      "${extension_dir}/ai_blaise_citus--0.1.0--0.1.1.sql"; \
+    install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.0.sql \
+      "${extension_dir}/ai_blaise_citus--0.1.1--0.1.0.sql"; \
+    install -m 0644 images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.1--0.1.2.sql \
+      "${extension_dir}/ai_blaise_citus--0.1.1--0.1.2.sql"; \
     rm -rf /build/citus

@@ -7,17 +7,36 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
 extension_dir="${repo_root}/images/citus-pg-overlay/extensions"
+fixture_builder="${repo_root}/ci/ai-blaise/build-real-citus-test-fixture.sh"
+fixture_contract="${repo_root}/ci/ai-blaise/real-citus-test-fixture-contract.py"
 control_file="${extension_dir}/ai_blaise_citus.control"
 sql_file="${extension_dir}/ai_blaise_citus--0.1.0.sql"
+upgrade_sql="${extension_dir}/ai_blaise_citus--0.1.0--0.1.1.sql"
+downgrade_sql="${extension_dir}/ai_blaise_citus--0.1.1--0.1.0.sql"
+security_sql="${extension_dir}/ai_blaise_citus--0.1.1--0.1.2.sql"
 require_docker="${REQUIRE_DOCKER:-0}"
-postgres_image="${AI_SQL_CONTRACT_SMOKE_IMAGE:-postgres:17}"
+pg_major=17
 
-for file in "${control_file}" "${sql_file}"; do
+for file in \
+  "${fixture_builder}" \
+  "${fixture_contract}" \
+  "${control_file}" \
+  "${sql_file}" \
+  "${upgrade_sql}" \
+  "${downgrade_sql}" \
+  "${security_sql}"; do
   if [[ ! -s "${file}" ]]; then
     echo "missing AI SQL contract smoke artifact: ${file}" >&2
     exit 1
   fi
 done
+
+if [[ ! -x "${fixture_builder}" ]]; then
+  echo "real-Citus test fixture builder is not executable: ${fixture_builder}" >&2
+  exit 1
+fi
+
+python3 "${fixture_contract}"
 
 if ! command -v docker >/dev/null 2>&1; then
   if [[ "${require_docker}" == "1" ]]; then
@@ -28,36 +47,61 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 0
 fi
 
+fixture_image="$("${fixture_builder}" --pg-major "${pg_major}")"
 container="ai-blaise-ai-sql-contract-smoke-${RANDOM}-$$"
 cleanup() {
-  docker rm -f "${container}" >/dev/null 2>&1 || true
+  docker rm --force --volumes "${container}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-docker run \
-  --name "${container}" \
+docker run --name "${container}" \
+  --network none \
   -e POSTGRES_PASSWORD=postgres \
-  -v "${control_file}:/usr/share/postgresql/17/extension/ai_blaise_citus.control:ro" \
-  -v "${sql_file}:/usr/share/postgresql/17/extension/ai_blaise_citus--0.1.0.sql:ro" \
-  -d "${postgres_image}" >/dev/null
+  -d "${fixture_image}" >/dev/null
 
+init_complete=0
 for _ in $(seq 1 120); do
   if docker logs "${container}" 2>&1 | grep -q "PostgreSQL init process complete"; then
+    init_complete=1
     break
   fi
   sleep 1
 done
+if [[ "${init_complete}" != "1" ]]; then
+  echo "real-Citus fixture did not complete PostgreSQL initialization" >&2
+  exit 1
+fi
 
+ready=0
 for _ in $(seq 1 60); do
   if docker exec "${container}" psql -U postgres -Atqc 'SELECT 1' >/dev/null 2>&1; then
+    ready=1
     break
   fi
   sleep 1
 done
+if [[ "${ready}" != "1" ]]; then
+  echo "real-Citus fixture did not become SQL-ready" >&2
+  exit 1
+fi
 
 docker exec -i "${container}" psql -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+CREATE EXTENSION citus;
 CREATE EXTENSION pgcrypto;
 CREATE EXTENSION ai_blaise_citus;
+DO $$
+BEGIN
+  IF to_regclass('pg_catalog.pg_dist_node') IS NULL
+     OR to_regprocedure(
+          'pg_catalog.citus_add_node(text,integer,integer,noderole,name)'
+        ) IS NULL THEN
+    RAISE EXCEPTION 'real Citus catalog or function surface is missing';
+  END IF;
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+      IS DISTINCT FROM '0.1.2' THEN
+    RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+  END IF;
+END $$;
 
 CREATE TABLE ai_sql_contract_docs (
   doc_id text PRIMARY KEY,

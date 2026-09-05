@@ -27,16 +27,18 @@ jobs:
         run: bash ci/ai-blaise/app-image-digest-manifest-smoke.sh
       - name: Check release publishability contract
         run: bash ci/ai-blaise/release-publishability-check.sh
-      - name: Smoke SQL companion extension (PG17 + PG18 matrix)
+      - name: Smoke SQL companion extension on real Citus (PG16 + PG17 + PG18)
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh
-      - name: Smoke AI SQL contract surface
-        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/ai-sql-contract-smoke.sh
       - name: Smoke A10/A11 AI SQL live execution against mock LLM
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/a10-a11-ai-sql-live-smoke.sh
       - name: Smoke migration durability invariants
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/migration-invariants-smoke.sh
-      - name: Smoke Timescale bridge against real TimescaleDB
-        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh
+      - name: Smoke Timescale bridge against real TimescaleDB 2.27 and 2.28
+        run: |
+          for timescaledb_minor in 2.27 2.28; do
+            TIMESCALE_BRIDGE_EXPECTED_TS_MINOR="${timescaledb_minor}" \
+              REQUIRE_DOCKER=1 bash ci/ai-blaise/timescale-bridge-smoke.sh
+          done
       - name: Smoke real Timescale and Citus cohabitation
         env:
           TIMESCALE_COHABITATION_MAKE_JOBS: "2"
@@ -52,22 +54,56 @@ jobs:
       - name: Smoke observability replication views
         run: REQUIRE_DOCKER=1 bash ci/ai-blaise/observability-replication-smoke.sh
 
-  build-overlay-image:
-    # PG version matrix: build the citus-pg-overlay image for each supported
-    # PostgreSQL major to verify the Dockerfile build-args parameterize cleanly.
+  ai-sql-real-citus-fixture:
+    # This is a source-built test fixture, not the PG17 Bundle1 release image.
+    # Its builder stages and hashes the exact selected checkout inputs and
+    # returns an immutable Docker image ID after closed label verification.
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test deterministic real-Citus fixture contract
+        run: |
+          python3 ci/ai-blaise/real-citus-test-fixture-contract.py
+          python3 ci/ai-blaise/real-citus-test-fixture-contract_test.py
+          python3 ci/ai-blaise/real-citus-timescale-test-fixture-contract.py
+          python3 ci/ai-blaise/real-citus-timescale-test-fixture-contract_test.py
+      - name: Smoke AI SQL contract on exact source-built Citus
+        env:
+          CITUS_TEST_FIXTURE_MAKE_JOBS: "2"
+        run: REQUIRE_DOCKER=1 bash ci/ai-blaise/ai-sql-contract-smoke.sh
+
+  build-overlay-image:
+    # PG17 builds and boots the light B1 operand boundary. PG18 remains the
+    # explicit manifest/init contract until its source-built dependency set is
+    # supported. The separate push-only full job below owns release-boundary
+    # evidence; the light target must never carry the full-bundle scope label.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        pg_major: ["17", "18"]
+        include:
+          - pg_major: "17"
+            target: bundle1-final-light
+            base_image: "postgres:17-bookworm@sha256:7bade6d532592ca8ce7ee32def7399dad2607c4ea5583839fc4352a095a11ea6"
+          - pg_major: "18"
+            target: bundle1-contract
+            # PG18 remains contract-only and is not W1 release evidence.
+            base_image: "postgres:18-bookworm"
     steps:
       - uses: actions/checkout@v5
       - name: Build overlay image for PG${{ matrix.pg_major }}
         run: |
           docker build \
+            --pull=false \
             -f images/citus-pg-overlay/Dockerfile \
+            --target ${{ matrix.target }} \
             --build-arg PG_MAJOR=${{ matrix.pg_major }} \
-            --build-arg BASE_IMAGE=postgres:${{ matrix.pg_major }}-bookworm \
+            --build-arg BASE_IMAGE="${{ matrix.base_image }}" \
+            --build-arg AI_BLAISE_SOURCE_GIT_SHA=${{ github.sha }} \
+            --build-arg AI_BLAISE_SOURCE_TREE_STATE=clean \
+            --iidfile "${RUNNER_TEMP}/bundle1-pg${{ matrix.pg_major }}.iid" \
             -t ai-blaise-citus-overlay:pg${{ matrix.pg_major }} \
             .
       - name: Verify pg-major label
@@ -77,3 +113,45 @@ jobs:
             echo "label mismatch: expected ${{ matrix.pg_major }}, got $observed" >&2
             exit 1
           fi
+      - name: Boot PG17 operand without PostgreSQL command overrides
+        if: matrix.target == 'bundle1-final-light'
+        env:
+          BUNDLE1_PG_MAJOR: "17"
+          BUNDLE1_EXPECTED_TARGET: bundle1-final-light
+          BUNDLE1_EXPECTED_SOURCE_GIT_SHA: ${{ github.sha }}
+          BUNDLE1_EXPECTED_SOURCE_TREE_STATE: clean
+        run: |
+          BUNDLE1_IMAGE="$(cat "${RUNNER_TEMP}/bundle1-pg17.iid")" \
+            bash ci/ai-blaise/bundle1-default-boot-smoke.sh
+
+  build-full-overlay-image:
+    # Full required-minus-plrust default-boot evidence is a release/publish
+    # prerequisite. It runs on branch pushes so PRs keep the bounded light B1
+    # feedback path; this workflow does not publish an image.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build full PG17 release-boundary operand
+        run: |
+          docker build \
+            --pull=false \
+            -f images/citus-pg-overlay/Dockerfile \
+            --target bundle1-final-full \
+            --build-arg PG_MAJOR=17 \
+            --build-arg BASE_IMAGE=postgres:17-bookworm@sha256:7bade6d532592ca8ce7ee32def7399dad2607c4ea5583839fc4352a095a11ea6 \
+            --build-arg AI_BLAISE_SOURCE_GIT_SHA=${{ github.sha }} \
+            --build-arg AI_BLAISE_SOURCE_TREE_STATE=clean \
+            --iidfile "${RUNNER_TEMP}/bundle1-pg17-full.iid" \
+            -t ai-blaise-citus-overlay:pg17-full \
+            .
+      - name: Boot full PG17 release-boundary operand without PostgreSQL command overrides
+        env:
+          BUNDLE1_PG_MAJOR: "17"
+          BUNDLE1_EXPECTED_TARGET: bundle1-final-full
+          BUNDLE1_EXPECTED_SOURCE_GIT_SHA: ${{ github.sha }}
+          BUNDLE1_EXPECTED_SOURCE_TREE_STATE: clean
+        run: |
+          BUNDLE1_IMAGE="$(cat "${RUNNER_TEMP}/bundle1-pg17-full.iid")" \
+            bash ci/ai-blaise/bundle1-default-boot-smoke.sh

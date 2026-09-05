@@ -1,8 +1,11 @@
 # TimescaleDB 2.27.x cohabitation notes
 
 This is the load-bearing TS line for the ai-blaise/citus cohabitation seam at
-the time this matrix lands. Production evidence is `ci/ai-blaise/timescale-cohabitation-smoke.sh`
-against `timescale/timescaledb-ha:pg17-ts2.27`, which currently resolves to the 2.27.x line; the matrix pins `timescale/timescaledb-ha:pg17-ts2.27`.
+the time this matrix lands. `image-tag.txt` and the shared fixture lock select
+`docker.io/timescale/timescaledb-ha:pg17-ts2.27` by the exact reviewed manifest
+digest. The source-bound builder installs the selected Citus checkout and
+companion into that base; older cohabitation receipts do not qualify the new
+fixture bytes.
 
 ## Hook seam summary
 
@@ -13,10 +16,8 @@ against `timescale/timescaledb-ha:pg17-ts2.27`, which currently resolves to the 
   removed; remains free in 2.27.x. Citus installs `CitusExecutorStart`
   cleanly; `PreviousExecutorStartHook` is `NULL`.
 - `ExecutorRun_hook`: not claimed by TimescaleDB; Citus uses the standard path.
-- `ExplainOneQuery_hook`: claimed by TimescaleDB for chunk-aware EXPLAIN. Citus
-  delegates non-distributed statements to the captured prior hook and keeps
-  distributed statements on the Citus EXPLAIN path so worker-task output is
-  still produced.
+- `ExplainOneQuery_hook`: not claimed. Source measurement found no references
+  in the 2.27.2 source, correcting the former chunk-aware-EXPLAIN assumption.
 
 ## GUC interactions
 

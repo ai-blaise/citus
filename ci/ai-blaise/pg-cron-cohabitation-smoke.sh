@@ -128,6 +128,13 @@ run_sql "${positive_container}" <<'SQL'
 CREATE EXTENSION IF NOT EXISTS citus;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;
+DO $$
+BEGIN
+  IF (SELECT extversion FROM pg_extension WHERE extname = 'ai_blaise_citus')
+      IS DISTINCT FROM '0.1.2' THEN
+    RAISE EXCEPTION 'expected shipped ai_blaise_citus version 0.1.2';
+  END IF;
+END $$;
 SELECT companion_internal.assert_shared_preload_libraries(
   string_to_array(current_setting('shared_preload_libraries', true), ','),
   ARRAY['pg_cron']

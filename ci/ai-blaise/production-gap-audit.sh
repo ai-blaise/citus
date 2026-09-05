@@ -78,6 +78,7 @@ RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
 RELEASE_HARDENING_SMOKE = ROOT / "ci/ai-blaise/release-hardening-runbook-smoke.sh"
 CANARY_UPGRADE_SMOKE = ROOT / "ci/ai-blaise/canary-upgrade-rollback-smoke.sh"
 UPGRADE_MANIFEST = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv"
+UPGRADE_ROLLBACK_GUARDRAIL = ROOT / "ci/ai-blaise/upgrade-rollback-guardrails.sh"
 K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
 K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
 K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
@@ -1053,9 +1054,9 @@ for path in (
             fail(f"{path} contains overclaiming wording: {pattern}")
 
 
-# Bundle1 is production-ready for the bundle1-final-light source-build subset.
-# Keep the subset tied to structured manifest/lock/smoke evidence so it cannot
-# drift into a prose-only production claim.
+# Bundle1 remains alpha until the declared required manifest has a current full
+# target default-boot receipt. Keep light and full scopes machine-separated so
+# a bounded B1 observation cannot drift into a release claim.
 for path in (BUNDLE1_LOCK, BUNDLE1_CONTRACT_CHECK):
     if not path.exists() or not read(path).strip():
         fail(f"missing Bundle1 source-build contract artifact: {path}")
@@ -1079,6 +1080,9 @@ for phrase in (
     "BUNDLE1_BUILD_IMAGE=1",
     "BUNDLE1_BUILD_HEAVY=1",
     "full-bundle-required-minus-plrust",
+    "light-required-subset-minus-heavy-and-plrust",
+    "release-target=true",
+    "no current full-target default-boot receipt",
     "ai-blaise.citus.source-git-sha",
     "ai-blaise.citus.source-tree-state",
     "plrust PG17 upstream gap",
@@ -1091,18 +1095,16 @@ bundle1_docs_truth = "\n".join(
     read(path)
     for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, DOCS, AUDIT)
 )
-# After Bundle1 promotion (2026-05-26), the only forbidden language is
-# overclaim of plrust/full bundle. The production-ready phrase itself is now
-# allowed because the full-bundle-required-minus-plrust evidence exists.
 for pattern in (
+    "FEATURE: Bundle1 is production-ready",
     "full Bundle1 production evidence exists",
     "plrust PG17 source-build is supported",
     "plrust source-build subset is production-ready",
 ):
     if compact(pattern) in compact(bundle1_docs_truth):
         fail(f"Bundle1 docs misstate boundary: {pattern}")
-if "feature: bundle1 is production-ready" not in compact(bundle1_docs_truth):
-    fail("Bundle1 docs must record the FEATURE: Bundle1 is production-ready promotion")
+if "feature: bundle1 remains alpha" not in compact(bundle1_docs_truth):
+    fail("Bundle1 docs must retain alpha status until full default-boot proof")
 
 # A10/A11 SQL-visible contract guardrail: both features are production-ready
 # under the live-provider-execution-safety-validated boundary. This audit pins
@@ -3058,13 +3060,20 @@ if "canary-upgrade-rollback-smoke.sh" not in production_workflow:
 
 if status_by_id.get("D10") != "production-ready":
     fail("D10 release hardening runbook must be production-ready after fail-closed release-record smoke evidence")
-if status_by_id.get("D9") != "production-ready":
-    fail("D9 canary upgrade runbook must be production-ready after live companion SQL upgrade/rollback smoke evidence")
 canary_upgrade_smoke = read(CANARY_UPGRADE_SMOKE)
 for phrase in (
     "FEATURE: D9",
-    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.1'",
+    "CREATE EXTENSION ai_blaise_citus VERSION '0.1.0'",
+    "CREATE EXTENSION ai_blaise_citus;",
+    "CREATE EXTENSION ai_blaise_citus VERSION '0.1.2'",
+    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.1';",
+    "ALTER EXTENSION ai_blaise_citus UPDATE;",
     "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.0'",
+    "pg_extension_update_paths('ai_blaise_citus')",
+    "selected_upgrade_path",
+    "selected_downgrade_path",
+    "pg_majors=(17 18)",
+    "canary image major mismatch",
     "companion_internal.record_extension_upgrade_event",
     "companion_extension_upgrade_events",
     "version_after_rollback",
@@ -3079,40 +3088,42 @@ if "canary-upgrade-rollback-smoke:" not in makefile:
     fail("Makefile.ai-blaise must expose canary-upgrade-rollback-smoke")
 if "canary-upgrade-rollback-smoke" not in makefile.split("gate-close:", 1)[1]:
     fail("gate-close must run canary-upgrade-rollback-smoke")
+upgrade_rollback_guardrail = read(UPGRADE_ROLLBACK_GUARDRAIL)
+for phrase in (
+    'FROZEN_INSTALL_ROOT_VERSION = "0.1.0"',
+    'FROZEN_INSTALL_ROOT_SHA256 = "c23c0887753118915c12b40ee6058ddd8920d95c33258353448c68b4e6c0ddb5"',
+    "restore it and add a new extension version plus transition",
+):
+    if phrase not in upgrade_rollback_guardrail:
+        fail(f"D9 upgrade guardrail lost install-root history freeze: {phrase}")
 manifest = read(UPGRADE_MANIFEST)
 for phrase in (
     "0.1.0|0.1.1|upgrade",
     "0.1.1|0.1.0|downgrade",
+    "0.1.1|0.1.2|upgrade",
     "ai_blaise_citus--0.1.0--0.1.1.sql",
     "ai_blaise_citus--0.1.1--0.1.0.sql",
+    "Forward-only security floor",
     "not full upstream Citus matrix evidence",
 ):
     if phrase not in manifest:
         fail(f"D9 upgrade manifest lost reversible transition phrase: {phrase}")
-d9_body = compact(entry_by_id["D9"]["body"])
-for phrase in (
-    "production evidence",
-    "canary-upgrade-rollback-smoke.sh",
-    "real `postgres:17` container",
-    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.1'",
-    "ALTER EXTENSION ai_blaise_citus UPDATE TO '0.1.0'",
-    "companion_internal.record_extension_upgrade_event",
-    "companion_extension_upgrade_events",
-    "0.1.1 event table and recorder are removed after rollback",
-    "not full upstream Citus upgrade-matrix evidence",
-    "does not certify an operand image release",
-    "does not perform human production promotion",
-):
-    if compact(phrase) not in d9_body:
-        fail(f"D9 docs lost canary upgrade evidence/boundary phrase: {phrase}")
 upgrade_runbook = compact(read(UPGRADE_RUNBOOK))
 for phrase in (
     "canary-upgrade-rollback-smoke.sh",
     "ai_blaise_citus--0.1.0--0.1.1.sql",
     "ai_blaise_citus--0.1.1--0.1.0.sql",
-    "creates the extension at `0.1.0`, upgrades to `0.1.1`",
-    "downgrades to `0.1.0`",
+    "On both PostgreSQL 17 and PostgreSQL 18",
+    "install root `0.1.0`",
+    "bare `ALTER EXTENSION ai_blaise_citus UPDATE`",
+    "bare `CREATE EXTENSION ai_blaise_citus`",
+    "explicit `CREATE EXTENSION ai_blaise_citus VERSION '0.1.2'`",
+    "explicitly downgrades to `0.1.0`",
+    "pg_extension_update_paths('ai_blaise_citus')",
     "does not replace upstream Citus `check-citus-upgrade`",
+    "future SQL changes require a new versioned file and transition",
+    "digest-pinned rolling image and extension-version update",
+    "coordinator and two real workers",
 ):
     if compact(phrase) not in upgrade_runbook:
         fail(f"upgrade runbook lost D9 canary drill phrase: {phrase}")
@@ -3125,10 +3136,14 @@ for phrase in (
         fail(f"release docs lost D9 canary evidence phrase: {phrase}")
 audit_compact_for_d9 = compact(read(AUDIT))
 for phrase in (
-    "D9 canary upgrade runbook is now production-ready",
+    "D9 canary upgrade runbook is alpha",
     "canary-upgrade-rollback-smoke.sh",
-    "installs `ai_blaise_citus` at `0.1.0`",
-    "upgrades to `0.1.1`",
+    "current candidate defaults the companion extension to `0.1.2`",
+    "On both PG17 and PG18",
+    "bare `ALTER EXTENSION ... UPDATE`",
+    "explicit `VERSION '0.1.2'` creation",
+    "extension-security-backup-smoke.sh",
+    "forward-only",
     "rolls back to `0.1.0`",
     "does not claim full upstream Citus upgrade-matrix evidence",
 ):
@@ -3406,7 +3421,7 @@ for phrase in (
     "does not claim full TimescaleDB functionality",
     "timescale/timescaledb-ha:pg17-ts2.27",
     "with_llvm=\"${WITH_LLVM}\"",
-    "postgresql-server-dev-17",
+    'postgresql-server-dev-${PG_MAJOR}=${postgresql_package_version}',
 ):
     if compact(phrase) not in timescale_runtime_truth:
         fail(f"Timescale runtime evidence boundary must preserve phrase: {phrase}")
