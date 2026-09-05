@@ -276,8 +276,14 @@ def validate_http_builder(builder: str) -> None:
         'fixture_image_id="$("${base_builder}" --pg-major "${pg_major}")"',
         'fixture_id="$(docker image inspect --format \'{{ index .Config.Labels "ai-blaise.citus.test-fixture.id" }}\' "${fixture_image_id}")"',
         'fixture_tag="ai-blaise-citus-test-fixture:pg${pg_major}-${fixture_id}"',
-        'fixture_parent="docker.io/library/${fixture_tag}@${fixture_image_id}"',
-        "docker image inspect --format '{{.Id}}' \"${fixture_parent}\"",
+        'fixture_parent="${fixture_tag}"',
+        "verify_parent_tag() {",
+        "verify_parent_ancestry() {",
+        "verify_http_fixture() {",
+        "docker image inspect --format '{{json .RootFS.Layers}}' \"${fixture_image_id}\"",
+        "docker image inspect --format '{{json .RootFS.Layers}}' \"${image_id}\"",
+        'verify_label "ai-blaise.citus.test-fixture.id" "${fixture_id}"',
+        "child[: len(parent)] != parent",
         'install -m 0644 "${dockerfile}" "${build_root}/Dockerfile"',
         'dockerfile_sha256="$(python3 - "${build_root}/Dockerfile"',
         "hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest()",
@@ -296,18 +302,22 @@ def validate_http_builder(builder: str) -> None:
         "trap 'exit 143' TERM",
     ):
         require_once(builder, token, context)
-    for token in (
-        'verify_label "ai-blaise.citus.test-fixture.http-parent-image-id" "${fixture_image_id}"',
-        'verify_label "ai-blaise.citus.test-fixture.http-parent-fixture-id" "${fixture_id}"',
-        "printf '%s\\n' \"${image_id}\"",
-    ):
-        if builder.count(token) != 2:
-            fail(f"{context} must verify/cache exactly twice: {token}")
+    if builder.count("verify_parent_tag") != 3:
+        fail(f"{context} must verify its parent tag before and after use")
+    if builder.count("verify_parent_ancestry") != 2:
+        fail(f"{context} must verify immutable parent rootfs ancestry")
+    if builder.count("verify_http_fixture") != 3:
+        fail(f"{context} must verify both cached and newly built HTTP fixtures")
+    if builder.count("printf '%s\\n' \"${image_id}\"") != 2:
+        fail(f"{context} must return both cached and newly built immutable image IDs")
     if (
         "docker image tag" in builder
-        or "REAL_CITUS_FIXTURE_PARENT=${fixture_tag}" in builder
+        or "@${fixture_image_id}" in builder
+        or 'fixture_parent="${fixture_image_id}"' in builder
     ):
-        fail(f"{context} must not use a floating parent tag")
+        fail(
+            f"{context} must use only its locally verified content-derived parent tag"
+        )
     if "postgres:" in builder:
         fail(f"{context} must not bypass the shared immutable base builder")
     if not (

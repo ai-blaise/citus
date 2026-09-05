@@ -3,10 +3,11 @@
 set -euo pipefail
 
 # Build/cache a test-only HTTP wrapper around the immutable real-Citus PG17
-# fixture. A bare local sha256 image ID is not a portable FROM reference, so
-# the builder requires the expected local fixture tag pinned by that digest,
-# verifies the compound reference, and fails closed on engines that cannot
-# resolve it. It never falls back to a floating parent tag.
+# fixture. A bare local sha256 image ID is not a portable BuildKit FROM
+# reference, while a locally built tag has no registry manifest digest. The
+# builder therefore verifies the content-derived local tag immediately before
+# and after use, then proves that the child rootfs extends the immutable parent
+# rootfs. It never falls back to an unverified or externally supplied tag.
 
 repo_root="$(git rev-parse --show-toplevel)"
 base_builder="${repo_root}/ci/ai-blaise/build-real-citus-test-fixture.sh"
@@ -101,16 +102,18 @@ if [[ ! "${fixture_id}" =~ ^[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 fixture_tag="ai-blaise-citus-test-fixture:pg${pg_major}-${fixture_id}"
-if [[ "$(docker image inspect --format '{{.Id}}' "${fixture_tag}")" != "${fixture_image_id}" ]]; then
-  echo "base real-Citus fixture tag does not resolve to the expected image ID" >&2
-  exit 1
-fi
-fixture_parent="docker.io/library/${fixture_tag}@${fixture_image_id}"
-if ! resolved_parent_id="$(docker image inspect --format '{{.Id}}' "${fixture_parent}" 2>/dev/null)" ||
-   [[ "${resolved_parent_id}" != "${fixture_image_id}" ]]; then
-  echo "Docker engine cannot resolve the locally cached digest-pinned fixture parent" >&2
-  exit 1
-fi
+
+verify_parent_tag() {
+  local resolved_parent_id
+  if ! resolved_parent_id="$(docker image inspect --format '{{.Id}}' "${fixture_tag}" 2>/dev/null)" ||
+     [[ "${resolved_parent_id}" != "${fixture_image_id}" ]]; then
+    echo "base real-Citus fixture tag does not resolve to the expected image ID" >&2
+    exit 1
+  fi
+}
+
+verify_parent_tag
+fixture_parent="${fixture_tag}"
 
 dockerfile_sha256="$(python3 - "${build_root}/Dockerfile" <<'PY'
 import hashlib
@@ -157,20 +160,73 @@ verify_label() {
   fi
 }
 
-if docker image inspect "${image}" >/dev/null 2>&1; then
+verify_parent_ancestry() {
+  local parent_layers child_layers
+  if ! parent_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "${fixture_image_id}")" ||
+     ! child_layers="$(docker image inspect --format '{{json .RootFS.Layers}}' "${image_id}")"; then
+    echo "could not inspect real-Citus HTTP fixture rootfs ancestry" >&2
+    exit 1
+  fi
+  if ! python3 - "${parent_layers}" "${child_layers}" <<'PY'
+import json
+import re
+import sys
+
+
+def parse_layers(value: str) -> list[str]:
+    layers = json.loads(value)
+    if not isinstance(layers, list) or not layers:
+        raise ValueError("rootfs layer inventory must be a nonempty list")
+    if any(
+        not isinstance(layer, str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", layer) is None
+        for layer in layers
+    ):
+        raise ValueError("rootfs layer inventory contains a malformed digest")
+    return layers
+
+
+try:
+    parent = parse_layers(sys.argv[1])
+    child = parse_layers(sys.argv[2])
+except (IndexError, json.JSONDecodeError, ValueError) as error:
+    print(f"invalid real-Citus HTTP fixture rootfs evidence: {error}", file=sys.stderr)
+    raise SystemExit(1) from error
+
+if len(child) <= len(parent) or child[: len(parent)] != parent:
+    print(
+        "real-Citus HTTP fixture does not extend the verified parent rootfs",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+  then
+    echo "real-Citus HTTP fixture parent ancestry verification failed" >&2
+    exit 1
+  fi
+}
+
+verify_http_fixture() {
   image_id="$(docker image inspect --format '{{.Id}}' "${image}")"
   [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-    echo "cached real-Citus HTTP fixture has a nonimmutable image ID" >&2
+    echo "real-Citus HTTP fixture has a nonimmutable image ID" >&2
     exit 1
   }
   verify_label "ai-blaise.citus.test-fixture.http" "true"
   verify_label "ai-blaise.citus.test-fixture.release-target" "false"
   verify_label "ai-blaise.citus.test-fixture.pg-major" "${pg_major}"
+  verify_label "ai-blaise.citus.test-fixture.id" "${fixture_id}"
   verify_label "ai-blaise.citus.test-fixture.http-package" "${package_name}"
   verify_label "ai-blaise.citus.test-fixture.http-package-version" "${package_version}"
   verify_label "ai-blaise.citus.test-fixture.http-parent-image-id" "${fixture_image_id}"
   verify_label "ai-blaise.citus.test-fixture.http-parent-fixture-id" "${fixture_id}"
   verify_label "ai-blaise.citus.test-fixture.http-id" "${http_fixture_id}"
+  verify_parent_tag
+  verify_parent_ancestry
+}
+
+if docker image inspect "${image}" >/dev/null 2>&1; then
+  verify_http_fixture
   printf '%s\n' "${image_id}"
   exit 0
 fi
@@ -189,17 +245,5 @@ docker build \
   -t "${image}" \
   "${build_root}" >&2
 
-image_id="$(docker image inspect --format '{{.Id}}' "${image}")"
-[[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] || {
-  echo "built real-Citus HTTP fixture has a nonimmutable image ID" >&2
-  exit 1
-}
-verify_label "ai-blaise.citus.test-fixture.http" "true"
-verify_label "ai-blaise.citus.test-fixture.release-target" "false"
-verify_label "ai-blaise.citus.test-fixture.pg-major" "${pg_major}"
-verify_label "ai-blaise.citus.test-fixture.http-package" "${package_name}"
-verify_label "ai-blaise.citus.test-fixture.http-package-version" "${package_version}"
-verify_label "ai-blaise.citus.test-fixture.http-parent-image-id" "${fixture_image_id}"
-verify_label "ai-blaise.citus.test-fixture.http-parent-fixture-id" "${fixture_id}"
-verify_label "ai-blaise.citus.test-fixture.http-id" "${http_fixture_id}"
+verify_http_fixture
 printf '%s\n' "${image_id}"
