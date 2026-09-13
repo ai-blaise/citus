@@ -103,6 +103,7 @@ GetPolicyListForRelation(Oid relationId)
  * CreatePolicyCommandForPolicy takes a relationId and a policy, returns
  * the CREATE POLICY command needed to reconstruct the policy identified
  * by the "policy" object on the relation with relationId.
+ * FEATURE: Sec1 - preserve restrictive policy mode during reconstruction.
  */
 static char *
 CreatePolicyCommandForPolicy(Oid relationId, RowSecurityPolicy *policy)
@@ -112,9 +113,10 @@ CreatePolicyCommandForPolicy(Oid relationId, RowSecurityPolicy *policy)
 
 	StringInfo createPolicyCommand = makeStringInfo();
 
-	appendStringInfo(createPolicyCommand, "CREATE POLICY %s ON %s FOR %s",
+	appendStringInfo(createPolicyCommand, "CREATE POLICY %s ON %s%s FOR %s",
 					 quote_identifier(policy->policy_name),
 					 relationName,
+					 policy->permissive ? "" : " AS RESTRICTIVE",
 					 unparse_policy_command(policy->polcmd));
 
 

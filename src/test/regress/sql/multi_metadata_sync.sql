@@ -885,3 +885,117 @@ ALTER SEQUENCE pg_catalog.pg_dist_placement_placementid_seq RESTART :last_placem
 -- Activate them at the end
 SELECT 1 FROM citus_activate_node('localhost', :worker_1_port);
 SELECT 1 FROM citus_activate_node('localhost', :worker_2_port);
+
+-- Restrictive policy mode must survive immediate metadata DDL and a complete
+-- shell-table drop/recreation. Keep both workers active again on completion.
+SELECT current_setting('citus.shard_replication_factor') AS replication_factor \gset policy_mode_
+SET citus.shard_replication_factor TO 1;
+SELECT stop_metadata_sync_to_node('localhost', :worker_2_port);
+CREATE SCHEMA policy_mode_metadata;
+CREATE USER policy_metadata_tenant_1 NOSUPERUSER NOBYPASSRLS;
+CREATE USER policy_metadata_tenant_2 NOSUPERUSER NOBYPASSRLS;
+GRANT USAGE ON SCHEMA policy_mode_metadata TO policy_metadata_tenant_1, policy_metadata_tenant_2;
+CREATE TABLE policy_mode_metadata.events (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
+SELECT create_distributed_table('policy_mode_metadata.events', 'tenant_id', colocate_with => 'none');
+INSERT INTO policy_mode_metadata.events VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
+GRANT SELECT ON policy_mode_metadata.events TO policy_metadata_tenant_1, policy_metadata_tenant_2;
+ALTER TABLE policy_mode_metadata.events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
+    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
+CREATE POLICY tenant_explicit ON policy_mode_metadata.events AS PERMISSIVE FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
+    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
+CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
+
+-- Observe the actual reconstruction text; ordinary permissive statements must
+-- still omit AS PERMISSIVE, while exactly one restrictive clause is present.
+WITH commands AS (SELECT unnest(activate_node_snapshot()) AS command)
+SELECT count(*) = 3
+   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT %') = 1
+   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT %'
+                          OR command LIKE 'CREATE POLICY tenant_explicit ON policy_mode_metadata.events FOR SELECT %') = 2
+   AS reconstruction_modes_match
+FROM commands WHERE command LIKE 'CREATE POLICY % ON policy_mode_metadata.events %';
+SELECT polname, polpermissive FROM pg_policy
+WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
+
+-- Worker 1 was already active, so these policies arrived via immediate DDL.
+\c - - - :worker_1_port
+SELECT polname, polpermissive FROM pg_policy
+WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
+SET ROLE policy_metadata_tenant_1;
+SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+SET ROLE policy_metadata_tenant_2;
+SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+
+-- Worker 2 has no shell table until activation reconstructs the existing policy.
+\c - - - :worker_2_port
+SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_before_activation;
+\c - - - :master_port
+SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
+\c - - - :worker_2_port
+SELECT polname, polpermissive FROM pg_policy
+WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
+SET ROLE policy_metadata_tenant_1;
+SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+SET ROLE policy_metadata_tenant_2;
+SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+
+-- A second independent restriction removes tenant 2's otherwise eligible row.
+\c - - - :master_port
+CREATE POLICY eligibility_after ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (id < 20);
+\c - - - :worker_2_port
+SELECT polname, polpermissive FROM pg_policy
+WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
+SET ROLE policy_metadata_tenant_1;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+SET ROLE policy_metadata_tenant_2;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+
+-- This drops shell tables, not merely a flag. Witness absence before rebuilding.
+\c - - - :master_port
+SELECT stop_metadata_sync_to_node('localhost', :worker_2_port, clear_metadata := true);
+\c - - - :worker_2_port
+SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_after_clear;
+\c - - - :master_port
+SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
+\c - - - :worker_2_port
+SELECT polname, polpermissive FROM pg_policy
+WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
+SET ROLE policy_metadata_tenant_1;
+SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+SET ROLE policy_metadata_tenant_2;
+SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
+       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
+       AS least_role FROM pg_roles WHERE rolname = current_user;
+SELECT id FROM policy_mode_metadata.events ORDER BY id;
+RESET ROLE;
+
+\c - - - :master_port
+DROP SCHEMA policy_mode_metadata CASCADE;
+DROP USER policy_metadata_tenant_1;
+DROP USER policy_metadata_tenant_2;
+SET citus.shard_replication_factor TO :'policy_mode_replication_factor';
+SELECT count(*) = 2 AND bool_and(hasmetadata) AS both_workers_active
+FROM pg_dist_node WHERE nodename = 'localhost' AND nodeport IN (:worker_1_port, :worker_2_port);

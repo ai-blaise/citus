@@ -5262,10 +5262,36 @@ generation, pool authentication, and auto-API integration remain alpha until
 independently proven. Sec2 JWT verification has its own evidence boundary and
 does not expand the Sec1 RLS-helper claim.
 
+Restrictive-policy reconstruction correction (**bounded native regression
+qualification**): `CreatePolicyCommandForPolicy` now preserves a restrictive policy's
+mode when emitting DDL for shards and metadata reconstruction. Ordinary permissive
+DDL remains unchanged. The actual C source is represented by
+`patches/0012-preserve-restrictive-policy-mode.patch`; the image compiles that
+already-integrated source, so this patch must not be applied a second time.
+The existing RLS 7 and metadata 10 native regression schedules passed on three
+private PostgreSQL 17.11 postmasters on one macOS arm64 host after adopting only
+reviewed, actually observed expected-output additions; all incumbent oracle bytes
+remain unchanged. Catalog modes, real least-role reads/forbidden writes, placement
+movement and full metadata recreation were covered. Baseline negative runs and
+all earlier failures remain preserved. The common host-only 2% disk reserve kept
+space checks enabled; product default 10% was not changed. This bounded result
+does not qualify default-reserve operation, expand the production-ready helper
+claim above, or establish Command Center storage or whole-fork readiness. See
+`docs/ai-blaise/RESTRICTIVE_POLICY_RUNTIME_2026-09-12.md` for exact evidence/limits.
+
+The separate distributed-trigger prerequisite is unchanged. Any future migration
+or maintenance opt-in to `citus.enable_unsafe_triggers` needs explicit scoped DDL,
+propagation, rollback, and real least-role qualification. This correction neither
+enables that setting nor claims ordinary row-trigger execution requires a
+persistent global opt-in.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
 - In-source: `FEATURE: Sec1` in `companion/src/auth.rs`
+- Policy reconstruction: `FEATURE: Sec1` in
+  `src/backend/distributed/commands/policy.c` (bounded native regression qualification)
+- Native policy receipt: `docs/ai-blaise/RESTRICTIVE_POLICY_RUNTIME_2026-09-12.md`
 - SQL runtime: `FEATURE: Sec1` in
   `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical`

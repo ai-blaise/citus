@@ -478,6 +478,141 @@ BEGIN;
   SELECT create_distributed_table('table_1_check_policy', 'tenant_id');
 ROLLBACK;
 
+-- Restrictive policy mode must survive both immediate DDL and reconstruction.
+-- These invoker helpers inspect every live placement, including empty shards.
+-- Empty/missing/error results cannot satisfy either aggregate.
+CREATE FUNCTION policy_mode_catalog_matches(table_name regclass)
+RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
+    SELECT COALESCE(
+        (SELECT count(*) = 3
+                AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
+                AND bool_and(polpermissive = (polname <> 'eligible'))
+         FROM pg_policy WHERE polrelid = table_name)
+        AND count(*) > 0
+        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
+                        JOIN pg_dist_shard_placement p USING (shardid)
+                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
+        AND bool_and(COALESCE(success AND result = 't', false)), false)
+    FROM run_command_on_placements(table_name, $command$
+        SELECT count(*) = 3
+               AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
+               AND bool_and(polpermissive = (polname <> 'eligible'))
+        FROM pg_policy WHERE polrelid = '%s'::regclass
+    $command$);
+$function$;
+
+-- master_run_on_worker opens a fresh connection as the invoking user. Check
+-- that actual worker identity and privileges as well as the visible row set.
+CREATE FUNCTION policy_mode_rows_match(table_name regclass, tenant integer)
+RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
+    SELECT COALESCE(count(*) > 0
+        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
+                        JOIN pg_dist_shard_placement p USING (shardid)
+                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
+        AND bool_and(COALESCE(success AND result IN ('0', '1'), false))
+        AND sum(CASE WHEN success AND result IN ('0', '1') THEN result::integer ELSE -1 END) = 1,
+        false)
+    FROM run_command_on_placements(table_name, format($command$
+        SELECT CASE WHEN current_user = %1$L
+            AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user)
+            AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = '%%1$s'::regclass)
+            AND count(*) FILTER (WHERE tenant_id <> %2$s OR eligible IS NOT TRUE) = 0
+            THEN count(*) ELSE -1 END
+        FROM %%1$s
+    $command$, current_user, tenant));
+$function$;
+
+CREATE TABLE policy_mode_after (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
+SELECT create_distributed_table('policy_mode_after', 'tenant_id', colocate_with => 'none');
+INSERT INTO policy_mode_after VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
+GRANT SELECT ON policy_mode_after TO rls_tenant_1, rls_tenant_2;
+ALTER TABLE policy_mode_after ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_default ON policy_mode_after FOR SELECT TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY tenant_explicit ON policy_mode_after AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY eligible ON policy_mode_after AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
+
+-- Existing restrictive policies are reconstructed with RLS enabled already.
+CREATE TABLE policy_mode_before_enabled (LIKE policy_mode_after);
+INSERT INTO policy_mode_before_enabled SELECT * FROM policy_mode_after;
+GRANT SELECT, INSERT ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2;
+ALTER TABLE policy_mode_before_enabled ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_default ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text)
+    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY tenant_explicit ON policy_mode_before_enabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY eligible ON policy_mode_before_enabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
+    USING (eligible) WITH CHECK (eligible);
+SELECT create_distributed_table('policy_mode_before_enabled', 'tenant_id', colocate_with => 'none');
+
+-- The same mode must be retained when RLS is disabled during distribution.
+CREATE TABLE policy_mode_before_disabled (LIKE policy_mode_after);
+INSERT INTO policy_mode_before_disabled SELECT * FROM policy_mode_after;
+GRANT SELECT, INSERT ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2;
+CREATE POLICY tenant_default ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text)
+    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY tenant_explicit ON policy_mode_before_disabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
+    USING (current_user = 'rls_tenant_' || tenant_id::text);
+CREATE POLICY eligible ON policy_mode_before_disabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
+    USING (eligible) WITH CHECK (eligible);
+SELECT create_distributed_table('policy_mode_before_disabled', 'tenant_id', colocate_with => 'none');
+ALTER TABLE policy_mode_before_disabled ENABLE ROW LEVEL SECURITY;
+
+SELECT policy_mode_catalog_matches('policy_mode_after'),
+       policy_mode_catalog_matches('policy_mode_before_enabled'),
+       policy_mode_catalog_matches('policy_mode_before_disabled');
+
+SET ROLE rls_tenant_1;
+SELECT id FROM policy_mode_after ORDER BY id;
+SELECT id FROM policy_mode_before_enabled ORDER BY id;
+SELECT id FROM policy_mode_before_disabled ORDER BY id;
+SELECT policy_mode_rows_match('policy_mode_after', 1),
+       policy_mode_rows_match('policy_mode_before_enabled', 1),
+       policy_mode_rows_match('policy_mode_before_disabled', 1);
+-- FOR ALL / WITH CHECK survives reconstruction; neither insert is admissible.
+INSERT INTO policy_mode_before_enabled VALUES (1, 13, false);
+INSERT INTO policy_mode_before_disabled VALUES (2, 23, true);
+RESET ROLE;
+SELECT (SELECT count(*) = 4 FROM policy_mode_before_enabled)
+   AND (SELECT count(*) = 4 FROM policy_mode_before_disabled) AS rejected_inserts_unchanged;
+
+SET ROLE rls_tenant_2;
+SELECT id FROM policy_mode_after ORDER BY id;
+SELECT id FROM policy_mode_before_enabled ORDER BY id;
+SELECT id FROM policy_mode_before_disabled ORDER BY id;
+SELECT policy_mode_rows_match('policy_mode_after', 2),
+       policy_mode_rows_match('policy_mode_before_enabled', 2),
+       policy_mode_rows_match('policy_mode_before_disabled', 2);
+RESET ROLE;
+
+-- Recreate a real placement, selecting its actual source instead of assuming
+-- a placement order. Replication factor is one and this table is not colocated.
+SELECT p.nodename AS policy_move_host, p.nodeport AS policy_move_port,
+       CASE WHEN p.nodeport = :worker_1_port THEN :worker_2_port ELSE :worker_1_port END AS policy_move_target
+FROM pg_dist_shard_placement p
+WHERE p.shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
+  AND p.shardstate = 1
+\gset
+SELECT master_move_shard_placement(get_shard_id_for_distribution_column('policy_mode_before_enabled', 1),
+    :'policy_move_host', :policy_move_port, 'localhost', :policy_move_target,
+    shard_transfer_mode := 'block_writes');
+SELECT count(*) = 1 AND bool_and(nodeport = :policy_move_target) AS moved_placement_present
+FROM pg_dist_shard_placement
+WHERE shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
+  AND shardstate = 1;
+SELECT policy_mode_catalog_matches('policy_mode_before_enabled');
+SET ROLE rls_tenant_1;
+SELECT id FROM policy_mode_before_enabled ORDER BY id;
+SELECT policy_mode_rows_match('policy_mode_before_enabled', 1);
+RESET ROLE;
+SET ROLE rls_tenant_2;
+SELECT id FROM policy_mode_before_enabled ORDER BY id;
+SELECT policy_mode_rows_match('policy_mode_before_enabled', 2);
+RESET ROLE;
+
 -- Clean up test suite
 DROP SCHEMA alter_table_rls CASCADE;
 

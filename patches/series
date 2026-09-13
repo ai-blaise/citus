@@ -6,3 +6,4 @@
 0006-fast-path-router-no-coord-rt.patch
 0007-citus-clock-cohabit-pg-cron.patch
 0008-cohabit-extensions-detection-api.patch
+0012-preserve-restrictive-policy-mode.patch

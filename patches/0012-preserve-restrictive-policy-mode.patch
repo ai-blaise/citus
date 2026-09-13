@@ -1,0 +1,821 @@
+Subject: [PATCH] Preserve restrictive row-security policy mode during reconstruction
+
+FEATURE: Sec1
+Upstream-Base: f1728591d33bd13d113d2a8d66bb99c377c31116
+Bootstrap-Base: 624ad5a762581b5908a0e38e44a7c3477aeb9535
+
+CreatePolicyCommandForPolicy is shared by immediate policy propagation and
+table/metadata reconstruction. Emit AS RESTRICTIVE only for a restrictive
+RowSecurityPolicy, retaining the exact existing output for permissive policies.
+The actual fork source already contains this correction; its image compiles
+that source, so this artifact must not be applied a second time to the fork.
+
+Extend the existing RLS and metadata-sync regressions with observed policy
+modes, invoker-role reads on physical placements, and real recreation.
+The appended expected blocks come from actual PostgreSQL17.11 corrected
+runs under a disclosed private2% disk-reserve fixture, with move-space checks
+enabled. Every incumbent expected byte is retained. No product default changes.
+Build/runtime evidence and its limits are recorded separately; this patch
+does not claim upstream acceptance or broader distributed product readiness.
+---
+diff --git a/src/backend/distributed/commands/policy.c b/src/backend/distributed/commands/policy.c
+index 97292e29d9280497b021031b484283a64695c365..92407bbbcba688eaaf4aabb6846aff996bb0832f 100644
+--- a/src/backend/distributed/commands/policy.c
++++ b/src/backend/distributed/commands/policy.c
+@@ -103,6 +103,7 @@ GetPolicyListForRelation(Oid relationId)
+  * CreatePolicyCommandForPolicy takes a relationId and a policy, returns
+  * the CREATE POLICY command needed to reconstruct the policy identified
+  * by the "policy" object on the relation with relationId.
++ * FEATURE: Sec1 - preserve restrictive policy mode during reconstruction.
+  */
+ static char *
+ CreatePolicyCommandForPolicy(Oid relationId, RowSecurityPolicy *policy)
+@@ -112,9 +113,10 @@ CreatePolicyCommandForPolicy(Oid relationId, RowSecurityPolicy *policy)
+ 
+ 	StringInfo createPolicyCommand = makeStringInfo();
+ 
+-	appendStringInfo(createPolicyCommand, "CREATE POLICY %s ON %s FOR %s",
++	appendStringInfo(createPolicyCommand, "CREATE POLICY %s ON %s%s FOR %s",
+ 					 quote_identifier(policy->policy_name),
+ 					 relationName,
++					 policy->permissive ? "" : " AS RESTRICTIVE",
+ 					 unparse_policy_command(policy->polcmd));
+ 
+ 
+diff --git a/src/test/regress/expected/multi_alter_table_row_level_security.out b/src/test/regress/expected/multi_alter_table_row_level_security.out
+index d82f76a25dfe7ba867d2b8987e9ed5216acbde24..4f6b2252a5826d224d51fbdc387d2a9d7b7f9123 100644
+--- a/src/test/regress/expected/multi_alter_table_row_level_security.out
++++ b/src/test/regress/expected/multi_alter_table_row_level_security.out
+@@ -627,6 +627,236 @@ HINT:  Distribute "table table_2_check_policy" first to distribute "function fun
+ ERROR:  "table table_1_check_policy" has dependency to "table table_2_check_policy" that is not in Citus' metadata
+ HINT:  Distribute "table table_2_check_policy" first to distribute "table table_1_check_policy"
+ ROLLBACK;
++-- Restrictive policy mode must survive both immediate DDL and reconstruction.
++-- These invoker helpers inspect every live placement, including empty shards.
++-- Empty/missing/error results cannot satisfy either aggregate.
++CREATE FUNCTION policy_mode_catalog_matches(table_name regclass)
++RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
++    SELECT COALESCE(
++        (SELECT count(*) = 3
++                AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
++                AND bool_and(polpermissive = (polname <> 'eligible'))
++         FROM pg_policy WHERE polrelid = table_name)
++        AND count(*) > 0
++        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
++                        JOIN pg_dist_shard_placement p USING (shardid)
++                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
++        AND bool_and(COALESCE(success AND result = 't', false)), false)
++    FROM run_command_on_placements(table_name, $command$
++        SELECT count(*) = 3
++               AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
++               AND bool_and(polpermissive = (polname <> 'eligible'))
++        FROM pg_policy WHERE polrelid = '%s'::regclass
++    $command$);
++$function$;
++-- master_run_on_worker opens a fresh connection as the invoking user. Check
++-- that actual worker identity and privileges as well as the visible row set.
++CREATE FUNCTION policy_mode_rows_match(table_name regclass, tenant integer)
++RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
++    SELECT COALESCE(count(*) > 0
++        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
++                        JOIN pg_dist_shard_placement p USING (shardid)
++                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
++        AND bool_and(COALESCE(success AND result IN ('0', '1'), false))
++        AND sum(CASE WHEN success AND result IN ('0', '1') THEN result::integer ELSE -1 END) = 1,
++        false)
++    FROM run_command_on_placements(table_name, format($command$
++        SELECT CASE WHEN current_user = %1$L
++            AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user)
++            AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = '%%1$s'::regclass)
++            AND count(*) FILTER (WHERE tenant_id <> %2$s OR eligible IS NOT TRUE) = 0
++            THEN count(*) ELSE -1 END
++        FROM %%1$s
++    $command$, current_user, tenant));
++$function$;
++CREATE TABLE policy_mode_after (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
++SELECT create_distributed_table('policy_mode_after', 'tenant_id', colocate_with => 'none');
++ create_distributed_table
++---------------------------------------------------------------------
++
++(1 row)
++
++INSERT INTO policy_mode_after VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
++GRANT SELECT ON policy_mode_after TO rls_tenant_1, rls_tenant_2;
++ALTER TABLE policy_mode_after ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_after FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_after AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_after AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
++-- Existing restrictive policies are reconstructed with RLS enabled already.
++CREATE TABLE policy_mode_before_enabled (LIKE policy_mode_after);
++INSERT INTO policy_mode_before_enabled SELECT * FROM policy_mode_after;
++GRANT SELECT, INSERT ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2;
++ALTER TABLE policy_mode_before_enabled ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text)
++    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_before_enabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_before_enabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
++    USING (eligible) WITH CHECK (eligible);
++SELECT create_distributed_table('policy_mode_before_enabled', 'tenant_id', colocate_with => 'none');
++ create_distributed_table
++---------------------------------------------------------------------
++
++(1 row)
++
++-- The same mode must be retained when RLS is disabled during distribution.
++CREATE TABLE policy_mode_before_disabled (LIKE policy_mode_after);
++INSERT INTO policy_mode_before_disabled SELECT * FROM policy_mode_after;
++GRANT SELECT, INSERT ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2;
++CREATE POLICY tenant_default ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text)
++    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_before_disabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_before_disabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
++    USING (eligible) WITH CHECK (eligible);
++SELECT create_distributed_table('policy_mode_before_disabled', 'tenant_id', colocate_with => 'none');
++ create_distributed_table
++---------------------------------------------------------------------
++
++(1 row)
++
++ALTER TABLE policy_mode_before_disabled ENABLE ROW LEVEL SECURITY;
++SELECT policy_mode_catalog_matches('policy_mode_after'),
++       policy_mode_catalog_matches('policy_mode_before_enabled'),
++       policy_mode_catalog_matches('policy_mode_before_disabled');
++ policy_mode_catalog_matches | policy_mode_catalog_matches | policy_mode_catalog_matches
++---------------------------------------------------------------------
++ t                           | t                           | t
++(1 row)
++
++SET ROLE rls_tenant_1;
++SELECT id FROM policy_mode_after ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++SELECT id FROM policy_mode_before_disabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++SELECT policy_mode_rows_match('policy_mode_after', 1),
++       policy_mode_rows_match('policy_mode_before_enabled', 1),
++       policy_mode_rows_match('policy_mode_before_disabled', 1);
++ policy_mode_rows_match | policy_mode_rows_match | policy_mode_rows_match
++---------------------------------------------------------------------
++ t                      | t                      | t
++(1 row)
++
++-- FOR ALL / WITH CHECK survives reconstruction; neither insert is admissible.
++INSERT INTO policy_mode_before_enabled VALUES (1, 13, false);
++ERROR:  new row violates row-level security policy "eligible" for table "policy_mode_before_enabled_1810008"
++CONTEXT:  while executing command on localhost:xxxxx
++INSERT INTO policy_mode_before_disabled VALUES (2, 23, true);
++ERROR:  new row violates row-level security policy for table "policy_mode_before_disabled_1810015"
++CONTEXT:  while executing command on localhost:xxxxx
++RESET ROLE;
++SELECT (SELECT count(*) = 4 FROM policy_mode_before_enabled)
++   AND (SELECT count(*) = 4 FROM policy_mode_before_disabled) AS rejected_inserts_unchanged;
++ rejected_inserts_unchanged
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SET ROLE rls_tenant_2;
++SELECT id FROM policy_mode_after ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++SELECT id FROM policy_mode_before_disabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++SELECT policy_mode_rows_match('policy_mode_after', 2),
++       policy_mode_rows_match('policy_mode_before_enabled', 2),
++       policy_mode_rows_match('policy_mode_before_disabled', 2);
++ policy_mode_rows_match | policy_mode_rows_match | policy_mode_rows_match
++---------------------------------------------------------------------
++ t                      | t                      | t
++(1 row)
++
++RESET ROLE;
++-- Recreate a real placement, selecting its actual source instead of assuming
++-- a placement order. Replication factor is one and this table is not colocated.
++SELECT p.nodename AS policy_move_host, p.nodeport AS policy_move_port,
++       CASE WHEN p.nodeport = :worker_1_port THEN :worker_2_port ELSE :worker_1_port END AS policy_move_target
++FROM pg_dist_shard_placement p
++WHERE p.shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
++  AND p.shardstate = 1
++\gset
++SELECT master_move_shard_placement(get_shard_id_for_distribution_column('policy_mode_before_enabled', 1),
++    :'policy_move_host', :policy_move_port, 'localhost', :policy_move_target,
++    shard_transfer_mode := 'block_writes');
++ master_move_shard_placement
++---------------------------------------------------------------------
++
++(1 row)
++
++SELECT count(*) = 1 AND bool_and(nodeport = :policy_move_target) AS moved_placement_present
++FROM pg_dist_shard_placement
++WHERE shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
++  AND shardstate = 1;
++ moved_placement_present
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT policy_mode_catalog_matches('policy_mode_before_enabled');
++ policy_mode_catalog_matches
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SET ROLE rls_tenant_1;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++SELECT policy_mode_rows_match('policy_mode_before_enabled', 1);
++ policy_mode_rows_match
++---------------------------------------------------------------------
++ t
++(1 row)
++
++RESET ROLE;
++SET ROLE rls_tenant_2;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++SELECT policy_mode_rows_match('policy_mode_before_enabled', 2);
++ policy_mode_rows_match
++---------------------------------------------------------------------
++ t
++(1 row)
++
++RESET ROLE;
+ -- Clean up test suite
+ DROP SCHEMA alter_table_rls CASCADE;
+ DROP USER rls_table_owner;
+diff --git a/src/test/regress/expected/multi_metadata_sync.out b/src/test/regress/expected/multi_metadata_sync.out
+index 4635a991d68b97fb65bf9b35d8151d296220eff2..ccaec4fd71ed5c55a5c1edbf41435a07dfd71f2b 100644
+--- a/src/test/regress/expected/multi_metadata_sync.out
++++ b/src/test/regress/expected/multi_metadata_sync.out
+@@ -2254,3 +2254,263 @@ SELECT 1 FROM citus_activate_node('localhost', :worker_2_port);
+         1
+ (1 row)
+ 
++-- Restrictive policy mode must survive immediate metadata DDL and a complete
++-- shell-table drop/recreation. Keep both workers active again on completion.
++SELECT current_setting('citus.shard_replication_factor') AS replication_factor \gset policy_mode_
++SET citus.shard_replication_factor TO 1;
++SELECT stop_metadata_sync_to_node('localhost', :worker_2_port);
++NOTICE:  dropping metadata on the node (localhost,57638)
++ stop_metadata_sync_to_node
++---------------------------------------------------------------------
++
++(1 row)
++
++CREATE SCHEMA policy_mode_metadata;
++CREATE USER policy_metadata_tenant_1 NOSUPERUSER NOBYPASSRLS;
++CREATE USER policy_metadata_tenant_2 NOSUPERUSER NOBYPASSRLS;
++GRANT USAGE ON SCHEMA policy_mode_metadata TO policy_metadata_tenant_1, policy_metadata_tenant_2;
++CREATE TABLE policy_mode_metadata.events (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
++SELECT create_distributed_table('policy_mode_metadata.events', 'tenant_id', colocate_with => 'none');
++ create_distributed_table
++---------------------------------------------------------------------
++
++(1 row)
++
++INSERT INTO policy_mode_metadata.events VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
++GRANT SELECT ON policy_mode_metadata.events TO policy_metadata_tenant_1, policy_metadata_tenant_2;
++ALTER TABLE policy_mode_metadata.events ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
++    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_metadata.events AS PERMISSIVE FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
++    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
++CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
++-- Observe the actual reconstruction text; ordinary permissive statements must
++-- still omit AS PERMISSIVE, while exactly one restrictive clause is present.
++WITH commands AS (SELECT unnest(activate_node_snapshot()) AS command)
++SELECT count(*) = 3
++   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT %') = 1
++   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT %'
++                          OR command LIKE 'CREATE POLICY tenant_explicit ON policy_mode_metadata.events FOR SELECT %') = 2
++   AS reconstruction_modes_match
++FROM commands WHERE command LIKE 'CREATE POLICY % ON policy_mode_metadata.events %';
++ reconstruction_modes_match
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++      polname       | polpermissive
++---------------------------------------------------------------------
++ eligibility_before | f
++ tenant_default     | t
++ tenant_explicit    | t
++(3 rows)
++
++-- Worker 1 was already active, so these policies arrived via immediate DDL.
++\c - - - :worker_1_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++      polname       | polpermissive
++---------------------------------------------------------------------
++ eligibility_before | f
++ tenant_default     | t
++ tenant_explicit    | t
++(3 rows)
++
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++RESET ROLE;
++-- Worker 2 has no shell table until activation reconstructs the existing policy.
++\c - - - :worker_2_port
++SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_before_activation;
++ shell_absent_before_activation
++---------------------------------------------------------------------
++ t
++(1 row)
++
++\c - - - :master_port
++SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
++ start_metadata_sync_to_node
++---------------------------------------------------------------------
++
++(1 row)
++
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++      polname       | polpermissive
++---------------------------------------------------------------------
++ eligibility_before | f
++ tenant_default     | t
++ tenant_explicit    | t
++(3 rows)
++
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 21
++(1 row)
++
++RESET ROLE;
++-- A second independent restriction removes tenant 2's otherwise eligible row.
++\c - - - :master_port
++CREATE POLICY eligibility_after ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (id < 20);
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++      polname       | polpermissive
++---------------------------------------------------------------------
++ eligibility_after  | f
++ eligibility_before | f
++ tenant_default     | t
++ tenant_explicit    | t
++(4 rows)
++
++SET ROLE policy_metadata_tenant_1;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++(0 rows)
++
++RESET ROLE;
++-- This drops shell tables, not merely a flag. Witness absence before rebuilding.
++\c - - - :master_port
++SELECT stop_metadata_sync_to_node('localhost', :worker_2_port, clear_metadata := true);
++NOTICE:  dropping metadata on the node (localhost,57638)
++ stop_metadata_sync_to_node
++---------------------------------------------------------------------
++
++(1 row)
++
++\c - - - :worker_2_port
++SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_after_clear;
++ shell_absent_after_clear
++---------------------------------------------------------------------
++ t
++(1 row)
++
++\c - - - :master_port
++SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
++ start_metadata_sync_to_node
++---------------------------------------------------------------------
++
++(1 row)
++
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++      polname       | polpermissive
++---------------------------------------------------------------------
++ eligibility_after  | f
++ eligibility_before | f
++ tenant_default     | t
++ tenant_explicit    | t
++(4 rows)
++
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++ 11
++(1 row)
++
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++ least_role
++---------------------------------------------------------------------
++ t
++(1 row)
++
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++ id
++---------------------------------------------------------------------
++(0 rows)
++
++RESET ROLE;
++\c - - - :master_port
++DROP SCHEMA policy_mode_metadata CASCADE;
++NOTICE:  drop cascades to table policy_mode_metadata.events
++DROP USER policy_metadata_tenant_1;
++DROP USER policy_metadata_tenant_2;
++SET citus.shard_replication_factor TO :'policy_mode_replication_factor';
++SELECT count(*) = 2 AND bool_and(hasmetadata) AS both_workers_active
++FROM pg_dist_node WHERE nodename = 'localhost' AND nodeport IN (:worker_1_port, :worker_2_port);
++ both_workers_active
++---------------------------------------------------------------------
++ t
++(1 row)
++
+diff --git a/src/test/regress/sql/multi_alter_table_row_level_security.sql b/src/test/regress/sql/multi_alter_table_row_level_security.sql
+index 88f9629d8d6c5ff73a9498ca0f25cb7a11d34524..91e8e049d4c88e3fa0a25cce1e6601645423eacd 100644
+--- a/src/test/regress/sql/multi_alter_table_row_level_security.sql
++++ b/src/test/regress/sql/multi_alter_table_row_level_security.sql
+@@ -478,6 +478,141 @@ BEGIN;
+   SELECT create_distributed_table('table_1_check_policy', 'tenant_id');
+ ROLLBACK;
+ 
++-- Restrictive policy mode must survive both immediate DDL and reconstruction.
++-- These invoker helpers inspect every live placement, including empty shards.
++-- Empty/missing/error results cannot satisfy either aggregate.
++CREATE FUNCTION policy_mode_catalog_matches(table_name regclass)
++RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
++    SELECT COALESCE(
++        (SELECT count(*) = 3
++                AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
++                AND bool_and(polpermissive = (polname <> 'eligible'))
++         FROM pg_policy WHERE polrelid = table_name)
++        AND count(*) > 0
++        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
++                        JOIN pg_dist_shard_placement p USING (shardid)
++                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
++        AND bool_and(COALESCE(success AND result = 't', false)), false)
++    FROM run_command_on_placements(table_name, $command$
++        SELECT count(*) = 3
++               AND count(*) FILTER (WHERE polname IN ('tenant_default', 'tenant_explicit', 'eligible')) = 3
++               AND bool_and(polpermissive = (polname <> 'eligible'))
++        FROM pg_policy WHERE polrelid = '%s'::regclass
++    $command$);
++$function$;
++
++-- master_run_on_worker opens a fresh connection as the invoking user. Check
++-- that actual worker identity and privileges as well as the visible row set.
++CREATE FUNCTION policy_mode_rows_match(table_name regclass, tenant integer)
++RETURNS boolean LANGUAGE sql STRICT SECURITY INVOKER AS $function$
++    SELECT COALESCE(count(*) > 0
++        AND count(*) = (SELECT count(*) FROM pg_dist_shard s
++                        JOIN pg_dist_shard_placement p USING (shardid)
++                        WHERE s.logicalrelid = table_name AND p.shardstate = 1)
++        AND bool_and(COALESCE(success AND result IN ('0', '1'), false))
++        AND sum(CASE WHEN success AND result IN ('0', '1') THEN result::integer ELSE -1 END) = 1,
++        false)
++    FROM run_command_on_placements(table_name, format($command$
++        SELECT CASE WHEN current_user = %1$L
++            AND NOT (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user)
++            AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = '%%1$s'::regclass)
++            AND count(*) FILTER (WHERE tenant_id <> %2$s OR eligible IS NOT TRUE) = 0
++            THEN count(*) ELSE -1 END
++        FROM %%1$s
++    $command$, current_user, tenant));
++$function$;
++
++CREATE TABLE policy_mode_after (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
++SELECT create_distributed_table('policy_mode_after', 'tenant_id', colocate_with => 'none');
++INSERT INTO policy_mode_after VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
++GRANT SELECT ON policy_mode_after TO rls_tenant_1, rls_tenant_2;
++ALTER TABLE policy_mode_after ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_after FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_after AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_after AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
++
++-- Existing restrictive policies are reconstructed with RLS enabled already.
++CREATE TABLE policy_mode_before_enabled (LIKE policy_mode_after);
++INSERT INTO policy_mode_before_enabled SELECT * FROM policy_mode_after;
++GRANT SELECT, INSERT ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2;
++ALTER TABLE policy_mode_before_enabled ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_before_enabled TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text)
++    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_before_enabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_before_enabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
++    USING (eligible) WITH CHECK (eligible);
++SELECT create_distributed_table('policy_mode_before_enabled', 'tenant_id', colocate_with => 'none');
++
++-- The same mode must be retained when RLS is disabled during distribution.
++CREATE TABLE policy_mode_before_disabled (LIKE policy_mode_after);
++INSERT INTO policy_mode_before_disabled SELECT * FROM policy_mode_after;
++GRANT SELECT, INSERT ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2;
++CREATE POLICY tenant_default ON policy_mode_before_disabled TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text)
++    WITH CHECK (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_before_disabled AS PERMISSIVE FOR SELECT TO rls_tenant_1, rls_tenant_2
++    USING (current_user = 'rls_tenant_' || tenant_id::text);
++CREATE POLICY eligible ON policy_mode_before_disabled AS RESTRICTIVE TO rls_tenant_1, rls_tenant_2
++    USING (eligible) WITH CHECK (eligible);
++SELECT create_distributed_table('policy_mode_before_disabled', 'tenant_id', colocate_with => 'none');
++ALTER TABLE policy_mode_before_disabled ENABLE ROW LEVEL SECURITY;
++
++SELECT policy_mode_catalog_matches('policy_mode_after'),
++       policy_mode_catalog_matches('policy_mode_before_enabled'),
++       policy_mode_catalog_matches('policy_mode_before_disabled');
++
++SET ROLE rls_tenant_1;
++SELECT id FROM policy_mode_after ORDER BY id;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++SELECT id FROM policy_mode_before_disabled ORDER BY id;
++SELECT policy_mode_rows_match('policy_mode_after', 1),
++       policy_mode_rows_match('policy_mode_before_enabled', 1),
++       policy_mode_rows_match('policy_mode_before_disabled', 1);
++-- FOR ALL / WITH CHECK survives reconstruction; neither insert is admissible.
++INSERT INTO policy_mode_before_enabled VALUES (1, 13, false);
++INSERT INTO policy_mode_before_disabled VALUES (2, 23, true);
++RESET ROLE;
++SELECT (SELECT count(*) = 4 FROM policy_mode_before_enabled)
++   AND (SELECT count(*) = 4 FROM policy_mode_before_disabled) AS rejected_inserts_unchanged;
++
++SET ROLE rls_tenant_2;
++SELECT id FROM policy_mode_after ORDER BY id;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++SELECT id FROM policy_mode_before_disabled ORDER BY id;
++SELECT policy_mode_rows_match('policy_mode_after', 2),
++       policy_mode_rows_match('policy_mode_before_enabled', 2),
++       policy_mode_rows_match('policy_mode_before_disabled', 2);
++RESET ROLE;
++
++-- Recreate a real placement, selecting its actual source instead of assuming
++-- a placement order. Replication factor is one and this table is not colocated.
++SELECT p.nodename AS policy_move_host, p.nodeport AS policy_move_port,
++       CASE WHEN p.nodeport = :worker_1_port THEN :worker_2_port ELSE :worker_1_port END AS policy_move_target
++FROM pg_dist_shard_placement p
++WHERE p.shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
++  AND p.shardstate = 1
++\gset
++SELECT master_move_shard_placement(get_shard_id_for_distribution_column('policy_mode_before_enabled', 1),
++    :'policy_move_host', :policy_move_port, 'localhost', :policy_move_target,
++    shard_transfer_mode := 'block_writes');
++SELECT count(*) = 1 AND bool_and(nodeport = :policy_move_target) AS moved_placement_present
++FROM pg_dist_shard_placement
++WHERE shardid = get_shard_id_for_distribution_column('policy_mode_before_enabled', 1)
++  AND shardstate = 1;
++SELECT policy_mode_catalog_matches('policy_mode_before_enabled');
++SET ROLE rls_tenant_1;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++SELECT policy_mode_rows_match('policy_mode_before_enabled', 1);
++RESET ROLE;
++SET ROLE rls_tenant_2;
++SELECT id FROM policy_mode_before_enabled ORDER BY id;
++SELECT policy_mode_rows_match('policy_mode_before_enabled', 2);
++RESET ROLE;
++
+ -- Clean up test suite
+ DROP SCHEMA alter_table_rls CASCADE;
+ 
+diff --git a/src/test/regress/sql/multi_metadata_sync.sql b/src/test/regress/sql/multi_metadata_sync.sql
+index f373a426f77ecfd2e456e43ca6b62eef6ea545c1..28aca2ddc4ea77127b1b9ef70901e91e18309a47 100644
+--- a/src/test/regress/sql/multi_metadata_sync.sql
++++ b/src/test/regress/sql/multi_metadata_sync.sql
+@@ -885,3 +885,117 @@ ALTER SEQUENCE pg_catalog.pg_dist_placement_placementid_seq RESTART :last_placem
+ -- Activate them at the end
+ SELECT 1 FROM citus_activate_node('localhost', :worker_1_port);
+ SELECT 1 FROM citus_activate_node('localhost', :worker_2_port);
++
++-- Restrictive policy mode must survive immediate metadata DDL and a complete
++-- shell-table drop/recreation. Keep both workers active again on completion.
++SELECT current_setting('citus.shard_replication_factor') AS replication_factor \gset policy_mode_
++SET citus.shard_replication_factor TO 1;
++SELECT stop_metadata_sync_to_node('localhost', :worker_2_port);
++CREATE SCHEMA policy_mode_metadata;
++CREATE USER policy_metadata_tenant_1 NOSUPERUSER NOBYPASSRLS;
++CREATE USER policy_metadata_tenant_2 NOSUPERUSER NOBYPASSRLS;
++GRANT USAGE ON SCHEMA policy_mode_metadata TO policy_metadata_tenant_1, policy_metadata_tenant_2;
++CREATE TABLE policy_mode_metadata.events (tenant_id int NOT NULL, id int NOT NULL, eligible boolean NOT NULL);
++SELECT create_distributed_table('policy_mode_metadata.events', 'tenant_id', colocate_with => 'none');
++INSERT INTO policy_mode_metadata.events VALUES (1, 11, true), (1, 12, false), (2, 21, true), (2, 22, false);
++GRANT SELECT ON policy_mode_metadata.events TO policy_metadata_tenant_1, policy_metadata_tenant_2;
++ALTER TABLE policy_mode_metadata.events ENABLE ROW LEVEL SECURITY;
++CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
++    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
++CREATE POLICY tenant_explicit ON policy_mode_metadata.events AS PERMISSIVE FOR SELECT TO policy_metadata_tenant_1, policy_metadata_tenant_2
++    USING (current_user = 'policy_metadata_tenant_' || tenant_id::text);
++CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (eligible);
++
++-- Observe the actual reconstruction text; ordinary permissive statements must
++-- still omit AS PERMISSIVE, while exactly one restrictive clause is present.
++WITH commands AS (SELECT unnest(activate_node_snapshot()) AS command)
++SELECT count(*) = 3
++   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY eligibility_before ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT %') = 1
++   AND count(*) FILTER (WHERE command LIKE 'CREATE POLICY tenant_default ON policy_mode_metadata.events FOR SELECT %'
++                          OR command LIKE 'CREATE POLICY tenant_explicit ON policy_mode_metadata.events FOR SELECT %') = 2
++   AS reconstruction_modes_match
++FROM commands WHERE command LIKE 'CREATE POLICY % ON policy_mode_metadata.events %';
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++
++-- Worker 1 was already active, so these policies arrived via immediate DDL.
++\c - - - :worker_1_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++
++-- Worker 2 has no shell table until activation reconstructs the existing policy.
++\c - - - :worker_2_port
++SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_before_activation;
++\c - - - :master_port
++SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++
++-- A second independent restriction removes tenant 2's otherwise eligible row.
++\c - - - :master_port
++CREATE POLICY eligibility_after ON policy_mode_metadata.events AS RESTRICTIVE FOR SELECT TO PUBLIC USING (id < 20);
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++SET ROLE policy_metadata_tenant_1;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++
++-- This drops shell tables, not merely a flag. Witness absence before rebuilding.
++\c - - - :master_port
++SELECT stop_metadata_sync_to_node('localhost', :worker_2_port, clear_metadata := true);
++\c - - - :worker_2_port
++SELECT to_regclass('policy_mode_metadata.events') IS NULL AS shell_absent_after_clear;
++\c - - - :master_port
++SELECT start_metadata_sync_to_node('localhost', :worker_2_port);
++\c - - - :worker_2_port
++SELECT polname, polpermissive FROM pg_policy
++WHERE polrelid = 'policy_mode_metadata.events'::regclass ORDER BY polname;
++SET ROLE policy_metadata_tenant_1;
++SELECT current_user = 'policy_metadata_tenant_1' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++SET ROLE policy_metadata_tenant_2;
++SELECT current_user = 'policy_metadata_tenant_2' AND NOT rolsuper AND NOT rolbypassrls
++       AND (SELECT relowner <> current_user::regrole FROM pg_class WHERE oid = 'policy_mode_metadata.events'::regclass)
++       AS least_role FROM pg_roles WHERE rolname = current_user;
++SELECT id FROM policy_mode_metadata.events ORDER BY id;
++RESET ROLE;
++
++\c - - - :master_port
++DROP SCHEMA policy_mode_metadata CASCADE;
++DROP USER policy_metadata_tenant_1;
++DROP USER policy_metadata_tenant_2;
++SET citus.shard_replication_factor TO :'policy_mode_replication_factor';
++SELECT count(*) = 2 AND bool_and(hasmetadata) AS both_workers_active
++FROM pg_dist_node WHERE nodename = 'localhost' AND nodeport IN (:worker_1_port, :worker_2_port);
