@@ -1,0 +1,1836 @@
+{
+  "artifacts": [
+    {
+      "bytes": 2188,
+      "path": "cdc-live-container-v2.sh",
+      "sha256": "660328b668318182a83d7181f4797bfc157b4d744fbb48168a92db80cc623767"
+    },
+    {
+      "bytes": 2644,
+      "path": "cdc-live-supervisor-v2.sh",
+      "sha256": "53ab05d950536eeae3d69a15c11167331700cbc85135ea578e4f15e97f055d53"
+    },
+    {
+      "bytes": 9740,
+      "path": "cdc-seal-live-v2.py",
+      "sha256": "7fde34fe9388c09c2f880215cb0e04693508e6da08ea8c3856d5a929bd0c682b"
+    },
+    {
+      "bytes": 1356,
+      "path": "live-pg16-v2/cdc-suite/Makefile",
+      "sha256": "0a6c7481714585e7e64dc86a291aec70b3fd73784dd61a1c9d861a5adfa8046b"
+    },
+    {
+      "bytes": 6288,
+      "path": "live-pg16-v2/cdc-suite/log/001_cdc_create_distributed_table_test_cdc_client.log",
+      "sha256": "378fcebba9b6d15f35407cea7ca0555df000975f89ae917a6867f85d1b19504c"
+    },
+    {
+      "bytes": 15179,
+      "path": "live-pg16-v2/cdc-suite/log/001_cdc_create_distributed_table_test_coordinator.log",
+      "sha256": "d8ff05037c9d942c916b41636877925420c86d2922d10d60ab53af0948770716"
+    },
+    {
+      "bytes": 129350,
+      "path": "live-pg16-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker0.log",
+      "sha256": "9e0b0480edd79330ae0ce06cdf7d5451ed8ed4173cf3f6efda833948a432aff3"
+    },
+    {
+      "bytes": 125603,
+      "path": "live-pg16-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker1.log",
+      "sha256": "f65c9590528ceb846e2e39ae02f46958d4f6d20594297102456511a9805dd2ef"
+    },
+    {
+      "bytes": 6252,
+      "path": "live-pg16-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_cdc_client.log",
+      "sha256": "303b91d8fe206b1a3f55034a862f96fe72125726ea2d9ff7f7f04067c8c4ded2"
+    },
+    {
+      "bytes": 199966,
+      "path": "live-pg16-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_coordinator.log",
+      "sha256": "08310676fd18a3ecd5ab1c68e010677a4ede48b4ac5f157e602fb4e9d7a5242d"
+    },
+    {
+      "bytes": 153797,
+      "path": "live-pg16-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker0.log",
+      "sha256": "6332a5ab225671ad2cbd9191d142d1991d66ca046b79d08274673240d20b856b"
+    },
+    {
+      "bytes": 155388,
+      "path": "live-pg16-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker1.log",
+      "sha256": "1fdde8dbce6ac29229700b5492a7b3f1856d7bb58a1b5b1d02e4f426312058eb"
+    },
+    {
+      "bytes": 5750,
+      "path": "live-pg16-v2/cdc-suite/log/003_cdc_parallel_insert_cdc_client.log",
+      "sha256": "a78145157787493999610c16b6cc67e481d9f5c53a505b17197d5eba4f77dbbc"
+    },
+    {
+      "bytes": 195636,
+      "path": "live-pg16-v2/cdc-suite/log/003_cdc_parallel_insert_coordinator.log",
+      "sha256": "326081ed85b78d2bad250a69d6aef487a27ddee90ca004df18dd7eea212f0669"
+    },
+    {
+      "bytes": 130742,
+      "path": "live-pg16-v2/cdc-suite/log/003_cdc_parallel_insert_worker0.log",
+      "sha256": "f3ed040521d4934a437fcaed15309b0beed3dd0d8b70e114296ed3125db9a19f"
+    },
+    {
+      "bytes": 134636,
+      "path": "live-pg16-v2/cdc-suite/log/003_cdc_parallel_insert_worker1.log",
+      "sha256": "d1e718943a204c364afeeddc98123caa9dd32e5973952849aca1abcf00d67a7d"
+    },
+    {
+      "bytes": 5675,
+      "path": "live-pg16-v2/cdc-suite/log/004_cdc_move_shard_cdc_client.log",
+      "sha256": "14e1cd460cb6c9c283dfd1f5c2762a6261c0337c9ec61aa676c076fdf8838702"
+    },
+    {
+      "bytes": 58060,
+      "path": "live-pg16-v2/cdc-suite/log/004_cdc_move_shard_coordinator.log",
+      "sha256": "d7dbee5a8cbf07ecad394ec48a63dea1ccef6acbc2b53dc862c9c599dfc2a974"
+    },
+    {
+      "bytes": 53159,
+      "path": "live-pg16-v2/cdc-suite/log/004_cdc_move_shard_worker0.log",
+      "sha256": "1482d268a1660a0d1d34541659633e7a5f1b34072ca46210b380ac1cab939e5a"
+    },
+    {
+      "bytes": 47260,
+      "path": "live-pg16-v2/cdc-suite/log/004_cdc_move_shard_worker1.log",
+      "sha256": "ddf79ee084a4905952ce196a9f550b1cc77a59f0d5930282c4b16861e6911e8f"
+    },
+    {
+      "bytes": 4760,
+      "path": "live-pg16-v2/cdc-suite/log/005_cdc_reference_table_test_cdc_client.log",
+      "sha256": "2311948d924c6573fba3989088292ea3282c37fe26ba1676eeaceec7e7536831"
+    },
+    {
+      "bytes": 13465,
+      "path": "live-pg16-v2/cdc-suite/log/005_cdc_reference_table_test_coordinator.log",
+      "sha256": "840d864d2f67f0579b04e6e19af8dda7e733bebf23e5a5fb257b8d04445936c7"
+    },
+    {
+      "bytes": 25207,
+      "path": "live-pg16-v2/cdc-suite/log/005_cdc_reference_table_test_worker0.log",
+      "sha256": "b306401273442d85e222cd7ca5c39a0ccc94aa3f53063b833a47b969b07361b3"
+    },
+    {
+      "bytes": 23693,
+      "path": "live-pg16-v2/cdc-suite/log/005_cdc_reference_table_test_worker1.log",
+      "sha256": "fc2391c72881527c53958e0ee519d18a80185121d960bf634d3b346cc602d0cc"
+    },
+    {
+      "bytes": 6304,
+      "path": "live-pg16-v2/cdc-suite/log/006_cdc_schema_change_and_move_cdc_client.log",
+      "sha256": "2dea4d70537f983131d887344130408a6afde469016461a0111283514e31cc5a"
+    },
+    {
+      "bytes": 61598,
+      "path": "live-pg16-v2/cdc-suite/log/006_cdc_schema_change_and_move_coordinator.log",
+      "sha256": "7bb98d237a2fdb23308dec82a8c1dcf9ddaa39bc7ca3808096d159ad1b83fc89"
+    },
+    {
+      "bytes": 60838,
+      "path": "live-pg16-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker0.log",
+      "sha256": "e6dee690eff0b3eadd87e2ec4a3b88ed981609bba5869b3bd9276c07688338d9"
+    },
+    {
+      "bytes": 50269,
+      "path": "live-pg16-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker1.log",
+      "sha256": "2eb796f1bf831cb65cf981207bafc09e4827af5e6c180098c826c146b1f7ad39"
+    },
+    {
+      "bytes": 6203,
+      "path": "live-pg16-v2/cdc-suite/log/007_cdc_undistributed_table_test_cdc_client.log",
+      "sha256": "f43a611bc36339f8c2f548f60abaabb59ad6ab43c1cebfb757ef1baf7212bde0"
+    },
+    {
+      "bytes": 80008,
+      "path": "live-pg16-v2/cdc-suite/log/007_cdc_undistributed_table_test_coordinator.log",
+      "sha256": "3dc29fb3eb71e89d4269d03a1b8faefb0c2a97739ec9a47522f6d7d42ace0f03"
+    },
+    {
+      "bytes": 96203,
+      "path": "live-pg16-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker0.log",
+      "sha256": "96d2ab1f7b44b6df7ba1193f2f79dd0b3873c857f4adbabfd26d3de9635ae9ad"
+    },
+    {
+      "bytes": 88305,
+      "path": "live-pg16-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker1.log",
+      "sha256": "0556bf958b23b3da5406cdef99b4138012da0ad8a2221a6100d9429c39efcb11"
+    },
+    {
+      "bytes": 4726,
+      "path": "live-pg16-v2/cdc-suite/log/008_cdc_shard_split_test_cdc_client.log",
+      "sha256": "60e03fe152afc3a757744bc4c7d08133437f7614aa8081ab4ac6c5b56b978085"
+    },
+    {
+      "bytes": 25453,
+      "path": "live-pg16-v2/cdc-suite/log/008_cdc_shard_split_test_coordinator.log",
+      "sha256": "ffcc80a12c983fdb1285f1004168de138c5f2ed17fa4690998702686429b2311"
+    },
+    {
+      "bytes": 33030,
+      "path": "live-pg16-v2/cdc-suite/log/008_cdc_shard_split_test_worker0.log",
+      "sha256": "2e9d544534860c2b90ac3b2f7d5c2d84b62c617746f6ca4e6a8fdb554e0b9c23"
+    },
+    {
+      "bytes": 5066,
+      "path": "live-pg16-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_cdc_client.log",
+      "sha256": "3ce9c07586e42d2945d6edd043e2a4367dd12d925d8d923ad135ced02fd3601d"
+    },
+    {
+      "bytes": 61051,
+      "path": "live-pg16-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_coordinator.log",
+      "sha256": "4aa7b866267fe593b6a799f33b009fe02982a4923a2bb60c90395c547e322483"
+    },
+    {
+      "bytes": 42326,
+      "path": "live-pg16-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_worker0.log",
+      "sha256": "ff9efd02245bbce482efded99713fc225e6c5c4d40b56edd27f2a23cbc01b830"
+    },
+    {
+      "bytes": 5038,
+      "path": "live-pg16-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_cdc_client.log",
+      "sha256": "de3cdcd8be6275f4b65573a0295eb0e1422096dc28f54ada95bfb4b30a666392"
+    },
+    {
+      "bytes": 61144,
+      "path": "live-pg16-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_coordinator.log",
+      "sha256": "4dd56197291b15d94db92a8ca5453d88208b9c5249cd44c0b56fa6a244be0134"
+    },
+    {
+      "bytes": 42965,
+      "path": "live-pg16-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_worker0.log",
+      "sha256": "1a67c3dae888aad172a6291fad5527ea7fcf96c7d9f3279cca0995248377471e"
+    },
+    {
+      "bytes": 6880,
+      "path": "live-pg16-v2/cdc-suite/log/011_cdc_alter_distributed_table_cdc_client.log",
+      "sha256": "9b537c20a7ae9cbe062cd12b9b0963eef44e5a0a95bc6313670255e6bb220822"
+    },
+    {
+      "bytes": 74033,
+      "path": "live-pg16-v2/cdc-suite/log/011_cdc_alter_distributed_table_coordinator.log",
+      "sha256": "81f7c5b001510e2f193becb19f4884bfa24cd431943dbd7e394e2b8ecb9a7b00"
+    },
+    {
+      "bytes": 67179,
+      "path": "live-pg16-v2/cdc-suite/log/011_cdc_alter_distributed_table_worker0.log",
+      "sha256": "ba2d5021bf6a4d3c54233c5f5aecec6382a13a2ab32b06a93c08cb731e20a352"
+    },
+    {
+      "bytes": 6612,
+      "path": "live-pg16-v2/cdc-suite/log/012_cdc_restart_test_cdc_client.log",
+      "sha256": "bf1aad764934e89f342ced5c04fc2b1ed466d491078ef1718d5bbcd7922c6da8"
+    },
+    {
+      "bytes": 13662,
+      "path": "live-pg16-v2/cdc-suite/log/012_cdc_restart_test_coordinator.log",
+      "sha256": "d2a69eb662987c365064824f24a4285835257c03048a151e70b285b042c5464f"
+    },
+    {
+      "bytes": 110575,
+      "path": "live-pg16-v2/cdc-suite/log/012_cdc_restart_test_worker0.log",
+      "sha256": "5fd24e034ee5944b90bf797548b6d20190099fcf814db76b42c5f4481b8f0515"
+    },
+    {
+      "bytes": 103646,
+      "path": "live-pg16-v2/cdc-suite/log/012_cdc_restart_test_worker1.log",
+      "sha256": "b41365aab82a2b1322d6b797f02d808a07e261e2c4458884122a536c8375a825"
+    },
+    {
+      "bytes": 5729,
+      "path": "live-pg16-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_cdc_client.log",
+      "sha256": "d833acedd48b349624141a00e899506d1a8f9feee55a8b24eefd130f5f1f56c1"
+    },
+    {
+      "bytes": 51567,
+      "path": "live-pg16-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_coordinator.log",
+      "sha256": "8cda888bb1fc2ab35bca21091f884624be83a3888447598571b2e184f866d303"
+    },
+    {
+      "bytes": 41900,
+      "path": "live-pg16-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker0.log",
+      "sha256": "2eb744ab84e5a8e07ce55d1c9c0096b4c5f8e07a3ca7dbc8f4d0556994c9601a"
+    },
+    {
+      "bytes": 40222,
+      "path": "live-pg16-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker1.log",
+      "sha256": "04c6dfb988e6a9afafa172020ce1c5797f83755ea54254b47294da2caf9e832a"
+    },
+    {
+      "bytes": 5884,
+      "path": "live-pg16-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_cdc_client.log",
+      "sha256": "7ecb38060ccacf528ab57997c6badeea773bd7b71eb8c9d467d91db4c6c7fce3"
+    },
+    {
+      "bytes": 51522,
+      "path": "live-pg16-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_coordinator.log",
+      "sha256": "439fd87b1321379247e47559d5d9078abf1b1ff87400d7584535929959f9ec46"
+    },
+    {
+      "bytes": 41121,
+      "path": "live-pg16-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker0.log",
+      "sha256": "d711afc3b25416e1194b8717352a43129e1a6dd6eb30973299e10ac4029072a1"
+    },
+    {
+      "bytes": 41184,
+      "path": "live-pg16-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker1.log",
+      "sha256": "689bcd5c8a8d089e0b506422999ec203e387f2d751511ea3e3c8497511bfec18"
+    },
+    {
+      "bytes": 2272,
+      "path": "live-pg16-v2/cdc-suite/log/015_cdc_without_citus_cdc_client.log",
+      "sha256": "85ea1326a3d5b3d6dca01f1c5839fc159c054e23b07138f4cef07c68f527a3ba"
+    },
+    {
+      "bytes": 9140,
+      "path": "live-pg16-v2/cdc-suite/log/015_cdc_without_citus_coordinator.log",
+      "sha256": "fb3636b157e45c13aa9719e51b66e29e384e814fd75ecdf07ace950513163e91"
+    },
+    {
+      "bytes": 9742,
+      "path": "live-pg16-v2/cdc-suite/log/015_cdc_without_citus_worker0.log",
+      "sha256": "9e90bd1aab64f8607cfb4f20a3adb889d647302927c26c231c9e76fa1e57df63"
+    },
+    {
+      "bytes": 8759,
+      "path": "live-pg16-v2/cdc-suite/log/015_cdc_without_citus_worker1.log",
+      "sha256": "ebc5f4d634d046f5d273700aa50a6c33ad932ad0cb306d1dd2315e87b059ba60"
+    },
+    {
+      "bytes": 6275,
+      "path": "live-pg16-v2/cdc-suite/log/016_cdc_wal2json_coordinator.log",
+      "sha256": "fcf93b5b3287ce199aa30ebf39a8dd739050686b0536159b1534ad5c599d6d26"
+    },
+    {
+      "bytes": 8125,
+      "path": "live-pg16-v2/cdc-suite/log/016_cdc_wal2json_worker0.log",
+      "sha256": "d951a8177ce3a0c98bb0c42246525436ea9474d1316c9fca0b0e9e7d30357afe"
+    },
+    {
+      "bytes": 13503,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_001_cdc_create_distributed_table_test",
+      "sha256": "564f89e3712553862cc93c55fbfa028ce68182ba7c73a352e2a1158c073cef70"
+    },
+    {
+      "bytes": 13307,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_002_cdc_create_distributed_table_concurrently",
+      "sha256": "9c489ea2cd515b18cdf2f3a5aa07a091147f983eb58ac72978d47eb0ce645c84"
+    },
+    {
+      "bytes": 11011,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_003_cdc_parallel_insert",
+      "sha256": "11907413fd1affacdae68aa895148ed936b6545aa16602683d34ad01d561c612"
+    },
+    {
+      "bytes": 11189,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_004_cdc_move_shard",
+      "sha256": "9b64ee10076842dbedb11c2590433baf606a1291aad557b4e927b1aa52c5cda8"
+    },
+    {
+      "bytes": 11947,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_005_cdc_reference_table_test",
+      "sha256": "dc321aef611089f7b9ebd3b69876355fdf49be18a0c0b5b51c34d54f088c0d9b"
+    },
+    {
+      "bytes": 12753,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_006_cdc_schema_change_and_move",
+      "sha256": "1592649b2f4e10f940f8abf209f98d58d67a6c3045917c26d661d48eef63f685"
+    },
+    {
+      "bytes": 13580,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_007_cdc_undistributed_table_test",
+      "sha256": "72ea5968c18fba81856b1988bbbaac355797f3e4b9b2a7c1ff9c8e2f6bb82bee"
+    },
+    {
+      "bytes": 8304,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_008_cdc_shard_split_test",
+      "sha256": "c5f6412fe0f016282ad64c4224edb4439896081044ba704cf8259bef0d892395"
+    },
+    {
+      "bytes": 8733,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_009_cdc_shard_split_test_non_blocking",
+      "sha256": "3546e56c5773b77d74cab5b72dea89ae8c576e06f23296297e0446ee8bab4df7"
+    },
+    {
+      "bytes": 8667,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_010_cdc_shard_split_parallel_insert",
+      "sha256": "5a12508c21c968d427b16319d98567968a6d641d74e70021ad1df51a5da401f6"
+    },
+    {
+      "bytes": 9518,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_011_cdc_alter_distributed_table",
+      "sha256": "bba9613bda304c1fcd20e4a81cfb9cf59b78f108f88f2ae722ed81b48ccdd2d0"
+    },
+    {
+      "bytes": 12199,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_012_cdc_restart_test",
+      "sha256": "03476c89fc1f4ed733c3fb6cc30e6920eea61ec24d868ecc64e1f87f78975917"
+    },
+    {
+      "bytes": 11786,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_013_cdc_drop_last_column_for_one_shard",
+      "sha256": "cfc62c61f6d88017e7c2c41b543e6c756beb7ef451c9faf24a2a03cf56764869"
+    },
+    {
+      "bytes": 11600,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_014_cdc_with_table_like_shard_name",
+      "sha256": "abd49be9b873367b9c9c33a7be66933e607388e5ce9ce2a17ac0723825536c5e"
+    },
+    {
+      "bytes": 9622,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_015_cdc_without_citus",
+      "sha256": "f9ac16ac4b2d11531a22e567354c42ebc3ed7846258770217eb7fcbb0dfbdf23"
+    },
+    {
+      "bytes": 5134,
+      "path": "live-pg16-v2/cdc-suite/log/regress_log_016_cdc_wal2json",
+      "sha256": "2abeed4f427f1981eaf8c2329508b094d7bd3c0af5d1883783cf683fd73ef19a"
+    },
+    {
+      "bytes": 33,
+      "path": "live-pg16-v2/cdc-suite/postgresql.conf",
+      "sha256": "252d98bba85fad69553a45552dca3019e426e9448875d471d5f75aa6fff0fa39"
+    },
+    {
+      "bytes": 4536,
+      "path": "live-pg16-v2/cdc-suite/t/001_cdc_create_distributed_table_test.pl",
+      "sha256": "16d04e5b5b066286745332330792c3f56c9bc8e7d103f53671d778f9bf5f07d3"
+    },
+    {
+      "bytes": 4065,
+      "path": "live-pg16-v2/cdc-suite/t/002_cdc_create_distributed_table_concurrently.pl",
+      "sha256": "03f134c552ffab4ed0478ad296a87ba4583d064cbc6ee4b8b487cb169443cf46"
+    },
+    {
+      "bytes": 3422,
+      "path": "live-pg16-v2/cdc-suite/t/003_cdc_parallel_insert.pl",
+      "sha256": "2c1a22c5c1cedb8d26af6a50b60dda07a5874226e1921d52ff68b9a58a52d3af"
+    },
+    {
+      "bytes": 4123,
+      "path": "live-pg16-v2/cdc-suite/t/004_cdc_move_shard.pl",
+      "sha256": "1677b1fa922c44e507a9b5fe5cf402e0f9e28c073b726cf036af2b8ff25ae952"
+    },
+    {
+      "bytes": 2373,
+      "path": "live-pg16-v2/cdc-suite/t/005_cdc_reference_table_test.pl",
+      "sha256": "64ed1f499164097724639575442d21629403254ccbf605faee710d7144d8840a"
+    },
+    {
+      "bytes": 5701,
+      "path": "live-pg16-v2/cdc-suite/t/006_cdc_schema_change_and_move.pl",
+      "sha256": "7030b196d50c99a71e4c9ce9f26e616b736abb4180fef4c2ebd9030b758c192c"
+    },
+    {
+      "bytes": 4617,
+      "path": "live-pg16-v2/cdc-suite/t/007_cdc_undistributed_table_test.pl",
+      "sha256": "133b062199fe9620ed8b2f82cf3c2474d8b0f77eb0b61f3e94084ab5833c3ebf"
+    },
+    {
+      "bytes": 3583,
+      "path": "live-pg16-v2/cdc-suite/t/008_cdc_shard_split_test.pl",
+      "sha256": "e480cc46a239acbba262f1aee030c0bfce63d3dca91eadcffdacfbae8d830d26"
+    },
+    {
+      "bytes": 3584,
+      "path": "live-pg16-v2/cdc-suite/t/009_cdc_shard_split_test_non_blocking.pl",
+      "sha256": "3a1fbba6e2128c949e5581eb1045f28e384171a18266ad6b05475c959d46af15"
+    },
+    {
+      "bytes": 4378,
+      "path": "live-pg16-v2/cdc-suite/t/010_cdc_shard_split_parallel_insert.pl",
+      "sha256": "473b7fe743b6a6a03504cb7aca063abee7856e217591836e6a6e2ae7dd4707c8"
+    },
+    {
+      "bytes": 4367,
+      "path": "live-pg16-v2/cdc-suite/t/011_cdc_alter_distributed_table.pl",
+      "sha256": "aa4765a5954a3893b16d1b69a73631334687aa4fcad02c8b8b0ad3203ccac5ab"
+    },
+    {
+      "bytes": 3472,
+      "path": "live-pg16-v2/cdc-suite/t/012_cdc_restart_test.pl",
+      "sha256": "5d7c5d94a0e8f50414426857165545aacedab1000ca15b16a0277436ccee9a38"
+    },
+    {
+      "bytes": 3825,
+      "path": "live-pg16-v2/cdc-suite/t/013_cdc_drop_last_column_for_one_shard.pl",
+      "sha256": "d11d7a90fc566eea21d90fe0ded64c5a1891ea177a3b0ebf0ac20a02b9e26a91"
+    },
+    {
+      "bytes": 3924,
+      "path": "live-pg16-v2/cdc-suite/t/014_cdc_with_table_like_shard_name.pl",
+      "sha256": "a19750cd4e324262965e3d4b8670236040d25f5d45a2c4934135f024c4e352eb"
+    },
+    {
+      "bytes": 1817,
+      "path": "live-pg16-v2/cdc-suite/t/015_cdc_without_citus.pl",
+      "sha256": "dd8e97249c143f593e78aafaaaf990e870be893305d23f67afba41e3f643fc46"
+    },
+    {
+      "bytes": 1642,
+      "path": "live-pg16-v2/cdc-suite/t/016_cdc_wal2json.pl",
+      "sha256": "f1fa089099b4ffdccd9b04207f2f91d785230a435ce407f25c2dc02f0677f98e"
+    },
+    {
+      "bytes": 16513,
+      "path": "live-pg16-v2/cdc-suite/t/cdctestlib.pm",
+      "sha256": "4e6951832f3fff9c396cb262b02efb35581fe085cec6757517321f7d0c92b9ff"
+    },
+    {
+      "bytes": 20144,
+      "path": "live-pg16-v2/config.log",
+      "sha256": "46ab642fdd3309eddcf630e230575991ae61df369dbad184efe60767e7cac210"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg16-v2/container-id.txt",
+      "sha256": "840d681624be019f740639320eedb8a08e8ed4b88e1a7292c7d4cc93a9499487"
+    },
+    {
+      "bytes": 8728,
+      "path": "live-pg16-v2/container-state.json",
+      "sha256": "562404ed1bcef527af028b679b8d66cd51e52e6fbd717f428c923ab63c79f9f0"
+    },
+    {
+      "bytes": 8728,
+      "path": "live-pg16-v2/final-container-state.json",
+      "sha256": "562404ed1bcef527af028b679b8d66cd51e52e6fbd717f428c923ab63c79f9f0"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg16-v2/finish.txt",
+      "sha256": "68ade401c2332785c3e71d363081c8d1b1bd943e1d52766931866f9839e7661f"
+    },
+    {
+      "bytes": 72,
+      "path": "live-pg16-v2/image-id.txt",
+      "sha256": "23da8f22fc2a085a83c4fc9765a9466880a705d07da99d96cadc937ae8ba8c12"
+    },
+    {
+      "bytes": 2031,
+      "path": "live-pg16-v2/image.json",
+      "sha256": "dfcaf77754898201c7f0db6c585a36e6479a8f068e97246d83a85f13d0b75e15"
+    },
+    {
+      "bytes": 275,
+      "path": "live-pg16-v2/launchers.sha256",
+      "sha256": "853223f43b636c0710a5adec68915eb30bd8b158bd4f1768e55e1ec29b98f7c8"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg16-v2/removed-id.txt",
+      "sha256": "840d681624be019f740639320eedb8a08e8ed4b88e1a7292c7d4cc93a9499487"
+    },
+    {
+      "bytes": 696755,
+      "path": "live-pg16-v2/result/build.log",
+      "sha256": "2a5487e6b824055c6858566bde4c98ee23e225f01eb4cf789377effd2298855a"
+    },
+    {
+      "bytes": 2783,
+      "path": "live-pg16-v2/result/configure.log",
+      "sha256": "f0cc2cd8b117ec666663a03a9c363353a7b52803d3f999e28980242ae0c47b06"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg16-v2/result/finish.txt",
+      "sha256": "2f4df63125dcaedce653f8d49a3183caf428289b052a683ca1f45e41f75df239"
+    },
+    {
+      "bytes": 80607,
+      "path": "live-pg16-v2/result/install.log",
+      "sha256": "07452d6ac99144552a0aeb44ab219cc237d466a1e1d5e141290649e4d08ef5ee"
+    },
+    {
+      "bytes": 342,
+      "path": "live-pg16-v2/result/installed-libraries.sha256",
+      "sha256": "fe601c06ba00bc1b0642133724deb15db3006b5ec73565bf9e1ffa2cf48dbcc8"
+    },
+    {
+      "bytes": 21,
+      "path": "live-pg16-v2/result/source-after.txt",
+      "sha256": "27e625d1ec923bcd6abc25be654ff8eb1fab7a29e42c82ef273bb8066b939b78"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg16-v2/result/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 421,
+      "path": "live-pg16-v2/result/source-files.sha256",
+      "sha256": "2ef602b40a631927bb54bd324460ee01ca2ca57fdafda727b0d3ab93107cb95d"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg16-v2/result/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    },
+    {
+      "bytes": 4782,
+      "path": "live-pg16-v2/result/tap.log",
+      "sha256": "a2cdb70427be9665450ad05c1f711c1c25719dea650dd2c41006e43686deebd8"
+    },
+    {
+      "bytes": 679,
+      "path": "live-pg16-v2/result/test-command.txt",
+      "sha256": "17a4d672cbacf2b62fa077e74886346b04de496f373a97efd3b4c1f3643c3dda"
+    },
+    {
+      "bytes": 786668,
+      "path": "live-pg16-v2/run.log",
+      "sha256": "09920978d50e146b8cc84665d813be4ab1487d003a1d02b0c97e9c43e906e955"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg16-v2/source-after.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg16-v2/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg16-v2/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    },
+    {
+      "bytes": 1356,
+      "path": "live-pg17-v2/cdc-suite/Makefile",
+      "sha256": "0a6c7481714585e7e64dc86a291aec70b3fd73784dd61a1c9d861a5adfa8046b"
+    },
+    {
+      "bytes": 6711,
+      "path": "live-pg17-v2/cdc-suite/log/001_cdc_create_distributed_table_test_cdc_client.log",
+      "sha256": "d02870853614f38ee2fae77095dd59b73c3e336faec96dee077f8efd88835af2"
+    },
+    {
+      "bytes": 16566,
+      "path": "live-pg17-v2/cdc-suite/log/001_cdc_create_distributed_table_test_coordinator.log",
+      "sha256": "864d0646a7f3b7c1acd861d4b0019b09b62ea2c49ccc0f1dd41bc0cae8f4a8ae"
+    },
+    {
+      "bytes": 130431,
+      "path": "live-pg17-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker0.log",
+      "sha256": "8b61da9797f598ff7d1dd302e9fe0f60e5e665d7c0fb1ec917bb41b485290d99"
+    },
+    {
+      "bytes": 126680,
+      "path": "live-pg17-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker1.log",
+      "sha256": "c1eb8c9f51e05d75ea0e2230855641be339b46b2dcef1d8300aad88290cf2043"
+    },
+    {
+      "bytes": 6683,
+      "path": "live-pg17-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_cdc_client.log",
+      "sha256": "d36ce24d96bfd78dd283fb93d97c498102db8c8bab510cae798983d9d4b930bd"
+    },
+    {
+      "bytes": 202430,
+      "path": "live-pg17-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_coordinator.log",
+      "sha256": "68885aff3d857095571715b3df8119f03f8c27aaafbbd7ff1b0774e3616d4602"
+    },
+    {
+      "bytes": 154878,
+      "path": "live-pg17-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker0.log",
+      "sha256": "afc56760e46e6577b6692477d35f88dff5f8e7f3e3dbeaddd11fb944f15dca63"
+    },
+    {
+      "bytes": 156145,
+      "path": "live-pg17-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker1.log",
+      "sha256": "831ae0dd54a6634a448a7ad609bdc0e1d0f5f14ea3b599bbf5329fb0ec197c7b"
+    },
+    {
+      "bytes": 6159,
+      "path": "live-pg17-v2/cdc-suite/log/003_cdc_parallel_insert_cdc_client.log",
+      "sha256": "1d33d6b3a5501553080cb2df99f35c30e1c502dc1c706a7abbcb8ad6cc7ed4d0"
+    },
+    {
+      "bytes": 198078,
+      "path": "live-pg17-v2/cdc-suite/log/003_cdc_parallel_insert_coordinator.log",
+      "sha256": "9ecf07a4708ed8eb908ad6355879c6b69a7856241bc9f25cfc14ad30fc7280e5"
+    },
+    {
+      "bytes": 132123,
+      "path": "live-pg17-v2/cdc-suite/log/003_cdc_parallel_insert_worker0.log",
+      "sha256": "a141ffdbcb09e78c3edcdf69e7a4ea0e539656fdaf6aa0a907edd371cea377b9"
+    },
+    {
+      "bytes": 135464,
+      "path": "live-pg17-v2/cdc-suite/log/003_cdc_parallel_insert_worker1.log",
+      "sha256": "559ab3f786ec6c358fc6478c22f37b60fb77d38f116002f37ea135f28f6571f1"
+    },
+    {
+      "bytes": 6079,
+      "path": "live-pg17-v2/cdc-suite/log/004_cdc_move_shard_cdc_client.log",
+      "sha256": "abd22ceb6e8016f08d658b7230815ba2b937c5dd1a6ae6dc69ba45024b11c836"
+    },
+    {
+      "bytes": 60479,
+      "path": "live-pg17-v2/cdc-suite/log/004_cdc_move_shard_coordinator.log",
+      "sha256": "58fa515be91e975d0904916ba7c42599dbf8911706ab06888c199f374f9e00cf"
+    },
+    {
+      "bytes": 53882,
+      "path": "live-pg17-v2/cdc-suite/log/004_cdc_move_shard_worker0.log",
+      "sha256": "ebe5e056811ea95de514f188b503a9a41be5d86f003dacbbff3eed15699519e8"
+    },
+    {
+      "bytes": 49142,
+      "path": "live-pg17-v2/cdc-suite/log/004_cdc_move_shard_worker1.log",
+      "sha256": "5a86d14ce64654b8ffb41fda48fe6b8673e5ab8cdd3a9a8eef2d6812b984b05e"
+    },
+    {
+      "bytes": 5174,
+      "path": "live-pg17-v2/cdc-suite/log/005_cdc_reference_table_test_cdc_client.log",
+      "sha256": "91c2c0a557f496a99a9a705cb6c3e259f68d3535fe90f0d772d124067c76e642"
+    },
+    {
+      "bytes": 14520,
+      "path": "live-pg17-v2/cdc-suite/log/005_cdc_reference_table_test_coordinator.log",
+      "sha256": "d618250c7066d3c5956908ceba9586f853d35f5a259efbac944221569b9a254e"
+    },
+    {
+      "bytes": 26272,
+      "path": "live-pg17-v2/cdc-suite/log/005_cdc_reference_table_test_worker0.log",
+      "sha256": "739fb98523fd9cd56489036a8ec30717d8b6dc0afd8a1f90e71316db6b2e1d08"
+    },
+    {
+      "bytes": 24758,
+      "path": "live-pg17-v2/cdc-suite/log/005_cdc_reference_table_test_worker1.log",
+      "sha256": "001505322a5c0af65a12f517204f9c03f6125677f13eb6ffb173df9eb00d4783"
+    },
+    {
+      "bytes": 6720,
+      "path": "live-pg17-v2/cdc-suite/log/006_cdc_schema_change_and_move_cdc_client.log",
+      "sha256": "779c079035d3d7f8959a948c9395603853e33be1d1560d304ffddfcd51a4adda"
+    },
+    {
+      "bytes": 64043,
+      "path": "live-pg17-v2/cdc-suite/log/006_cdc_schema_change_and_move_coordinator.log",
+      "sha256": "b3373636f87e45e82c2128ab4cc09b24a05c317f26eac7dbb28364e24e390e8d"
+    },
+    {
+      "bytes": 61900,
+      "path": "live-pg17-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker0.log",
+      "sha256": "9fa9e04caaf110f86c2472d59b69133b748f36a7d7b44359829905b8ac90f0f0"
+    },
+    {
+      "bytes": 52499,
+      "path": "live-pg17-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker1.log",
+      "sha256": "b154a2f72345d1acaf75afd04b6025b54ea9820ad49fd6ec06adf88fa1c852cc"
+    },
+    {
+      "bytes": 6621,
+      "path": "live-pg17-v2/cdc-suite/log/007_cdc_undistributed_table_test_cdc_client.log",
+      "sha256": "41d1c786817d01aae9fefed2b5c1a00d8df9982a0ba09c565f33efe47c3b4ae5"
+    },
+    {
+      "bytes": 81055,
+      "path": "live-pg17-v2/cdc-suite/log/007_cdc_undistributed_table_test_coordinator.log",
+      "sha256": "65d4eb8759dccb06e7a37eee01620e36ae6662ed59878f7cb671e7b2e4c4ff11"
+    },
+    {
+      "bytes": 97260,
+      "path": "live-pg17-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker0.log",
+      "sha256": "9cf68cb0141b825a80e4d2ad2898df15043e2c0ade58d45c33dbd77088e84218"
+    },
+    {
+      "bytes": 89364,
+      "path": "live-pg17-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker1.log",
+      "sha256": "a7f06a1b229591ec68b04c6a9b12f5983677dad6598a903cb0da8640a716ecb2"
+    },
+    {
+      "bytes": 5130,
+      "path": "live-pg17-v2/cdc-suite/log/008_cdc_shard_split_test_cdc_client.log",
+      "sha256": "762e2fbda951ef159af4ae433c09943570be358e0bbd3a6f9e7f32ac70dc612b"
+    },
+    {
+      "bytes": 26503,
+      "path": "live-pg17-v2/cdc-suite/log/008_cdc_shard_split_test_coordinator.log",
+      "sha256": "6dd0e9f346c4d838e18b84852ea730b4254deae4e00d24fc58d74f50106a7f4e"
+    },
+    {
+      "bytes": 34091,
+      "path": "live-pg17-v2/cdc-suite/log/008_cdc_shard_split_test_worker0.log",
+      "sha256": "88a755aca3a08ca83ce2d681360babd25e8ab81fd0a5a80bdfb5d84a42b71664"
+    },
+    {
+      "bytes": 5483,
+      "path": "live-pg17-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_cdc_client.log",
+      "sha256": "3f1da11500da8007cc69fdc68100adae9d4833edc7b8ad7a7f3ccc6ffbf5b776"
+    },
+    {
+      "bytes": 63507,
+      "path": "live-pg17-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_coordinator.log",
+      "sha256": "44e98ea23330852b769fe1cbb40b81d80249b1737cfa392e84810941635de68e"
+    },
+    {
+      "bytes": 43399,
+      "path": "live-pg17-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_worker0.log",
+      "sha256": "14cb652cbb521b5d9aa08b4ad9ea6338c1374634f12cd2345f06d0a822903b86"
+    },
+    {
+      "bytes": 5453,
+      "path": "live-pg17-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_cdc_client.log",
+      "sha256": "0034da264cdc55cb103eb18311288f42a61178a431b1c540b6ddd8db6aa9c683"
+    },
+    {
+      "bytes": 63598,
+      "path": "live-pg17-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_coordinator.log",
+      "sha256": "c3cd217f6698919dbb24cfecb59f59ceb3ac9f9c4d0e9a1d28a75e973eed2608"
+    },
+    {
+      "bytes": 44361,
+      "path": "live-pg17-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_worker0.log",
+      "sha256": "ecfd08f767b3ec1b64fcbbb9d89e77b8e7d867b5c685d73feb88f979db1522f9"
+    },
+    {
+      "bytes": 7303,
+      "path": "live-pg17-v2/cdc-suite/log/011_cdc_alter_distributed_table_cdc_client.log",
+      "sha256": "898465f1fff2427dce0a71c6d27272ae20e603b244eef2277677820b803bf232"
+    },
+    {
+      "bytes": 77160,
+      "path": "live-pg17-v2/cdc-suite/log/011_cdc_alter_distributed_table_coordinator.log",
+      "sha256": "a08a9e964c99f2b083143cc8dae22815e782a02ec373eca588c2578c6d9c67be"
+    },
+    {
+      "bytes": 68920,
+      "path": "live-pg17-v2/cdc-suite/log/011_cdc_alter_distributed_table_worker0.log",
+      "sha256": "da9314bd65ea8a75bb3027facfc98ebddb3cec05d058df8edb014ebcddaea967"
+    },
+    {
+      "bytes": 7039,
+      "path": "live-pg17-v2/cdc-suite/log/012_cdc_restart_test_cdc_client.log",
+      "sha256": "de7ba7504429214d8d82e1a3c1ac015475b635f5288031701b4a6d582a68da6a"
+    },
+    {
+      "bytes": 14718,
+      "path": "live-pg17-v2/cdc-suite/log/012_cdc_restart_test_coordinator.log",
+      "sha256": "a48405303694e6ddd0c465a4dd4acfaeefa375eec0bb416e2ed6dc18904b7a58"
+    },
+    {
+      "bytes": 112134,
+      "path": "live-pg17-v2/cdc-suite/log/012_cdc_restart_test_worker0.log",
+      "sha256": "e6e30342b51b76a2adcb23a32770e4ceda34705d17ec38c89e2d81b0579d3e95"
+    },
+    {
+      "bytes": 104758,
+      "path": "live-pg17-v2/cdc-suite/log/012_cdc_restart_test_worker1.log",
+      "sha256": "31498bffef9f121c12f54637599bee72e3ad3e2374788fa57ed68db3182e34fc"
+    },
+    {
+      "bytes": 6194,
+      "path": "live-pg17-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_cdc_client.log",
+      "sha256": "70069ab08da78d63e5d51b4933a3fb68b4e7b94d8c6ce7d66094ff6bfa3d3d68"
+    },
+    {
+      "bytes": 54343,
+      "path": "live-pg17-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_coordinator.log",
+      "sha256": "97c569f99b3fa8aedff62f87ebb1d69158944ebab62903c61b350efc91af0e0c"
+    },
+    {
+      "bytes": 43229,
+      "path": "live-pg17-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker0.log",
+      "sha256": "4221d67a6612aae720fc094765c475b0789a87c2f5b398b485b795887ec14c03"
+    },
+    {
+      "bytes": 41864,
+      "path": "live-pg17-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker1.log",
+      "sha256": "9320445662694d3c5bf81f7806d8d26edf79576c1096f27e35a705fc16c9440d"
+    },
+    {
+      "bytes": 6346,
+      "path": "live-pg17-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_cdc_client.log",
+      "sha256": "2d02a67d2a9f1b6128af0246bc0e27362abf4a8598b85d89bf1625b81cb5330e"
+    },
+    {
+      "bytes": 54295,
+      "path": "live-pg17-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_coordinator.log",
+      "sha256": "fd515d1fd35733a604c68180307373b12a5e763807520887b1e4fe30408f9360"
+    },
+    {
+      "bytes": 42440,
+      "path": "live-pg17-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker0.log",
+      "sha256": "ab8c790bdd698760207eac5c320d38233cb0848f7d354c95b40f545859b2c60f"
+    },
+    {
+      "bytes": 42498,
+      "path": "live-pg17-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker1.log",
+      "sha256": "2be18128e48b0633228c0a27271dac89c1094e5c648bb0f3f4ad384614da3c48"
+    },
+    {
+      "bytes": 2689,
+      "path": "live-pg17-v2/cdc-suite/log/015_cdc_without_citus_cdc_client.log",
+      "sha256": "15c5cc9dbf077165df5761b74433e74e7dd3c2da1237d0d42c8fce5f7d662bea"
+    },
+    {
+      "bytes": 11234,
+      "path": "live-pg17-v2/cdc-suite/log/015_cdc_without_citus_coordinator.log",
+      "sha256": "1fd1d665ec06bfff225ebf8604fec96475121372cd464e68213e0edd9db547e0"
+    },
+    {
+      "bytes": 10569,
+      "path": "live-pg17-v2/cdc-suite/log/015_cdc_without_citus_worker0.log",
+      "sha256": "05215693f263caf9c50dcf3d6a2284321c56ff2c92b9f6679db252fc1a7fe1e9"
+    },
+    {
+      "bytes": 9207,
+      "path": "live-pg17-v2/cdc-suite/log/015_cdc_without_citus_worker1.log",
+      "sha256": "334a28f87c5703ca8add15204759e9e43f727f782988fc45e8b895323a27d0a1"
+    },
+    {
+      "bytes": 6711,
+      "path": "live-pg17-v2/cdc-suite/log/016_cdc_wal2json_coordinator.log",
+      "sha256": "8e72f0285f524db8a4f5b063da31f9a1275fb6b4350326bf3ca39b8b068522b3"
+    },
+    {
+      "bytes": 8566,
+      "path": "live-pg17-v2/cdc-suite/log/016_cdc_wal2json_worker0.log",
+      "sha256": "492bd45fe272ceb56b221382e1970a3d320faf4e7f9404c01a360f42b488c6cb"
+    },
+    {
+      "bytes": 14681,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_001_cdc_create_distributed_table_test",
+      "sha256": "5baddb3d87b38dc5fb2e37ae1eef947c8fea95070d18f3539484a8c220a7a381"
+    },
+    {
+      "bytes": 14517,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_002_cdc_create_distributed_table_concurrently",
+      "sha256": "48a546bea961e97dd498c0de925c3002e3154457aa60a992d40a5636e71cfb7b"
+    },
+    {
+      "bytes": 12133,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_003_cdc_parallel_insert",
+      "sha256": "f18b79be380be7a45441b93317274c314b51d515325a06399c0d17db6986e22c"
+    },
+    {
+      "bytes": 12291,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_004_cdc_move_shard",
+      "sha256": "0ac0d944511ffa80a4aa414766cb8bcfc82b76447826fc5b49ec4b7620f296b0"
+    },
+    {
+      "bytes": 13089,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_005_cdc_reference_table_test",
+      "sha256": "2f8f1cc45786b8858959087f91c2806cb957d91f58ff174dad8c07b228cf139d"
+    },
+    {
+      "bytes": 13903,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_006_cdc_schema_change_and_move",
+      "sha256": "beac1bf64facc62a92deae01baf28860a088001d71da3f5f6462f3fe487a9850"
+    },
+    {
+      "bytes": 14738,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_007_cdc_undistributed_table_test",
+      "sha256": "d74372669245393f2d9c8c205936f6905a90c7d7f32658c1a1d766adb51f3f21"
+    },
+    {
+      "bytes": 9152,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_008_cdc_shard_split_test",
+      "sha256": "f18c7876abbf464d6845ac5783cd33c3149e9782a728d934009a89f756703c17"
+    },
+    {
+      "bytes": 9620,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_009_cdc_shard_split_test_non_blocking",
+      "sha256": "54aca3b2ac42bf2e0e95e191e79c6baa48efbd13199e8c7f52df28da7210854e"
+    },
+    {
+      "bytes": 9548,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_010_cdc_shard_split_parallel_insert",
+      "sha256": "f44436c3fc67d8b2185e055282660df857f229dac7ad394288c9a1fdf1ecd6c1"
+    },
+    {
+      "bytes": 10387,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_011_cdc_alter_distributed_table",
+      "sha256": "757458db31121253bfd53cc0b76abb52cf4cbc3f55155362a4cef756ec597b80"
+    },
+    {
+      "bytes": 13309,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_012_cdc_restart_test",
+      "sha256": "93f32922da8148dee348f47541fe430ad102afce7f6c0dec1919117cb4437dcc"
+    },
+    {
+      "bytes": 12972,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_013_cdc_drop_last_column_for_one_shard",
+      "sha256": "6071ef8ac7f2b91a269bcc46c1cf8dcd3a8b036c39d605a55af981595706d02f"
+    },
+    {
+      "bytes": 12770,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_014_cdc_with_table_like_shard_name",
+      "sha256": "cc3ba02162f46e36e086575b1a852e794cb271f48e68cbeccf157427863a7122"
+    },
+    {
+      "bytes": 10740,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_015_cdc_without_citus",
+      "sha256": "377ded5e3052fb155133fa0855d5f22f52e2d5a3a30a31e885a98116a9903768"
+    },
+    {
+      "bytes": 5684,
+      "path": "live-pg17-v2/cdc-suite/log/regress_log_016_cdc_wal2json",
+      "sha256": "cdf290a95f01dcafad849ebb7ac07ed9e351f4f74161691482d499fd7a0f923d"
+    },
+    {
+      "bytes": 33,
+      "path": "live-pg17-v2/cdc-suite/postgresql.conf",
+      "sha256": "252d98bba85fad69553a45552dca3019e426e9448875d471d5f75aa6fff0fa39"
+    },
+    {
+      "bytes": 4536,
+      "path": "live-pg17-v2/cdc-suite/t/001_cdc_create_distributed_table_test.pl",
+      "sha256": "16d04e5b5b066286745332330792c3f56c9bc8e7d103f53671d778f9bf5f07d3"
+    },
+    {
+      "bytes": 4065,
+      "path": "live-pg17-v2/cdc-suite/t/002_cdc_create_distributed_table_concurrently.pl",
+      "sha256": "03f134c552ffab4ed0478ad296a87ba4583d064cbc6ee4b8b487cb169443cf46"
+    },
+    {
+      "bytes": 3422,
+      "path": "live-pg17-v2/cdc-suite/t/003_cdc_parallel_insert.pl",
+      "sha256": "2c1a22c5c1cedb8d26af6a50b60dda07a5874226e1921d52ff68b9a58a52d3af"
+    },
+    {
+      "bytes": 4123,
+      "path": "live-pg17-v2/cdc-suite/t/004_cdc_move_shard.pl",
+      "sha256": "1677b1fa922c44e507a9b5fe5cf402e0f9e28c073b726cf036af2b8ff25ae952"
+    },
+    {
+      "bytes": 2373,
+      "path": "live-pg17-v2/cdc-suite/t/005_cdc_reference_table_test.pl",
+      "sha256": "64ed1f499164097724639575442d21629403254ccbf605faee710d7144d8840a"
+    },
+    {
+      "bytes": 5701,
+      "path": "live-pg17-v2/cdc-suite/t/006_cdc_schema_change_and_move.pl",
+      "sha256": "7030b196d50c99a71e4c9ce9f26e616b736abb4180fef4c2ebd9030b758c192c"
+    },
+    {
+      "bytes": 4617,
+      "path": "live-pg17-v2/cdc-suite/t/007_cdc_undistributed_table_test.pl",
+      "sha256": "133b062199fe9620ed8b2f82cf3c2474d8b0f77eb0b61f3e94084ab5833c3ebf"
+    },
+    {
+      "bytes": 3583,
+      "path": "live-pg17-v2/cdc-suite/t/008_cdc_shard_split_test.pl",
+      "sha256": "e480cc46a239acbba262f1aee030c0bfce63d3dca91eadcffdacfbae8d830d26"
+    },
+    {
+      "bytes": 3584,
+      "path": "live-pg17-v2/cdc-suite/t/009_cdc_shard_split_test_non_blocking.pl",
+      "sha256": "3a1fbba6e2128c949e5581eb1045f28e384171a18266ad6b05475c959d46af15"
+    },
+    {
+      "bytes": 4378,
+      "path": "live-pg17-v2/cdc-suite/t/010_cdc_shard_split_parallel_insert.pl",
+      "sha256": "473b7fe743b6a6a03504cb7aca063abee7856e217591836e6a6e2ae7dd4707c8"
+    },
+    {
+      "bytes": 4367,
+      "path": "live-pg17-v2/cdc-suite/t/011_cdc_alter_distributed_table.pl",
+      "sha256": "aa4765a5954a3893b16d1b69a73631334687aa4fcad02c8b8b0ad3203ccac5ab"
+    },
+    {
+      "bytes": 3472,
+      "path": "live-pg17-v2/cdc-suite/t/012_cdc_restart_test.pl",
+      "sha256": "5d7c5d94a0e8f50414426857165545aacedab1000ca15b16a0277436ccee9a38"
+    },
+    {
+      "bytes": 3825,
+      "path": "live-pg17-v2/cdc-suite/t/013_cdc_drop_last_column_for_one_shard.pl",
+      "sha256": "d11d7a90fc566eea21d90fe0ded64c5a1891ea177a3b0ebf0ac20a02b9e26a91"
+    },
+    {
+      "bytes": 3924,
+      "path": "live-pg17-v2/cdc-suite/t/014_cdc_with_table_like_shard_name.pl",
+      "sha256": "a19750cd4e324262965e3d4b8670236040d25f5d45a2c4934135f024c4e352eb"
+    },
+    {
+      "bytes": 1817,
+      "path": "live-pg17-v2/cdc-suite/t/015_cdc_without_citus.pl",
+      "sha256": "dd8e97249c143f593e78aafaaaf990e870be893305d23f67afba41e3f643fc46"
+    },
+    {
+      "bytes": 1642,
+      "path": "live-pg17-v2/cdc-suite/t/016_cdc_wal2json.pl",
+      "sha256": "f1fa089099b4ffdccd9b04207f2f91d785230a435ce407f25c2dc02f0677f98e"
+    },
+    {
+      "bytes": 16513,
+      "path": "live-pg17-v2/cdc-suite/t/cdctestlib.pm",
+      "sha256": "4e6951832f3fff9c396cb262b02efb35581fe085cec6757517321f7d0c92b9ff"
+    },
+    {
+      "bytes": 18208,
+      "path": "live-pg17-v2/config.log",
+      "sha256": "928acea1340cf77ceeee011a950719e683008b41f981377a9fc4a365155b9ab9"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg17-v2/container-id.txt",
+      "sha256": "83671a32e9f55a34b04a04e90b093c88f67fe5eb5a2542fecd159773ef4e7cae"
+    },
+    {
+      "bytes": 8727,
+      "path": "live-pg17-v2/container-state.json",
+      "sha256": "d6a461e04c5740f30040e816c7ce0bc08fd37d0121fa3adf4783d41eced5d592"
+    },
+    {
+      "bytes": 8727,
+      "path": "live-pg17-v2/final-container-state.json",
+      "sha256": "d6a461e04c5740f30040e816c7ce0bc08fd37d0121fa3adf4783d41eced5d592"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg17-v2/finish.txt",
+      "sha256": "e8fcb5446dd112bf505632e81f882f7ef5c8b38d471de0aa28b73f2fc27405fb"
+    },
+    {
+      "bytes": 72,
+      "path": "live-pg17-v2/image-id.txt",
+      "sha256": "1c976d341a34fafbc568b5a9abaf7edbac9c035cf7abaae1eb5b3aaea8ad7657"
+    },
+    {
+      "bytes": 2031,
+      "path": "live-pg17-v2/image.json",
+      "sha256": "86b7f304676932bdb49f20cd90b6ce7d9a3d638c1d8747fafc1e01cb63534ecd"
+    },
+    {
+      "bytes": 275,
+      "path": "live-pg17-v2/launchers.sha256",
+      "sha256": "853223f43b636c0710a5adec68915eb30bd8b158bd4f1768e55e1ec29b98f7c8"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg17-v2/removed-id.txt",
+      "sha256": "83671a32e9f55a34b04a04e90b093c88f67fe5eb5a2542fecd159773ef4e7cae"
+    },
+    {
+      "bytes": 699849,
+      "path": "live-pg17-v2/result/build.log",
+      "sha256": "87f8ed94b161ff24e703e52f248dd22d371c24ec3f508fe96494c93a00fdf8b3"
+    },
+    {
+      "bytes": 2783,
+      "path": "live-pg17-v2/result/configure.log",
+      "sha256": "0792b358b6e74a21312f1f9c8b836343443ae05104d06193243f9f747e3b502a"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg17-v2/result/finish.txt",
+      "sha256": "8d2293216a4eef19a6f6f8b523d09988221670e088e16a2d64a277c2cbf7e899"
+    },
+    {
+      "bytes": 80607,
+      "path": "live-pg17-v2/result/install.log",
+      "sha256": "7f8be79a201ba2c34fe670f8ddba178ac4cb7cdd5633c42ccadcdc510f593529"
+    },
+    {
+      "bytes": 342,
+      "path": "live-pg17-v2/result/installed-libraries.sha256",
+      "sha256": "547bd3d5978bc78ec25fb95316ed303ed0cef94a5420413fe927c8f71d7f0575"
+    },
+    {
+      "bytes": 81,
+      "path": "live-pg17-v2/result/source-after.txt",
+      "sha256": "cba52b8b61a4d26c6a2128a67cbdd277b75e345023381db715bbbe5998937014"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg17-v2/result/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 421,
+      "path": "live-pg17-v2/result/source-files.sha256",
+      "sha256": "2ef602b40a631927bb54bd324460ee01ca2ca57fdafda727b0d3ab93107cb95d"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg17-v2/result/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    },
+    {
+      "bytes": 7624,
+      "path": "live-pg17-v2/result/tap.log",
+      "sha256": "00d19a24d18b117b279fad43d68df87a67fc8456055b9d2a26a73de35aa10840"
+    },
+    {
+      "bytes": 679,
+      "path": "live-pg17-v2/result/test-command.txt",
+      "sha256": "9d011f95b08108f75d771aa15295b4a47c83ab5b9f1b89c617def13273df8d92"
+    },
+    {
+      "bytes": 792604,
+      "path": "live-pg17-v2/run.log",
+      "sha256": "6d6d224f61724bc14b5f9f47c698cfe590984b7643af9989179288ffd77d023f"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg17-v2/source-after.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg17-v2/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg17-v2/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    },
+    {
+      "bytes": 1356,
+      "path": "live-pg18-v2/cdc-suite/Makefile",
+      "sha256": "0a6c7481714585e7e64dc86a291aec70b3fd73784dd61a1c9d861a5adfa8046b"
+    },
+    {
+      "bytes": 6709,
+      "path": "live-pg18-v2/cdc-suite/log/001_cdc_create_distributed_table_test_cdc_client.log",
+      "sha256": "f6daa32be6bfb4c1e78c4ffa09deafbabf32ec013360bc89c5ddfb1591e2faf5"
+    },
+    {
+      "bytes": 16680,
+      "path": "live-pg18-v2/cdc-suite/log/001_cdc_create_distributed_table_test_coordinator.log",
+      "sha256": "8811b494913c3060a9ae2692fa2c1a56e43777c7b3901111f11cf06d61bfbb55"
+    },
+    {
+      "bytes": 131577,
+      "path": "live-pg18-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker0.log",
+      "sha256": "670d3304ce40f66d62557095f9861967b19609663615be34dc6bb3c657662483"
+    },
+    {
+      "bytes": 127034,
+      "path": "live-pg18-v2/cdc-suite/log/001_cdc_create_distributed_table_test_worker1.log",
+      "sha256": "def6ec8f55f3bccdde9f769d9f515d746a7d16166dfb42c33411f8e2d24bee4b"
+    },
+    {
+      "bytes": 6681,
+      "path": "live-pg18-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_cdc_client.log",
+      "sha256": "5b70506e93a6b0416a59270c96d24ef1a5a615c854c63f817427209d299c6801"
+    },
+    {
+      "bytes": 202792,
+      "path": "live-pg18-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_coordinator.log",
+      "sha256": "20690eebfef9c4c24654e8115d46a0c44a0620d50840409aec0d94813065c991"
+    },
+    {
+      "bytes": 155095,
+      "path": "live-pg18-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker0.log",
+      "sha256": "2e0d441afbc5e7d53544ed703d457870e6836175c1b9b853fbec6c6bd06695a7"
+    },
+    {
+      "bytes": 156806,
+      "path": "live-pg18-v2/cdc-suite/log/002_cdc_create_distributed_table_concurrently_worker1.log",
+      "sha256": "cb382528fc4ec3a6a94fa91e9d4afa17e8d1af99a87fcadaceefa401bf866a1d"
+    },
+    {
+      "bytes": 6157,
+      "path": "live-pg18-v2/cdc-suite/log/003_cdc_parallel_insert_cdc_client.log",
+      "sha256": "3bae867003577056adc6ed12f9b47f6ed01d9ea135ab9eac937273c43a72467f"
+    },
+    {
+      "bytes": 198808,
+      "path": "live-pg18-v2/cdc-suite/log/003_cdc_parallel_insert_coordinator.log",
+      "sha256": "c560295e3f26f22cd0e48291624d4c6cd9e94bf42477c7d47564e3d5ccd572f0"
+    },
+    {
+      "bytes": 132387,
+      "path": "live-pg18-v2/cdc-suite/log/003_cdc_parallel_insert_worker0.log",
+      "sha256": "53cdd01d0c4cdb27631ecb492bb6035154341d0261df35c8799764bc39b31ff8"
+    },
+    {
+      "bytes": 135957,
+      "path": "live-pg18-v2/cdc-suite/log/003_cdc_parallel_insert_worker1.log",
+      "sha256": "525152c5182efb7bfa8727b6e05b03ec26866dbb6016fe888e8f6812951d544c"
+    },
+    {
+      "bytes": 6077,
+      "path": "live-pg18-v2/cdc-suite/log/004_cdc_move_shard_cdc_client.log",
+      "sha256": "2e69b30b4b1aa5948485ea9013967b2afa00e0e9b3a27a1d6be4b9d984e1e9a3"
+    },
+    {
+      "bytes": 60913,
+      "path": "live-pg18-v2/cdc-suite/log/004_cdc_move_shard_coordinator.log",
+      "sha256": "cdbf863ee4a4c6c90c3406ccd9c91ea6df48f6d020ce7534ead69d87bcaffd76"
+    },
+    {
+      "bytes": 54162,
+      "path": "live-pg18-v2/cdc-suite/log/004_cdc_move_shard_worker0.log",
+      "sha256": "7b1d533ad07194dd179fd6150f950eb7f9637bdfb7535e2162726efbcb870f56"
+    },
+    {
+      "bytes": 49357,
+      "path": "live-pg18-v2/cdc-suite/log/004_cdc_move_shard_worker1.log",
+      "sha256": "ba4edb978e2d3ddd03f485418eded5abbb8d92e6b666cf17f06fe78da4b098a1"
+    },
+    {
+      "bytes": 5172,
+      "path": "live-pg18-v2/cdc-suite/log/005_cdc_reference_table_test_cdc_client.log",
+      "sha256": "6d8528c54cdbcf178f5d7ef942c56cfe7ab8158df78b38627fb3b2c6c6033367"
+    },
+    {
+      "bytes": 14651,
+      "path": "live-pg18-v2/cdc-suite/log/005_cdc_reference_table_test_coordinator.log",
+      "sha256": "1e0f03278248f8c7220beb9ffa22361b0ba1c26cfe407b8dc4042860c1fcdb4a"
+    },
+    {
+      "bytes": 26846,
+      "path": "live-pg18-v2/cdc-suite/log/005_cdc_reference_table_test_worker0.log",
+      "sha256": "0fc249c30ba46193623307cf3f3416461894eeef2fcbfc1dcf1b71da733edc89"
+    },
+    {
+      "bytes": 25593,
+      "path": "live-pg18-v2/cdc-suite/log/005_cdc_reference_table_test_worker1.log",
+      "sha256": "ef10573f2b6f04234510f16d224c2e91db383c42683433a2b4742486c49b63f0"
+    },
+    {
+      "bytes": 6718,
+      "path": "live-pg18-v2/cdc-suite/log/006_cdc_schema_change_and_move_cdc_client.log",
+      "sha256": "578919909dcc5756b636f97aa45d22bbb1b56f54f86f56b22f8b40ca17eb6804"
+    },
+    {
+      "bytes": 64439,
+      "path": "live-pg18-v2/cdc-suite/log/006_cdc_schema_change_and_move_coordinator.log",
+      "sha256": "8460890c4610d5de5f60854b157ebf37d6b2804fc03510c91638ea55a3d18e9e"
+    },
+    {
+      "bytes": 62152,
+      "path": "live-pg18-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker0.log",
+      "sha256": "e28aa3eeb78ec6b3a1a6eb26f11c2e2fa407167012e975c2c049763f65f99b36"
+    },
+    {
+      "bytes": 53001,
+      "path": "live-pg18-v2/cdc-suite/log/006_cdc_schema_change_and_move_worker1.log",
+      "sha256": "d133e8a89ba224f9e57bcd0303b199e26d791ae3fbe661fe8e64468525890db8"
+    },
+    {
+      "bytes": 6619,
+      "path": "live-pg18-v2/cdc-suite/log/007_cdc_undistributed_table_test_cdc_client.log",
+      "sha256": "cfce204e6ede926a8a01f6d2423a1ca6268d7ead07a653d27df30c8814d3e13e"
+    },
+    {
+      "bytes": 81190,
+      "path": "live-pg18-v2/cdc-suite/log/007_cdc_undistributed_table_test_coordinator.log",
+      "sha256": "6bd3e6aa3c7689100692d6c665cf5a37b8c26a340315e389c46efe9eef6e5782"
+    },
+    {
+      "bytes": 97515,
+      "path": "live-pg18-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker0.log",
+      "sha256": "2bab4eb2ed0b9550d11235d45c5677e87f66fc5c9d273cab4e35e47f48742384"
+    },
+    {
+      "bytes": 89413,
+      "path": "live-pg18-v2/cdc-suite/log/007_cdc_undistributed_table_test_worker1.log",
+      "sha256": "a4c54098ca757ff8099f204f4c0d7542965847bf3b3e4c6a68fc0c3f8c268283"
+    },
+    {
+      "bytes": 5128,
+      "path": "live-pg18-v2/cdc-suite/log/008_cdc_shard_split_test_cdc_client.log",
+      "sha256": "e375da1b372411851527b1214ebf1481826257cce95b60b66ded832ebf55462f"
+    },
+    {
+      "bytes": 26643,
+      "path": "live-pg18-v2/cdc-suite/log/008_cdc_shard_split_test_coordinator.log",
+      "sha256": "a34cb44e1b06df35d35135b5afbb5360e2921c63a80d63d5f7ea874affb48f49"
+    },
+    {
+      "bytes": 34351,
+      "path": "live-pg18-v2/cdc-suite/log/008_cdc_shard_split_test_worker0.log",
+      "sha256": "831c22c4d51b58772a33dee3ddd2a1946e07cd2eeaa9c9811b0b3b5059462a39"
+    },
+    {
+      "bytes": 5481,
+      "path": "live-pg18-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_cdc_client.log",
+      "sha256": "9a31d4726142cd5596a23662dd3fad9916ad43484b66c103c4a5206ed6c9b090"
+    },
+    {
+      "bytes": 63885,
+      "path": "live-pg18-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_coordinator.log",
+      "sha256": "3573bdb9ce637620c922a3227a6602a38243ce6c116043572b636e7fe10e6c67"
+    },
+    {
+      "bytes": 43633,
+      "path": "live-pg18-v2/cdc-suite/log/009_cdc_shard_split_test_non_blocking_worker0.log",
+      "sha256": "ff4ffcf0fad65b3b442a818dbb8f6ddc062d4d8f2cf046a4dd5b4b6a4ec773e7"
+    },
+    {
+      "bytes": 5451,
+      "path": "live-pg18-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_cdc_client.log",
+      "sha256": "8c6772d8b703d7bd9862a143a8f580ed3d8aa6f28686be7db86ec414e61e56ce"
+    },
+    {
+      "bytes": 63980,
+      "path": "live-pg18-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_coordinator.log",
+      "sha256": "0eb41a6da84607d001b31995ec3598bbaf6dc5c781c49e58fc86ae4528390752"
+    },
+    {
+      "bytes": 44275,
+      "path": "live-pg18-v2/cdc-suite/log/010_cdc_shard_split_parallel_insert_worker0.log",
+      "sha256": "af097e87be490aedba16887d8809dfe0ac9dd5916df00579be3fe56d68930525"
+    },
+    {
+      "bytes": 7301,
+      "path": "live-pg18-v2/cdc-suite/log/011_cdc_alter_distributed_table_cdc_client.log",
+      "sha256": "035c3771ccb1abeb2ebfcbfa032b53411c3bd8c783df9fd1a26b2d11e3461c53"
+    },
+    {
+      "bytes": 77682,
+      "path": "live-pg18-v2/cdc-suite/log/011_cdc_alter_distributed_table_coordinator.log",
+      "sha256": "9e91b28a197bd99592975e5c3eac6e28501969dcedb0f0e61c5eec6c2d9f08c1"
+    },
+    {
+      "bytes": 69298,
+      "path": "live-pg18-v2/cdc-suite/log/011_cdc_alter_distributed_table_worker0.log",
+      "sha256": "e967d5038c161ae0aa90d83102f991677abc2b23a8305bc2fa49d45099ed9430"
+    },
+    {
+      "bytes": 7299,
+      "path": "live-pg18-v2/cdc-suite/log/012_cdc_restart_test_cdc_client.log",
+      "sha256": "36824e1f0a85bcf646e98f3941322f77963524834f607dc149e9a6019b025c79"
+    },
+    {
+      "bytes": 15451,
+      "path": "live-pg18-v2/cdc-suite/log/012_cdc_restart_test_coordinator.log",
+      "sha256": "14e75b3c211c4d533cae024c29ffb1e98f5c26dd414c4ce94158dcd9a3ddb379"
+    },
+    {
+      "bytes": 112427,
+      "path": "live-pg18-v2/cdc-suite/log/012_cdc_restart_test_worker0.log",
+      "sha256": "d564617fd42134e1d6c7d4bf5c0576a70f8420c8b5e12dc781f8944a559101c9"
+    },
+    {
+      "bytes": 105084,
+      "path": "live-pg18-v2/cdc-suite/log/012_cdc_restart_test_worker1.log",
+      "sha256": "6bbe3f1a6bbccb7917d703691cc53a9f776d31e258c734c4d0de363932f51253"
+    },
+    {
+      "bytes": 6151,
+      "path": "live-pg18-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_cdc_client.log",
+      "sha256": "a5b9a76ef54a555f3fccff1f8111f0d250636c9fd565fd7fd4d6570dd1c5bc0c"
+    },
+    {
+      "bytes": 54400,
+      "path": "live-pg18-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_coordinator.log",
+      "sha256": "a781705bf7197e416b98afe6b2114e669466abec48e4144d27e5700927fd1c71"
+    },
+    {
+      "bytes": 43427,
+      "path": "live-pg18-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker0.log",
+      "sha256": "1643909b0af2364d2dbdd5884559fb2489134992fcb701a7815b51463cca39ac"
+    },
+    {
+      "bytes": 41971,
+      "path": "live-pg18-v2/cdc-suite/log/013_cdc_drop_last_column_for_one_shard_worker1.log",
+      "sha256": "8d83776a0ee6efe9e8725fa19c2978a7455b648aee911f16c4c96d1077d85f16"
+    },
+    {
+      "bytes": 6302,
+      "path": "live-pg18-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_cdc_client.log",
+      "sha256": "b88821792577bbacb6f3c7aba74c4d7a8020b548318f6d425267bcb622ebfbb1"
+    },
+    {
+      "bytes": 54359,
+      "path": "live-pg18-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_coordinator.log",
+      "sha256": "0a13dd2257138fea44ef7a5ff5abf6d14004d6774ca3a8bf800f24e5f9b9ee2b"
+    },
+    {
+      "bytes": 42653,
+      "path": "live-pg18-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker0.log",
+      "sha256": "3ee28542ed830231234890427ee357349c2ac061680cd62e79868c993520062e"
+    },
+    {
+      "bytes": 42614,
+      "path": "live-pg18-v2/cdc-suite/log/014_cdc_with_table_like_shard_name_worker1.log",
+      "sha256": "7ad708dc3f4ae92088b452188312d00e1cb6193d096977c3f922fc715e0fe53d"
+    },
+    {
+      "bytes": 2687,
+      "path": "live-pg18-v2/cdc-suite/log/015_cdc_without_citus_cdc_client.log",
+      "sha256": "92e16365e03ff5e0e69f051136320d965e5c820c1e91f37032f48ba801fedbfc"
+    },
+    {
+      "bytes": 11347,
+      "path": "live-pg18-v2/cdc-suite/log/015_cdc_without_citus_coordinator.log",
+      "sha256": "3c95f6dad9279f93051fe4507305730b566d91d9a892589db23978bf1aabc25a"
+    },
+    {
+      "bytes": 10523,
+      "path": "live-pg18-v2/cdc-suite/log/015_cdc_without_citus_worker0.log",
+      "sha256": "17eae7ba1d9ad98416e5b52ebc0f2e7cd8f4b8b79c8fb43d5482e977b4b431a1"
+    },
+    {
+      "bytes": 9314,
+      "path": "live-pg18-v2/cdc-suite/log/015_cdc_without_citus_worker1.log",
+      "sha256": "005e1429f25c1f92ced45cbd6af917d22858932d64412068037d7818283ffee8"
+    },
+    {
+      "bytes": 6732,
+      "path": "live-pg18-v2/cdc-suite/log/016_cdc_wal2json_coordinator.log",
+      "sha256": "9ef78a3dad79e4c108871dcc7702a8cbc4dbebfee53ef42fc3d2bac51d3cdc28"
+    },
+    {
+      "bytes": 8587,
+      "path": "live-pg18-v2/cdc-suite/log/016_cdc_wal2json_worker0.log",
+      "sha256": "f9039e2d8c16f84ee63e6766a51b806e0460ca745b80780d5fb7a651a41c9f5b"
+    },
+    {
+      "bytes": 14885,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_001_cdc_create_distributed_table_test",
+      "sha256": "828dc7b2bd93bdcc48dbe0510679a1b6b811f1915f4cb319a7a93e049c0c3c1d"
+    },
+    {
+      "bytes": 14721,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_002_cdc_create_distributed_table_concurrently",
+      "sha256": "c4eae8ec6b678680f4f55cec1fc598b571a18a95a2ac1b7976b8af58183847eb"
+    },
+    {
+      "bytes": 12337,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_003_cdc_parallel_insert",
+      "sha256": "213ce1b73989aa40e90a883dfbb24d556d0d1884dfc9c8c2f5551abf1da6a8e2"
+    },
+    {
+      "bytes": 12495,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_004_cdc_move_shard",
+      "sha256": "eea76a6ce99d0427d66e0fd650827aa07b5752408083689bcd4e0463a67594f6"
+    },
+    {
+      "bytes": 13293,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_005_cdc_reference_table_test",
+      "sha256": "c53a455351dc3ea3b95690282682f497386687973c128ecf51ce5e23b9846b2a"
+    },
+    {
+      "bytes": 14107,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_006_cdc_schema_change_and_move",
+      "sha256": "4e11f3433cfd38f0add6402b6f89226de52080dfaa6ca8ad36c6c42581f77511"
+    },
+    {
+      "bytes": 14942,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_007_cdc_undistributed_table_test",
+      "sha256": "421697a2fbdcc9c1fcd98216d0c4a8da940656d06bc8bc4020849c25e8125b24"
+    },
+    {
+      "bytes": 9305,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_008_cdc_shard_split_test",
+      "sha256": "241823ba0788fbab5704578f80f0f5ebb1b90051009d27faea6f00b6d6cfd35b"
+    },
+    {
+      "bytes": 9773,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_009_cdc_shard_split_test_non_blocking",
+      "sha256": "d7e76e39d9750070d33fb32c93058e9dfbb9de19ec76f173dd0780f5087606a3"
+    },
+    {
+      "bytes": 9701,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_010_cdc_shard_split_parallel_insert",
+      "sha256": "c3b0b0e7b665d041faf707182fe2e191004e00cedf85c8302e623fdfef6488cf"
+    },
+    {
+      "bytes": 10540,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_011_cdc_alter_distributed_table",
+      "sha256": "bcdb146de6ee8c8a2e656cb3fc098ec31bacc83f3bbd53fe49d0775ed3c554e2"
+    },
+    {
+      "bytes": 13543,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_012_cdc_restart_test",
+      "sha256": "b138fb55580090614d286b0d8f6ff9b9f4f7c57df057bd03b1e98ede6406ea0c"
+    },
+    {
+      "bytes": 13172,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_013_cdc_drop_last_column_for_one_shard",
+      "sha256": "d7d46141c3bd0f3feaa5a5a880d17fd136b4e7c8620792df4157ed8cb79930c5"
+    },
+    {
+      "bytes": 12970,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_014_cdc_with_table_like_shard_name",
+      "sha256": "e43290da008804ba42422850a6d51fdf5838a661a8c0135a5029424b8a7e15e6"
+    },
+    {
+      "bytes": 10941,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_015_cdc_without_citus",
+      "sha256": "9fc4bab312a18194f372d04eacb9adc031c54f1a2e88fa7b448105052183e4a9"
+    },
+    {
+      "bytes": 5786,
+      "path": "live-pg18-v2/cdc-suite/log/regress_log_016_cdc_wal2json",
+      "sha256": "425437b22847ed49ca40c5ab3155f9e5e8afbefae62c09b21132aef07e25df4a"
+    },
+    {
+      "bytes": 33,
+      "path": "live-pg18-v2/cdc-suite/postgresql.conf",
+      "sha256": "252d98bba85fad69553a45552dca3019e426e9448875d471d5f75aa6fff0fa39"
+    },
+    {
+      "bytes": 4536,
+      "path": "live-pg18-v2/cdc-suite/t/001_cdc_create_distributed_table_test.pl",
+      "sha256": "16d04e5b5b066286745332330792c3f56c9bc8e7d103f53671d778f9bf5f07d3"
+    },
+    {
+      "bytes": 4065,
+      "path": "live-pg18-v2/cdc-suite/t/002_cdc_create_distributed_table_concurrently.pl",
+      "sha256": "03f134c552ffab4ed0478ad296a87ba4583d064cbc6ee4b8b487cb169443cf46"
+    },
+    {
+      "bytes": 3422,
+      "path": "live-pg18-v2/cdc-suite/t/003_cdc_parallel_insert.pl",
+      "sha256": "2c1a22c5c1cedb8d26af6a50b60dda07a5874226e1921d52ff68b9a58a52d3af"
+    },
+    {
+      "bytes": 4123,
+      "path": "live-pg18-v2/cdc-suite/t/004_cdc_move_shard.pl",
+      "sha256": "1677b1fa922c44e507a9b5fe5cf402e0f9e28c073b726cf036af2b8ff25ae952"
+    },
+    {
+      "bytes": 2373,
+      "path": "live-pg18-v2/cdc-suite/t/005_cdc_reference_table_test.pl",
+      "sha256": "64ed1f499164097724639575442d21629403254ccbf605faee710d7144d8840a"
+    },
+    {
+      "bytes": 5701,
+      "path": "live-pg18-v2/cdc-suite/t/006_cdc_schema_change_and_move.pl",
+      "sha256": "7030b196d50c99a71e4c9ce9f26e616b736abb4180fef4c2ebd9030b758c192c"
+    },
+    {
+      "bytes": 4617,
+      "path": "live-pg18-v2/cdc-suite/t/007_cdc_undistributed_table_test.pl",
+      "sha256": "133b062199fe9620ed8b2f82cf3c2474d8b0f77eb0b61f3e94084ab5833c3ebf"
+    },
+    {
+      "bytes": 3583,
+      "path": "live-pg18-v2/cdc-suite/t/008_cdc_shard_split_test.pl",
+      "sha256": "e480cc46a239acbba262f1aee030c0bfce63d3dca91eadcffdacfbae8d830d26"
+    },
+    {
+      "bytes": 3584,
+      "path": "live-pg18-v2/cdc-suite/t/009_cdc_shard_split_test_non_blocking.pl",
+      "sha256": "3a1fbba6e2128c949e5581eb1045f28e384171a18266ad6b05475c959d46af15"
+    },
+    {
+      "bytes": 4378,
+      "path": "live-pg18-v2/cdc-suite/t/010_cdc_shard_split_parallel_insert.pl",
+      "sha256": "473b7fe743b6a6a03504cb7aca063abee7856e217591836e6a6e2ae7dd4707c8"
+    },
+    {
+      "bytes": 4367,
+      "path": "live-pg18-v2/cdc-suite/t/011_cdc_alter_distributed_table.pl",
+      "sha256": "aa4765a5954a3893b16d1b69a73631334687aa4fcad02c8b8b0ad3203ccac5ab"
+    },
+    {
+      "bytes": 3472,
+      "path": "live-pg18-v2/cdc-suite/t/012_cdc_restart_test.pl",
+      "sha256": "5d7c5d94a0e8f50414426857165545aacedab1000ca15b16a0277436ccee9a38"
+    },
+    {
+      "bytes": 3825,
+      "path": "live-pg18-v2/cdc-suite/t/013_cdc_drop_last_column_for_one_shard.pl",
+      "sha256": "d11d7a90fc566eea21d90fe0ded64c5a1891ea177a3b0ebf0ac20a02b9e26a91"
+    },
+    {
+      "bytes": 3924,
+      "path": "live-pg18-v2/cdc-suite/t/014_cdc_with_table_like_shard_name.pl",
+      "sha256": "a19750cd4e324262965e3d4b8670236040d25f5d45a2c4934135f024c4e352eb"
+    },
+    {
+      "bytes": 1817,
+      "path": "live-pg18-v2/cdc-suite/t/015_cdc_without_citus.pl",
+      "sha256": "dd8e97249c143f593e78aafaaaf990e870be893305d23f67afba41e3f643fc46"
+    },
+    {
+      "bytes": 1642,
+      "path": "live-pg18-v2/cdc-suite/t/016_cdc_wal2json.pl",
+      "sha256": "f1fa089099b4ffdccd9b04207f2f91d785230a435ce407f25c2dc02f0677f98e"
+    },
+    {
+      "bytes": 16513,
+      "path": "live-pg18-v2/cdc-suite/t/cdctestlib.pm",
+      "sha256": "4e6951832f3fff9c396cb262b02efb35581fe085cec6757517321f7d0c92b9ff"
+    },
+    {
+      "bytes": 20144,
+      "path": "live-pg18-v2/config.log",
+      "sha256": "539ce28d51c2d3fab43d7793bd1683d77a18741e0153e7c9092e2f746759be47"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg18-v2/container-id.txt",
+      "sha256": "e60376a27abc58fa70bc85385ed56d054abfca83203f9099d023bfa733053aee"
+    },
+    {
+      "bytes": 8727,
+      "path": "live-pg18-v2/container-state.json",
+      "sha256": "d18c065f365146ca32d8d0f258fea7347be4008bc86249779e5778175650d7b8"
+    },
+    {
+      "bytes": 8727,
+      "path": "live-pg18-v2/final-container-state.json",
+      "sha256": "5440cc3757d7bb36898973a6cb105393c36cdf3d1425dce0c621d42092307394"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg18-v2/finish.txt",
+      "sha256": "5638b59077eec3d7510ad463b3fdb9ee71047fd7f5739dd99d1b0c4654d54c88"
+    },
+    {
+      "bytes": 72,
+      "path": "live-pg18-v2/image-id.txt",
+      "sha256": "d151635416614143c919ffd26c0ba825776ec295f8872f63d7fa765096b21a4d"
+    },
+    {
+      "bytes": 2031,
+      "path": "live-pg18-v2/image.json",
+      "sha256": "463a76046d07785075d15b16615e3dc5e0be560b802d5f45d39708420b410dee"
+    },
+    {
+      "bytes": 275,
+      "path": "live-pg18-v2/launchers.sha256",
+      "sha256": "853223f43b636c0710a5adec68915eb30bd8b158bd4f1768e55e1ec29b98f7c8"
+    },
+    {
+      "bytes": 65,
+      "path": "live-pg18-v2/removed-id.txt",
+      "sha256": "e60376a27abc58fa70bc85385ed56d054abfca83203f9099d023bfa733053aee"
+    },
+    {
+      "bytes": 698211,
+      "path": "live-pg18-v2/result/build.log",
+      "sha256": "33f2a4e9f464ecc26baad76071aee745087b11d320490463f751ea2e0adcbae9"
+    },
+    {
+      "bytes": 2783,
+      "path": "live-pg18-v2/result/configure.log",
+      "sha256": "41eb2e698fdee950477ecb4830949ea697d4cdcbb5c32623ae430e4ebf40636b"
+    },
+    {
+      "bytes": 40,
+      "path": "live-pg18-v2/result/finish.txt",
+      "sha256": "2d5dfd80bd4a31e2ea653691bc0bbd2ec4ee714fbd96e43c82e6da98546c2fe9"
+    },
+    {
+      "bytes": 80607,
+      "path": "live-pg18-v2/result/install.log",
+      "sha256": "af06591f54e2b5b8f37680f6229d91e390a451e2ab9fb29cb4e4a9aa854bde54"
+    },
+    {
+      "bytes": 342,
+      "path": "live-pg18-v2/result/installed-libraries.sha256",
+      "sha256": "47b5f40841c8e656cd1242e16cee5245012f9847780d3c87fd729ea489b3a938"
+    },
+    {
+      "bytes": 21,
+      "path": "live-pg18-v2/result/source-after.txt",
+      "sha256": "27e625d1ec923bcd6abc25be654ff8eb1fab7a29e42c82ef273bb8066b939b78"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg18-v2/result/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 421,
+      "path": "live-pg18-v2/result/source-files.sha256",
+      "sha256": "2ef602b40a631927bb54bd324460ee01ca2ca57fdafda727b0d3ab93107cb95d"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg18-v2/result/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    },
+    {
+      "bytes": 7624,
+      "path": "live-pg18-v2/result/tap.log",
+      "sha256": "bdeb6560dbd7ac79979393e826e06055375f31c22c312d47f1416f7ab789c425"
+    },
+    {
+      "bytes": 679,
+      "path": "live-pg18-v2/result/test-command.txt",
+      "sha256": "ca646a237c80ec7f1faa9d68437305767c925fd59f7589b1e04a3e973904a47b"
+    },
+    {
+      "bytes": 791056,
+      "path": "live-pg18-v2/run.log",
+      "sha256": "2b4aa197b095276e84df6e9650c5ce7305c2b5b0f163bd0ca072e8efa4d711a7"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg18-v2/source-after.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "live-pg18-v2/source-before.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 82,
+      "path": "live-pg18-v2/source.txt",
+      "sha256": "635f185656b996f81ed3a436c7910ff1bb6cfad6addb6317da4fd11c5f0962b9"
+    }
+  ],
+  "decoder_sha256": "387682f0907c51453ffead0279385f38924f554eff59cf87b608c561138e0267",
+  "prior_proof_manifest": {
+    "all_702_artifact_hashes_reverified": true,
+    "path": "proof-manifest-v1.json",
+    "sha256": "55ae964247f8a7e5672e335eae809767b5c1976e0e4df4cf02a143554c138276"
+  },
+  "runs": [
+    {
+      "container_removed": "dd2b2b9328ad3e316205bfad4e1d65d34593638e41387d2c699d89d89ca8a6e5",
+      "image": "sha256:89b06af67c21a50421c6dcdc758c99a8b151b4f9e683be338986d1bb3427d259",
+      "major": 16,
+      "path": "live-pg16-v2",
+      "postgres": "PostgreSQL 16.14 (Debian 16.14-1.pgdg12+1)",
+      "summary": [
+        "Files=16, Tests=43, 93 wallclock secs ( 0.06 usr  0.02 sys + 24.35 cusr 13.97 csys = 38.40 CPU)",
+        "Result: PASS"
+      ],
+      "tap_sha256": "a2cdb70427be9665450ad05c1f711c1c25719dea650dd2c41006e43686deebd8",
+      "terminal": {
+        "exit": "0",
+        "finished_at": "2026-09-29T23:26:51Z"
+      }
+    },
+    {
+      "container_removed": "2be38dbe066dd6346c99c3158c302dc249abdd22eea540a254a1104120cdbe35",
+      "image": "sha256:7afb5d835a65ff38224d5fef24ebf62cc9684b496921f96b760a10c95fa8113f",
+      "major": 17,
+      "path": "live-pg17-v2",
+      "postgres": "PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2)",
+      "summary": [
+        "Files=16, Tests=43, 92 wallclock secs ( 0.06 usr  0.02 sys + 24.70 cusr 14.52 csys = 39.30 CPU)",
+        "Result: PASS"
+      ],
+      "tap_sha256": "00d19a24d18b117b279fad43d68df87a67fc8456055b9d2a26a73de35aa10840",
+      "terminal": {
+        "exit": "0",
+        "finished_at": "2026-09-29T23:26:54Z"
+      }
+    },
+    {
+      "container_removed": "73ed98b2a3f299efdb86157f181d06d7f47442684d5ff71cb99d1d0c394458a4",
+      "image": "sha256:576c329a82dfb7bf7f7967ca22219645944f86b52d99bccaf613b8c5a29304c6",
+      "major": 18,
+      "path": "live-pg18-v2",
+      "postgres": "PostgreSQL 18.6 (Debian 18.6-1.pgdg12+2)",
+      "summary": [
+        "Files=16, Tests=43, 97 wallclock secs ( 0.07 usr  0.02 sys + 25.78 cusr 15.00 csys = 40.87 CPU)",
+        "Result: PASS"
+      ],
+      "tap_sha256": "bdeb6560dbd7ac79979393e826e06055375f31c22c312d47f1416f7ab789c425",
+      "terminal": {
+        "exit": "0",
+        "finished_at": "2026-09-29T23:26:56Z"
+      }
+    }
+  ],
+  "schema": 1,
+  "scope": "Fresh full builds and 16-file/43-assertion CDC TAP suites pass on PG16.14,17.11,18.6. Does not close historical unrelated CI reds or authorize publication/repinning.",
+  "source": [
+    "077a3e4243f875841d8f7ede4e305f1b7ad63032",
+    "51ed3de06ef40720c783801e308a5dc0e29e3895"
+  ]
+}
