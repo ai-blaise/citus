@@ -27,7 +27,7 @@ udf_current="${udf_dir}/15.0-1.sql"
 udf_upstream="${udf_dir}/14.0-1.sql"
 router_assist="companion/src/router_assist.rs"
 patch_file="patches/0005-placement-generation-counter.patch"
-feature_doc="docs/ai-blaise/NEW_FEATURES.md"
+boundary_doc="docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 pg_cron_smoke="ci/ai-blaise/pg-cron-cohabitation-smoke.sh"
 
 for file in \
@@ -40,7 +40,7 @@ for file in \
   "${udf_upstream}" \
   "${router_assist}" \
   "${patch_file}" \
-  "${feature_doc}" \
+  "${boundary_doc}" \
   "${pg_cron_smoke}"
 do
   require_file "${file}"
@@ -89,10 +89,10 @@ do
   grep -Fq "${required}" "${patch_file}" || fail "patch artifact lost ${required}"
 done
 
-grep -Fq "placement-generation-udf-contract-smoke.sh" "${feature_doc}" || \
-  fail "NEW_FEATURES.md must reference the placement-generation UDF smoke"
-grep -Fq "pg-cron-cohabitation-smoke.sh" "${feature_doc}" || \
-  fail "NEW_FEATURES.md must reference the live patched-Citus runtime smoke"
+grep -Fq "placement-generation-udf-contract-smoke.sh" "${boundary_doc}" || \
+  fail "production audit must reference the placement-generation UDF smoke"
+grep -Fq "pg-cron-cohabitation-smoke.sh" "${boundary_doc}" || \
+  fail "production audit must reference the live patched-Citus runtime smoke"
 for required in \
   "placement_generation_after_first_distribution" \
   "placement_generation_after_second_distribution" \
@@ -101,8 +101,8 @@ for required in \
   "SET citus.shard_count TO 7" \
   "production latency"
 do
-  grep -Fq "${required}" "${feature_doc}" || \
-    fail "NEW_FEATURES.md lost T2 runtime proof/boundary: ${required}"
+  grep -Fq "${required}" "${boundary_doc}" || \
+    fail "production audit lost T2 runtime proof/boundary: ${required}"
 done
 for required in \
   "placement_generation_after_first_distribution" \

@@ -1,38 +1,47 @@
 # License Audit
 
-This file tracks the dependency and fork targets called out by the V2 plan.
-The release rule is simple: permissive or compatible copyleft components can
-be integrated, source patches stay upstream-minimal, and restricted components
-are consumed only through unmodified binaries or optional external services.
+This file tracks dependency and fork targets. Going forward, the September 5
+**CHIMERA — FINAL PRODUCTION PLAN** selects Apache-only TimescaleDB, no
+toolkit/TSL artifacts, and the capability replacements in its section 14.
+The attachment SHA-256 is
+`c38eeae185222a0121e844eb43da362e7f33ff4a50bf5c9a7a6b881ff8e4c31e`;
+the durable plan and adoption record are in the `ai-blaise/chimera` repository
+under `docs/porting/`. This supersedes the earlier unresolved deployment choice.
+Existing fork images and the dependency snapshot below have not thereby been
+converted or qualified for that plan.
 
-Per-language transitive dependency tables live at the repo root and are
-generated from each language's lockfile:
+A row is a review boundary, not distribution approval. Keeping a binary
+unmodified or placing it behind a service does not by itself satisfy its
+license. The exact source revision, linkage, notices, source obligations, and
+intended deployment must be reviewed for the release candidate.
 
-- [`ATTRIBUTIONS-Rust.md`](../../ATTRIBUTIONS-Rust.md) — every Rust crate in
-  the Cargo workspace, grouped by license. Generated from
-  `cargo metadata --format-version 1`.
-- [`ATTRIBUTIONS-Go.md`](../../ATTRIBUTIONS-Go.md) — every Go module under
-  `tools/citus-admin/` once the WhoDB fork lands. Generated from
-  `go list -m -json all`.
-- [`ATTRIBUTIONS-TypeScript.md`](../../ATTRIBUTIONS-TypeScript.md) — every
-  npm package under `tools/citus-schema-designer/` and `tools/citus-admin/`
-  once the DrawDB and WhoDB front-end forks land. Generated from
-  `package.json` + the lockfile.
+Per-language records live at the repo root:
 
-`ci/ai-blaise/license-check.sh` enforces the presence of those three files,
-that they are linked from this audit, and that no Rust transitive dep
-resolves to a GPL-2.0 or GPL-3.0 SPDX expression (AGPL / LGPL transitive
-deps remain compatible).
+- [`ATTRIBUTIONS-Rust.md`](../../ATTRIBUTIONS-Rust.md) — a dated resolved-graph
+  snapshot from `cargo metadata --locked --format-version 1`, with its lockfile
+  checksum and package-declared license expressions.
+- [`ATTRIBUTIONS-Go.md`](../../ATTRIBUTIONS-Go.md) — records that no Go module
+  is imported under `tools/citus-admin/`; anticipated packages are not listed
+  as dependencies.
+- [`ATTRIBUTIONS-TypeScript.md`](../../ATTRIBUTIONS-TypeScript.md) — records
+  that no npm project is imported under `tools/citus-schema-designer/` or
+  `tools/citus-admin/`.
+
+`ci/ai-blaise/license-check.sh` enforces these records' presence and links,
+validates one complete locked Cargo metadata document, and applies the existing
+Rust dependency policy. It does not regenerate the tables, scan Go or npm,
+package license texts, or establish legal compatibility. A passing scan does
+not complete B4.
 
 ## Required Checks
 
 | Component | License posture | Integration rule |
 |---|---|---|
 | Citus | AGPL-3.0 | Fork source directly in `ai-blaise/citus`. |
-| TimescaleDB Apache parts | Apache-2.0 | Consume extension APIs and unmodified sources where license permits. |
-| TimescaleDB TSL parts | Timescale License | Do not patch TSL source; consume unmodified binaries only where allowed. |
-| pgcat | MIT | Fork or port pooler concepts into `pool/`. |
-| pgrx | MIT / Apache-2.0 | Use for companion extension packaging. |
+| TimescaleDB Apache parts | Apache-2.0 | Selected Chimera posture: build the Apache-only artifact and implement the production plan's explicit capability replacements. Verify actual image contents and notices before qualification. |
+| TimescaleDB TSL parts / toolkit | Excluded by the production plan | Do not include these artifacts in the qualifying Chimera operand. Historical Community fixtures do not establish Apache-only compliance. |
+| pgcat | MIT | Vendor the selected pool data plane into Chimera with the production plan's integrations and reviewed provenance. |
+| pgrx | MIT / Apache-2.0 | Use the pinned raw-only production substrate and parity-tested native inlines. Guarded bindings are measurement comparators, not a production tier. Preserve upstream SQL/ABI and add integration SQL through `chimera` on `citus.so`. |
 | kube-rs | MIT / Apache-2.0 | Planned for alpha operator-controller implementation; the current production operator runtime has no kube-rs dependency. |
 | pg_repack | BSD-style | Bundle or call for online repack workflows. |
 | pgvector | PostgreSQL License | Bundle for vector indexes. |
@@ -43,7 +52,7 @@ deps remain compatible).
 | pgsodium | PostgreSQL License | Bundle for libsodium-backed crypto. |
 | hll / topn / tdigest | Apache-2.0 | Bundle for merge-friendly approximations. |
 | pgnodemx | Apache-2.0 | Bundle for OS and cgroup metrics. |
-| PostGIS | GPL-2.0 | Bundle under compatible AGPL distribution terms. |
+| PostGIS | GPL-2.0-or-later | Preserve the exact imported source's notices and review the combined distribution. The [upstream source header](https://github.com/postgis/postgis/blob/d4a0809234543b13ec401d43ffd57290b6cc208a/postgis/lwgeom_functions_basic.c) expressly permits later GPL versions. |
 | pg_search | AGPL-3.0 | Bundle only under compatible AGPL distribution terms. |
 | pg_graphql | Apache-2.0 | Bundle for GraphQL schema exposure. |
 | pg_jsonschema | Apache-2.0 | Bundle for JSON Schema validation. |
@@ -56,6 +65,7 @@ deps remain compatible).
 | pgcrypto / pg_trgm / citext | PostgreSQL License | Use core contrib extensions. |
 | rum | PostgreSQL License | Bundle for alternate full-text indexes. |
 | PostgREST | MIT | Run as sidecar, do not vendor Haskell runtime into core. |
+| WhoDB reference | Apache-2.0 at reviewed revision | Not imported here. The [license at `95dcf00f2d237296b1758b73d88c0b68459f81de`](https://github.com/clidey/whodb/blob/95dcf00f2d237296b1758b73d88c0b68459f81de/LICENSE) was checked on 2026-09-05; review the exact candidate and retain notices before any import. |
 | Deno | MIT | Use for edge function runtime sidecar. |
 | Bun | MIT | Use as optional edge function runtime sidecar. |
 | DataFusion / Arrow | Apache-2.0 | Use for analytical sidecar contracts. |
@@ -82,8 +92,16 @@ deps remain compatible).
 
 ## Guardrails
 
+- The Timescale deployment choice is Apache-only. The section 14 retirements
+  and replacements are requirements, not optional commercial/self-hosted
+  alternatives. Build-content, SQL-surface, upgrade, and distribution checks
+  remain outstanding; the plan selection is not their receipt.
+- Runtime-image LICENSE/NOTICE packaging and the applicable corresponding-source
+  offer remain outstanding candidate-specific work. Attribution tables are not
+  substitutes for those artifacts.
 - Upstream Citus source changes stay in `patches/` until an upstreamable PR is
   prepared.
-- TSL source is not patched in this repo.
+- Qualifying Chimera artifacts must exclude toolkit/TSL code and binaries;
+  not patching TSL source is insufficient to establish this property.
 - Optional sidecars may be disabled at deploy time.
 - New bundled extension candidates must add a row above before code lands.

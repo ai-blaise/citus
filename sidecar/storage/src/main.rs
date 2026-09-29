@@ -70,10 +70,10 @@ fn run_runtime_canonical() {
     });
 
     println!(
-        "bucket\ttenant_id\tobject_key\tcontent_type\tsize_bytes\tcontent_digest\tstored_objects\tquarantined_objects\tscanned_objects\tissued_urls\tantivirus_verdict\tpresigned_method\tpresigned_ttl\tpresigned_url"
+        "bucket\ttenant_id\tobject_key\tcontent_type\tsize_bytes\tcontent_digest\tstored_objects\tquarantined_objects\tscanned_objects\tissued_urls\tantivirus_verdict\tpresigning_status"
     );
     println!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\tunconfigured",
         report.upload.metadata.bucket,
         report.upload.metadata.tenant_id,
         report.upload.metadata.object_key,
@@ -85,9 +85,6 @@ fn run_runtime_canonical() {
         report.state.scanned_objects,
         report.state.issued_urls,
         verdict_name(&report.upload.antivirus_verdict),
-        method_name(&report.presigned_url.plan.method),
-        report.presigned_url.expires_in_seconds,
-        report.presigned_url.url,
     );
 }
 

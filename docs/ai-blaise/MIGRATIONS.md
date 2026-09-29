@@ -18,7 +18,11 @@ two-version invariant (2VI) runtime described in
 | Durability Invariants | Read-only row-count/checksum gates for destructive schema changes | `companion.migration_invariant_checks` |
 | Cluster Alarms | 2VI violations | `companion.cluster_alarms` |
 | Sidecar Controller | tokio loop that polls the controller | `sidecar/schema_job/src/controller.rs` |
-| SQL surface | Tables, views, functions installed by `ai_blaise_citus` | `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` |
+| SQL surface | Tables, views, functions installed by `ai_blaise_citus` | `images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0.sql` plus the current `ai_blaise_citus--0.1.0--0.1.1.sql` transition |
+
+The `0.1.0` install file is immutable release history and is SHA-256-pinned by
+`ci/ai-blaise/upgrade-rollback-guardrails.sh`. Extend the SQL surface with a new
+versioned transition; never edit the released install root in place.
 
 ## Lifecycle
 

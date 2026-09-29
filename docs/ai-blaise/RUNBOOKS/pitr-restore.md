@@ -79,6 +79,13 @@ and confirms the restored cluster contains only rows committed before the PITR
 target. The smoke is narrow PostgreSQL evidence for the runbook mechanics; it
 does not replace a live Citus cluster drill.
 
+The separate `dr_restore_depth_report` executable is a deterministic model of
+the approval, archive, restore, and validation contracts. Its canonical row is
+a model test, not an observation of a backup service, KMS, object store, or
+restored Citus cluster. Neither the model row nor a documentation status can
+qualify a production restore; attach the actual source-bound drill evidence
+for the deployment being evaluated.
+
 ## Picking the restore target
 
 A PITR has three valid targets. Pick one before running any command.

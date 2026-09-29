@@ -1,4 +1,4 @@
-name: v2-closure
+name: v2-inventory-identity
 
 on:
   pull_request:
@@ -20,5 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Check V2 closure contract
-        run: bash ci/ai-blaise/v2-closure-check.sh
+      - name: Test the machine feature register
+        run: cargo test --locked -p ai_blaise_feature_register
+      - name: Build the real feature-register validator
+        run: cargo build --locked --quiet -p ai_blaise_feature_register
+      - name: Test the inventory-only compatibility gate
+        run: |
+          python3 ci/ai-blaise/v2-closure-check_test.py \
+            --feature-register-bin "${GITHUB_WORKSPACE}/target/debug/ai_blaise_feature_register"
+      - name: Check feature inventory structure and identity
+        run: |
+          bash ci/ai-blaise/v2-closure-check.sh \
+            --feature-register-bin "${GITHUB_WORKSPACE}/target/debug/ai_blaise_feature_register"

@@ -220,7 +220,8 @@ chmod 700 /dr/restore
 
   local archive_count
   archive_count="$(find "${archive_dir}" -type f | wc -l | tr -d ' ')"
-  echo "dr_restore_depth_postgres_smoke\ttarget_time=${target_time}\tarchived_wal_segments=${archive_count}\trestored_rows=${restored_rows}"
+  printf 'dr_restore_depth_postgres_smoke\ttarget_time=%s\tarchived_wal_segments=%s\trestored_rows=%s\n' \
+    "${target_time}" "${archive_count}" "${restored_rows}"
 }
 
 cargo test -q -p ai_blaise_citus_e2e dr_restore_depth
@@ -231,7 +232,7 @@ assert_output_line \
 
 assert_contains "docs/ai-blaise/RUNBOOKS/disaster-recovery.md" "ci/ai-blaise/dr-restore-depth-check.sh"
 assert_contains "docs/ai-blaise/RUNBOOKS/pitr-restore.md" "dr_restore_depth_postgres_smoke"
-assert_contains "docs/ai-blaise/NEW_FEATURES.md" "dr_restore_depth_report"
+assert_contains "docs/ai-blaise/RUNBOOKS/pitr-restore.md" "dr_restore_depth_report"
 assert_contains "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md" "restore-depth gate"
 assert_contains "Makefile.ai-blaise" "dr-restore-depth-check:"
 

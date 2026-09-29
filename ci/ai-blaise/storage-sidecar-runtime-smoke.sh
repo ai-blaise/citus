@@ -85,19 +85,25 @@ try:
     assert policy["acl"] == "tenant_read_write"
     assert policy["metadata_table"] == "storage.objects"
     assert policy["presigned_url_ttl_seconds"] == 900
+    assert policy["presigning_status"] == "unconfigured"
     assert policy["antivirus_fail_closed"] is True
     assert policy["quarantine_bucket"] == "quarantine"
 
-    status, data = request(port, "POST", "/storage/presign", '{"method":"put","ttl_seconds":900}')
-    presign = require_json(status, data, 200)
-    assert presign["bucket"] == "tenant-files"
-    assert presign["method"] == "put"
-    assert presign["expires_in_seconds"] == 900
-    assert "signature=ai-blaise-canonical" in presign["url"]
+    status, data = request(
+        port,
+        "POST",
+        "/storage/presign",
+        '{"bucket":"attacker","tenant_id":"victim","method":"put","ttl_seconds":900}',
+    )
+    presign = require_json(status, data, 503)
+    assert presign == {"error": "presigning unavailable: no provider signer is configured"}
+    assert "attacker" not in data
+    assert "victim" not in data
+    assert "signature=" not in data
 
     status, data = request(port, "POST", "/storage/presign", '{"ttl_seconds":901}')
-    failure = require_json(status, data, 400)
-    assert "exceeds policy" in failure["error"]
+    failure = require_json(status, data, 503)
+    assert failure == presign
 
     clean_upload = json.dumps(
         {
@@ -144,7 +150,7 @@ try:
     state = require_json(status, data, 200)
     assert state["stored_objects"] == 1
     assert state["quarantined_objects"] == 1
-    assert state["issued_urls"] == 1
+    assert state["issued_urls"] == 0
     assert state["scanned_objects"] == 2
 
     status, data = request(port, "POST", "/drain")

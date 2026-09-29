@@ -1,9 +1,9 @@
 # Companion 0.1.2 SQL security and recovery — development evidence
 
 Historical, source-specific record: its stock-image override is no longer
-accepted by the current harness. A later source-built fixture run used changed
-harness bytes and is outside this isolated source checkpoint; the hashes and
-commands below remain authoritative only for this historical receipt.
+accepted by the current harness. See the
+[2026-09-05 real-Citus fixture results](2026-09-05-real-citus-fixtures.md) for
+the later source-built fixture runs and current reproduction commands.
 
 Both native PostgreSQL 17 and PostgreSQL 18 runs passed on 2026-09-04 using
 the existing `instance-20260415-20260415-235136` VM in `asia-south1-b`.

@@ -7,22 +7,40 @@
 > Kubernetes evidence recorded in `docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md`
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
-Implemented CRD surface from the V2 plan. `operator/src/main.rs` validates the
-canonical catalog and emits the CI-gated `run-canonical` TSV summary. The
+The V2 plan contains 17 Rust spec surfaces, but exactly 14 currently have an
+actual kube-rs controller and generated Kubernetes CRD. `ShardGroup`, `Branch`,
+and `Vectorizer` remain Rust contract models and are not silently exported as
+runtime CRDs. `operator/src/main.rs` validates the canonical catalog and emits
+the CI-gated `run-canonical` TSV summary. The
 controller boundary runner also emits typed Conditions at the mutation edge.
 Unsupported direct SQL execution remains non-executable unless a separate
 implementation moves it out of `AlphaNotImplemented`; `CitusCluster`,
 `Hypertable`, and `Sidecar` have explicitly bounded live status/apply paths.
 
+Generate all actual controller CRDs as a multi-document YAML stream with:
+
+```console
+cargo run -p ai_blaise_citus_operator -- print-crds
+```
+
+All 14 documents are structural, namespaced `citus.ai-blaise.io/v2` CRDs.
+`CitusCluster`, `Migration`, `Hypertable`, `ScheduledRepack`,
+`ConflictPolicy`, and `Sidecar` expose their typed status subresource and
+schema; the other eight are spec-only, matching their current controller
+implementation. Focused `print-citus-cluster-crd`, `print-sidecar-crd`, and
+`print-hypertable-crd` commands are retained.
+
 - `CitusCluster` (`FEATURE: S4`, spec, digest-pinned coordinator-worker CNPG
   apply path, exact node-TLS/version bootstrap verification, finalizer, owner
   references, and status conditions implemented; see
   `operator/CITUS_CLUSTER_PRODUCTION.md`)
-- `ShardGroup` (`FEATURE: S2`, canonical Rust spec implemented)
+- `ShardGroup` (`FEATURE: S2`, canonical Rust spec implemented; no kube-rs
+  controller or exported CRD yet)
 - `Hypertable` (`FEATURE: TS7`, Rust spec and guarded apply plan implemented)
 - `Branch` (`FEATURE: R2`, `FEATURE: C6`, `FEATURE: C7`, `FEATURE: C8`,
-  canonical Rust spec implemented)
-- `Vectorizer` (`FEATURE: A8`, canonical Rust spec implemented)
+  canonical Rust spec implemented; no kube-rs controller or exported CRD yet)
+- `Vectorizer` (`FEATURE: A8`, canonical Rust spec implemented; no kube-rs
+  controller or exported CRD yet)
 - `Sidecar` (`FEATURE: O5`, spec, digest-pinned apply-mode image contract, reconcile plan, and controller implemented)
 - `Migration` (`FEATURE: C9`, `FEATURE: M3`, schema job reconcile plan and
   controller implemented)

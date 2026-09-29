@@ -4,13 +4,22 @@
 // FEATURE: API4
 // FEATURE: API5
 
+use ai_blaise_citus_auth_introspection_client::{
+    validate_bearer_token, AuthIntrospectionClient, AuthIntrospectionConfig,
+    AuthIntrospectionError, VerifiedIdentity, AUTH_CA_CERT_PATH_ENV, AUTH_CLIENT_IDENTITY_PATH_ENV,
+    AUTH_EXPECTED_AUDIENCE_ENV, AUTH_EXPECTED_ISSUER_ENV, AUTH_INTROSPECTION_URL_ENV,
+    AUTH_TIMEOUT_MS_ENV,
+};
 use ai_blaise_citus_sidecar_shared::{
     listen_addr_from_env, HttpProbeResponse, SidecarRuntime, SidecarRuntimeError,
 };
 use postgres::{Client, NoTls};
+use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GraphqlSidecarPlan {
@@ -71,7 +80,7 @@ impl DistributedGraphqlBinding {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GraphqlAuthPolicy {
     pub rls_required: bool,
-    pub jwt_secret_ref: String,
+    pub auth_service_ref: String,
     pub tenant_claim: String,
     pub introspection_enabled: bool,
 }
@@ -81,7 +90,7 @@ impl GraphqlAuthPolicy {
         if !self.rls_required {
             return Err(GraphqlSidecarError::RlsRequired);
         }
-        validate_required("auth.jwt_secret_ref", &self.jwt_secret_ref)?;
+        validate_required("auth.auth_service_ref", &self.auth_service_ref)?;
         validate_required("auth.tenant_claim", &self.tenant_claim)
     }
 }
@@ -91,6 +100,10 @@ pub enum GraphqlSidecarError {
     InvalidIdentifier(&'static str),
     InvalidPath(&'static str),
     InvalidRuntimeDependency(String),
+    AuthenticationRejected,
+    AuthenticationUnavailable,
+    BodyIdentityForbidden,
+    DatabaseUnavailable(&'static str),
     IntrospectionDisabled,
     MalformedHttpRequest,
     MalformedQuery(String),
@@ -99,6 +112,7 @@ pub enum GraphqlSidecarError {
     PlanResolutionFailed(String),
     Runtime(String),
     TenantClaimMissing,
+    LiveExecutionRequired,
     RlsRequired,
 }
 
@@ -110,6 +124,14 @@ impl fmt::Display for GraphqlSidecarError {
             Self::InvalidRuntimeDependency(detail) => {
                 write!(formatter, "invalid runtime dependency: {detail}")
             }
+            Self::AuthenticationRejected => write!(formatter, "authentication rejected"),
+            Self::AuthenticationUnavailable => {
+                write!(formatter, "authentication service unavailable")
+            }
+            Self::BodyIdentityForbidden => {
+                write!(formatter, "request-body identity claims are forbidden")
+            }
+            Self::DatabaseUnavailable(_) => write!(formatter, "GraphQL database unavailable"),
             Self::IntrospectionDisabled => {
                 write!(formatter, "GraphQL introspection is disabled by policy")
             }
@@ -130,6 +152,12 @@ impl fmt::Display for GraphqlSidecarError {
                 "request.jwt.claims is missing the tenant claim required for RLS"
             ),
             Self::RlsRequired => write!(formatter, "RLS must be required for GraphQL routes"),
+            Self::LiveExecutionRequired => {
+                write!(
+                    formatter,
+                    "live GraphQL execution must be explicitly enabled"
+                )
+            }
         }
     }
 }
@@ -137,27 +165,44 @@ impl fmt::Display for GraphqlSidecarError {
 impl Error for GraphqlSidecarError {}
 
 impl From<SidecarRuntimeError> for GraphqlSidecarError {
-    fn from(error: SidecarRuntimeError) -> Self {
-        Self::Runtime(error.to_string())
+    fn from(_error: SidecarRuntimeError) -> Self {
+        Self::Runtime("GraphQL runtime request rejected".to_string())
     }
 }
 
 impl From<std::io::Error> for GraphqlSidecarError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Runtime(error.to_string())
+    fn from(_error: std::io::Error) -> Self {
+        Self::Runtime("GraphQL I/O unavailable".to_string())
     }
 }
 
 impl From<postgres::Error> for GraphqlSidecarError {
-    fn from(error: postgres::Error) -> Self {
-        if let Some(db_error) = error.as_db_error() {
-            return Self::Runtime(format!(
-                "{}: {}",
-                db_error.code().code(),
-                db_error.message()
-            ));
+    fn from(_error: postgres::Error) -> Self {
+        Self::DatabaseUnavailable("database-operation-unavailable")
+    }
+}
+
+impl From<AuthIntrospectionError> for GraphqlSidecarError {
+    fn from(error: AuthIntrospectionError) -> Self {
+        match error {
+            AuthIntrospectionError::MissingConfiguration(name) => {
+                Self::MissingRuntimeDependency(name.to_string())
+            }
+            AuthIntrospectionError::InvalidConfiguration(name)
+            | AuthIntrospectionError::CredentialRead(name)
+            | AuthIntrospectionError::CredentialTooLarge(name)
+            | AuthIntrospectionError::CredentialInvalid(name) => {
+                Self::InvalidRuntimeDependency(name.to_string())
+            }
+            AuthIntrospectionError::Inactive | AuthIntrospectionError::InvalidToken => {
+                Self::AuthenticationRejected
+            }
+            AuthIntrospectionError::ClientBuild
+            | AuthIntrospectionError::RequestFailed
+            | AuthIntrospectionError::ResponseTooLarge
+            | AuthIntrospectionError::UnexpectedStatus(_)
+            | AuthIntrospectionError::InvalidResponse(_) => Self::AuthenticationUnavailable,
         }
-        Self::Runtime(error.to_string())
     }
 }
 
@@ -229,7 +274,7 @@ pub fn canonical_graphql_plan() -> GraphqlSidecarPlan {
         }],
         auth: GraphqlAuthPolicy {
             rls_required: true,
-            jwt_secret_ref: "graphql-jwt-secret".to_string(),
+            auth_service_ref: "auth3-introspection".to_string(),
             tenant_claim: "tenant_id".to_string(),
             introspection_enabled: false,
         },
@@ -243,14 +288,17 @@ pub fn canonical_graphql_execution_plan() -> Result<GraphqlSidecarPlan, GraphqlS
 }
 
 pub const GRAPHQL_DATABASE_URL_ENV: &str = "AI_BLAISE_GRAPHQL_DATABASE_URL";
-pub const GRAPHQL_JWT_SECRET_ENV: &str = "AI_BLAISE_GRAPHQL_JWT_SECRET";
 pub const GRAPHQL_LIVE_EXECUTION_ENV: &str = "AI_BLAISE_GRAPHQL_LIVE_EXECUTION";
-const MIN_JWT_SECRET_BYTES: usize = 32;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GraphqlRuntimeDependencyReport {
     pub database_url_env: String,
-    pub jwt_secret_env: String,
+    pub auth_introspection_url_env: String,
+    pub auth_ca_cert_path_env: String,
+    pub auth_client_identity_path_env: String,
+    pub auth_expected_issuer_env: String,
+    pub auth_expected_audience_env: String,
+    pub auth_timeout_ms_env: String,
     pub endpoint_path: String,
     pub pg_graphql_extension_required: bool,
 }
@@ -271,12 +319,16 @@ where
     plan.validate()?;
     let database_url = require_runtime_env(&lookup, GRAPHQL_DATABASE_URL_ENV)?;
     validate_postgres_url(GRAPHQL_DATABASE_URL_ENV, &database_url)?;
-    let jwt_secret = require_runtime_env(&lookup, GRAPHQL_JWT_SECRET_ENV)?;
-    validate_jwt_secret(GRAPHQL_JWT_SECRET_ENV, &jwt_secret)?;
+    AuthIntrospectionConfig::from_lookup(lookup)?;
 
     Ok(GraphqlRuntimeDependencyReport {
         database_url_env: GRAPHQL_DATABASE_URL_ENV.to_string(),
-        jwt_secret_env: GRAPHQL_JWT_SECRET_ENV.to_string(),
+        auth_introspection_url_env: AUTH_INTROSPECTION_URL_ENV.to_string(),
+        auth_ca_cert_path_env: AUTH_CA_CERT_PATH_ENV.to_string(),
+        auth_client_identity_path_env: AUTH_CLIENT_IDENTITY_PATH_ENV.to_string(),
+        auth_expected_issuer_env: AUTH_EXPECTED_ISSUER_ENV.to_string(),
+        auth_expected_audience_env: AUTH_EXPECTED_AUDIENCE_ENV.to_string(),
+        auth_timeout_ms_env: AUTH_TIMEOUT_MS_ENV.to_string(),
         endpoint_path: plan.endpoint_path.clone(),
         pg_graphql_extension_required: true,
     })
@@ -287,12 +339,12 @@ pub struct GraphqlLiveExecutor {
 }
 
 impl GraphqlLiveExecutor {
-    pub fn connect_from_env() -> Result<Option<Self>, GraphqlSidecarError> {
+    pub fn connect_from_env() -> Result<Self, GraphqlSidecarError> {
         if !graphql_live_execution_enabled_from_env() {
-            return Ok(None);
+            return Err(GraphqlSidecarError::LiveExecutionRequired);
         }
         let report = graphql_runtime_dependency_report_from_env()?;
-        Ok(Some(Self::connect_env(&report.database_url_env)?))
+        Self::connect_env(&report.database_url_env)
     }
 
     pub fn connect_env(database_url_env: &str) -> Result<Self, GraphqlSidecarError> {
@@ -303,13 +355,18 @@ impl GraphqlLiveExecutor {
 
     pub fn connect(database_url: &str) -> Result<Self, GraphqlSidecarError> {
         validate_postgres_url(GRAPHQL_DATABASE_URL_ENV, database_url)?;
-        let mut client = Client::connect(database_url, NoTls)?;
+        let mut client = Client::connect(database_url, NoTls).map_err(|_| {
+            GraphqlSidecarError::DatabaseUnavailable("database-connect-unavailable")
+        })?;
         let extension_exists: bool = client
             .query_one(
                 "select exists (select 1 from pg_extension where extname = 'pg_graphql')",
                 &[],
             )?
-            .get(0);
+            .try_get(0)
+            .map_err(|_| {
+                GraphqlSidecarError::DatabaseUnavailable("extension-attestation-result-unavailable")
+            })?;
         if !extension_exists {
             return Err(GraphqlSidecarError::MissingRuntimeDependency(
                 "pg_graphql extension".to_string(),
@@ -318,14 +375,34 @@ impl GraphqlLiveExecutor {
         Ok(Self { client })
     }
 
-    pub fn execute(&mut self, request: &GraphqlRequest) -> Result<String, GraphqlSidecarError> {
-        let mut transaction = self.client.transaction()?;
-        if let Some(claims_json) = request.jwt_claims_json.as_deref() {
-            transaction.simple_query(&render_set_claims_sql(claims_json))?;
-        }
-        let row = transaction.query_one(&format!("{}::text", render_resolve_sql(request)), &[])?;
-        let response_json: String = row.get(0);
-        transaction.commit()?;
+    fn execute(
+        &mut self,
+        request: &GraphqlRequest,
+        identity: &GraphqlIdentity,
+    ) -> Result<String, GraphqlSidecarError> {
+        let mut transaction = self.client.transaction().map_err(|_| {
+            GraphqlSidecarError::DatabaseUnavailable("database-transaction-unavailable")
+        })?;
+        transaction
+            .query_one(
+                "select pg_catalog.set_config('request.jwt.claims', $1, true)",
+                &[&identity.claims_json],
+            )
+            .map_err(|_| GraphqlSidecarError::DatabaseUnavailable("claims-install-unavailable"))?;
+        let variables_json = render_variables_json(&request.variables)?;
+        let operation_name = request.operation_name.as_deref();
+        let row = transaction
+            .query_one(
+                "select graphql.resolve($1, $2::text::jsonb, $3)::text",
+                &[&request.query, &variables_json, &operation_name],
+            )
+            .map_err(|_| GraphqlSidecarError::DatabaseUnavailable("graphql-resolve-unavailable"))?;
+        let response_json: String = row
+            .try_get(0)
+            .map_err(|_| GraphqlSidecarError::DatabaseUnavailable("graphql-result-unavailable"))?;
+        transaction
+            .commit()
+            .map_err(|_| GraphqlSidecarError::DatabaseUnavailable("database-commit-unavailable"))?;
         Ok(response_json)
     }
 }
@@ -355,16 +432,6 @@ fn validate_postgres_url(field: &str, value: &str) -> Result<(), GraphqlSidecarE
     }
 }
 
-fn validate_jwt_secret(field: &str, value: &str) -> Result<(), GraphqlSidecarError> {
-    if value.len() >= MIN_JWT_SECRET_BYTES {
-        Ok(())
-    } else {
-        Err(GraphqlSidecarError::InvalidRuntimeDependency(format!(
-            "{field} must be at least {MIN_JWT_SECRET_BYTES} bytes"
-        )))
-    }
-}
-
 // =============================================================================
 // Runtime: GraphQL handler with GUC-aware resolution
 // =============================================================================
@@ -372,9 +439,8 @@ fn validate_jwt_secret(field: &str, value: &str) -> Result<(), GraphqlSidecarErr
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct GraphqlRequest {
     pub query: String,
-    pub variables: BTreeMap<String, String>,
+    pub variables: BTreeMap<String, Value>,
     pub operation_name: Option<String>,
-    pub jwt_claims_json: Option<String>,
 }
 
 impl GraphqlRequest {
@@ -383,18 +449,34 @@ impl GraphqlRequest {
             query: query.into(),
             variables: BTreeMap::new(),
             operation_name: None,
-            jwt_claims_json: None,
         }
     }
 
-    pub fn with_variable(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_variable(mut self, key: impl Into<String>, value: impl Into<Value>) -> Self {
         self.variables.insert(key.into(), value.into());
         self
     }
+}
 
-    pub fn with_jwt_claims_json(mut self, claims: impl Into<String>) -> Self {
-        self.jwt_claims_json = Some(claims.into());
-        self
+#[derive(Clone, Eq, PartialEq)]
+struct GraphqlIdentity {
+    tenant_id: String,
+    claims_json: String,
+}
+
+impl GraphqlIdentity {
+    fn from_verified(identity: VerifiedIdentity) -> Self {
+        Self {
+            tenant_id: identity.tenant_id().to_string(),
+            claims_json: identity.claims_json(),
+        }
+    }
+
+    fn canonical_fixture() -> Self {
+        Self {
+            tenant_id: "tenant-a".to_string(),
+            claims_json: "{\"aud\":\"postgres\",\"exp\":4102444800,\"iat\":0,\"iss\":\"canonical-fixture\",\"jti\":\"canonical-fixture\",\"mfa_verified\":false,\"role\":\"web_anon\",\"sub\":\"canonical-fixture\",\"tenant_id\":\"tenant-a\"}".to_string(),
+        }
     }
 }
 
@@ -465,9 +547,10 @@ impl GraphqlHandler {
     /// produces the rendered statements so the deployment can run them through
     /// whatever Postgres client is provided (e.g. `tokio-postgres` upstream of
     /// a real deployment, or the canonical fixture in tests).
-    pub fn resolve(
+    fn resolve(
         &mut self,
         request: &GraphqlRequest,
+        identity: &GraphqlIdentity,
     ) -> Result<GraphqlResponse, GraphqlSidecarError> {
         let trimmed = request.query.trim();
         if trimmed.is_empty() {
@@ -482,13 +565,10 @@ impl GraphqlHandler {
         }
         let uses_subscription = lower.starts_with("subscription");
 
-        let tenant_id = self.extract_tenant_id(request.jwt_claims_json.as_deref())?;
-        let set_jwt_claims_sql = request
-            .jwt_claims_json
-            .as_deref()
-            .map(render_set_claims_sql);
-
-        let resolve_sql = render_resolve_sql(request);
+        if identity.tenant_id.trim().is_empty() {
+            return Err(GraphqlSidecarError::TenantClaimMissing);
+        }
+        let tenant_id = Some(identity.tenant_id.clone());
         let distributed_types = self
             .plan
             .distributed_bindings
@@ -498,8 +578,10 @@ impl GraphqlHandler {
             .collect::<Vec<_>>();
 
         let execution_plan = GraphqlExecutionPlan {
-            set_jwt_claims_sql,
-            resolve_sql,
+            set_jwt_claims_sql: Some(
+                "select pg_catalog.set_config('request.jwt.claims', $1, true)".to_string(),
+            ),
+            resolve_sql: "select graphql.resolve($1, $2::text::jsonb, $3)::text".to_string(),
             binding_namespace: self.plan.schema_bindings[0].graphql_namespace.clone(),
             distributed_types: distributed_types.clone(),
             uses_introspection,
@@ -518,9 +600,10 @@ impl GraphqlHandler {
         })
     }
 
-    pub fn register_subscription(
+    fn register_subscription(
         &mut self,
         request: &GraphqlRequest,
+        identity: &GraphqlIdentity,
     ) -> Result<GraphqlSubscription, GraphqlSidecarError> {
         if !request
             .query
@@ -532,7 +615,9 @@ impl GraphqlHandler {
                 "subscriptions must begin with `subscription`".to_string(),
             ));
         }
-        let _ = self.extract_tenant_id(request.jwt_claims_json.as_deref())?;
+        if identity.tenant_id.trim().is_empty() {
+            return Err(GraphqlSidecarError::TenantClaimMissing);
+        }
         let field = subscription_field(&request.query);
         let notify_channels = self
             .plan
@@ -570,21 +655,6 @@ impl GraphqlHandler {
     pub fn subscriptions(&self) -> &BTreeMap<String, GraphqlSubscription> {
         &self.subscriptions
     }
-
-    fn extract_tenant_id(
-        &self,
-        claims_json: Option<&str>,
-    ) -> Result<Option<String>, GraphqlSidecarError> {
-        if !self.plan.auth.rls_required {
-            return Ok(None);
-        }
-        let Some(claims) = claims_json else {
-            return Err(GraphqlSidecarError::TenantClaimMissing);
-        };
-        let tenant_id = extract_string_field(claims, &self.plan.auth.tenant_claim)
-            .ok_or(GraphqlSidecarError::TenantClaimMissing)?;
-        Ok(Some(tenant_id))
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -597,19 +667,19 @@ pub struct GraphqlRuntimeReport {
 
 pub fn canonical_graphql_request() -> GraphqlRequest {
     GraphqlRequest::new("query { orderCollection { edges { node { id total } } } }")
-        .with_jwt_claims_json("{\"tenant_id\":\"tenant-a\",\"role\":\"web_anon\"}")
 }
 
 pub fn canonical_graphql_subscription_request() -> GraphqlRequest {
     GraphqlRequest::new("subscription { orderInserted { id total } }")
-        .with_jwt_claims_json("{\"tenant_id\":\"tenant-a\",\"role\":\"web_anon\"}")
 }
 
 pub fn canonical_graphql_runtime_report() -> Result<GraphqlRuntimeReport, GraphqlSidecarError> {
     let plan = canonical_graphql_execution_plan()?;
     let mut handler = GraphqlHandler::new(plan.clone())?;
-    let response = handler.resolve(&canonical_graphql_request())?;
-    let subscription = handler.register_subscription(&canonical_graphql_subscription_request())?;
+    let identity = GraphqlIdentity::canonical_fixture();
+    let response = handler.resolve(&canonical_graphql_request(), &identity)?;
+    let subscription =
+        handler.register_subscription(&canonical_graphql_subscription_request(), &identity)?;
     Ok(GraphqlRuntimeReport {
         plan,
         response,
@@ -618,34 +688,11 @@ pub fn canonical_graphql_runtime_report() -> Result<GraphqlRuntimeReport, Graphq
     })
 }
 
-fn render_set_claims_sql(claims_json: &str) -> String {
-    format!(
-        "select set_config('request.jwt.claims', '{}', true)",
-        claims_json.replace('\'', "''")
-    )
-}
-
-fn render_resolve_sql(request: &GraphqlRequest) -> String {
-    let escaped_query = request.query.replace('\'', "''");
-    let variables_json = render_variables_json(&request.variables);
-    let operation = request
-        .operation_name
-        .as_deref()
-        .map(|name| format!("'{}'", name.replace('\'', "''")))
-        .unwrap_or_else(|| "null".to_string());
-    format!("select graphql.resolve('{escaped_query}', '{variables_json}'::jsonb, {operation})")
-}
-
-fn render_variables_json(variables: &BTreeMap<String, String>) -> String {
-    if variables.is_empty() {
-        return "{}".to_string();
-    }
-    let entries = variables
-        .iter()
-        .map(|(key, value)| format!("\"{}\":\"{}\"", key, value.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!("{{{entries}}}")
+fn render_variables_json(
+    variables: &BTreeMap<String, Value>,
+) -> Result<String, GraphqlSidecarError> {
+    serde_json::to_string(variables)
+        .map_err(|_| GraphqlSidecarError::PlanResolutionFailed("variables".to_string()))
 }
 
 fn render_canonical_response(
@@ -681,57 +728,6 @@ fn subscription_field(query: &str) -> String {
         .to_string()
 }
 
-fn extract_string_field(claims_json: &str, field: &str) -> Option<String> {
-    let needle = format!("\"{field}\":");
-    let start = claims_json.find(&needle)? + needle.len();
-    let mut chars = claims_json[start..].chars().peekable();
-    while let Some(ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-        } else {
-            break;
-        }
-    }
-    if chars.peek() == Some(&'"') {
-        chars.next();
-        let mut value = String::new();
-        while let Some(ch) = chars.next() {
-            if ch == '\\' {
-                if let Some(next) = chars.next() {
-                    match next {
-                        '"' => value.push('"'),
-                        '\\' => value.push('\\'),
-                        '/' => value.push('/'),
-                        'n' => value.push('\n'),
-                        'r' => value.push('\r'),
-                        't' => value.push('\t'),
-                        other => value.push(other),
-                    }
-                }
-                continue;
-            }
-            if ch == '"' {
-                return Some(value);
-            }
-            value.push(ch);
-        }
-        None
-    } else {
-        let mut value = String::new();
-        for ch in chars {
-            if ch == ',' || ch == '}' {
-                let trimmed = value.trim();
-                if trimmed.is_empty() {
-                    return None;
-                }
-                return Some(trimmed.to_string());
-            }
-            value.push(ch);
-        }
-        None
-    }
-}
-
 fn query_hash(query: &str) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in query.as_bytes() {
@@ -745,27 +741,81 @@ fn query_hash(query: &str) -> String {
 // HTTP front door
 // =============================================================================
 
+const MAX_HTTP_REQUEST_BYTES: usize = 65_536;
+const MAX_HTTP_BODY_BYTES: usize = 49_152;
+
+trait GraphqlAuthenticator {
+    fn authenticate(&self, token: &str) -> Result<GraphqlIdentity, GraphqlSidecarError>;
+}
+
+impl GraphqlAuthenticator for AuthIntrospectionClient {
+    fn authenticate(&self, token: &str) -> Result<GraphqlIdentity, GraphqlSidecarError> {
+        self.introspect(token)
+            .map(GraphqlIdentity::from_verified)
+            .map_err(GraphqlSidecarError::from)
+    }
+}
+
+#[derive(Debug)]
+struct ParsedHttpRequest<'a> {
+    raw: &'a str,
+    method: &'a str,
+    path: &'a str,
+    body: &'a str,
+    authorization: Option<&'a str>,
+    content_type: Option<&'a str>,
+}
+
+impl ParsedHttpRequest<'_> {
+    fn raw_bytes(&self) -> &[u8] {
+        self.raw.as_bytes()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GraphqlHttpBody {
+    query: String,
+    #[serde(default)]
+    variables: BTreeMap<String, Value>,
+    #[serde(default, rename = "operationName")]
+    operation_name: Option<String>,
+}
+
 pub fn handle_graphql_sidecar_http_bytes(
     request: &[u8],
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
     let mut runtime = SidecarRuntime::ready("graphql");
-    handle_graphql_sidecar_http_request(request, &mut runtime, None)
+    handle_graphql_sidecar_http_request(request, &mut runtime, None, None)
 }
 
 fn handle_graphql_sidecar_http_request(
     request: &[u8],
     runtime: &mut SidecarRuntime,
+    authenticator: Option<&dyn GraphqlAuthenticator>,
     live_executor: Option<&mut GraphqlLiveExecutor>,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
-    let request =
-        std::str::from_utf8(request).map_err(|_| GraphqlSidecarError::MalformedHttpRequest)?;
-    let (method, path, body) = parse_http_request(request)?;
+    let request = parse_http_request(request)?;
     let plan = canonical_graphql_execution_plan()?;
 
-    if (method == "POST" || method == "GET") && path.starts_with("/graphql") {
-        if path == "/graphql/ws" {
-            if method == "POST" {
-                return handle_graphql_subscription_post(&plan, body);
+    let is_graphql_route =
+        matches!(request.path, "/graphql" | "/graphql/ws") || request.path == plan.endpoint_path;
+    if (request.method == "POST" || request.method == "GET") && is_graphql_route {
+        if request.method == "POST"
+            && !request
+                .content_type
+                .and_then(|value| value.split(';').next())
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+        {
+            return Ok(HttpProbeResponse::new(
+                415,
+                "application/json",
+                "{\"errors\":[{\"message\":\"application/json required\"}]}\n",
+            ));
+        }
+        if request.path == "/graphql/ws" {
+            if request.method == "POST" {
+                return handle_graphql_subscription_post(&plan, &request, authenticator);
             }
             return Ok(HttpProbeResponse::new(
                 426,
@@ -773,128 +823,162 @@ fn handle_graphql_sidecar_http_request(
                 "{\"error\":\"upgrade required: subscriptions use WebSocket transport at /graphql/ws\"}\n",
             ));
         }
-        if method == "GET" {
+        if request.method == "GET" {
             return Ok(HttpProbeResponse::new(
                 200,
                 "text/html; charset=utf-8",
                 render_graphiql(&plan.endpoint_path),
             ));
         }
-        return handle_graphql_post(&plan, body, live_executor);
+        return handle_graphql_post(&plan, &request, authenticator, live_executor);
     }
 
-    Ok(runtime.handle_http_bytes(request.as_bytes())?)
+    Ok(runtime.handle_http_bytes(request.raw_bytes())?)
 }
 
 fn handle_graphql_subscription_post(
     plan: &GraphqlSidecarPlan,
-    body: &str,
+    http_request: &ParsedHttpRequest<'_>,
+    authenticator: Option<&dyn GraphqlAuthenticator>,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
-    let body = body.trim();
-    if body.is_empty() {
-        return Ok(HttpProbeResponse::new(
-            400,
-            "application/json",
-            "{\"errors\":[{\"message\":\"empty GraphQL subscription body\"}]}\n",
-        ));
-    }
-    let query = extract_string_field(body, "query").ok_or_else(|| {
-        GraphqlSidecarError::MalformedQuery("missing subscription query field".to_string())
-    })?;
-    let claims_json = extract_string_field(body, "jwt_claims");
-    let mut request = GraphqlRequest::new(query);
-    if let Some(claims) = claims_json {
-        request = request.with_jwt_claims_json(claims);
-    }
+    let request = match parse_graphql_body(http_request.body) {
+        Ok(request) => request,
+        Err(error) => return Ok(graphql_error_response(&error)),
+    };
+    let identity = match authenticate_request(http_request.authorization, authenticator) {
+        Ok(identity) => identity,
+        Err(error) => {
+            log_closed_request_failure("authenticate", &error);
+            return Ok(graphql_error_response(&error));
+        }
+    };
 
     let mut handler = GraphqlHandler::new(plan.clone())?;
-    match handler.register_subscription(&request) {
-        Ok(subscription) => Ok(HttpProbeResponse::new(
-            200,
-            "application/json",
-            render_subscription_boundary(&subscription),
-        )),
-        Err(error) => Ok(HttpProbeResponse::new(
-            400,
-            "application/json",
-            format!(
-                "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                escape_json(&error.to_string())
-            ),
-        )),
+    if let Err(error) = handler.register_subscription(&request, &identity) {
+        return Ok(graphql_error_response(&error));
     }
+    Ok(HttpProbeResponse::new(
+        501,
+        "application/json",
+        "{\"errors\":[{\"message\":\"subscription transport unavailable\"}]}\n",
+    ))
 }
 
 fn handle_graphql_post(
     plan: &GraphqlSidecarPlan,
-    body: &str,
+    http_request: &ParsedHttpRequest<'_>,
+    authenticator: Option<&dyn GraphqlAuthenticator>,
     live_executor: Option<&mut GraphqlLiveExecutor>,
 ) -> Result<HttpProbeResponse, GraphqlSidecarError> {
-    let body = body.trim();
-    if body.is_empty() {
-        return Ok(HttpProbeResponse::new(
-            400,
-            "application/json",
-            "{\"errors\":[{\"message\":\"empty GraphQL body\"}]}\n",
+    let request = match parse_graphql_body(http_request.body) {
+        Ok(request) => request,
+        Err(error) => return Ok(graphql_error_response(&error)),
+    };
+    let identity = match authenticate_request(http_request.authorization, authenticator) {
+        Ok(identity) => identity,
+        Err(error) => {
+            log_closed_request_failure("authenticate", &error);
+            return Ok(graphql_error_response(&error));
+        }
+    };
+    let Some(executor) = live_executor else {
+        return Ok(graphql_error_response(
+            &GraphqlSidecarError::LiveExecutionRequired,
         ));
-    }
-    let query = extract_string_field(body, "query")
-        .ok_or_else(|| GraphqlSidecarError::MalformedQuery("missing query field".to_string()))?;
-    let claims_json = extract_string_field(body, "jwt_claims");
-    let operation_name = extract_string_field(body, "operationName");
-
-    let mut request = GraphqlRequest::new(query);
-    if let Some(claims) = claims_json {
-        request = request.with_jwt_claims_json(claims);
-    }
-    if let Some(name) = operation_name {
-        request.operation_name = Some(name);
-    }
+    };
 
     let mut handler = GraphqlHandler::new(plan.clone())?;
-    if let Some(executor) = live_executor {
-        if let Err(error) = handler.resolve(&request) {
-            return Ok(HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!(
-                    "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                    escape_json(&error.to_string())
-                ),
-            ));
-        }
-        return match executor.execute(&request) {
-            Ok(response_json) => Ok(HttpProbeResponse::new(
-                200,
-                "application/json",
-                format!("{response_json}\n"),
-            )),
-            Err(error) => Ok(HttpProbeResponse::new(
-                502,
-                "application/json",
-                format!(
-                    "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                    escape_json(&error.to_string())
-                ),
-            )),
-        };
+    if let Err(error) = handler.resolve(&request, &identity) {
+        return Ok(graphql_error_response(&error));
     }
-
-    match handler.resolve(&request) {
-        Ok(response) => Ok(HttpProbeResponse::new(
+    match executor.execute(&request, &identity) {
+        Ok(response_json) => Ok(HttpProbeResponse::new(
             200,
             "application/json",
-            format!("{}\n", response.data_json),
+            format!("{response_json}\n"),
         )),
-        Err(error) => Ok(HttpProbeResponse::new(
-            400,
-            "application/json",
-            format!(
-                "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                escape_json(&error.to_string())
-            ),
-        )),
+        Err(error) => {
+            log_closed_request_failure("execute", &error);
+            Ok(graphql_error_response(&error))
+        }
     }
+}
+
+fn log_closed_request_failure(stage: &'static str, error: &GraphqlSidecarError) {
+    let category = match error {
+        GraphqlSidecarError::AuthenticationRejected => "authentication-rejected",
+        GraphqlSidecarError::AuthenticationUnavailable => "authentication-unavailable",
+        GraphqlSidecarError::DatabaseUnavailable(stage) => stage,
+        GraphqlSidecarError::LiveExecutionRequired => "live-execution-required",
+        GraphqlSidecarError::TenantClaimMissing => "tenant-claim-missing",
+        _ => "request-rejected",
+    };
+    eprintln!("ai-blaise graphql request rejected: stage={stage} category={category}");
+}
+
+fn parse_graphql_body(body: &str) -> Result<GraphqlRequest, GraphqlSidecarError> {
+    let body = body.trim();
+    if body.is_empty() || body.len() > MAX_HTTP_BODY_BYTES {
+        return Err(GraphqlSidecarError::MalformedQuery(
+            "invalid request body".to_string(),
+        ));
+    }
+    let value: Value = serde_json::from_str(body)
+        .map_err(|_| GraphqlSidecarError::MalformedQuery("invalid JSON body".to_string()))?;
+    let object = value.as_object().ok_or_else(|| {
+        GraphqlSidecarError::MalformedQuery("request body must be an object".to_string())
+    })?;
+    if object.contains_key("jwt_claims") || object.contains_key("tenant_id") {
+        return Err(GraphqlSidecarError::BodyIdentityForbidden);
+    }
+    let body: GraphqlHttpBody = serde_json::from_str(body)
+        .map_err(|_| GraphqlSidecarError::MalformedQuery("invalid request fields".to_string()))?;
+    let mut request = GraphqlRequest::new(body.query);
+    request.variables = body.variables;
+    request.operation_name = body.operation_name;
+    Ok(request)
+}
+
+fn authenticate_request(
+    authorization: Option<&str>,
+    authenticator: Option<&dyn GraphqlAuthenticator>,
+) -> Result<GraphqlIdentity, GraphqlSidecarError> {
+    let authenticator = authenticator.ok_or(GraphqlSidecarError::AuthenticationUnavailable)?;
+    let authorization = authorization.ok_or(GraphqlSidecarError::AuthenticationRejected)?;
+    let mut fields = authorization.split_ascii_whitespace();
+    let scheme = fields
+        .next()
+        .ok_or(GraphqlSidecarError::AuthenticationRejected)?;
+    let token = fields
+        .next()
+        .ok_or(GraphqlSidecarError::AuthenticationRejected)?;
+    if !scheme.eq_ignore_ascii_case("Bearer") || fields.next().is_some() {
+        return Err(GraphqlSidecarError::AuthenticationRejected);
+    }
+    validate_bearer_token(token).map_err(|_| GraphqlSidecarError::AuthenticationRejected)?;
+    authenticator.authenticate(token)
+}
+
+fn graphql_error_response(error: &GraphqlSidecarError) -> HttpProbeResponse {
+    let (status, message) = match error {
+        GraphqlSidecarError::AuthenticationRejected => (401, "authentication rejected"),
+        GraphqlSidecarError::AuthenticationUnavailable
+        | GraphqlSidecarError::DatabaseUnavailable(_)
+        | GraphqlSidecarError::LiveExecutionRequired
+        | GraphqlSidecarError::MissingRuntimeDependency(_)
+        | GraphqlSidecarError::InvalidRuntimeDependency(_) => (503, "service unavailable"),
+        GraphqlSidecarError::BodyIdentityForbidden => {
+            (400, "request-body identity claims are forbidden")
+        }
+        GraphqlSidecarError::IntrospectionDisabled => (400, "introspection disabled"),
+        GraphqlSidecarError::TenantClaimMissing => (401, "authentication rejected"),
+        _ => (400, "invalid GraphQL request"),
+    };
+    HttpProbeResponse::new(
+        status,
+        "application/json",
+        format!("{{\"errors\":[{{\"message\":\"{message}\"}}]}}\n"),
+    )
 }
 
 pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), GraphqlSidecarError> {
@@ -903,6 +987,7 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
 
     canonical_graphql_execution_plan()?;
     let mut runtime = SidecarRuntime::ready("graphql");
+    let authenticator = AuthIntrospectionClient::from_env()?;
     let mut live_executor = GraphqlLiveExecutor::connect_from_env()?;
     let listen_addr = listen_addr_from_env(default_addr)?;
     let listener = TcpListener::bind(&listen_addr)?;
@@ -911,57 +996,33 @@ pub fn serve_graphql_sidecar_http_forever(default_addr: &str) -> Result<(), Grap
     for stream in listener.incoming() {
         let mut stream = stream?;
         let request = read_http_request(&mut stream)?;
-        let response =
-            handle_graphql_sidecar_http_request(&request, &mut runtime, live_executor.as_mut())
-                .unwrap_or_else(|error| {
-                    HttpProbeResponse::new(
-                        400,
-                        "application/json",
-                        format!(
-                            "{{\"errors\":[{{\"message\":\"{}\"}}]}}\n",
-                            escape_json(&error.to_string())
-                        ),
-                    )
-                });
+        let response = handle_graphql_sidecar_http_request(
+            request.as_slice(),
+            &mut runtime,
+            Some(&authenticator),
+            Some(&mut live_executor),
+        )
+        .unwrap_or_else(|error| graphql_error_response(&error));
         stream.write_all(response.to_http_string().as_bytes())?;
     }
     Ok(())
 }
 
-fn render_subscription_boundary(subscription: &GraphqlSubscription) -> String {
-    let channels = subscription
-        .notify_channels
-        .iter()
-        .map(|channel| format!("\"{}\"", escape_json(channel)))
-        .collect::<Vec<_>>()
-        .join(",");
-    let distributed_types = subscription
-        .distributed_types
-        .iter()
-        .map(|type_name| format!("\"{}\"", escape_json(type_name)))
-        .collect::<Vec<_>>()
-        .join(",");
-    format!(
-        "{{\"transport\":\"websocket\",\"protocol\":\"graphql-transport-ws\",\"subscription_field\":\"{}\",\"notify_channels\":[{}],\"distributed_types\":[{}]}}\n",
-        escape_json(&subscription.field),
-        channels,
-        distributed_types,
-    )
-}
-
 fn render_graphiql(endpoint: &str) -> String {
     format!(
-        "<!doctype html><html><head><title>ai-blaise GraphQL</title></head><body><pre>POST a JSON {{\\\"query\\\":...,\\\"jwt_claims\\\":...}} to {endpoint} to execute queries.</pre></body></html>\n"
+        "<!doctype html><html><head><title>ai-blaise GraphQL</title></head><body><pre>POST a JSON {{\\\"query\\\":...}} with an Authorization: Bearer header to {endpoint}.</pre></body></html>\n"
     )
 }
 
-fn read_http_request(stream: &mut std::net::TcpStream) -> Result<Vec<u8>, std::io::Error> {
+fn read_http_request(
+    stream: &mut std::net::TcpStream,
+) -> Result<Zeroizing<Vec<u8>>, std::io::Error> {
     use std::io::Read;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
-    let mut request = Vec::new();
-    let mut chunk = [0_u8; 8192];
+    let mut request = Zeroizing::new(Vec::new());
+    let mut chunk = Zeroizing::new([0_u8; 8192]);
     loop {
-        let read_len = stream.read(&mut chunk)?;
+        let read_len = stream.read(&mut chunk[..])?;
         if read_len == 0 {
             break;
         }
@@ -1001,7 +1062,12 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
-fn parse_http_request(request: &str) -> Result<(&str, &str, &str), GraphqlSidecarError> {
+fn parse_http_request(request: &[u8]) -> Result<ParsedHttpRequest<'_>, GraphqlSidecarError> {
+    if request.len() > MAX_HTTP_REQUEST_BYTES {
+        return Err(GraphqlSidecarError::MalformedHttpRequest);
+    }
+    let request =
+        std::str::from_utf8(request).map_err(|_| GraphqlSidecarError::MalformedHttpRequest)?;
     let (head, body) = request
         .split_once("\r\n\r\n")
         .or_else(|| request.split_once("\n\n"))
@@ -1017,24 +1083,133 @@ fn parse_http_request(request: &str) -> Result<(&str, &str, &str), GraphqlSideca
     let path = parts
         .next()
         .ok_or(GraphqlSidecarError::MalformedHttpRequest)?;
-    if !path.starts_with('/') {
+    let version = parts
+        .next()
+        .ok_or(GraphqlSidecarError::MalformedHttpRequest)?;
+    if parts.next().is_some()
+        || !path.starts_with('/')
+        || !matches!(version, "HTTP/1.0" | "HTTP/1.1")
+    {
         return Err(GraphqlSidecarError::MalformedHttpRequest);
     }
-    Ok((method, path, body))
-}
-
-fn escape_json(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    let mut authorization = None;
+    let mut content_length = None;
+    let mut content_type = None;
+    for line in head.lines().skip(1) {
+        if line.is_empty()
+            || line.starts_with([' ', '\t'])
+            || line
+                .bytes()
+                .any(|byte| byte.is_ascii_control() && byte != b'\t')
+        {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+        let (name, value) = line
+            .split_once(':')
+            .ok_or(GraphqlSidecarError::MalformedHttpRequest)?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("authorization") && authorization.replace(value).is_some() {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+        if name.eq_ignore_ascii_case("content-length")
+            && content_length
+                .replace(
+                    value
+                        .parse::<usize>()
+                        .map_err(|_| GraphqlSidecarError::MalformedHttpRequest)?,
+                )
+                .is_some()
+        {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+        if name.eq_ignore_ascii_case("content-type") && content_type.replace(value).is_some() {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err(GraphqlSidecarError::MalformedHttpRequest);
+        }
+    }
+    if body.len() > MAX_HTTP_BODY_BYTES
+        || content_length.is_some_and(|length| length != body.len())
+        || (method == "POST" && content_length.is_none())
+    {
+        return Err(GraphqlSidecarError::MalformedHttpRequest);
+    }
+    Ok(ParsedHttpRequest {
+        raw: request,
+        method,
+        path,
+        body,
+        authorization,
+        content_type,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct AcceptingAuthenticator;
+
+    impl GraphqlAuthenticator for AcceptingAuthenticator {
+        fn authenticate(&self, token: &str) -> Result<GraphqlIdentity, GraphqlSidecarError> {
+            if token != "header.token.value" {
+                return Err(GraphqlSidecarError::AuthenticationRejected);
+            }
+            Ok(GraphqlIdentity::canonical_fixture())
+        }
+    }
+
+    struct UnavailableAuthenticator;
+
+    impl GraphqlAuthenticator for UnavailableAuthenticator {
+        fn authenticate(&self, _token: &str) -> Result<GraphqlIdentity, GraphqlSidecarError> {
+            Err(GraphqlSidecarError::AuthenticationUnavailable)
+        }
+    }
+
+    fn runtime_dependency(name: &str) -> Option<String> {
+        match name {
+            GRAPHQL_DATABASE_URL_ENV => {
+                Some("postgresql://postgres@127.0.0.1/postgres".to_string())
+            }
+            AUTH_INTROSPECTION_URL_ENV => {
+                Some("https://auth.example.com/auth/introspect".to_string())
+            }
+            AUTH_CA_CERT_PATH_ENV => Some("/run/secrets/auth-ca.pem".to_string()),
+            AUTH_CLIENT_IDENTITY_PATH_ENV => Some("/run/secrets/graphql-client.pem".to_string()),
+            AUTH_EXPECTED_ISSUER_ENV => Some("https://issuer.example.com".to_string()),
+            AUTH_EXPECTED_AUDIENCE_ENV => Some("postgres".to_string()),
+            _ => None,
+        }
+    }
+
+    fn post_request(path: &str, body: &str, authorization: Option<&str>) -> Vec<u8> {
+        let authorization = authorization
+            .map(|value| format!("Authorization: {value}\r\n"))
+            .unwrap_or_default();
+        format!(
+            "POST {path} HTTP/1.1\r\nHost: local\r\nContent-Type: application/json\r\n{authorization}Content-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+        .into_bytes()
+    }
+
+    fn handle_with_auth(
+        request: &[u8],
+        authenticator: &dyn GraphqlAuthenticator,
+    ) -> HttpProbeResponse {
+        let mut runtime = SidecarRuntime::ready("graphql");
+        handle_graphql_sidecar_http_request(request, &mut runtime, Some(authenticator), None)
+            .expect("HTTP response")
+    }
 
     #[test]
     fn graphql_plan_validates_distributed_binding() {
@@ -1099,7 +1274,6 @@ mod tests {
         let plan = canonical_graphql_plan();
         let err = graphql_runtime_dependency_report(&plan, |name| match name {
             GRAPHQL_DATABASE_URL_ENV => Some("http://postgres".to_string()),
-            GRAPHQL_JWT_SECRET_ENV => Some("01234567890123456789012345678901".to_string()),
             _ => None,
         })
         .expect_err("invalid database url");
@@ -1109,17 +1283,25 @@ mod tests {
     #[test]
     fn runtime_dependency_report_names_pg_graphql_boundary() {
         let plan = canonical_graphql_plan();
-        let report = graphql_runtime_dependency_report(&plan, |name| match name {
-            GRAPHQL_DATABASE_URL_ENV => {
-                Some("postgresql://postgres@127.0.0.1/postgres".to_string())
-            }
-            GRAPHQL_JWT_SECRET_ENV => Some("01234567890123456789012345678901".to_string()),
-            _ => None,
-        })
-        .expect("runtime dependencies");
+        let report =
+            graphql_runtime_dependency_report(&plan, runtime_dependency).expect("dependencies");
 
         assert_eq!(report.database_url_env, GRAPHQL_DATABASE_URL_ENV);
-        assert_eq!(report.jwt_secret_env, GRAPHQL_JWT_SECRET_ENV);
+        assert_eq!(
+            report.auth_introspection_url_env,
+            AUTH_INTROSPECTION_URL_ENV
+        );
+        assert_eq!(report.auth_ca_cert_path_env, AUTH_CA_CERT_PATH_ENV);
+        assert_eq!(
+            report.auth_client_identity_path_env,
+            AUTH_CLIENT_IDENTITY_PATH_ENV
+        );
+        assert_eq!(report.auth_expected_issuer_env, AUTH_EXPECTED_ISSUER_ENV);
+        assert_eq!(
+            report.auth_expected_audience_env,
+            AUTH_EXPECTED_AUDIENCE_ENV
+        );
+        assert_eq!(report.auth_timeout_ms_env, AUTH_TIMEOUT_MS_ENV);
         assert_eq!(report.endpoint_path, "/graphql/v1");
         assert!(report.pg_graphql_extension_required);
     }
@@ -1128,9 +1310,10 @@ mod tests {
     fn resolve_renders_set_claims_and_resolve_sql() {
         let plan = canonical_graphql_plan();
         let mut handler = GraphqlHandler::new(plan).expect("handler");
+        let identity = GraphqlIdentity::canonical_fixture();
 
         let response = handler
-            .resolve(&canonical_graphql_request())
+            .resolve(&canonical_graphql_request(), &identity)
             .expect("resolve");
 
         let set_claims = response
@@ -1138,11 +1321,16 @@ mod tests {
             .set_jwt_claims_sql
             .as_deref()
             .expect("set_claims");
-        assert!(set_claims.starts_with("select set_config('request.jwt.claims',"));
-        assert!(response
-            .execution_plan
-            .resolve_sql
-            .contains("graphql.resolve"));
+        assert_eq!(
+            set_claims,
+            "select pg_catalog.set_config('request.jwt.claims', $1, true)"
+        );
+        assert_eq!(
+            response.execution_plan.resolve_sql,
+            "select graphql.resolve($1, $2::text::jsonb, $3)::text"
+        );
+        assert!(!set_claims.contains("tenant-a"));
+        assert!(!response.execution_plan.resolve_sql.contains("tenant-a"));
         assert_eq!(response.tenant_id.as_deref(), Some("tenant-a"));
         assert!(response
             .execution_plan
@@ -1156,12 +1344,12 @@ mod tests {
     fn resolve_rejects_introspection_when_disabled() {
         let plan = canonical_graphql_plan();
         let mut handler = GraphqlHandler::new(plan).expect("handler");
+        let identity = GraphqlIdentity::canonical_fixture();
 
-        let request = GraphqlRequest::new("query { __schema { types { name } } }")
-            .with_jwt_claims_json("{\"tenant_id\":\"tenant-a\"}");
+        let request = GraphqlRequest::new("query { __schema { types { name } } }");
 
         assert_eq!(
-            handler.resolve(&request),
+            handler.resolve(&request, &identity),
             Err(GraphqlSidecarError::IntrospectionDisabled)
         );
     }
@@ -1172,9 +1360,13 @@ mod tests {
         let mut handler = GraphqlHandler::new(plan).expect("handler");
 
         let request = GraphqlRequest::new("query { orderCollection { edges { node { id } } } }");
+        let empty_identity = GraphqlIdentity {
+            tenant_id: String::new(),
+            claims_json: "{}".to_string(),
+        };
 
         assert_eq!(
-            handler.resolve(&request),
+            handler.resolve(&request, &empty_identity),
             Err(GraphqlSidecarError::TenantClaimMissing)
         );
     }
@@ -1183,9 +1375,10 @@ mod tests {
     fn register_subscription_records_notify_channels() {
         let plan = canonical_graphql_plan();
         let mut handler = GraphqlHandler::new(plan).expect("handler");
+        let identity = GraphqlIdentity::canonical_fixture();
 
         let subscription = handler
-            .register_subscription(&canonical_graphql_subscription_request())
+            .register_subscription(&canonical_graphql_subscription_request(), &identity)
             .expect("subscription");
 
         assert!(subscription
@@ -1211,22 +1404,26 @@ mod tests {
     }
 
     #[test]
-    fn http_front_door_serves_graphql_query_and_graphiql() {
-        let body = r#"{"query":"query { orderCollection { edges { node { id } } } }","jwt_claims":"{\"tenant_id\":\"tenant-a\"}"}"#;
-        let request = format!(
-            "POST /graphql/v1 HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
-            body.len(),
-            body,
-        );
-        let response = handle_graphql_sidecar_http_bytes(request.as_bytes()).expect("post");
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.contains("\"namespace\":\"public_api\""));
-
+    fn public_http_front_door_serves_graphiql_but_fails_post_closed() {
         let get =
             handle_graphql_sidecar_http_bytes(b"GET /graphql HTTP/1.1\r\nHost: local\r\n\r\n")
                 .expect("get");
         assert_eq!(get.status_code, 200);
         assert!(get.body.contains("ai-blaise GraphQL"));
+        assert!(get.body.contains("Authorization: Bearer"));
+        assert!(!get.body.contains("jwt_claims"));
+
+        let request = post_request(
+            "/graphql/v1",
+            r#"{"query":"query { orderCollection { edges { node { id } } } }"}"#,
+            Some("Bearer header.token.value"),
+        );
+        let response = handle_graphql_sidecar_http_bytes(&request).expect("post");
+        assert_eq!(response.status_code, 503);
+        assert_eq!(
+            response.body,
+            "{\"errors\":[{\"message\":\"service unavailable\"}]}\n"
+        );
     }
 
     #[test]
@@ -1239,34 +1436,116 @@ mod tests {
     }
 
     #[test]
-    fn websocket_boundary_registers_subscription() {
-        let body = r#"{"query":"subscription { orderInserted { id total } }","jwt_claims":"{\"tenant_id\":\"tenant-a\"}"}"#;
-        let request = format!(
-            "POST /graphql/ws HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
-            body.len(),
-            body,
-        );
-        let response = handle_graphql_sidecar_http_bytes(request.as_bytes()).expect("ws boundary");
-
-        assert_eq!(response.status_code, 200);
-        assert!(response.body.contains("\"transport\":\"websocket\""));
-        assert!(response
-            .body
-            .contains("\"subscription_field\":\"orderInserted\""));
-        assert!(response.body.contains("public_api.public.orders"));
+    fn body_identity_is_forbidden_before_authentication() {
+        for field in ["jwt_claims", "tenant_id"] {
+            let body = format!(
+                "{{\"query\":\"query {{ orderCollection {{ edges {{ node {{ id }} }} }} }}\",\"{field}\":\"attacker\"}}"
+            );
+            let request = post_request("/graphql/v1", &body, Some("Bearer header.token.value"));
+            let response = handle_with_auth(&request, &AcceptingAuthenticator);
+            assert_eq!(response.status_code, 400);
+            assert!(response.body.contains("identity claims are forbidden"));
+            assert!(!response.body.contains("attacker"));
+            assert!(!response.body.contains("header.token.value"));
+        }
     }
 
     #[test]
-    fn extract_string_field_parses_nested_quotes_after_double_quote() {
-        let claims = "{\"tenant_id\":\"tenant-a\",\"role\":\"web_anon\"}";
+    fn query_routes_require_one_validated_bearer_and_live_execution() {
+        let body = r#"{"query":"query { orderCollection { edges { node { id } } } }","variables":{"count":3,"nested":{"safe":true}}}"#;
+
+        let missing = post_request("/graphql/v1", body, None);
+        let response = handle_with_auth(&missing, &AcceptingAuthenticator);
+        assert_eq!(response.status_code, 401);
+
+        for value in [
+            "Basic abc",
+            "Bearer",
+            "Bearer bad token",
+            "Bearer bad\\token",
+        ] {
+            let request = post_request("/graphql/v1", body, Some(value));
+            let response = handle_with_auth(&request, &AcceptingAuthenticator);
+            assert_eq!(response.status_code, 401);
+            assert!(!response.body.contains(value));
+        }
+
+        let accepted = post_request("/graphql/v1", body, Some("Bearer header.token.value"));
+        let response = handle_with_auth(&accepted, &AcceptingAuthenticator);
+        assert_eq!(response.status_code, 503);
+        assert!(!response.body.contains("tenant-a"));
+        assert!(!response.body.contains("header.token.value"));
+
+        let unavailable = handle_with_auth(&accepted, &UnavailableAuthenticator);
+        assert_eq!(unavailable.status_code, 503);
+        assert_eq!(unavailable.body, response.body);
+    }
+
+    #[test]
+    fn websocket_boundary_authenticates_then_fails_unimplemented_transport_closed() {
+        let body = r#"{"query":"subscription { orderInserted { id total } }"}"#;
+        let unauthorized = post_request("/graphql/ws", body, None);
+        let unauthorized = handle_with_auth(&unauthorized, &AcceptingAuthenticator);
+        assert_eq!(unauthorized.status_code, 401);
+
+        let request = post_request("/graphql/ws", body, Some("Bearer header.token.value"));
+        let response = handle_with_auth(&request, &AcceptingAuthenticator);
+
+        assert_eq!(response.status_code, 501);
         assert_eq!(
-            extract_string_field(claims, "tenant_id"),
-            Some("tenant-a".to_string())
+            response.body,
+            "{\"errors\":[{\"message\":\"subscription transport unavailable\"}]}\n"
         );
+        assert!(!response.body.contains("tenant-a"));
+    }
+
+    #[test]
+    fn http_parser_rejects_duplicate_authority_and_ambiguous_framing() {
+        let duplicate = b"POST /graphql/v1 HTTP/1.1\r\nAuthorization: Bearer first.token\r\nAuthorization: Bearer second.token\r\nContent-Length: 2\r\n\r\n{}";
         assert_eq!(
-            extract_string_field(claims, "role"),
-            Some("web_anon".to_string())
+            handle_graphql_sidecar_http_bytes(duplicate),
+            Err(GraphqlSidecarError::MalformedHttpRequest)
         );
-        assert_eq!(extract_string_field(claims, "missing"), None);
+        let duplicate_length =
+            b"POST /graphql/v1 HTTP/1.1\r\nContent-Length: 2\r\nContent-Length: 2\r\n\r\n{}";
+        assert_eq!(
+            handle_graphql_sidecar_http_bytes(duplicate_length),
+            Err(GraphqlSidecarError::MalformedHttpRequest)
+        );
+        let mismatched_length = b"POST /graphql/v1 HTTP/1.1\r\nContent-Length: 9\r\n\r\n{}";
+        assert_eq!(
+            handle_graphql_sidecar_http_bytes(mismatched_length),
+            Err(GraphqlSidecarError::MalformedHttpRequest)
+        );
+        let transfer_encoding = b"POST /graphql/v1 HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Type: application/json\r\n\r\n2\r\n{}\r\n0\r\n\r\n";
+        assert_eq!(
+            handle_graphql_sidecar_http_bytes(transfer_encoding),
+            Err(GraphqlSidecarError::MalformedHttpRequest)
+        );
+        let missing_length =
+            b"POST /graphql/v1 HTTP/1.1\r\nContent-Type: application/json\r\n\r\n{}";
+        assert_eq!(
+            handle_graphql_sidecar_http_bytes(missing_length),
+            Err(GraphqlSidecarError::MalformedHttpRequest)
+        );
+        let missing_content_type = b"POST /graphql/v1 HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}";
+        let response =
+            handle_graphql_sidecar_http_bytes(missing_content_type).expect("HTTP response");
+        assert_eq!(response.status_code, 415);
+    }
+
+    #[test]
+    fn graphql_body_parser_rejects_unknown_and_duplicate_fields() {
+        for body in [
+            r#"{"query":"query { ok }","unknown":true}"#,
+            r#"{"query":"query { first }","query":"query { second }"}"#,
+            r#"["query { ok }"]"#,
+        ] {
+            let result = parse_graphql_body(body);
+            assert!(
+                matches!(&result, Err(GraphqlSidecarError::MalformedQuery(_))),
+                "unexpected parse result for {body:?}: {result:?}"
+            );
+        }
     }
 }

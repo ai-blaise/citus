@@ -19,5 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Check license audit
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Test license audit failure boundaries
+        run: python3 ci/ai-blaise/license-check_test.py
+      - name: Check license audit against locked metadata
+        env:
+          AI_BLAISE_RELEASE_MODE: "1"
         run: bash ci/ai-blaise/license-check.sh

@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # FEATURE: API1 API2 API3 API4 API5 API6 EF1 EF2 EF4 EF5
-# Bounded process/socket smoke for sidecar API runtimes whose feature tests are
-# otherwise canonical/model-only.
+# Bounded process/socket smoke for sidecar API runtimes. GraphQL is deliberately
+# limited here to its canonical report and fail-closed Auth3 startup boundary;
+# its authenticated process/data-plane proof has a dedicated mTLS live smoke.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -238,28 +239,7 @@ def smoke_component_front_door(port, label):
         return
 
     if label == "graphql":
-        status, body = request(port, "GET", "/graphql")
-        assert status == 200, body
-        assert "ai-blaise GraphQL" in body, body
-        assert "/graphql/v1" in body, body
-
-        query = '{"query":"query { orderCollection { edges { node { id } } } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
-        status, body = request(port, "POST", "/graphql/v1", body=query)
-        assert status == 200, body
-        assert '"namespace":"public_api"' in body, body
-        assert '"tenant_id":"tenant-a"' in body, body
-
-        subscription = '{"query":"subscription { orderInserted { id total } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
-        status, body = request(port, "POST", "/graphql/ws", body=subscription)
-        assert status == 200, body
-        assert '"transport":"websocket"' in body, body
-        assert '"subscription_field":"orderInserted"' in body, body
-        assert "public_api.public.orders" in body, body
-
-        status, body = request(port, "GET", "/graphql/ws")
-        assert status == 426, body
-        assert "upgrade required" in body, body
-        return
+        fail("GraphQL requires the dedicated Auth3/mTLS/pg_graphql live smoke")
 
     if label == "edge-functions":
         status, body = request(port, "GET", "/functions")
@@ -305,6 +285,28 @@ def smoke_fail_closed(entry):
     run_expect_failure(
         [require_binary(package), "serve"],
         "invalid listen address",
+        env=env,
+    )
+
+
+def smoke_graphql_fail_closed(entry):
+    binary = require_binary(entry["package"])
+    run_expect_failure([binary, "definitely-not-a-command"], "unknown command")
+    env = os.environ.copy()
+    for name in (
+        "AI_BLAISE_GRAPHQL_DATABASE_URL",
+        "AI_BLAISE_GRAPHQL_LIVE_EXECUTION",
+        "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
+        "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE",
+        "AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS",
+    ):
+        env.pop(name, None)
+    run_expect_failure(
+        [binary, "serve"],
+        "missing runtime dependency: AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
         env=env,
     )
 
@@ -378,8 +380,11 @@ run(["cargo", "build", "-q"] + sum((["-p", package] for package in packages), []
 
 smoke_canonical_reports()
 for entry in COMPONENTS:
-    smoke_fail_closed(entry)
-    smoke_http_runtime(entry)
+    if entry["label"] == "graphql":
+        smoke_graphql_fail_closed(entry)
+    else:
+        smoke_fail_closed(entry)
+        smoke_http_runtime(entry)
 
 print("ai_blaise_citus sidecar API runtime smoke passed")
 PY

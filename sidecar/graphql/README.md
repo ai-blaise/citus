@@ -14,30 +14,58 @@ Implemented surface:
 
 - `GraphqlSidecarPlan`, `GraphqlSchemaBinding`, `DistributedGraphqlBinding`,
   and `GraphqlAuthPolicy` validation.
-- RLS/JWT tenant-claim enforcement before request planning.
+- Centralized Auth3 token introspection before request planning. Production
+  transport is HTTPS-only, verifies an explicitly mounted CA, requires a PEM
+  client identity for mTLS, applies a bounded total timeout, and never accepts
+  plaintext fallback.
+- Exactly one `Authorization: Bearer` token is accepted. `jwt_claims` and
+  `tenant_id` in the request body are rejected as untrusted identity input; the
+  tenant and complete PostgreSQL claims JSON come only from the validated
+  Auth3 response.
 - SQL rendering through the `graphql.resolve(...)` pg_graphql boundary with
-  request JWT claims installed through `set_config('request.jwt.claims', ...)`.
+  Auth3-validated claims installed through a bound
+  `pg_catalog.set_config('request.jwt.claims', $1, true)` parameter in the same
+  database transaction. Query, variables, and operation name are also bound
+  parameters rather than SQL-interpolated input.
 - Live PostgreSQL-backed query execution when
   `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1` is set and
   `AI_BLAISE_GRAPHQL_DATABASE_URL` points at a database with `pg_graphql`
-  installed.
+  installed. The process refuses to bind its listener unless all live database
+  and Auth3 transport settings are present and the mTLS credentials parse.
 - Deterministic persisted-plan and subscription registration state.
-- HTTP front door for `/healthz`, `/readyz`, `/metrics`, GraphiQL, `/graphql/v1`,
-  and the `/graphql/ws` subscription transport boundary.
+- HTTP front door for `/healthz`, `/readyz`, `/metrics`, GraphiQL, and
+  `/graphql/v1`. `/graphql/ws` authenticates the bearer token but returns 501;
+  there is no implemented WebSocket/subscription transport yet.
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- run-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical`.
 - `cargo run -p ai_blaise_citus_sidecar_graphql -- check-runtime-dependencies`.
 - `bash ci/ai-blaise/sidecar-api-runtime-smoke.sh` builds the binary and verifies probe/drain fail-closed behavior.
-- `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` boots the service and verifies live TCP probes, query/subscription boundary responses, malformed input handling, and fail-closed database/JWT dependency validation.
+- `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` verifies static plans,
+  dependency reporting, HTTPS-only Auth3 configuration, and fail-closed
+  startup when mounted mTLS credentials are absent.
 - `bash ci/ai-blaise/graphql-pggraphql-live-smoke.sh` boots a live PostgreSQL
-  `pg_graphql` data plane, starts the sidecar in live execution mode, and
-  verifies tenant-scoped `graphql.resolve(...)` results through `/graphql/v1`.
-- `bash ci/ai-blaise/api-trio-runtime-smoke.sh` boots the service and verifies
-  readiness, query handling, and subscription-boundary registration over real
-  TCP.
+  `pg_graphql` data plane and the real Auth3 sidecar. Auth3 is bound only to
+  loopback behind an ephemeral TLS endpoint that requires a client
+  certificate. The smoke issues two real tokens, proves tenant-scoped
+  `graphql.resolve(...)` results, body-claim rejection, revoked-token
+  rejection, and failure of a TLS client without a certificate.
+- `bash ci/ai-blaise/api-trio-runtime-smoke.sh` proves the GraphQL process
+  refuses to start without its Auth3 transport while covering the other API
+  processes independently.
+
+Required GraphQL runtime settings are
+`AI_BLAISE_GRAPHQL_DATABASE_URL`, `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1`,
+`AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL` (an exact HTTPS
+`/auth/introspect` URL), `AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH`,
+`AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH`,
+`AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER`, and
+`AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE`. The optional
+`AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS` is bounded to at most five seconds.
 
 These contracts cover `FEATURE: API3`, `FEATURE: API4`, and `FEATURE: API5`.
-`FEATURE: API4` has separate production-ready SQL evidence. The API3
-production-ready boundary covers live query execution and tenant RLS; durable
-subscription fan-out, multi-worker GraphQL planning, and Kubernetes traffic are
-outside this sidecar proof.
+`FEATURE: API4` has separate SQL evidence. The API3 smoke is bounded
+single-process evidence, not a high-availability or promotion receipt. Durable
+Auth3 identity/session persistence, Auth3 replica/revocation consistency,
+production certificate issuance and rotation, Kubernetes traffic policy,
+multi-worker GraphQL planning, and the subscription transport remain unproven
+or unimplemented and must not be described as production-ready.

@@ -1,11 +1,11 @@
 # Bundled-extension microbench feature map
 
-This file is the canonical source-side anchor for the 26 `MB<n>` feature IDs
-that name the always-on bundled-extension microbenchmarks. The
-`features-doc-check.sh` and `production-readiness-check.sh` audits scan the
-`scripts/` tree for `FEATURE:` markers; the executable surface for each
-feature lives under `benchmarks/microbenches/<ext>/`, and the documentation
-register entry lives under `docs/ai-blaise/NEW_FEATURES.md`.
+This file is the source-side identity anchor for the `MB<n>` bundled-extension
+microbenchmark artifacts. The Rust feature register's `check-source-coverage`
+command scans `scripts/` for these markers; it proves identity coverage only.
+The executable surface lives under `benchmarks/microbenches/<ext>/`, and the
+machine register is `docs/features.tsv`. These entries are evidence-only
+artifacts, not separate product features or accepted performance measurements.
 
 | Feature ID | Extension          | Microbench directory                          |
 | ---------- | ------------------ | --------------------------------------------- |

@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
+cargo run --locked --quiet -p ai_blaise_feature_register -- check
+
 python3 <<'PY'
 import datetime as dt
 import pathlib
@@ -11,21 +13,12 @@ import re
 import sys
 
 ROOT = pathlib.Path(".")
-FEATURES = ROOT / "docs/ai-blaise/NEW_FEATURES.md"
 DEPLOY_README = ROOT / "deploy/README.md"
 UPSTREAM_SYNC = ROOT / "docs/ai-blaise/UPSTREAM_SYNC.md"
 IMAGE_OVERVIEW = ROOT / "images/README.ai-blaise.md"
 PG_OVERLAY_README = ROOT / "images/citus-pg-overlay/README.md"
 AUDIT = ROOT / "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 RUNBOOKS = ROOT / "docs/ai-blaise/RUNBOOKS"
-
-PRODUCTION_STATUSES = {
-    "ga",
-    "production",
-    "production-ready",
-    "production ready",
-    "stable",
-}
 
 
 def read(path: pathlib.Path) -> str:
@@ -49,40 +42,6 @@ def compact(text: str) -> str:
 
 failures = []
 
-features_text = read(FEATURES)
-heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
-status_re = re.compile(r"^\*\*Status\*\*:\s*(.+)$", re.M)
-production_evidence_re = re.compile(r"^Production evidence:", re.M)
-headings = list(heading_re.finditer(features_text))
-
-for index, heading in enumerate(headings):
-    body_start = heading.start()
-    body_end = headings[index + 1].start() if index + 1 < len(headings) else len(features_text)
-    body = features_text[body_start:body_end]
-    status_match = status_re.search(body)
-    if not status_match:
-        continue
-    feature_id = heading.group(1)
-    status = status_match.group(1).strip()
-    normalized_status = status.lower()
-    production_evidence_match = production_evidence_re.search(body)
-    if normalized_status in PRODUCTION_STATUSES:
-        if not production_evidence_match:
-            add_failure(
-                FEATURES,
-                f"{feature_id} is {status!r} but lacks a Production evidence field",
-                line_for(features_text, heading.start()),
-            )
-    elif production_evidence_match:
-        add_failure(
-            FEATURES,
-            f"{feature_id} is {status!r} but uses the Production evidence label; use Evidence boundary until the status is promoted",
-            line_for(features_text, body_start + production_evidence_match.start()),
-        )
-
-if not headings:
-    add_failure(FEATURES, "no feature headings found in NEW_FEATURES.md")
-
 docs_paths = []
 for root in (ROOT / "docs/ai-blaise", ROOT / "deploy"):
     if root.exists():
@@ -94,12 +53,12 @@ for path in (IMAGE_OVERVIEW, PG_OVERLAY_README):
 docs_paths = sorted(set(docs_paths))
 
 blocked_outside_audit = {
-    "production-verified": "use Status: production-ready plus measured evidence, or describe a contract/smoke boundary",
+    "production-verified": "describe the exact source-bound evidence and its scope; a status label cannot certify production",
     "production certified by v2-acceptance": "V2 acceptance is modeled release gating, not production certification",
     "v2 acceptance proves production": "V2 acceptance must not be cited as production evidence",
-    "full plan is production-ready": "the whole overlay is not production-ready while alpha features remain",
-    "entire plan is production-ready": "the whole overlay is not production-ready while alpha features remain",
-    "all custom features are production-ready": "feature status must remain per-entry and evidence-backed",
+    "full plan is production-ready": "whole-overlay qualification is not established by source, model, or inventory checks",
+    "entire plan is production-ready": "whole-overlay qualification is not established by source, model, or inventory checks",
+    "all custom features are production-ready": "each claim needs current-source full-scope qualification, not a label",
 }
 
 for path in docs_paths:
@@ -174,6 +133,10 @@ else:
 if "not live pr evidence" not in compact(upstream_text):
     add_failure(UPSTREAM_SYNC, "UPSTREAM_SYNC.md must state that the snapshot is not live PR evidence")
 
+audit_text = read(AUDIT)
+if "Whole-Repo Production Readiness Audit" not in audit_text:
+    add_failure(AUDIT, "missing whole-repo audit section")
+
 if failures:
     for path, line, message in failures:
         print(f"{path}:{line}: {message}", file=sys.stderr)
@@ -181,10 +144,9 @@ if failures:
 
 print(
     "docs_evidence_boundary_check\t"
-    f"feature_headings={len(headings)}\t"
     f"docs_scanned={len(docs_paths)}\t"
     f"upstream_snapshot={snapshot_match.group(1) if snapshot_match else 'missing'}\t"
-    "alpha_production_labels=0\t"
+    "authority=docs-and-inventory-only\t"
     "deploy_digest_boundary=true"
 )
 PY

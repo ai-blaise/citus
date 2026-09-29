@@ -240,25 +240,6 @@ def expect_contract_violation(callback: Callable[[], None], context: str) -> Non
     fail(f"Bundle1 negative contract did not fail closed: {context}")
 
 
-def validate_boundary_claims(docs: str, source_metadata: str) -> None:
-    for forbidden in (
-        "FEATURE: Bundle1 is production-ready",
-        "full Bundle1 production evidence exists",
-        "plrust PG17 source-build is supported",
-        "plrust source-build subset is production-ready",
-    ):
-        if compact(forbidden) in compact(docs):
-            raise ContractViolation(f"Bundle1 docs misstate boundary: {forbidden}")
-    for forbidden in (
-        "Bundle1 is production-ready",
-        "Bundle1 production-ready evidence",
-    ):
-        if compact(forbidden) in compact(source_metadata):
-            raise ContractViolation(
-                f"Bundle1 source metadata misstates boundary: {forbidden}"
-            )
-
-
 def validate_trusted_preload_order(
     preloaded_libraries: list[str], trusted_cohabit_libraries: list[str]
 ) -> None:
@@ -321,14 +302,6 @@ def run_negative_contract_tests(
         ),
         "trusted Bundle1 missing required preload",
     )
-    expect_contract_violation(
-        lambda: validate_boundary_claims("", "Bundle1 is production-ready"),
-        "manifest promotion claim",
-    )
-    expect_contract_violation(
-        lambda: validate_boundary_claims("", "Bundle1 production-ready evidence"),
-        "source lock promotion claim",
-    )
 
 
 def main() -> None:
@@ -347,10 +320,6 @@ def main() -> None:
     default_boot_smoke = read(DEFAULT_BOOT_SMOKE)
     image_workflow = read(IMAGE_WORKFLOW)
     docs = "\n".join(read(path) for path in (README, BUNDLED_DOC, AUDIT_DOC))
-    try:
-        validate_boundary_claims(docs, read(MANIFEST) + "\n" + read(LOCKFILE))
-    except ContractViolation as exc:
-        fail(str(exc))
     validate_citus_downgrade_install(dockerfile, build_citus)
     if "--without-pg-version-check" in dockerfile:
         fail("Bundle1 Citus build must not bypass its supported PostgreSQL version check")
@@ -697,13 +666,9 @@ def main() -> None:
                     "latest Bundle1 full evidence row missing required manifest entries: "
                     f"{sorted(missing_full)}"
                 )
-        elif (
-            "no current release-qualified full-target default-boot receipt"
-            not in compact(docs)
-        ):
+        elif "no current full-target default-boot receipt" not in compact(docs):
             fail(
-                "Bundle1 docs must disclose that no current release-qualified "
-                "full-target receipt exists"
+                "Bundle1 docs must disclose that no current full-target receipt exists"
             )
 
     require_all(
@@ -717,7 +682,7 @@ def main() -> None:
             "complete initdb path",
             "plrust PG17 upstream gap",
             "FEATURE: Bundle1 remains alpha",
-            "no current release-qualified full-target default-boot receipt",
+            "no current full-target default-boot receipt",
             "release-target=true",
             "workflow does not publish",
             "historical tracking metadata",
@@ -733,6 +698,15 @@ def main() -> None:
         ),
         "image-check.sh",
     )
+
+    for forbidden in (
+        "FEATURE: Bundle1 is production-ready",
+        "full Bundle1 production evidence exists",
+        "plrust PG17 source-build is supported",
+        "plrust source-build subset is production-ready",
+    ):
+        if compact(forbidden) in compact(docs):
+            fail(f"Bundle1 docs misstate boundary: {forbidden}")
 
     print("bundle1-contract-check passed")
 

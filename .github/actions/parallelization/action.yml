@@ -1,10 +1,13 @@
 name: 'Parallelization matrix'
+description: Generate the requested number of upstream test partitions.
 inputs:
   count:
+    description: Number of partitions in the generated matrix.
     required: false
-    default: 32
+    default: '32'
 outputs:
   json:
+    description: JSON include matrix with one-based partition IDs.
     value: ${{ steps.generate_matrix.outputs.json }}
 runs:
   using: "composite"

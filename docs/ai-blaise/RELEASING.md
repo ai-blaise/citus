@@ -26,7 +26,7 @@ records (`mode=scaffold` or `scaffold-only` notes) fail the release path so a
 missing `psql`, Postgres endpoint, or benchmark driver cannot masquerade as
 measured performance evidence.
 
-Those checks are release prerequisites, not a waiver for alpha features. A
+Those checks are release prerequisites, not release qualification. A
 production release must also pass:
 
 ```bash
@@ -37,13 +37,19 @@ PERF_EVIDENCE_MODE=release BENCH_RESULT_TAG=release \
   make -f Makefile.ai-blaise performance-evidence-release-check
 ```
 
-The production-release mode intentionally fails while any release-scope custom
-feature is still alpha, contract-only, or model-only without measured evidence.
-The production gap audit keeps V2 acceptance models, canonical contract
-runners, and smoke-test scaffolding from being misread as production evidence
-unless the corresponding feature entry has measured runtime evidence and an
-explicit status promotion. The release gate monitor adds parallel matrix
-monitoring for PR checks while preserving that local evidence boundary.
+Production-release mode delegates to the Rust `release-gaps` command and
+currently fails with per-ID scope and blockers because the trusted
+current-source release evidence verifier is unimplemented. Historical
+`production-ready` claims, `implemented` maturity, and local evidence-file
+references cannot authorize release. Exit 1 is a valid but unqualified
+inventory; exit 2 is invalid input. Do not waive either failure.
+
+The production gap audit is a static source/document check, not a runtime
+receipt verifier. V2 acceptance models, canonical contract runners, and
+smoke-test scaffolding are not measured evidence. The release gate monitor
+adds parallel matrix monitoring for PR checks but cannot supply missing
+artifact provenance, functional coverage, comparative performance,
+recovery/upgrade evidence, licensing, or operational signoff.
 
 Before publishing images, run the lightweight release-operator packaging gate:
 
@@ -88,7 +94,8 @@ Release artifacts must include:
   above, verified with `REQUIRE_PUBLISHED_DIGESTS=1`
 - SBOMs
 - signed container images
-- updated `NEW_FEATURES.md`
+- updated `docs/features.tsv` and, until parser migration is complete,
+  `NEW_FEATURES.md`
 - updated `BENCHMARKS.md`
 - `images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv`
   matching the shipped companion SQL files

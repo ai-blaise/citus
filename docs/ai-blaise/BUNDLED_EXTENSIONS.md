@@ -9,8 +9,7 @@ binary-package required extension on top of `postgres:17-bookworm`;
 extensions. The light target is partial B1/PR evidence and excludes the
 lockfile's `full` rows; only the full target may claim
 `full-bundle-required-minus-plrust` and release eligibility. There is no
-current release-qualified full-target default-boot receipt from a reviewed
-clean commit, so release/publishing stays blocked.
+current full-target default-boot receipt, so release/publishing stays blocked.
 The fast default `bundle1-contract` image stays a manifest/init contract for
 cheap PR coverage and does not carry production claims by itself.
 The plrust PG17 upstream gap is unchanged (upstream main still pg13-pg16 with
@@ -78,7 +77,7 @@ only full carries `full-bundle-required-minus-plrust` and
 `release-target=true`.
 
 Both source-build targets copy the canonical preload file to
-`/etc/postgresql/ai-blaise/shared-preload-libraries.conf` and append a
+`/etc/postgresql/ai-blaise/shared-preload-libraries.conf` and appends a
 fail-closed `include` to the `postgresql.conf.sample` used by initdb. The
 `ci-image.yml` PG17 leg explicitly builds `bundle1-final-light` and invokes
 `ci/ai-blaise/bundle1-default-boot-smoke.sh` without a postgres command or
@@ -87,7 +86,7 @@ minus source-build lock rows marked `full`. A separate push-time full build
 runs the same smoke against every required manifest entry. Both modes check
 the applied `pg_file_settings.sourcefile`, preload GUCs, init completion,
 readiness, installed Citus control version and `ai_blaise_citus` version
-`0.1.2`, target/scope/release labels, and expected source Git SHA/tree-state.
+`0.1.1`, target/scope/release labels, and expected source Git SHA/tree-state.
 The workflow does not publish an image.
 
 ## pg_cron Cohabitation Subset

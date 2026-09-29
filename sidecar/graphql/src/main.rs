@@ -104,11 +104,18 @@ fn run_dependency_check() {
         eprintln!("graphql: runtime dependency check failed: {error}");
         process::exit(1);
     });
-    println!("database_url_env	jwt_secret_env	endpoint	pg_graphql_required");
     println!(
-        "{}	{}	{}	{}",
+        "database_url_env\tauth_introspection_url_env\tauth_ca_cert_path_env\tauth_client_identity_path_env\tauth_expected_issuer_env\tauth_expected_audience_env\tauth_timeout_ms_env\tendpoint\tpg_graphql_required"
+    );
+    println!(
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         report.database_url_env,
-        report.jwt_secret_env,
+        report.auth_introspection_url_env,
+        report.auth_ca_cert_path_env,
+        report.auth_client_identity_path_env,
+        report.auth_expected_issuer_env,
+        report.auth_expected_audience_env,
+        report.auth_timeout_ms_env,
         report.endpoint_path,
         report.pg_graphql_extension_required,
     );

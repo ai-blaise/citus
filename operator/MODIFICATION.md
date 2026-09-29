@@ -1,5 +1,30 @@
 # operator Modifications
 
+## 2026-09-04 — Authoritative CRD catalog and fail-closed serving
+
+The operator now derives one `print-crds` multi-document YAML stream from the
+same typed 14-controller catalog used to launch watch loops. Tests bind every
+document to the exact `citus.ai-blaise.io/v2` GVK, namespaced scope, plural,
+structural spec schema, and the exact presence and fields of each implemented
+status schema. The three existing focused CRD print commands remain stable.
+The older count of 17 described plan-level Rust specs, not runnable Kubernetes
+controllers; `ShardGroup`, `Branch`, and `Vectorizer` therefore remain explicit
+non-exported contract models.
+
+`AI_BLAISE_OPERATOR_CONTROLLERS` is now parsed into a typed subset of that same
+catalog. Unset or sole `all` selects all 14; canonical snake-case names can be
+comma-separated, and the existing `cituscluster`/`citus_cluster` aliases are
+retained. Empty entries, duplicates, mixed `all`, and unknown names terminate
+startup instead of falling through to every controller.
+
+The `serve` path no longer starts an always-ready probe before Kubernetes is
+usable. It validates selection, loads credentials, and successfully calls the
+API-server version endpoint before binding probes. A missing client or
+unreachable API exits nonzero without a probe, and clean, failed, or panicked
+controller task termination is process-terminal so stale readiness cannot
+survive a dead controller set. This is a source/test hardening receipt; live
+rollout behavior still requires current in-cluster evidence.
+
 ## 2026-09-04 — Production-bounded CitusCluster reconciliation
 
 Implemented the coordinator-worker `CitusCluster` apply path behind `FEATURE:

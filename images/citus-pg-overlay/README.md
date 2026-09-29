@@ -9,9 +9,8 @@
 
 CloudNativePG operand image contract for Citus, the companion SQL fallback,
 and the bundled extension policy. `FEATURE: Bundle1 remains alpha` because its
-declared required manifest has no current release-qualified full-target proof
-from a reviewed clean commit. Historical light and dirty-context full receipts
-remain bounded observations only. `bundle1-final-light` is the
+declared required manifest has no current full-target proof. Historical light
+receipts remain bounded observations only. `bundle1-final-light` is the
 bounded B1/PR target and deliberately excludes the lockfile's `full` entries;
 it carries `light-required-subset-minus-heavy-and-plrust` and is never a
 release target. `bundle1-final-full` adds pg_search and plv8, is the only image

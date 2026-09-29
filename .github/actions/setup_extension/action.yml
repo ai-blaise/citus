@@ -1,11 +1,13 @@
 name: setup_extension
+description: Install the built extension and configure the upstream test workspace.
 inputs:
   pg_major:
+    description: PostgreSQL major for the build artifact; defaults to the runner environment.
     required: false
   skip_installation:
+    description: Set to 'true' to configure without extracting the installation artifact.
     required: false
-    default: false
-    type: boolean
+    default: 'false'
 runs:
   using: composite
   steps:

@@ -1,6 +1,8 @@
 name: save_logs_and_results
+description: Retain upstream regression logs, differences, and failure stack traces.
 inputs:
   folder:
+    description: Name of the uploaded log artifact.
     required: false
     default: "log"
 runs:

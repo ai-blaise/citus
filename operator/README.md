@@ -8,13 +8,30 @@
 > and guarded by `ci/ai-blaise/production-gap-audit.sh`.
 
 Rust operator contract model for Citus topology, CRDs, sidecars, and ai-blaise
-feature orchestration. The `serve` path starts the shared
-health/readiness/metrics runtime and, when Kubernetes client configuration is
-available, starts kube-rs watch loops for `CitusCluster`, `Migration`,
+feature orchestration. The `serve` path validates the typed controller
+selection, constructs a Kubernetes client, and proves API-server reachability
+before it starts the shared health/readiness/metrics runtime and kube-rs watch
+loops for `CitusCluster`, `Migration`,
 `Tenant`, `Region`, `SurvivalGoal`, `Backup`, `Hypertable`, `Federation`,
 `SearchIndex`, `Webhook`, `Function`, `ScheduledRepack`, `ConflictPolicy`, and
-`Sidecar`. Without a cluster client it keeps the probe runtime up and logs the
-controller startup failure instead of claiming a live reconciliation surface.
+`Sidecar`. Missing credentials, client construction failures, API readiness
+failures, invalid controller selectors, and any terminal controller task now
+exit nonzero; none can leave a probe-only process advertising readiness.
+
+`cargo run -p ai_blaise_citus_operator -- print-crds` emits one structural,
+namespaced `citus.ai-blaise.io/v2` CRD document for each of those 14 actual
+controllers. The existing `print-citus-cluster-crd`, `print-sidecar-crd`, and
+`print-hypertable-crd` commands remain available for focused workflows. Six
+currently implemented controller CRDs expose typed status subresources
+(`CitusCluster`, `Migration`, `Hypertable`, `ScheduledRepack`,
+`ConflictPolicy`, and `Sidecar`); the other eight exports truthfully remain
+spec-only until their status mutation paths are implemented.
+
+`AI_BLAISE_OPERATOR_CONTROLLERS` may be unset (all controllers), the sole token
+`all`, or a comma-separated subset of the 14 canonical snake-case controller
+names. `cituscluster` remains an alias for `citus_cluster`. Empty selectors,
+duplicates, mixed `all`, and unknown names fail startup instead of silently
+launching every controller.
 
 Implemented kube-rs controller modules currently cover `CitusCluster`,
 `Migration`, `Tenant`, `Region`, `SurvivalGoal`, `Backup`, `Hypertable`,

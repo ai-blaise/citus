@@ -1,15 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# FEATURE: D10 — static source checks must permit evidence-based demotion.
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
 
+run_feature_source_coverage() {
+  cargo run --locked --quiet -p ai_blaise_feature_register -- \
+    check-source-coverage --repo "${repo_root}"
+}
+
+if ! feature_coverage_output="$(run_feature_source_coverage)"; then
+  echo "production-gap-audit: feature register source coverage validation failed" >&2
+  exit 1
+fi
+if ! grep -Fqx $'feature_register_source_coverage\tpassed' <<<"${feature_coverage_output}" \
+  || ! grep -Fqx $'claim_boundary\tidentity-coverage-only' <<<"${feature_coverage_output}"; then
+  echo "production-gap-audit: feature register source coverage lost its identity-only contract" >&2
+  exit 1
+fi
+
 # After the 2026-05-22 Helm chart fold into ai-blaise/command-center, this audit
 # verifies only the source-of-truth pieces that remain in this repo: the machine
-# derived feature inventory in NEW_FEATURES.md, the audit doc overclaim
-# guardrail, and the deploy/k8s/-may-not-be-reintroduced negative gate. Chart
-# contract / digest / argo / sidecar HA assertions moved with the chart to
-# ai-blaise/command-center.
+# validated feature identity inventory, direct source/runtime/wiring contracts,
+# the audit doc overclaim guardrail, and the deploy/k8s/-may-not-be-reintroduced
+# negative gate. Chart contract / digest / argo / sidecar HA assertions moved
+# with the chart to ai-blaise/command-center.
 
 python3 <<'PY'
 import json
@@ -18,7 +35,7 @@ import re
 import sys
 
 ROOT = pathlib.Path(".")
-DOCS = ROOT / "docs/ai-blaise/NEW_FEATURES.md"
+LEGACY_DOCS = ROOT / "docs/ai-blaise/NEW_FEATURES.md"
 AUDIT = ROOT / "docs/ai-blaise/PRODUCTION_READINESS_AUDIT.md"
 RELEASING = ROOT / "docs/ai-blaise/RELEASING.md"
 RUNBOOK = ROOT / "docs/ai-blaise/RUNBOOKS/production.md"
@@ -50,6 +67,8 @@ OPERATOR_RECONCILERS_BATCH_C_SMOKE = ROOT / "ci/ai-blaise/operator-reconcilers-b
 COMPANION_RUNTIME_DEPTH_A_SMOKE = ROOT / "ci/ai-blaise/companion-runtime-depth-a-smoke.sh"
 GRAPHQL_POSTGREST_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/graphql-postgrest-runtime-smoke.sh"
 GRAPHQL_PGGRAPHQL_LIVE_SMOKE = ROOT / "ci/ai-blaise/graphql-pggraphql-live-smoke.sh"
+GRAPHQL_SIDECAR_LIB = ROOT / "sidecar/graphql/src/lib.rs"
+AUTH_INTROSPECTION_CLIENT_LIB = ROOT / "sidecar/auth_client/src/lib.rs"
 POSTGREST_LIVE_DATA_PLANE_SMOKE = ROOT / "ci/ai-blaise/postgrest-live-data-plane-smoke.sh"
 EDGE_DENO_LIVE_SMOKE = ROOT / "ci/ai-blaise/edge-functions-deno-live-smoke.sh"
 EDGE_BUN_LIVE_SMOKE = ROOT / "ci/ai-blaise/edge-functions-bun-live-smoke.sh"
@@ -59,6 +78,7 @@ OBSERVABILITY_WORKFLOW = ROOT / ".github/workflows/ci-observability-contracts.ym
 SIDECAR_REALTIME_SMOKE = ROOT / "ci/ai-blaise/sidecar-realtime-smoke.sh"
 SIDECAR_REALTIME_README = ROOT / "sidecar/realtime/README.md"
 STORAGE_RUNTIME_SMOKE = ROOT / "ci/ai-blaise/storage-sidecar-runtime-smoke.sh"
+STORAGE_SIDECAR_LIB = ROOT / "sidecar/storage/src/lib.rs"
 POOL_PROXY_SMOKE = ROOT / "ci/ai-blaise/pool-proxy-smoke.sh"
 SQL_EXTENSION_SMOKE = ROOT / "ci/ai-blaise/sql-extension-smoke.sh"
 POOL_ROUTING_SECURITY_SMOKE = ROOT / "ci/ai-blaise/pool-routing-security-smoke.sh"
@@ -77,8 +97,8 @@ CITUS_PATCH_AUDIT = ROOT / "ci/ai-blaise/citus-patch-production-audit.sh"
 RUNBOOK_CHECK = ROOT / "ci/ai-blaise/runbook-command-check.sh"
 RELEASE_HARDENING_SMOKE = ROOT / "ci/ai-blaise/release-hardening-runbook-smoke.sh"
 CANARY_UPGRADE_SMOKE = ROOT / "ci/ai-blaise/canary-upgrade-rollback-smoke.sh"
-UPGRADE_MANIFEST = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv"
 UPGRADE_ROLLBACK_GUARDRAIL = ROOT / "ci/ai-blaise/upgrade-rollback-guardrails.sh"
+UPGRADE_MANIFEST = ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus-upgrade-manifest.tsv"
 K8S_GUARDRAIL_RENDERER = ROOT / "deploy/contracts/render_k8s_guardrails.py"
 K8S_GUARDRAIL_MANIFEST = ROOT / "deploy/contracts/k8s-production-guardrails.yaml"
 K8S_GUARDRAIL_KUSTOMIZATION = ROOT / "deploy/contracts/kustomization.yaml"
@@ -130,20 +150,6 @@ BUNDLE1_LOCK = ROOT / "images/citus-pg-overlay/bundle1-source-build.lock.tsv"
 BUNDLE1_CONTRACT_CHECK = ROOT / "ci/ai-blaise/bundle1-contract-check.py"
 IMAGE_CHECK = ROOT / "ci/ai-blaise/image-check.sh"
 
-SOURCE_ROOTS = [
-    "companion",
-    "sidecar",
-    "pool",
-    "operator",
-    "e2e",
-    "tools",
-    "patches",
-    "deploy",
-    "images",
-    "scripts",
-]
-
-
 def fail(message: str) -> None:
     sys.stderr.write(message + "\n")
     sys.exit(1)
@@ -159,111 +165,12 @@ def compact(text: str) -> str:
     return " ".join(text.split()).lower()
 
 
-def source_text() -> str:
-    chunks = []
-    for root_name in SOURCE_ROOTS:
-        root = ROOT / root_name
-        if not root.exists():
-            continue
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            if ".git" in path.parts or "target" in path.parts:
-                continue
-            try:
-                chunks.append(path.read_text(encoding="utf-8", errors="ignore"))
-            except Exception:
-                continue
-    return "\n".join(chunks)
-
-
-def feature_section(docs: str, feature_id: str) -> str:
-    heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
-    headings = list(heading_re.finditer(docs))
-    for index, heading in enumerate(headings):
-        if heading.group(1) != feature_id:
-            continue
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(docs)
-        return docs[heading.start():end]
-    fail(f"missing feature heading in NEW_FEATURES.md: {feature_id}")
-
-
-def feature_entries(docs: str):
-    heading_re = re.compile(r"^###\s+([A-Za-z][A-Za-z0-9]*):\s+(.+)$", re.M)
-    status_re = re.compile(r"^\*\*Status\*\*:\s*([A-Za-z-]+)\s*$", re.M)
-    headings = list(heading_re.finditer(docs))
-    entries = []
-    for index, heading in enumerate(headings):
-        end = headings[index + 1].start() if index + 1 < len(headings) else len(docs)
-        body = docs[heading.start():end]
-        status_match = status_re.search(body)
-        entries.append(
-            {
-                "id": heading.group(1),
-                "status": status_match.group(1).lower() if status_match else "",
-                "body": body,
-            }
-        )
-    return entries
-
-
-docs = read(DOCS)
-audit = read(AUDIT)
-source = source_text()
-
-source_ids = set(re.findall(r"FEATURE:\s+([A-Za-z][A-Za-z0-9]*)", source))
-entries = feature_entries(docs)
-entry_ids = [entry["id"] for entry in entries]
-doc_ids = set(entry_ids)
-
-if not source_ids:
-    fail("no FEATURE: markers found in source")
-
-missing_from_doc = source_ids - doc_ids
-if missing_from_doc:
-    fail(
-        "source FEATURE markers missing from NEW_FEATURES.md: "
-        + ", ".join(sorted(missing_from_doc))
-    )
-
-missing_from_source = doc_ids - source_ids
-if missing_from_source:
-    fail(
-        "NEW_FEATURES.md references FEATURE ids missing from source: "
-        + ", ".join(sorted(missing_from_source))
-    )
-
-duplicates = sorted({feature_id for feature_id in entry_ids if entry_ids.count(feature_id) > 1})
-if duplicates:
-    fail("duplicate feature headings in NEW_FEATURES.md: " + ", ".join(duplicates))
-
-missing_status = sorted(entry["id"] for entry in entries if not entry["status"])
-if missing_status:
-    fail("feature headings missing Status fields: " + ", ".join(missing_status))
-
-supported_statuses = {"alpha", "production-ready"}
-unexpected_statuses = sorted(
-    {entry["status"] for entry in entries if entry["status"] not in supported_statuses}
+legacy_docs = (
+    LEGACY_DOCS.read_text(encoding="utf-8", errors="ignore")
+    if LEGACY_DOCS.is_file()
+    else ""
 )
-if unexpected_statuses:
-    fail("unsupported feature Status values: " + ", ".join(unexpected_statuses))
-
-production_entries = [entry for entry in entries if entry["status"] == "production-ready"]
-alpha_entries = [entry for entry in entries if entry["status"] == "alpha"]
-source_only_ids = source_ids - doc_ids
-
-status_by_id = {entry["id"]: entry["status"] for entry in entries}
-entry_by_id = {entry["id"]: entry for entry in entries}
-for feature_id in ("C6", "C7", "C8"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} branch lifecycle must be production-ready once live kind+CSI snapshot evidence is wired")
-if status_by_id.get("MR3") != "production-ready":
-    fail("MR3 must be production-ready once live multi-worker regional row-placement evidence is wired")
-if status_by_id.get("MR9") != "production-ready":
-    fail("MR9 must be production-ready once live regional failover smoke evidence is wired")
-for feature_id in ("PGC1", "PGC2"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready once patched PG17+Citus runtime evidence is wired")
+audit = read(AUDIT)
 
 pgc_truth = "\n".join(
     read(path)
@@ -273,7 +180,6 @@ pgc_truth = "\n".join(
         PGC_PROBE_C,
         PGC_PROBE_SQL,
         MAKEFILE,
-        DOCS,
         AUDIT,
         PG_OVERLAY_README,
         POSTGRES_PATCH_SERIES,
@@ -305,20 +211,6 @@ for phrase in (
 ):
     if compact(phrase) not in compact(pgc_truth):
         fail(f"PGC1/PGC2 patched-core runtime boundary missing truth phrase: {phrase}")
-for feature_id in ("PGC1", "PGC2"):
-    section = feature_section(docs, feature_id)
-    for phrase in (
-        "Production evidence:",
-        "postgres-core-patches-live-smoke.sh",
-        "Citus build-against-patched-`pg_config`",
-        "PG18",
-        "full Bundle1 operand image",
-    ):
-        if compact(phrase) not in compact(section):
-            fail(f"{feature_id} docs lost patched-core production boundary phrase: {phrase}")
-    if compact("alpha-with-placeholder") in compact(section):
-        fail(f"{feature_id} docs still claim alpha placeholder status")
-
 audit_compact = compact(audit)
 
 sidecar_coldtier_smoke = read(SIDECAR_COLDTIER_SMOKE)
@@ -326,26 +218,6 @@ sidecar_coldtier_lib = read(SIDECAR_COLDTIER_LIB)
 sidecar_coldtier_main = read(SIDECAR_COLDTIER_MAIN)
 coldtier_makefile_text = read(MAKEFILE)
 sidecar_workflow = read(SIDECAR_WORKFLOW)
-
-for feature_id in ("R1", "R5", "R9", "Search8"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} cold-tier local file materialization must be production-ready")
-    section = compact(feature_section(docs, feature_id))
-    for phrase in (
-        "Production evidence:",
-        "ci/ai-blaise/sidecar-coldtier-runtime-smoke.sh",
-        "run-local-file-materialization-canonical",
-        "local `file://`",
-        "materialized_artifact_count=4",
-        "materialized_bytes=1408",
-        "object_store_io_attempted=false",
-        "citus_cold_read_serving=false",
-        "S3/GCS/Azure object-store",
-        "pageserver deployment",
-        "Citus cold-read serving",
-    ):
-        if compact(phrase) not in section:
-            fail(f"{feature_id} docs lost cold-tier production boundary phrase: {phrase}")
 
 for phrase in (
     "run-local-file-materialization-canonical",
@@ -404,77 +276,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing cold-tier boundary phrase: {phrase}")
 
-for pattern in (
-    r"current feature inventory contains\s+\d+\s+source\s+`feature:`\s+markers",
-    r"\d+\s+narrow headings are\s+`status:\s*production-ready`",
-    r"other\s+\d+\s+feature headings remain\s+`status:\s*alpha`",
-):
-    if re.search(pattern, audit_compact):
-        fail(
-            "PRODUCTION_READINESS_AUDIT.md must not hard-code machine-derived "
-            "feature inventory counts"
-        )
-
-for phrase in (
-    "feature inventory is machine-derived",
-    "do not restate source/heading/status counts in prose",
-    "production_gap_audit",
-    "source_feature_ids",
-    "feature_headings",
-    "production_ready",
-    "alpha_headings",
-):
-    if compact(phrase) not in audit_compact:
-        fail(
-            "PRODUCTION_READINESS_AUDIT.md must document the machine-derived "
-            f"inventory contract: {phrase}"
-        )
-
-if len(production_entries) + len(alpha_entries) != len(entries):
-    fail(
-        "computed feature status counts do not cover every NEW_FEATURES.md heading"
-    )
-
-d1_section = feature_section(docs, "D1")
-m8_section = feature_section(docs, "M8")
-b5_section = feature_section(docs, "B5")
-for phrase in (
-    "**Status**: production-ready",
-    "explicit `--state-dir`",
-    "json and tsv outputs are deterministic",
-    "local `dev-lifecycle.audit.tsv` log",
-    "not evidence for docker/kind startup",
-):
-    if compact(phrase) not in compact(d1_section):
-        fail(f"D1 citusctl dev lifecycle production boundary missing phrase: {phrase}")
-for phrase in (
-    "**Status**: production-ready",
-    "M8 is production-ready for two real binary paths",
-    "citusctl plan/apply apply <manifest>",
-    "kubectl apply --dry-run=server",
-    "deterministic `k8s-apply-*` plan id",
-    "requires apply to match that rendered plan id",
-    "k8s-manifest-apply.audit.tsv",
-    "live-kubernetes-manifest-apply",
-    "does not claim Docker/kind lifecycle orchestration",
-    "deterministic JSON/TSV output",
-    "local audit append",
-):
-    if compact(phrase) not in compact(m8_section):
-        fail(f"M8 citusctl plan/apply boundary missing phrase: {phrase}")
-for phrase in (
-    "**Status**: production-ready",
-    "citusctl plan/apply time-travel <target_time>",
-    "strict RFC3339 UTC calendar validation",
-    "rejects ahead-of-now targets",
-    "rejects targets older than the explicit staleness window",
-    "deterministic `time-travel-*` plan id",
-    "time-travel-intent.audit.tsv",
-    "time-travel-intent-validation-only",
-    "does not execute follower reads",
-):
-    if compact(phrase) not in compact(b5_section):
-        fail(f"B5 citusctl time-travel boundary missing phrase: {phrase}")
 for phrase in (
     "explicit `--state-dir` invocations",
     "deterministic JSON/TSV output",
@@ -612,9 +413,7 @@ for phrase in (
 branch_lifecycle_smoke = read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-smoke.sh") + read(ROOT / "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh")
 branch_scale_live_smoke = read(ROOT / "ci/ai-blaise/operator-branch-scale-to-zero-live-smoke.sh")
 r2_truth = compact(
-    feature_section(docs, "R2")
-    + "\n"
-    + audit
+    audit
     + "\n"
     + branch_lifecycle_smoke
     + "\n"
@@ -624,8 +423,6 @@ r2_truth = compact(
     + "\n"
     + read(OPERATOR_WORKFLOW)
 )
-if status_by_id.get("R2") != "production-ready":
-    fail("R2 scale-to-zero compute must be production-ready after live Kubernetes scale-down evidence")
 for phrase in (
     "operator-branch-lifecycle-smoke.sh",
     "operator-branch-scale-to-zero-live-smoke.sh",
@@ -646,12 +443,9 @@ for phrase in (
 ):
     if compact(phrase) not in r2_truth:
         fail(f"R2 scale-to-zero production boundary missing truth phrase: {phrase}")
-r12_section = feature_section(docs, "R12")
 r12_smoke = read(SHARD_TEMPERATURE_RANKING_LIVE_SMOKE)
 r12_truth = compact(
-    r12_section
-    + "\n"
-    + audit
+    audit
     + "\n"
     + r12_smoke
     + "\n"
@@ -663,10 +457,7 @@ r12_truth = compact(
     + "\n"
     + read(COMPANION_WORKFLOW)
 )
-if status_by_id.get("R12") != "production-ready":
-    fail("R12 per-shard temperature ranking must be production-ready after live Citus catalog ranking evidence")
 for phrase in (
-    "companion/src/shard_temperature.rs",
     "run-shard-temperature-ranking-canonical",
     "run-shard-temperature-ranking-sql-canonical",
     "shard-temperature-ranking-live-smoke.sh",
@@ -684,7 +475,6 @@ for phrase in (
     "cold_shards=1",
     "automatic_tier_movement=false",
     "coldtier_moves_executed=false",
-    "does not collect production telemetry",
     "does not claim telemetry collection",
     "does not claim automatic tier movement",
     "does not claim cold-tier artifact moves",
@@ -695,13 +485,7 @@ for phrase in (
         fail(f"R12 temperature ranking production boundary missing truth phrase: {phrase}")
 
 columnar_tiering_truth = compact(
-    feature_section(docs, "L7")
-    + "\n"
-    + feature_section(docs, "R3")
-    + "\n"
-    + feature_section(docs, "R8")
-    + "\n"
-    + audit
+    audit
     + "\n"
     + read(ROOT / "companion/src/columnar_tiering.rs")
     + "\n"
@@ -713,11 +497,7 @@ columnar_tiering_truth = compact(
     + "\n"
     + read(COMPANION_WORKFLOW)
 )
-for feature_id in ("L7", "R3", "R8"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready after live Citus columnar tiering evidence")
 for phrase in (
-    "companion/src/columnar_tiering.rs",
     "run-columnar-tiering-canonical",
     "run-columnar-tiering-sql-canonical",
     "columnar-tiering-live-smoke.sh",
@@ -759,9 +539,7 @@ for phrase in ("columnar-tiering-live-smoke", "ci/ai-blaise/columnar-tiering-liv
 
 
 cross_tier_query_truth = compact(
-    feature_section(docs, "L10")
-    + "\n"
-    + audit
+    audit
     + "\n"
     + read(ROOT / "companion/src/cross_tier_query.rs")
     + "\n"
@@ -773,10 +551,7 @@ cross_tier_query_truth = compact(
     + "\n"
     + read(COMPANION_WORKFLOW)
 )
-if status_by_id.get("L10") != "production-ready":
-    fail("L10 must be production-ready after live Citus cross-tier query execution evidence")
 for phrase in (
-    "companion/src/cross_tier_query.rs",
     "run-cross-tier-query-canonical",
     "run-cross-tier-query-sql-canonical",
     "cross-tier-query-live-smoke.sh",
@@ -820,12 +595,9 @@ if "run-cross-tier-query-canonical" not in read(COMPANION_WORKFLOW):
 if "run-cross-tier-query-sql-canonical" not in read(COMPANION_WORKFLOW):
     fail("ci-companion workflow must run the cross-tier query SQL renderer")
 
-regional_section = feature_section(docs, "S8") + "\n" + feature_section(docs, "S12")
 regional_smoke = read(REGIONAL_PLACEMENT_LIVE_SMOKE)
 regional_truth = compact(
-    regional_section
-    + "\n"
-    + audit
+    audit
     + "\n"
     + regional_smoke
     + "\n"
@@ -837,11 +609,7 @@ regional_truth = compact(
     + "\n"
     + read(COMPANION_WORKFLOW)
 )
-for feature_id in ("S8", "S12"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} regional placement catalog guard must be production-ready after live Citus/PostgreSQL evidence")
 for phrase in (
-    "companion/src/regional_placement.rs",
     "run-regional-placement-canonical",
     "run-regional-placement-sql-canonical",
     "regional-placement-live-smoke.sh",
@@ -873,9 +641,7 @@ for phrase in (
         fail(f"S8/S12 regional placement production boundary missing truth phrase: {phrase}")
 
 mr3_truth = compact(
-    feature_section(docs, "MR3")
-    + "\n"
-    + audit
+    audit
     + "\n"
     + regional_smoke
     + "\n"
@@ -886,8 +652,6 @@ mr3_truth = compact(
     + read(MAKEFILE)
 )
 for phrase in (
-    "**Status**: production-ready",
-    "companion/src/regional_row_placement.rs",
     "run-regional-row-placement-canonical",
     "run-regional-row-placement-sql-canonical",
     "regional-placement-live-smoke.sh",
@@ -907,19 +671,15 @@ for phrase in (
     "automatic repartition scheduling",
     "regional traffic routing",
     "regional failover",
-    "MR9 is production-ready for the bounded two-region drill",
     "gate-close:",
     "regional-placement-live-smoke",
 ):
     if compact(phrase) not in mr3_truth:
         fail(f"MR3 regional row-placement production boundary missing truth phrase: {phrase}")
 
-transaction_state_section = feature_section(docs, "T13") + "\n" + feature_section(docs, "T14")
 transaction_state_smoke = read(TRANSACTION_STATE_LIVE_SMOKE)
 transaction_state_truth = compact(
-    transaction_state_section
-    + "\n"
-    + audit
+    audit
     + "\n"
     + transaction_state_smoke
     + "\n"
@@ -931,11 +691,7 @@ transaction_state_truth = compact(
     + "\n"
     + read(COMPANION_WORKFLOW)
 )
-for feature_id in ("T13", "T14"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} transaction-state smoke must be production-ready after live Citus transaction evidence")
 for phrase in (
-    "companion/src/transaction_state.rs",
     "run-transaction-state-canonical",
     "run-transaction-state-sql-canonical",
     "transaction-state-live-smoke.sh",
@@ -983,7 +739,7 @@ for phrase in (
 if "operator-branch-lifecycle-smoke.sh" not in read(OPERATOR_WORKFLOW):
     fail("ci-operator workflow must run operator-branch-lifecycle-smoke.sh")
 
-branch_lifecycle_truth = compact(docs + "\n" + audit + "\n" + branch_lifecycle_smoke)
+branch_lifecycle_truth = compact(audit + "\n" + branch_lifecycle_smoke)
 for phrase in (
     "ci/ai-blaise/operator-branch-lifecycle-smoke.sh",
     "ci/ai-blaise/operator-branch-lifecycle-live-smoke.sh",
@@ -995,20 +751,30 @@ for phrase in (
     if compact(phrase) not in branch_lifecycle_truth:
         fail(f"Branch lifecycle docs must preserve production-ready evidence boundary: {phrase}")
 
-multiregion_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "ci/ai-blaise/operator-multiregion-contracts-smoke.sh"))
+multiregion_truth = compact(
+    audit
+    + "\n"
+    + read(ROOT / "ci/ai-blaise/operator-multiregion-contracts-smoke.sh")
+)
 for phrase in (
     "ci/ai-blaise/operator-multiregion-contracts-smoke.sh",
     "RegionalRowPlacementPlan",
     "live_k8s_exercised=false",
     "GeoIP pool routing",
     "regional failover",
-    "MR9 is production-ready for the bounded two-region drill",
 ):
     if compact(phrase) not in multiregion_truth:
         fail(f"Multi-region docs must preserve alpha evidence boundary: {phrase}")
 
+global_overclaim_patterns = (
+    "full plan is production-ready",
+    "entire plan is production-ready",
+    "all custom features are production-ready",
+    "production certified by v2-acceptance",
+    "v2 acceptance proves production",
+)
+
 for path in (
-    DOCS,
     AUDIT,
     RELEASING,
     RUNBOOK,
@@ -1038,20 +804,20 @@ for path in (
     SIDECAR_REALTIME_SMOKE,
     SIDECAR_REALTIME_README,
     STORAGE_RUNTIME_SMOKE,
+    STORAGE_SIDECAR_LIB,
     POOL_PROXY_SMOKE,
     POOL_ROUTING_SECURITY_SMOKE,
     PLACEMENT_GENERATION_UDF_SMOKE,
 ):
     text = read(path)
-    for pattern in (
-        "full plan is production-ready",
-        "entire plan is production-ready",
-        "all custom features are production-ready",
-        "production certified by v2-acceptance",
-        "v2 acceptance proves production",
-    ):
+    for pattern in global_overclaim_patterns:
         if compact(pattern) in compact(text):
             fail(f"{path} contains overclaiming wording: {pattern}")
+
+if legacy_docs:
+    for pattern in global_overclaim_patterns:
+        if compact(pattern) in compact(legacy_docs):
+            fail(f"{LEGACY_DOCS} contains overclaiming wording: {pattern}")
 
 
 # Bundle1 remains alpha until the declared required manifest has a current full
@@ -1066,7 +832,6 @@ bundle1_truth = "\n".join(
     for path in (
         BUNDLED_EXTENSIONS_DOC,
         PG_OVERLAY_README,
-        DOCS,
         AUDIT,
         SQL_EXTENSION_SMOKE,
         IMAGE_CHECK,
@@ -1093,7 +858,7 @@ for phrase in (
 
 bundle1_docs_truth = "\n".join(
     read(path)
-    for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, DOCS, AUDIT)
+    for path in (BUNDLED_EXTENSIONS_DOC, PG_OVERLAY_README, AUDIT)
 )
 for pattern in (
     "FEATURE: Bundle1 is production-ready",
@@ -1106,31 +871,7 @@ for pattern in (
 if "feature: bundle1 remains alpha" not in compact(bundle1_docs_truth):
     fail("Bundle1 docs must retain alpha status until full default-boot proof")
 
-# A10/A11 SQL-visible contract guardrail: both features are production-ready
-# under the live-provider-execution-safety-validated boundary. This audit pins
-# their NEW_FEATURES status so a regression to alpha would fail the gate.
-entry_status = {entry["id"]: entry["status"] for entry in entries}
-for feature_id in ("A10", "A11"):
-    if entry_status.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready once live AI SQL execution evidence is wired")
-
-section_a10 = feature_section(docs, "A10")
-section_a11 = feature_section(docs, "A11")
-for phrase in (
-    "live-provider-execution",
-    "http+jsonb live POST",
-    "production-ready",
-):
-    if compact(phrase) not in compact(section_a10):
-        fail(f"A10 docs must record live-provider-execution evidence: {phrase}")
-for phrase in (
-    "live-provider-execution-safety-validated",
-    "safety validator",
-    "statement_timeout",
-    "production-ready",
-):
-    if compact(phrase) not in compact(section_a11):
-        fail(f"A11 docs must record safety-validated-execution evidence: {phrase}")
+# A10/A11 SQL-visible source and test wiring are not release evidence.
 for phrase in (
     "A10 and A11 are production-ready",
     "live-provider-execution-safety-validated",
@@ -1153,13 +894,8 @@ coordinatorless_mx_live_smoke = read(COORDINATORLESS_MX_LIVE_SMOKE)
 companion_contracts = read(COMPANION_CONTRACTS)
 companion_workflow = read(COMPANION_WORKFLOW)
 
-if status_by_id.get("S4") != "production-ready":
-    fail("S4 must be Status: production-ready once live Citus MX worker-entry and pool-entry evidence is wired")
-section_s4 = feature_section(docs, "S4")
 s4_truth = compact(
-    section_s4
-    + "\n"
-    + audit
+    audit
     + "\n"
     + coordinatorless_mx_live_smoke
     + "\n"
@@ -1169,22 +905,6 @@ s4_truth = compact(
     + "\n"
     + read(ROOT / "operator/src/reconcile/citus_cluster.rs")
 )
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/coordinatorless-mx-live-smoke.sh",
-    "Citus MX metadata sync",
-    "worker entry point",
-    "pool proxy",
-    "Custom Scan (Citus Adaptive)",
-    "Task Count: 1",
-    "coordinator bootstrap removal",
-    "dynamic shard-aware pool routing",
-    "multi-shard plan-leader execution",
-    "Kubernetes reconciliation",
-    "WAN or cross-region behavior",
-):
-    if compact(phrase) not in compact(section_s4):
-        fail(f"S4 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: S4",
     "POSTGRES_HOST_AUTH_METHOD=trust",
@@ -1225,24 +945,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S4 boundary phrase: {phrase}")
 
-if status_by_id.get("S5") != "production-ready":
-    fail("S5 must be Status: production-ready once live multi-process Raft transport evidence is wired")
-section_s5 = feature_section(docs, "S5")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/sidecar-raft-smoke.sh",
-    "three separate `ai_blaise_citus_sidecar_raft serve` OS processes",
-    "/raft/campaign",
-    "/raft/propose",
-    "/raft/message",
-    "/raft/status",
-    "networked-placement-intent",
-    "follower proposals",
-    "operator-driven membership changes",
-    "Citus placement synchronization",
-):
-    if compact(phrase) not in compact(section_s5):
-        fail(f"S5 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "networked_raft_transport=passed",
     "start_raft_node worker-a",
@@ -1273,25 +975,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S5 boundary phrase: {phrase}")
 
-if status_by_id.get("S9") != "production-ready":
-    fail("S9 must be Status: production-ready once live HLC follower-read gate evidence is wired")
-section_s9 = feature_section(docs, "S9")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/sidecar-hlc-smoke.sh",
-    "`ai_blaise_citus_sidecar_hlc serve`",
-    "/clock/tick",
-    "/clock/observe",
-    "/closed_ts",
-    "/follower_read",
-    "HTTP 409",
-    "unknown peers fail closed",
-    "MVCC snapshot execution",
-    "replica query routing",
-    "planner integration",
-):
-    if compact(phrase) not in compact(section_s9):
-        fail(f"S9 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "hlc_live_gate=passed",
     "/clock/tick",
@@ -1325,31 +1008,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing S9 boundary phrase: {phrase}")
 
-if status_by_id.get("MR6") != "production-ready":
-    fail("MR6 must be Status: production-ready once live HLC time-travel gate evidence is wired")
-section_mr6 = feature_section(docs, "MR6")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/sidecar-hlc-smoke.sh",
-    "`ai_blaise_citus_sidecar_hlc serve`",
-    "/clock/tick",
-    "/clock/observe",
-    "/closed_ts",
-    "/follower_read",
-    "HTTP 409",
-    "unknown peers fail closed",
-    "closed_timestamp_time_travel_gate=passed",
-    "follower_read_as_of_closed_served=true",
-    "follower_read_newer_than_closed_rejected=true",
-    "closed_ts_peer_exchange_observed=true",
-    "MVCC snapshot execution",
-    "replica query routing",
-    "stale-read SQL syntax",
-    "planner integration",
-    "Kubernetes reconciliation",
-):
-    if compact(phrase) not in compact(section_mr6):
-        fail(f"MR6 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: S9/MR6",
     "hlc_live_gate=passed",
@@ -1389,35 +1047,6 @@ for phrase in (
         fail(f"PRODUCTION_READINESS_AUDIT.md missing MR6 boundary phrase: {phrase}")
 
 
-if status_by_id.get("Edge1") != "production-ready":
-    fail("Edge1 must be Status: production-ready once live edge-read HLC gate evidence is wired")
-section_edge1 = feature_section(docs, "Edge1")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/sidecar-hlc-smoke.sh",
-    "`ai_blaise_citus_sidecar_hlc serve`",
-    "AI_BLAISE_HLC_EDGE_REPLICAS",
-    "/closed_ts",
-    "/clock/tick",
-    "/clock/observe",
-    "/edge_read",
-    "HTTP 409",
-    "edge_bounded_staleness_gate=passed",
-    "edge_read_as_of_closed_served=true",
-    "edge_read_newer_than_closed_rejected=true",
-    "edge_read_too_stale_rejected=true",
-    "edge_read_replica_mismatch_rejected=true",
-    "edge_unknown_region_rejected=true",
-    "Edge replica provisioning",
-    "POP/WAN network deployment",
-    "SQL/MVCC snapshot execution",
-    "planner integration",
-    "data-plane query routing",
-    "failover automation",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_edge1):
-        fail(f"Edge1 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: S9/MR6/Edge1",
     "FEATURE: Edge1",
@@ -1466,13 +1095,8 @@ for phrase in (
         fail(f"PRODUCTION_READINESS_AUDIT.md missing Edge1 boundary phrase: {phrase}")
 
 
-if status_by_id.get("Edge2") != "production-ready":
-    fail("Edge2 must be Status: production-ready once fail-closed libsql research guard evidence is wired")
-section_edge2 = feature_section(docs, "Edge2")
 edge2_truth = compact(
-    section_edge2
-    + "\n"
-    + audit
+    audit
     + "\n"
     + read(EDGE2_LIBSQL_GUARD_SMOKE)
     + "\n"
@@ -1487,15 +1111,12 @@ edge2_truth = compact(
     + makefile
 )
 for phrase in (
-    "Production evidence:",
     "docs/ai-blaise/ADR/0009-libsql-read-tier-research-guard.md",
     "run-libsql-read-tier-guard-canonical",
     "edge2-libsql-research-guard-smoke.sh",
     "edge2_libsql_research_guard_smoke",
     "guard_status=fail-closed",
     "libsql production read tier",
-    "promotion evidence requirements",
-    "forbidden runtime claims",
     "live_execution_claims=0",
     "replication_adapter_claimed=false",
     "workload_isolation_claimed=false",
@@ -1525,24 +1146,6 @@ if "edge2-libsql-research-guard-smoke.sh" not in companion_workflow:
 if "companion-edge2-libsql-research-guard-smoke" not in makefile:
     fail("Makefile.ai-blaise must wire companion-edge2-libsql-research-guard-smoke")
 
-if status_by_id.get("T5") != "production-ready":
-    fail("T5 must be Status: production-ready once networked txn-status Raft evidence is wired")
-section_t5 = feature_section(docs, "T5")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/txn-status-networked-raft-smoke.sh",
-    "three separate `ai_blaise_citus_sidecar_raft serve` OS processes",
-    "`ai_blaise_citus_sidecar_txn_status serve`",
-    "AI_BLAISE_TXN_RAFT_LEADER_ADDR",
-    "stage:txn-live-raft-1:worker-a",
-    "commit:txn-live-raft-1",
-    "follower-backed replication failures fail closed",
-    "Citus distributed executor",
-    "PostgreSQL-core commit timestamp patches",
-    "Kubernetes operator wiring",
-):
-    if compact(phrase) not in compact(section_t5):
-        fail(f"T5 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "txn_status_networked_raft=passed",
     "AI_BLAISE_TXN_RAFT_LEADER_ADDR",
@@ -1582,21 +1185,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing T5 boundary phrase: {phrase}")
 
-if status_by_id.get("F4") != "production-ready":
-    fail("F4 must be Status: production-ready once live postgres_fdw rotation evidence is wired")
-section_f4 = feature_section(docs, "F4")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/fdw-credential-rotation-live-smoke.sh",
-    "old_password_rejected=true",
-    "new_password_succeeded=true",
-    "plan_secret_literals=false",
-    "postgres_fdw_disconnect_all()",
-    "Managed secret backends",
-    "Kubernetes `ExternalSecret`",
-):
-    if compact(phrase) not in compact(section_f4):
-        fail(f"F4 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "old_password_rejected=true",
     "new_password_succeeded=true",
@@ -1637,23 +1225,6 @@ for phrase in (
     if compact(phrase) not in audit_compact:
         fail(f"PRODUCTION_READINESS_AUDIT.md missing F4 boundary phrase: {phrase}")
 
-if status_by_id.get("M4") != "production-ready":
-    fail("M4 must be Status: production-ready once live schema drift evidence is wired")
-section_m4 = feature_section(docs, "M4")
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/schema-drift-live-smoke.sh",
-    "missing_column",
-    "type_mismatch",
-    "nullability_mismatch",
-    "unexpected_column",
-    "clean_schema_zero_drift=true",
-    "information_schema.columns",
-    "Remediation planning",
-    "operator apply behavior",
-):
-    if compact(phrase) not in compact(section_m4):
-        fail(f"M4 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "CREATE TEMP TABLE ai_blaise_expected_schema_columns",
     "information_schema.columns",
@@ -1762,7 +1333,7 @@ for phrase in (
     if compact(phrase) not in compact(benchmarks_doc):
         fail(f"BENCHMARKS.md missing performance evidence release wording: {phrase}")
 
-realtime_docs = "\n".join([docs, audit, read(SIDECAR_REALTIME_README)])
+realtime_docs = "\n".join([audit, read(SIDECAR_REALTIME_README)])
 for phrase in (
     "runtime_boundary=single-node-raw-ws-cdc-ingest",
     "websocket_network_exercised=true",
@@ -1790,9 +1361,7 @@ for phrase in (
 
 sidecar_cdc_smoke = read(SIDECAR_CDC_SMOKE)
 cdc_truth = compact(
-    docs
-    + "\n"
-    + audit
+    audit
     + "\n"
     + sidecar_cdc_smoke
     + "\n"
@@ -1800,8 +1369,6 @@ cdc_truth = compact(
     + "\n"
     + read(SIDECAR_CDC_MODIFICATION)
 )
-if status_by_id.get("C2") != "production-ready":
-    fail("C2 must be production-ready after live PostgreSQL DDL capture parsing evidence")
 for phrase in (
     "postgres:17-bookworm",
     "CREATE EVENT TRIGGER ai_blaise_capture_ddl",
@@ -1835,9 +1402,7 @@ for phrase in (
         fail(f"C2 DDL capture executable proof must preserve phrase: {phrase}")
 
 conflict_truth = compact(
-    docs
-    + "\n"
-    + audit
+    audit
     + "\n"
     + read(OPERATOR_RECONCILERS_BATCH_C_SMOKE)
     + "\n"
@@ -1849,10 +1414,6 @@ conflict_truth = compact(
     + "\n"
     + read(ROOT / "companion/src/replication_conflict.rs")
 )
-if status_by_id.get("C4") != "production-ready":
-    fail("C4 must be production-ready after live conflict-policy metadata apply evidence")
-if status_by_id.get("C5") != "production-ready":
-    fail("C5 must be production-ready after seven-class resolver and live metadata apply evidence")
 for phrase in (
     "run-conflict-policy-runtime-canonical",
     "CONFLICT_POLICY_IMAGE",
@@ -1908,22 +1469,6 @@ for required in (
 ):
     if required not in sidecar_controller_live_smoke:
         fail(f"O5 live sidecar controller smoke lost required assertion: {required}")
-if status_by_id.get("O5") != "production-ready":
-    fail("O5 must be production-ready after live Sidecar controller apply evidence")
-o5_body = compact(entry_by_id["O5"]["body"])
-for phrase in (
-    "sidecar-controller-live-smoke.sh",
-    "digest-pinned images",
-    "AI_BLAISE_OPERATOR_EXECUTION_MODE=apply",
-    "AI_BLAISE_OPERATOR_CONTROLLERS=sidecar",
-    "generated Deployment, Service, owner references, status fields",
-    "sidecars/status",
-    "rejects it before creating a Deployment",
-    "does not claim OpenTelemetry trace propagation",
-    "full production semantics for every sidecar application",
-):
-    if compact(phrase) not in o5_body:
-        fail(f"O5 docs lost live apply proof/boundary phrase: {phrase}")
 shared_sidecar_readme = read(SIDECAR_SHARED_README)
 shared_sidecar_readme_compact = compact(shared_sidecar_readme)
 for phrase in (
@@ -1984,9 +1529,6 @@ for required in (
     if required not in postgrest_live_smoke:
         fail(f"live PostgREST data-plane smoke lost required assertion: {required}")
 
-for feature_id in ("API1", "API2", "API3", "API5", "API6"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready after live API data-plane evidence")
 for required in (
     "graphql_pggraphql_live=passed",
     "AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1",
@@ -1997,68 +1539,57 @@ for required in (
     "tenant_a_rows=1",
     "tenant_b_rows=1",
     "rls_cross_tenant_hidden=true",
+    "auth3_introspection=true",
+    "mtls_client_certificate_required=true",
+    "body_identity_rejected=true",
+    "revoked_token_rejected=true",
     "graphql_resolve_executed=true",
-    "database_url not in raw",
-    "jwt_secret not in raw",
+    "ssl.CERT_REQUIRED",
+    'socket.create_connection(("127.0.0.1", upstream_port)',
 ):
     if required not in graphql_pggraphql_live_smoke:
         fail(f"live pg_graphql smoke lost API3 assertion: {required}")
-api3_body = compact(entry_by_id["API3"]["body"])
-for phrase in (
-    "production evidence",
-    "graphql-pggraphql-live-smoke.sh",
-    "AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1",
-    "pg_graphql",
-    "public.account",
-    "graphql.resolve",
-    "PostgreSQL RLS",
-    "database URL/JWT secret material is absent",
-    "durable GraphQL subscription fan-out",
-    "multi-worker GraphQL planning",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in api3_body:
-        fail(f"API3 docs lost live pg_graphql data-plane phrase: {phrase}")
-api_rest_body = compact(
-    entry_by_id["API1"]["body"]
-    + entry_by_id["API2"]["body"]
-    + entry_by_id["API5"]["body"]
-)
-for phrase in (
-    "production evidence",
-    "postgrest-live-data-plane-smoke.sh",
-    "run-live-postgrest",
-    "AI_BLAISE_POSTGREST_UPSTREAM",
-    "create_distributed_table('public.orders', 'tenant_id')",
-    "pg_dist_partition",
-    "security-invoker `api.orders` view",
-    "tenant A cross-tenant INSERT for tenant B is rejected",
-    "API3 has separate live `pg_graphql` execution evidence",
-):
-    if compact(phrase) not in api_rest_body:
-        fail(f"API1/API2/API5 docs lost live PostgREST data-plane phrase: {phrase}")
-api6_body = compact(entry_by_id["API6"]["body"])
-for phrase in (
-    "production evidence",
-    "graphql-postgrest-runtime-smoke.sh",
-    "/openapi.json",
-    "openapi 3.0 metadata",
-    "absence of database uri or jwt secret material",
-    "API1/API2/API5 have separate production evidence",
-    "API3 has separate live `pg_graphql` query execution evidence",
-    "does not claim GraphQL OpenAPI generation",
-):
-    if compact(phrase) not in api6_body:
-        fail(f"API6 docs lost bounded production evidence phrase: {phrase}")
 
-if status_by_id.get("EF1") != "production-ready":
-    fail("EF1 inline Deno runtime must be production-ready after live Deno process smoke evidence")
-if status_by_id.get("EF4") != "production-ready":
-    fail("EF4 database callback over UDS must be production-ready after live PostgreSQL UDS smoke evidence")
-if status_by_id.get("EF5") != "production-ready":
-    fail("EF5 trigger dispatch must be production-ready after live scheduled/CDC Deno dispatch evidence")
-if status_by_id.get("EF2") != "production-ready":
-    fail("EF2 Bun runtime must be production-ready after live Bun process smoke evidence")
+graphql_sidecar_lib = read(GRAPHQL_SIDECAR_LIB)
+for required in (
+    "BodyIdentityForbidden",
+    'object.contains_key("jwt_claims") || object.contains_key("tenant_id")',
+    "select pg_catalog.set_config('request.jwt.claims', $1, true)",
+    "select graphql.resolve($1, $2::text::jsonb, $3)::text",
+    "GraphqlSidecarError::AuthenticationUnavailable",
+    "DatabaseUnavailable(&'static str)",
+    'eprintln!("ai-blaise graphql request rejected: stage={stage} category={category}")',
+    "501",
+):
+    if required not in graphql_sidecar_lib:
+        fail(f"GraphQL sidecar lost fail-closed Auth3/RLS boundary: {required}")
+
+auth_introspection_client_lib = read(AUTH_INTROSPECTION_CLIENT_LIB)
+for required in (
+    ".https_only(true)",
+    ".tls_built_in_root_certs(false)",
+    ".identity(identity)",
+    ".redirect(reqwest::redirect::Policy::none())",
+    ".no_proxy()",
+    "MAX_CREDENTIAL_BYTES",
+    "MAX_RESPONSE_BYTES",
+    "MAX_TOKEN_BYTES",
+    "Zeroizing",
+):
+    if required not in auth_introspection_client_lib:
+        fail(f"Auth3 introspection client lost bounded mTLS boundary: {required}")
+for phrase in (
+    "real Auth3 on loopback behind a client-certificate-required TLS proxy",
+    "body `jwt_claims`/`tenant_id` are rejected",
+    "share one transaction",
+    "There is no canonical 200 fallback",
+    "returns honest HTTP 501",
+    "single-process alpha evidence",
+    "Durable Auth3 identity/session/ revocation state and replica consistency",
+):
+    if compact(phrase) not in audit_compact:
+        fail(f"production audit lost API3 alpha evidence boundary: {phrase}")
+
 edge_deno_live_smoke = read(EDGE_DENO_LIVE_SMOKE)
 for required in (
     "FEATURE: EF1",
@@ -2107,66 +1638,6 @@ for path, required in (
 ):
     if required not in read(path):
         fail(f"EF2 live Bun smoke is not wired into {path}: {required}")
-ef2_body = compact(entry_by_id["EF2"]["body"])
-for phrase in (
-    "production evidence",
-    "edge-functions-bun-live-smoke.sh",
-    "AI_BLAISE_EDGE_RUNTIME_EXECUTION=1",
-    "AI_BLAISE_BUN_BIN",
-    "status=executed",
-    "execution_mode=live",
-    "user_code_executed=true",
-    "runtime_response_json",
-    "child environment is cleared",
-    "HTTP 504",
-    "runtime stdout cap",
-    "scheduled and CDC trigger dispatch",
-    "explicit opt-in inline Bun execution",
-    "package installation",
-    "bundle URI/Git source fetch",
-    "Kubernetes deployment",
-):
-    if compact(phrase) not in ef2_body:
-        fail(f"EF2 docs lost live Bun evidence phrase: {phrase}")
-ef1_body = compact(entry_by_id["EF1"]["body"])
-for phrase in (
-    "production evidence",
-    "edge-functions-deno-live-smoke.sh",
-    "AI_BLAISE_EDGE_RUNTIME_EXECUTION=1",
-    "AI_BLAISE_DENO_BIN",
-    "status=executed",
-    "execution_mode=live",
-    "user_code_executed=true",
-    "runtime_response_json",
-    "environment access is denied",
-    "HTTP 504",
-    "explicit opt-in inline Deno execution",
-    "Bun execution",
-    "EF5 production boundary",
-    "Kubernetes deployment",
-):
-    if compact(phrase) not in ef1_body:
-        fail(f"EF1 docs lost live Deno evidence phrase: {phrase}")
-ef5_body = compact(entry_by_id["EF5"]["body"])
-for phrase in (
-    "production evidence",
-    "edge-functions-deno-live-smoke.sh",
-    "POST /triggers/scheduled",
-    "POST /triggers/cdc",
-    "public.edge_orders insert",
-    "matched=1",
-    "dispatched=1",
-    "execution_mode=live",
-    "user_code_executed=true",
-    "runtime_response_json",
-    "sidecar-owned trigger ingress and dispatch",
-    "Queue/broker integration",
-    "long-running CDC slot tailing",
-    "durable retry/DLQ",
-    "Kubernetes deployment",
-):
-    if compact(phrase) not in ef5_body:
-        fail(f"EF5 docs lost live trigger dispatch evidence phrase: {phrase}")
 edge_db_callback_smoke = read(EDGE_DB_CALLBACK_UDS_SMOKE)
 for required in (
     "FEATURE: EF4",
@@ -2182,26 +1653,6 @@ for required in (
 ):
     if required not in edge_db_callback_smoke:
         fail(f"EF4 UDS callback smoke lost production assertion: {required}")
-ef4_body = compact(entry_by_id["EF4"]["body"])
-for phrase in (
-    "production evidence",
-    "edge-functions-db-callback-uds-smoke.sh",
-    "postgres:17",
-    ".s.PGSQL.5432",
-    "db_callback_socket",
-    "AI_BLAISE_EDGE_DB_CALLBACK_EXECUTION=1",
-    "unsafe multi-statement callback SQL",
-    "db_callback_statement_executed=true",
-    "db_callback_rows=1",
-    "sidecar-owned PostgreSQL UDS callback executor",
-    "Bun DB-callback integration",
-    "separate EF1/EF2 production boundaries",
-    "explicit opt-in inline Deno execution",
-    "EF5 covers sidecar-owned trigger dispatch",
-    "Kubernetes deployment",
-):
-    if compact(phrase) not in ef4_body:
-        fail(f"EF4 docs lost live UDS callback evidence phrase: {phrase}")
 audit_body = compact(read(AUDIT))
 for phrase in (
     "edge-functions-deno-live-smoke.sh",
@@ -2234,8 +1685,6 @@ for required in (
     if required not in structured_log_smoke:
         fail(f"structured-log ingestion smoke lost O15 runtime proof: {required}")
 
-if status_by_id.get("O14") != "production-ready":
-    fail("O14 trace-context propagation must be production-ready after pool, SQL, sidecar, and Jaeger evidence")
 otel_trace_smoke = read(ROOT / "ci/ai-blaise/otel-trace-propagation-smoke.sh")
 for phrase in (
     "CREATE EXTENSION ai_blaise_citus;",
@@ -2260,20 +1709,6 @@ for phrase in (
 ):
     if phrase not in otel_trace_smoke:
         fail(f"O14 trace propagation smoke lost required phrase: {phrase}")
-o14_body = compact(entry_by_id["O14"]["body"])
-for phrase in (
-    "production evidence",
-    "companion.current_traceparent",
-    "companion.current_tracestate",
-    "companion.project_traceparent_from_application_name",
-    "/tracez",
-    "trace-context extraction, propagation, SQL projection, sidecar ingress visibility, and Jaeger correlation harness evidence",
-    "not automatic OTLP span export",
-    "not a production dashboard/SLO certification",
-    "not a claim that every business endpoint emits child spans",
-):
-    if compact(phrase) not in o14_body:
-        fail(f"O14 docs lost production evidence or boundary phrase: {phrase}")
 install_sql = read(SQL_EXTENSION)
 transition_sql = read(ROOT / "images/citus-pg-overlay/extensions/ai_blaise_citus--0.1.0--0.1.1.sql")
 for label, sql in (("install", install_sql), ("upgrade", transition_sql)):
@@ -2327,22 +1762,6 @@ for phrase in (
 ):
     if phrase not in observability_workflow_o14:
         fail(f"observability workflow lost O14 runtime proof: {phrase}")
-if status_by_id.get("O15") != "production-ready":
-    fail("O15 structured-log schema must be production-ready after PostgreSQL ingestion smoke evidence")
-o15_body = compact(entry_by_id["O15"]["body"])
-for phrase in (
-    "production evidence",
-    "structured-log-ingestion-smoke.sh",
-    "postgres:17",
-    "companion.sidecar_log_raw",
-    "applies all 17 generated typed views",
-    "ingests all 17 sidecar records as jsonb",
-    "does not claim vector",
-    "broader o14 trace propagation path",
-):
-    if compact(phrase) not in o15_body:
-        fail(f"O15 docs lost PostgreSQL typed-view evidence phrase: {phrase}")
-
 observability_workflow = read(OBSERVABILITY_WORKFLOW)
 for required in (
     "bootstrap-v2",
@@ -2382,10 +1801,25 @@ for required in (
     "/storage/upload",
     "malware:eicar-test",
     "quarantined",
+    'require_json(status, data, 503)',
+    "presigning unavailable: no provider signer is configured",
+    'assert state["issued_urls"] == 0',
     "/drain",
 ):
     if required not in storage_smoke:
         fail(f"storage sidecar runtime smoke lost required assertion: {required}")
+
+storage_sidecar_lib = read(STORAGE_SIDECAR_LIB)
+for required in (
+    "PresigningUnavailable",
+    'HttpProbeResponse::new(\n            503,',
+    '\\"presigning_status\\":\\"unconfigured\\"',
+):
+    if required not in storage_sidecar_lib:
+        fail(f"storage sidecar lost fail-closed presigning boundary: {required}")
+for forbidden in ("signature=ai-blaise-canonical", ".ai-blaise.local/"):
+    if forbidden in storage_sidecar_lib or forbidden in storage_smoke:
+        fail(f"storage sidecar restored fake presigning success: {forbidden}")
 
 
 sql_extension_smoke = read(SQL_EXTENSION_SMOKE)
@@ -2437,37 +1871,9 @@ for required in (
     if required not in pool_smoke:
         fail(f"pool proxy smoke lost T7 raw-wire pipelining assertion: {required}")
 
-if "### T7: Pipelined Client Protocol In Pool" in docs:
-    t7_section = docs.split("### T7: Pipelined Client Protocol In Pool", 1)[1].split("### T10:", 1)[0]
-    for required in (
-        "**Status**: production-ready",
-        "Production evidence:",
-        "raw PostgreSQL client",
-        "pool/wire",
-        "pool-extended-query-pipeline-live-smoke.sh",
-        "pool-extended-query-through-pool-live-smoke.sh",
-        "ai_blaise_citus_pool_ext_query_frames_total",
-        "forward_client_to_upstream",
-        "deterministic-failure semantics",
-        "Shard-aware routing of an extended-query pipeline",
-        "remain alpha",
-    ):
-        if required not in t7_section:
-            fail(f"T7 production boundary lost required docs phrase: {required}")
-
-
 bulk_distsql_live_smoke = read(BULK_DISTSQL_LIVE_SMOKE)
-for feature_id in ("T10", "T11"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready once live bulk/DistSQL evidence is wired")
-section_t10 = feature_section(docs, "T10")
-section_t11 = feature_section(docs, "T11")
 bulk_distsql_truth = compact(
-    section_t10
-    + "\n"
-    + section_t11
-    + "\n"
-    + audit
+    audit
     + "\n"
     + bulk_distsql_live_smoke
     + "\n"
@@ -2477,29 +1883,6 @@ bulk_distsql_truth = compact(
     + "\n"
     + read(MAKEFILE)
 )
-for phrase in (
-    "**Status**: production-ready",
-    "ci/ai-blaise/bulk-distsql-live-smoke.sh",
-    "FETCH 4096",
-    "bulk_fetch_rows_returned=4096",
-    "custom PostgreSQL wire-protocol",
-    "backpressure",
-    "cross-worker streaming fanout",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_t10):
-        fail(f"T10 docs missing production boundary phrase: {phrase}")
-for phrase in (
-    "**Status**: production-ready",
-    "Custom Scan (Citus Adaptive)",
-    "citus_task_count_observed=1",
-    "worker_task_budget=16",
-    "physical plan rewrite engine",
-    "multi-worker fanout",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_t11):
-        fail(f"T11 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: T10",
     "FEATURE: T11",
@@ -2541,17 +1924,8 @@ for phrase in (
 
 
 timescale_advanced_live_smoke = read(TIMESCALE_ADVANCED_LIVE_SMOKE)
-for feature_id in ("TS10", "TS11"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready once live Timescale advanced evidence is wired")
-section_ts10 = feature_section(docs, "TS10")
-section_ts11 = feature_section(docs, "TS11")
 timescale_advanced_truth = compact(
-    section_ts10
-    + "\n"
-    + section_ts11
-    + "\n"
-    + audit
+    audit
     + "\n"
     + timescale_advanced_live_smoke
     + "\n"
@@ -2561,31 +1935,6 @@ timescale_advanced_truth = compact(
     + "\n"
     + read(MAKEFILE)
 )
-for phrase in (
-    "**Status**: production-ready",
-    "ci/ai-blaise/timescale-advanced-live-smoke.sh",
-    "refresh_continuous_aggregate",
-    "hierarchical_cagg_count=2",
-    "hierarchical_cagg_daily_rows=4",
-    "automated refresh scheduling",
-    "multi-worker fanout",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_ts10):
-        fail(f"TS10 docs missing production boundary phrase: {phrase}")
-for phrase in (
-    "**Status**: production-ready",
-    "timescaledb.compress_segmentby",
-    "compression_segmentby_columns=2",
-    "segmentby_bloom_rows=16",
-    "segmentby_bloom_bit_count=2048",
-    "native Timescale bloom filters",
-    "planner integration",
-    "compressed-chunk scan pruning",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_ts11):
-        fail(f"TS11 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: TS10",
     "FEATURE: TS11",
@@ -2626,13 +1975,8 @@ for phrase in (
 
 
 shard_split_live_smoke = read(SHARD_SPLIT_LIVE_SMOKE)
-if status_by_id.get("S1") != "production-ready":
-    fail("S1 must be production-ready once live shard split evidence is wired")
-section_s1 = feature_section(docs, "S1")
 shard_split_truth = compact(
-    section_s1
-    + "\n"
-    + audit
+    audit
     + "\n"
     + shard_split_live_smoke
     + "\n"
@@ -2642,23 +1986,6 @@ shard_split_truth = compact(
     + "\n"
     + read(MAKEFILE)
 )
-for phrase in (
-    "**Status**: production-ready",
-    "ci/ai-blaise/shard-split-live-smoke.sh",
-    "wal_level=logical",
-    "isolate_tenant_to_new_shard",
-    "split_shard_count_before=4",
-    "split_shard_count_after=6",
-    "split_tenant_rows_preserved=10",
-    "split_isolated_range_exact=true",
-    "policy scheduler",
-    "threshold telemetry",
-    "rollback automation",
-    "multi-node movement",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_s1):
-        fail(f"S1 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: S1",
     "ShardSplitPlan",
@@ -2703,13 +2030,8 @@ for phrase in (
 
 
 clone_node_live_smoke = read(CLONE_NODE_LIVE_SMOKE)
-if status_by_id.get("S3") != "production-ready":
-    fail("S3 must be production-ready once live clone-node evidence is wired")
-section_s3 = feature_section(docs, "S3")
 clone_node_truth = compact(
-    section_s3
-    + "\n"
-    + audit
+    audit
     + "\n"
     + clone_node_live_smoke
     + "\n"
@@ -2719,25 +2041,6 @@ clone_node_truth = compact(
     + "\n"
     + read(MAKEFILE)
 )
-for phrase in (
-    "**Status**: production-ready",
-    "ci/ai-blaise/clone-node-live-smoke.sh",
-    "pg_basebackup",
-    "citus_add_clone_node",
-    "citus_promote_clone_and_rebalance",
-    "clone_rows_preserved=20",
-    "clone_sum_preserved=5060",
-    "clone_role_after_promote=primary",
-    "clone_shard_placements_after=2",
-    "primary_shard_placements_after=2",
-    "Kubernetes clone orchestration",
-    "CSI snapshot",
-    "automatic capacity policy",
-    "WAN/cross-region",
-    "production traffic cutover",
-):
-    if compact(phrase) not in compact(section_s3):
-        fail(f"S3 docs missing production boundary phrase: {phrase}")
 for phrase in (
     "FEATURE: S3",
     "CloneNodePlan",
@@ -2795,30 +2098,15 @@ for required in (
         fail(f"pool routing/security smoke lost required assertion: {required}")
 
 
-if status_by_id.get("MR5") != "production-ready":
-    fail("MR5 must be production-ready once live pool GeoIP routing evidence is wired")
-section_mr5 = feature_section(docs, "MR5")
-mr5_truth = compact(section_mr5 + "\n" + audit + "\n" + pool_geoip_live_smoke + "\n" + read(ROOT / "pool/src/proxy.rs") + "\n" + read(MAKEFILE))
-for phrase in (
-    "Production evidence:",
-    "ci/ai-blaise/pool-geoip-live-smoke.sh",
-    "AI_BLAISE_POOL_GEO_DEFAULT_REGION=us-east-1",
-    "AI_BLAISE_POOL_GEO_RULES=127.0.0.0/8=us-east-1",
-    "AI_BLAISE_POOL_GEO_REPLICAS",
-    "geoip_pool_route_selected_region=us-east-1",
-    "geoip_pool_fallback_region=us-east-1",
-    "ai_blaise_citus_pool_geo_routes_total",
-    "ai_blaise_citus_pool_geo_fallback_routes_total",
-    "invalid CIDR fails closed",
-    "managed MaxMind DB loading",
-    "Region-CR synchronization",
-    "hot-swap reloads",
-    "cross-region/WAN traffic behavior",
-    "edge-replica traffic",
-    "Kubernetes traffic",
-):
-    if compact(phrase) not in compact(section_mr5):
-        fail(f"MR5 docs missing production boundary phrase: {phrase}")
+mr5_truth = compact(
+    audit
+    + "\n"
+    + pool_geoip_live_smoke
+    + "\n"
+    + read(ROOT / "pool/src/proxy.rs")
+    + "\n"
+    + read(MAKEFILE)
+)
 for phrase in (
     "FEATURE: MR5",
     "AI_BLAISE_POOL_GEO_DEFAULT_REGION",
@@ -2935,63 +2223,6 @@ operator_workflow = read(OPERATOR_WORKFLOW)
 if "security-supply-chain-smoke.sh" not in operator_workflow:
     fail("operator workflow must run security-supply-chain-smoke.sh")
 
-if status_by_id.get("A9") != "production-ready":
-    fail("A9 must be production-ready after live vector-provider ExternalSecret reconciliation evidence")
-a9_body = compact(entry_by_id["A9"]["body"])
-for phrase in (
-    "Production evidence",
-    "security-external-secrets-tls-live-smoke.sh",
-    "ai-blaise-vector-provider-openai",
-    "External Secrets Operator chart `0.10.7`",
-    "fake-provider `ExternalSecret`",
-    "runtime ServiceAccount is denied Secret API reads",
-    "does not claim cloud provider authentication",
-    "provider credential rotation",
-):
-    if compact(phrase) not in a9_body:
-        fail(f"A9 docs lost live proof/boundary phrase: {phrase}")
-if status_by_id.get("Sec9") != "production-ready":
-    fail("Sec9 must remain production-ready after registry-backed SBOM/cosign proof")
-for feature_id in ("Sec7", "Sec8"):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready after live External Secrets and TLS proof")
-sec7_body = compact(entry_by_id["Sec7"]["body"])
-for phrase in (
-    "External Secrets Operator chart `0.10.7`",
-    "fake-provider `ExternalSecret` objects into real Kubernetes Secrets",
-    "runtime ServiceAccount is denied Secret API reads",
-    "does not claim cloud provider authentication",
-    "production rotation SLOs",
-    "security-external-secrets-tls-live-smoke.sh",
-):
-    if compact(phrase) not in sec7_body:
-        fail(f"Sec7 docs lost live proof/boundary phrase: {phrase}")
-sec8_body = compact(entry_by_id["Sec8"]["body"])
-for phrase in (
-    "TLS 1.3 mTLS success",
-    "no-client-cert and TLS 1.2 clients fail",
-    "does not claim cloud certificate issuance",
-    "automatic rotation",
-    "every application protocol path",
-    "security-external-secrets-tls-live-smoke.sh",
-):
-    if compact(phrase) not in sec8_body:
-        fail(f"Sec8 docs lost live proof/boundary phrase: {phrase}")
-sec9_body = compact(entry_by_id["Sec9"]["body"])
-for phrase in (
-    "Production evidence",
-    "security-sbom-cosign-live-smoke.sh",
-    "local OCI registry",
-    "SPDX 2.3 SBOM with Syft",
-    "Cosign",
-    "SLSA provenance attestations",
-    ".sigstore.json` bundle",
-    "Kubernetes admission-policy enforcement",
-    "public release registry publication",
-):
-    if compact(phrase) not in sec9_body:
-        fail(f"Sec9 production boundary lost docs phrase: {phrase}")
-
 for phrase in (
     "security-external-secrets-tls-live-smoke.sh",
     "External Secrets Operator chart `0.10.7`",
@@ -3058,8 +2289,6 @@ if "release-hardening-runbook-smoke.sh" not in production_workflow:
 if "canary-upgrade-rollback-smoke.sh" not in production_workflow:
     fail("ci-production-readiness workflow must run canary-upgrade-rollback-smoke.sh")
 
-if status_by_id.get("D10") != "production-ready":
-    fail("D10 release hardening runbook must be production-ready after fail-closed release-record smoke evidence")
 canary_upgrade_smoke = read(CANARY_UPGRADE_SMOKE)
 for phrase in (
     "FEATURE: D9",
@@ -3150,47 +2379,31 @@ for phrase in (
     if compact(phrase) not in audit_compact_for_d9:
         fail(f"PRODUCTION_READINESS_AUDIT.md lost D9 evidence phrase: {phrase}")
 release_hardening_smoke = read(RELEASE_HARDENING_SMOKE)
+readiness_check = read(ROOT / "ci/ai-blaise/production-readiness-check.sh")
+if "exec cargo run --locked --quiet -p ai_blaise_feature_register -- release-gaps" not in readiness_check:
+    fail("production-release must use the Rust release-gaps rejection path, not prose status promotion")
 for phrase in (
     "FEATURE: D10",
-    "run-release-hardening-canonical",
-    "required_gates=19",
-    "release_record_fields=10",
     "production-readiness-check.sh production-release",
     "production_release_blocked=true",
-    "owner_signoff_required=true",
-    "rollback_evidence_required=true",
-    "D10 must not be listed as a production-release blocker",
-    "release_record_source_revision",
+    '"${release_status}" != "1"',
+    "release_evidence_verifier",
+    "unimplemented",
+    "actual != expected",
+    "claim_boundary=rejection-contract-only",
 ):
     if phrase not in release_hardening_smoke:
         fail(f"D10 release hardening smoke lost assertion: {phrase}")
-d10_body = compact(entry_by_id["D10"]["body"])
-for phrase in (
-    "production evidence",
-    "release-hardening-runbook-smoke.sh",
-    "run-release-hardening-canonical",
-    "all 19 required release gates",
-    "10 required release-record fields",
-    "production-readiness-check.sh production-release",
-    "requires it to fail closed while alpha features remain",
-    "D10 is no longer listed as the blocker",
-    "source revision",
-    "rollback checkpoint requirement",
-    "owner signoff requirement",
-    "does not claim that a release candidate has been certified",
-    "D9 canary upgrade/rollback drills",
-):
-    if compact(phrase) not in d10_body:
-        fail(f"D10 docs lost release hardening evidence phrase: {phrase}")
 production_runbook = read(RUNBOOK)
 for phrase in (
     "release-hardening-runbook-smoke.sh",
-    "run-release-hardening-canonical",
-    "production_release_block_required=true",
-    "owner_signoff_required=true",
-    "rollback_evidence_required=true",
-    "release_block_status",
-    "alpha_feature_scope",
+    "release-gaps",
+    "trusted current-source release evidence verifier is unimplemented",
+    "Exit 1",
+    "exit 2",
+    "Source paths and local evidence files are not verified release receipts",
+    "rollback checkpoint",
+    "owner signoff",
 ):
     if compact(phrase) not in compact(production_runbook):
         fail(f"production runbook lost D10 release-record phrase: {phrase}")
@@ -3346,25 +2559,6 @@ for required_path, required_phrase in (
         fail(f"placement-generation SQL contract missing {required_phrase} in {required_path}")
 if "placement-generation-udf-contract-smoke:" not in makefile or "placement-generation-udf-contract-smoke" not in makefile.split("gate-close:", 1)[1]:
     fail("gate-close must run placement-generation-udf-contract-smoke")
-if status_by_id.get("T2") != "production-ready":
-    fail("T2 must be production-ready after live patched-Citus placement-generation and GUC_REPORT evidence")
-t2_body = compact(entry_by_id["T2"]["body"])
-for phrase in (
-    "placement-generation-udf-contract-smoke.sh",
-    "pg-cron-cohabitation-smoke.sh",
-    "pg_catalog.citus_placement_generation()",
-    "fresh-install sql",
-    "15.0 upgrade sql",
-    "placement_generation_after_first_distribution",
-    "placement_generation_after_second_distribution",
-    "placement_generation_placements",
-    "citus_shard_count_parameter_status",
-    "ParameterStatus",
-    "SET citus.shard_count TO 7",
-    "does not claim production latency",
-):
-    if compact(phrase) not in t2_body:
-        fail(f"T2 docs lost placement-generation runtime proof/boundary phrase: {phrase}")
 
 pg_cron_cohabitation_smoke = read(PG_CRON_COHABITATION_SMOKE)
 for phrase in (
@@ -3410,7 +2604,15 @@ for pattern in ("TS 2.28 production-ready", "TimescaleDB 2.28 production-ready")
 timescale_bridge_smoke = read(TIMESCALE_BRIDGE_SMOKE)
 timescale_cohabitation_smoke = read(TIMESCALE_COHABITATION_SMOKE)
 ts_version_matrix_smoke = read(TS_VERSION_MATRIX_SMOKE)
-timescale_runtime_truth = compact(docs + "\n" + audit + "\n" + timescale_bridge_smoke + "\n" + timescale_cohabitation_smoke + "\n" + read(TIMESCALE_COHABITATION_DOCKERFILE))
+timescale_runtime_truth = compact(
+    audit
+    + "\n"
+    + timescale_bridge_smoke
+    + "\n"
+    + timescale_cohabitation_smoke
+    + "\n"
+    + read(TIMESCALE_COHABITATION_DOCKERFILE)
+)
 for phrase in (
     "missing_citus_fail_closed",
     "policy_execution_scope",
@@ -3418,47 +2620,23 @@ for phrase in (
     "stubbed_citus_distribution",
     "real_citus_distribution",
     "timescaledb_extversion",
-    "does not claim full TimescaleDB functionality",
     "timescale/timescaledb-ha:pg17-ts2.27",
     "with_llvm=\"${WITH_LLVM}\"",
-    'postgresql-server-dev-${PG_MAJOR}=${postgresql_package_version}',
+    "postgresql-server-dev-17",
 ):
     if compact(phrase) not in timescale_runtime_truth:
         fail(f"Timescale runtime evidence boundary must preserve phrase: {phrase}")
-for feature_id, function_name in (
-    ("TS1", "apply_distribute_hypertable"),
-    ("TS2", "apply_compression_policy_distributed"),
-    ("TS3", "apply_continuous_aggregate_distributed"),
-    ("TS4", "apply_retention_policy_distributed"),
-    ("TS5", "apply_time_range_shard_pruner"),
-    ("TS12", "apply_reorder_policy_distributed"),
-):
-    if status_by_id.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready for bounded live Timescale bridge apply/catalog-state evidence")
-    body = compact(entry_by_id[feature_id]["body"])
-    for phrase in (
-        "Production evidence",
-        function_name,
-        "timescale/timescaledb-ha:pg17-ts2.27",
-        "policy_execution_scope=entrypoints-and-catalog-state-only",
-        "does not claim full TimescaleDB functionality",
-        "operator reconciliation",
-    ):
-        if compact(phrase) not in body:
-            fail(f"{feature_id} docs lost bounded Timescale production evidence phrase: {phrase}")
-if status_by_id.get("TS7") != "production-ready":
-    fail("TS7 must be production-ready after live Kubernetes Hypertable controller SQL execution and status reconciliation evidence")
-ts7_truth = compact(docs + "\n" + audit + "\n" + read(OPERATOR_HYPERTABLE_LIVE_SMOKE))
+ts7_truth = compact(audit + "\n" + read(OPERATOR_HYPERTABLE_LIVE_SMOKE))
 for phrase in (
     "operator-hypertable-live-smoke.sh",
-    "AI_BLAISE_OPERATOR_EXECUTION_MODE=apply",
-    "status.phase=Applied",
+    "AI_BLAISE_OPERATOR_EXECUTION_MODE",
+    "{.status.phase}",
     "observedGeneration",
-    "skippedStepCount >= 5",
-    "timeColumn=metric_time",
-    "distributionColumn=tenant_id",
-    "no duplicate bridge-state rows",
-    "does not claim multi-worker fanout",
+    "skippedStepCount",
+    "timeColumn: metric_time",
+    "distributionColumn: tenant_id",
+    "duplicate_bridge_rows <> 0",
+    "multi-worker fanout",
 ):
     if compact(phrase) not in ts7_truth:
         fail(f"TS7 live controller evidence boundary must preserve phrase: {phrase}")
@@ -3482,14 +2660,10 @@ for pattern in (
     "distributed hypertables production-ready",
     "planner pushdown production-ready",
 ):
-    if compact(pattern) in compact(docs + "\n" + audit):
+    if compact(pattern) in compact(legacy_docs + "\n" + audit):
         fail(f"Timescale docs overclaim production readiness: {pattern}")
 
-pg_cron_truth = compact(docs + "\n" + audit + "\n" + pg_cron_cohabitation_smoke)
-if status_by_id.get("TS19") != "production-ready":
-    fail("TS19 pg_cron clock cohabitation must be production-ready after live clock-reservation worker evidence")
-if status_by_id.get("TS20") != "production-ready":
-    fail("TS20 cohabit role/configuration classifier must be production-ready after SQL-visible C API live proof")
+pg_cron_truth = compact(audit + "\n" + pg_cron_cohabitation_smoke)
 for phrase in (
     "citus_cohabit_clock_tick_reserved",
     "clock_tick_reserved",
@@ -3505,7 +2679,7 @@ for phrase in (
     "negative_pg_cron_citus_configured",
     "scheduled pg_cron worker",
     "does not make `pg_cron` a trusted hook-chain coextension",
-    "role/configuration classifier boundary only",
+    "role/configuration classification",
 ):
     if compact(phrase) not in pg_cron_truth:
         fail(f"pg_cron TS19 production boundary must preserve phrase: {phrase}")
@@ -3561,10 +2735,7 @@ if deploy_k8s_tree:
         + ", ".join(str(p) for p in deploy_k8s_tree)
     )
 
-repack_truth = compact(docs + "\n" + audit + "\n" + read(ROOT / "sidecar/repack/README.md"))
-r7_entries = [entry for entry in entries if entry["id"] == "R7"]
-if len(r7_entries) != 1 or r7_entries[0]["status"] != "production-ready":
-    fail("R7 must be production-ready only with live pg_repack execution evidence")
+repack_truth = compact(audit + "\n" + read(ROOT / "sidecar/repack/README.md"))
 for phrase in (
     "dry-run-plan-only",
     "run-live-pg-repack",
@@ -3586,31 +2757,8 @@ if "sidecar-repack-smoke.sh" not in read(SIDECAR_WORKFLOW):
     fail("ci-sidecar workflow must run sidecar-repack-smoke.sh")
 if "run-live-pg-repack" not in read(ROOT / "sidecar/repack/src/main.rs"):
     fail("R7 sidecar must expose the live pg_repack execution command")
-analytical_alpha_ids = set()
-entry_status = {entry["id"]: entry["status"] for entry in entries}
-not_alpha = sorted(feature_id for feature_id in analytical_alpha_ids if entry_status.get(feature_id) != "alpha")
-if not_alpha:
-    fail(
-        "analytical/lakehouse features without local execution evidence must remain alpha: "
-        + ", ".join(not_alpha)
-    )
-for feature_id in ("L2", "L4"):
-    if entry_status.get(feature_id) != "production-ready":
-        fail(f"{feature_id} must be production-ready once local DataFusion runtime evidence is wired")
-if entry_status.get("L3") != "production-ready":
-    fail("L3 must be production-ready once local Parquet read evidence is wired")
-if entry_status.get("L8") != "production-ready":
-    fail("L8 must be production-ready once live test_decoding mirror materialization evidence is wired")
-if entry_status.get("L5") != "production-ready":
-    fail("L5 must be production-ready once local Iceberg snapshot metadata commit evidence is wired")
-if entry_status.get("L12") != "production-ready":
-    fail("L12 must be production-ready once live DuckDB extension load evidence is wired")
-if entry_status.get("L6") != "production-ready":
-    fail("L6 must be production-ready once local federation catalog publication evidence is wired")
 analytical_truth = compact(
-    docs
-    + "\n"
-    + audit
+    audit
     + "\n"
     + read(ROOT / "sidecar/analytical/README.md")
     + "\n"
@@ -3633,7 +2781,6 @@ analytical_truth = compact(
     + read(ROOT / "ci/ai-blaise/sidecar-analytical-federation-catalog-live-smoke.sh")
 )
 for phrase in (
-    "**Status**: production-ready",
     "datafusion = \"55.0.0\"",
     "query_engine_executed=true",
     "datafusion_output_rows=2",
@@ -3654,10 +2801,6 @@ for phrase in (
 ):
     if compact(phrase) not in analytical_truth:
         fail(f"analytical L2/L4 production boundary missing truth phrase: {phrase}")
-for feature_id in analytical_alpha_ids:
-    section = feature_section(docs, feature_id)
-    if "**Status**: alpha" not in section:
-        fail(f"{feature_id} analytical feature must remain alpha")
 for phrase in ("sidecar-analytical-smoke", "ci/ai-blaise/sidecar-analytical-smoke.sh"):
     if phrase not in makefile:
         fail(f"Makefile.ai-blaise must wire the analytical smoke: {phrase}")
@@ -3836,18 +2979,14 @@ if "sidecar-analytical-federation-catalog-live-smoke.sh" not in read(SIDECAR_WOR
 
 print(
     "production_gap_audit\t"
-    f"source_feature_ids={len(source_ids)}\t"
-    f"doc_feature_headings={len(doc_ids)}\t"
-    f"feature_headings={len(entries)}\t"
-    f"production_ready={len(production_entries)}\t"
-    f"alpha_headings={len(alpha_entries)}\t"
-    "inventory_contract=machine_derived\t"
-    f"source_only_alpha={len(source_only_ids)}\t"
+    "feature_registry=validated\t"
+    "source_feature_coverage=validated\t"
+    "inventory_contract=identity_only\t"
     "v2_acceptance=model_only\t"
     "production_release_blocked=true\t"
-    "live_sql_guards=true\t"
-    "k8s_guardrail_contract=true\t"
-    "live_k8s_e2e_harness=true\t"
+    "live_sql_contract_sources_checked=true\t"
+    "k8s_guardrail_contract_sources_checked=true\t"
+    "live_k8s_e2e_harness_source_checked=true\t"
     "chart_folded_to_command_center=2026-05-22"
 )
 PY

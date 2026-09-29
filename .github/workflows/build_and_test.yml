@@ -17,6 +17,8 @@ on:
   push:
     branches:
       - "main"
+      # FEATURE: D10
+      - "bootstrap-v2"
       - "release-*"
   pull_request:
     types: [opened, reopened,synchronize]

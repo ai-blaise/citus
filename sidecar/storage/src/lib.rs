@@ -164,6 +164,7 @@ pub enum StorageSidecarError {
     },
     Io(String),
     PolicyNotFound,
+    PresigningUnavailable,
     PresignedTtlExceedsPolicy {
         ttl_seconds: u32,
         max_ttl_seconds: u32,
@@ -195,6 +196,12 @@ impl fmt::Display for StorageSidecarError {
             ),
             Self::Io(error) => write!(formatter, "storage sidecar I/O error: {error}"),
             Self::PolicyNotFound => write!(formatter, "no bucket policy matched bucket and tenant"),
+            Self::PresigningUnavailable => {
+                write!(
+                    formatter,
+                    "presigning unavailable: no provider signer is configured"
+                )
+            }
             Self::PresignedTtlExceedsPolicy {
                 ttl_seconds,
                 max_ttl_seconds,
@@ -298,7 +305,7 @@ pub struct StorageRuntimeState {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct StorageRuntimeReport {
     pub upload: ObjectUploadResult,
-    pub presigned_url: PresignedUrlIssue,
+    pub presigned_url: Option<PresignedUrlIssue>,
     pub state: StorageRuntimeState,
 }
 
@@ -335,30 +342,9 @@ impl StorageRuntime {
 
     pub fn issue_presigned_url(
         &mut self,
-        plan: &PresignedUrlPlan,
+        _plan: &PresignedUrlPlan,
     ) -> Result<PresignedUrlIssue, StorageSidecarError> {
-        plan.validate()?;
-        if plan.ttl_seconds > self.plan.contract.presigned_url_ttl_seconds {
-            return Err(StorageSidecarError::PresignedTtlExceedsPolicy {
-                ttl_seconds: plan.ttl_seconds,
-                max_ttl_seconds: self.plan.contract.presigned_url_ttl_seconds,
-            });
-        }
-
-        let bucket_policy = self.plan.bucket_policy(&plan.bucket, &plan.tenant_id)?;
-        if !acl_allows_method(bucket_policy.acl, plan.method) {
-            return Err(StorageSidecarError::AccessDenied(
-                "bucket ACL does not allow presigned method",
-            ));
-        }
-
-        let issue = PresignedUrlIssue {
-            plan: plan.clone(),
-            url: deterministic_presigned_url(&self.plan.provider, plan),
-            expires_in_seconds: plan.ttl_seconds,
-        };
-        self.issued_urls.push(issue.clone());
-        Ok(issue)
+        Err(StorageSidecarError::PresigningUnavailable)
     }
 
     pub fn put_object(
@@ -425,42 +411,12 @@ impl StorageRuntime {
     }
 }
 
-fn acl_allows_method(acl: BucketAcl, method: PresignedMethod) -> bool {
-    match method {
-        PresignedMethod::Get => matches!(
-            acl,
-            BucketAcl::TenantRead | BucketAcl::TenantReadWrite | BucketAcl::PublicRead
-        ),
-        PresignedMethod::Put | PresignedMethod::Delete => acl == BucketAcl::TenantReadWrite,
-    }
-}
-
-fn deterministic_presigned_url(provider: &ObjectStoreProvider, plan: &PresignedUrlPlan) -> String {
-    format!(
-        "https://{}.ai-blaise.local/{}/{}?method={}&tenant={}&ttl={}&signature=ai-blaise-canonical",
-        provider_slug(provider),
-        plan.bucket,
-        plan.object_key,
-        method_slug(&plan.method),
-        plan.tenant_id,
-        plan.ttl_seconds,
-    )
-}
-
 fn provider_slug(provider: &ObjectStoreProvider) -> &'static str {
     match provider {
         ObjectStoreProvider::S3 => "s3",
         ObjectStoreProvider::Gcs => "gcs",
         ObjectStoreProvider::AzureBlob => "azure-blob",
         ObjectStoreProvider::Minio => "minio",
-    }
-}
-
-fn method_slug(method: &PresignedMethod) -> &'static str {
-    match method {
-        PresignedMethod::Get => "get",
-        PresignedMethod::Put => "put",
-        PresignedMethod::Delete => "delete",
     }
 }
 
@@ -546,12 +502,11 @@ pub fn canonical_storage_report() -> Result<StorageCanonicalReport, StorageSidec
 
 pub fn canonical_storage_runtime_report() -> Result<StorageRuntimeReport, StorageSidecarError> {
     let mut runtime = StorageRuntime::new(canonical_storage_plan())?;
-    let presigned_url = runtime.issue_presigned_url(&canonical_presigned_url_plan())?;
     let upload = runtime.put_object(&canonical_upload_request())?;
 
     Ok(StorageRuntimeReport {
         upload,
-        presigned_url,
+        presigned_url: None,
         state: runtime.state(),
     })
 }
@@ -592,19 +547,12 @@ fn handle_storage_sidecar_http_request(
         ));
     }
     if method == "POST" && path == "/storage/presign" {
-        let plan = presign_plan_from_body(body)?;
-        return match storage.issue_presigned_url(&plan) {
-            Ok(issue) => Ok(HttpProbeResponse::new(
-                200,
-                "application/json",
-                render_presigned_issue(&issue),
-            )),
-            Err(error) => Ok(HttpProbeResponse::new(
-                400,
-                "application/json",
-                format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
-            )),
-        };
+        let error = StorageSidecarError::PresigningUnavailable;
+        return Ok(HttpProbeResponse::new(
+            503,
+            "application/json",
+            format!("{{\"error\":\"{}\"}}\n", escape_json(&error.to_string())),
+        ));
     }
     if method == "POST" && path == "/storage/upload" {
         let upload = upload_request_from_body(body)?;
@@ -649,38 +597,6 @@ fn parse_http_request(request: &str) -> Result<(&str, &str, &str), StorageSideca
     Ok((method, path, body))
 }
 
-fn presign_plan_from_body(body: &str) -> Result<PresignedUrlPlan, StorageSidecarError> {
-    let mut plan = canonical_presigned_url_plan();
-    if let Some(bucket) = body_field(body, "bucket") {
-        plan.bucket = bucket;
-    }
-    if let Some(object_key) = body_field(body, "object_key") {
-        plan.object_key = object_key;
-    }
-    if let Some(tenant_id) = body_field(body, "tenant_id") {
-        plan.tenant_id = tenant_id;
-    }
-    if let Some(method) = body_field(body, "method") {
-        plan.method = match method.as_str() {
-            "get" => PresignedMethod::Get,
-            "put" => PresignedMethod::Put,
-            "delete" => PresignedMethod::Delete,
-            _ => {
-                return Err(StorageSidecarError::SharedContract(
-                    "unsupported presigned method".to_string(),
-                ));
-            }
-        };
-    }
-    if let Some(ttl) = body_field(body, "ttl_seconds") {
-        plan.ttl_seconds = ttl
-            .parse()
-            .map_err(|_| StorageSidecarError::InvalidPresignedTtl)?;
-    }
-    plan.validate()?;
-    Ok(plan)
-}
-
 fn upload_request_from_body(body: &str) -> Result<ObjectUploadRequest, StorageSidecarError> {
     let mut metadata = canonical_metadata_record();
     if let Some(bucket) = body_field(body, "bucket") {
@@ -715,7 +631,7 @@ fn render_storage_policy(plan: &StorageSidecarPlan) -> String {
     let bucket = &plan.buckets[0];
     let antivirus = plan.antivirus.as_ref();
     format!(
-        "{{\"provider\":\"{}\",\"bucket\":\"{}\",\"tenant_id\":\"{}\",\"acl\":\"{}\",\"metadata_table\":\"{}\",\"presigned_url_ttl_seconds\":{},\"max_object_bytes\":{},\"antivirus_fail_closed\":{},\"quarantine_bucket\":{}}}\n",
+        "{{\"provider\":\"{}\",\"bucket\":\"{}\",\"tenant_id\":\"{}\",\"acl\":\"{}\",\"metadata_table\":\"{}\",\"presigned_url_ttl_seconds\":{},\"presigning_status\":\"unconfigured\",\"max_object_bytes\":{},\"antivirus_fail_closed\":{},\"quarantine_bucket\":{}}}\n",
         provider_slug(&plan.provider),
         escape_json(&bucket.bucket),
         escape_json(&bucket.tenant_id),
@@ -734,18 +650,6 @@ fn render_storage_state(state: &StorageRuntimeState) -> String {
     format!(
         "{{\"stored_objects\":{},\"quarantined_objects\":{},\"issued_urls\":{},\"scanned_objects\":{}}}\n",
         state.stored_objects, state.quarantined_objects, state.issued_urls, state.scanned_objects,
-    )
-}
-
-fn render_presigned_issue(issue: &PresignedUrlIssue) -> String {
-    format!(
-        "{{\"bucket\":\"{}\",\"object_key\":\"{}\",\"tenant_id\":\"{}\",\"method\":\"{}\",\"expires_in_seconds\":{},\"url\":\"{}\"}}\n",
-        escape_json(&issue.plan.bucket),
-        escape_json(&issue.plan.object_key),
-        escape_json(&issue.plan.tenant_id),
-        method_slug(&issue.plan.method),
-        issue.expires_in_seconds,
-        escape_json(&issue.url),
     )
 }
 
@@ -924,7 +828,7 @@ mod tests {
     }
 
     #[test]
-    fn storage_runtime_stores_clean_object_and_issues_url() {
+    fn storage_runtime_stores_clean_object_and_keeps_presigning_unavailable() {
         let report = canonical_storage_runtime_report().expect("runtime report");
 
         assert!(report.upload.stored);
@@ -932,12 +836,9 @@ mod tests {
         assert_eq!(report.upload.antivirus_verdict, AntivirusVerdict::Clean);
         assert_eq!(report.state.stored_objects, 1);
         assert_eq!(report.state.quarantined_objects, 0);
-        assert_eq!(report.state.issued_urls, 1);
+        assert_eq!(report.state.issued_urls, 0);
         assert_eq!(report.state.scanned_objects, 1);
-        assert_eq!(
-            report.presigned_url.url,
-            "https://s3.ai-blaise.local/tenant-files/orders/1.pdf?method=put&tenant=tenant-a&ttl=900&signature=ai-blaise-canonical"
-        );
+        assert_eq!(report.presigned_url, None);
     }
 
     #[test]
@@ -971,18 +872,36 @@ mod tests {
     }
 
     #[test]
-    fn storage_runtime_rejects_presign_ttl_over_policy() {
+    fn storage_runtime_fails_closed_when_presigning_is_unconfigured() {
         let mut runtime = StorageRuntime::new(canonical_storage_plan()).expect("runtime");
         let mut plan = canonical_presigned_url_plan();
         plan.ttl_seconds = 901;
 
         assert_eq!(
             runtime.issue_presigned_url(&plan),
-            Err(StorageSidecarError::PresignedTtlExceedsPolicy {
-                ttl_seconds: 901,
-                max_ttl_seconds: 900,
-            })
+            Err(StorageSidecarError::PresigningUnavailable)
         );
+        assert_eq!(runtime.state().issued_urls, 0);
+    }
+
+    #[test]
+    fn http_presign_never_returns_a_fake_or_caller_derived_url() {
+        let body = r#"{"bucket":"attacker","object_key":"../escape","tenant_id":"victim","method":"put","ttl_seconds":900}"#;
+        let request = format!(
+            "POST /storage/presign HTTP/1.1\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+            body.len(),
+            body,
+        );
+        let response = handle_storage_sidecar_http_bytes(request.as_bytes()).expect("response");
+
+        assert_eq!(response.status_code, 503);
+        assert_eq!(
+            response.body,
+            "{\"error\":\"presigning unavailable: no provider signer is configured\"}\n"
+        );
+        assert!(!response.body.contains("attacker"));
+        assert!(!response.body.contains("victim"));
+        assert!(!response.body.contains("signature="));
     }
 
     #[test]

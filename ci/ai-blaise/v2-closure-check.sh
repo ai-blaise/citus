@@ -1,227 +1,137 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-docs_file="docs/ai-blaise/NEW_FEATURES.md"
-implementation_roots=(
-  companion
-  sidecar
-  pool
-  operator
-  e2e
-  tools
-  patches
-  deploy
-  images
-  scripts
-)
+# Historical compatibility entrypoint. The Rust feature-register tool owns TSV
+# validation and identity coverage. This wrapper is not a V2 runtime-closure or
+# release gate.
 
-required_v2_ids=(
-  A7
-  A9
-  A10
-  A11
-  A12
-  C11
-  C12
-  C13
-  D7
-  D8
-  D9
-  D10
-  D11
-  EF6
-  Edge1
-  Edge2
-  F2
-  F3
-  F4
-  F5
-  G1
-  Geo1
-  IA1
-  IA2
-  JS1
-  L7
-  L10
-  L11
-  M4
-  M6
-  M10
-  M12
-  MR3
-  MR6
-  MR7
-  MR9
-  O7
-  O8
-  O9
-  O11
-  O12
-  PM1
-  PM2
-  R3
-  R6
-  R8
-  R11
-  R12
-  RT5
-  S1
-  S3
-  S7
-  S8
-  S12
-  Search1
-  Search4
-  Search5
-  Search6
-  Sec3
-  Sec4
-  Sec7
-  Sec8
-  Sec9
-  Sec10
-  Sec11
-  Sec13
-  Sec14
-  Sec15
-  Sto2
-  T4
-  T6
-  T7
-  T10
-  T11
-  T13
-  T14
-  TS10
-  TS11
-  WF1
-)
+usage() {
+  cat <<'EOF'
+usage: v2-closure-check.sh [--repo PATH] [--feature-register-bin PATH]
 
-contains_feature_id() {
-  local id="$1"
-  shift
+With no arguments, validate this checkout using the workspace
+ai_blaise_feature_register crate. The overrides are intended for tests and for
+validating an explicitly selected checkout with the real validator binary.
+EOF
+}
 
-  if command -v rg >/dev/null 2>&1; then
-    rg -q "FEATURE: ${id}([^A-Za-z0-9]|$)" "$@"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source_repo="$(cd -- "${script_dir}/../.." && pwd -P)"
+register_repo="${source_repo}"
+feature_register_bin=""
+
+while (($# > 0)); do
+  case "$1" in
+    --repo)
+      (($# >= 2)) || {
+        echo "--repo requires a path" >&2
+        usage >&2
+        exit 64
+      }
+      register_repo="$2"
+      shift 2
+      ;;
+    --feature-register-bin)
+      (($# >= 2)) || {
+        echo "--feature-register-bin requires a path" >&2
+        usage >&2
+        exit 64
+      }
+      feature_register_bin="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 64
+      ;;
+  esac
+done
+
+if [[ ! -d "${register_repo}" ]]; then
+  echo "feature-register repository is not a directory: ${register_repo}" >&2
+  exit 64
+fi
+register_repo="$(cd -- "${register_repo}" && pwd -P)"
+
+if [[ -n "${feature_register_bin}" ]]; then
+  if [[ ! -x "${feature_register_bin}" ]]; then
+    echo "feature-register binary is not executable: ${feature_register_bin}" >&2
+    exit 64
+  fi
+  feature_register_bin="$(cd -- "$(dirname -- "${feature_register_bin}")" && pwd -P)/$(basename -- "${feature_register_bin}")"
+fi
+
+run_feature_register() {
+  local command="$1"
+  if [[ -n "${feature_register_bin}" ]]; then
+    "${feature_register_bin}" "${command}" --repo "${register_repo}"
   else
-    grep -R -Eq "FEATURE: ${id}([^A-Za-z0-9]|$)" "$@"
+    (
+      cd -- "${source_repo}"
+      cargo run --locked --quiet -p ai_blaise_feature_register -- \
+        "${command}" --repo "${register_repo}"
+    )
   fi
 }
 
-for id in "${required_v2_ids[@]}"; do
-  if ! contains_feature_id "${id}" "${implementation_roots[@]}"; then
-    echo "V2 closure id missing from implementation markers: ${id}" >&2
+extract_positive_count() {
+  local label="$1"
+  local report="$2"
+  local value
+  value="$(awk -F '\t' -v label="${label}" '$1 == label && NF == 2 { print $2 }' <<<"${report}")"
+  if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "feature-register report lost its positive ${label} count" >&2
     exit 1
   fi
+  printf '%s' "${value}"
+}
 
-  if ! contains_feature_id "${id}" "${docs_file}"; then
-    echo "V2 closure id missing from ${docs_file}: ${id}" >&2
-    exit 1
-  fi
-done
+# Each successful command performs the authoritative Rust validation before it
+# renders. Do not duplicate that validator in this shell compatibility layer.
+check_output="$(run_feature_register check)"
+coverage_output="$(run_feature_register check-source-coverage)"
+run_feature_register summary >/dev/null
 
-stale_pattern='future|initial Rust spec|not actual|later slice'
-if grep -E -n "${stale_pattern}" docs/ai-blaise/NEW_FEATURES.md operator/CRDS.md; then
-  echo "Stale V2 closure wording remains in docs." >&2
+inventory_rows="$(extract_positive_count rows "${check_output}")"
+source_marker_ids="$(extract_positive_count source_marker_ids "${coverage_output}")"
+
+# This one semantic label is retained so a future tool change cannot silently
+# turn source-marker enumeration into implementation or release evidence.
+if ! grep -Fqx $'claim_boundary\tidentity-coverage-only' <<<"${coverage_output}"; then
+  echo "feature-register source coverage lost its identity-only claim boundary" >&2
   exit 1
 fi
 
-for crate_dir in tools/* pool operator companion e2e sidecar/*; do
-  [[ -f "${crate_dir}/Cargo.toml" ]] || continue
-
-  has_bin=false
-  if [[ -d "${crate_dir}/src/bin" ]] \
-    && find "${crate_dir}/src/bin" -type f | grep -q .; then
-    has_bin=true
-  fi
-
-  if [[ ! -f "${crate_dir}/src/main.rs" && "${has_bin}" == false ]]; then
-    echo "Overlay crate missing executable target: ${crate_dir}" >&2
+set +e
+release_output="$(run_feature_register release-gaps)"
+release_status=$?
+set -e
+if [[ "${release_status}" -ne 1 ]]; then
+  echo "feature-register release-gaps exited ${release_status}; expected the intentional blocked status 1" >&2
+  if [[ "${release_status}" -eq 0 ]]; then
     exit 1
   fi
-done
+  exit "${release_status}"
+fi
 
-assert_row() {
-  local label="$1"
-  local expected="$2"
-  shift 2
+# Exit 1 is only accepted when the trusted tool identifies it as its deliberate
+# release-rejection path, rather than an arbitrary command failure.
+if [[ "$(sed -n '1p' <<<"${release_output}")" != $'feature_release_gaps\tblocked' ]] \
+  || [[ "$(sed -n '2p' <<<"${release_output}")" != $'release_evidence_verifier\tunimplemented' ]]; then
+  echo "feature-register release-gaps lost its blocked/unimplemented boundary" >&2
+  exit 1
+fi
 
-  local output
-  if ! output="$("$@")"; then
-    echo "${label} runner failed." >&2
-    exit 1
-  fi
-
-  if ! printf '%s\n' "${output}" | grep -Fqx "${expected}"; then
-    echo "${label} runner did not emit expected TSV row." >&2
-    echo "Expected: ${expected}" >&2
-    echo "Actual output:" >&2
-    printf '%s\n' "${output}" >&2
-    exit 1
-  fi
-}
-
-assert_row \
-  operator \
-  $'17\t3\t3\t32\t5\t8\t13\t30\t3072\t2\t2\t2\t2' \
-  cargo run -q -p ai_blaise_citus_operator -- run-canonical
-
-assert_row \
-  companion-extension-catalog \
-  $'45\t38\t47\t18\t26\t1\t18' \
-  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-extension-catalog-canonical
-
-assert_row \
-  companion-advanced-planner \
-  $'27\t1\t1\t4096\t2\t2\t256\t19\t40\t1\t2' \
-  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-advanced-planner-canonical
-
-assert_row \
-  companion-domain-contracts \
-  $'38\tA1,API4,Auth2,G2,G3,Geo2,Geo3,IA3,JS2,L9,M1,M11,M13,M2,M7,PM3,PM4,S13,S14,S6,Search2,Search3,Search9,Sec1,Sec2,Sec5,Sec6,T8,TO3,TO4,TO5,TS13,TS14,TS15,TS16,TS17,TS9,WH2\t22\t11\t51' \
-  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-domain-contracts-canonical
-
-assert_row \
-  companion-operations \
-  $'15\t1\t2\t3\t2\t6\t1' \
-  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical
-
-assert_row \
-  companion-plan-runtime \
-  $'1\t1\t1\t8\t1\t1\t1\t1\t5' \
-  cargo run -q -p ai_blaise_citus_companion --bin companion_contracts -- run-plan-runtime-canonical
-
-assert_row \
-  pool \
-  $'1\t1000\t1\t1\t1\t5\t1\t42\t1\t2000\t1\t1\t32\ttrue\t1\t3600\ttrue\ttrue\ttrue\t16\t1000\t1\t1\t1\t2\t1\t1\t10000\t1\t1\t2\t1\t8\t1\t1\t1\t1\t1\t1\t1\t2\t1' \
-  cargo run -q -p ai_blaise_citus_pool -- run-canonical
-
-assert_row \
-  tools-mcp \
-  $'3\t2\t3\t1' \
-  cargo run -q -p ai_blaise_citus_mcp -- run-canonical
-
-assert_row \
-  tools-citusctl \
-  $'5\t21\t2\t5\t1\t17' \
-  cargo run -q -p ai_blaise_citusctl -- run-canonical
-
-assert_row \
-  tools-admin \
-  $'8\t1' \
-  cargo run -q -p ai_blaise_citus_admin -- run-canonical
-
-assert_row \
-  schema-designer \
-  $'1\t0\t1\t5' \
-  cargo run -q -p ai_blaise_citus_schema_designer -- run-canonical
-
-assert_row \
-  tui \
-  $'9\t2\ttrue\t9' \
-  cargo run -q -p ai_blaise_citus_tui -- run-canonical
-
-assert_row \
-  watch \
-  $'3\t9\t9\t5' \
-  cargo run -q -p ai_blaise_citus_watch -- run-canonical
+printf '%s\t%s\n' \
+  v2_inventory_check passed \
+  authority inventory-only \
+  inventory_rows "${inventory_rows}" \
+  source_marker_ids "${source_marker_ids}" \
+  runtime_closure unverified \
+  release_qualification blocked \
+  release_evidence_verifier unimplemented

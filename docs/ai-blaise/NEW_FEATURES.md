@@ -1,7 +1,16 @@
 # New Features Register
 
-This is the canonical register of features that `ai-blaise/citus` adds beyond
-vanilla Citus. Every feature-bearing PR updates this file.
+This is the transitional legacy prose register of features that
+`ai-blaise/citus` adds beyond vanilla Citus. The structured inventory is now
+[`docs/features.tsv`](../features.tsv), with its schema and interpretation in
+[`docs/features.md`](../features.md). Every feature-bearing PR updates the
+inventory and, until the remaining legacy parsers are retargeted, this file.
+Do not delete this prose register until the historical-heading adapter has been
+replaced by a committed historical-identity retention contract and every
+remaining documentation consumer has migrated.
+The production-status labels below are retained historical claims, not release
+qualification. They are preserved as `claimed_status` in the machine register
+and are not copied into implementation maturity.
 
 Status semantics are intentionally conservative: alpha means not
 production-ready, not feature-complete, and not eligible for production release
@@ -9,18 +18,25 @@ without separate measured evidence and an explicit status promotion. Contract,
 model, catalog, SQL-plan, and runbook entries are implementation artifacts, not
 proof that the end-to-end user-facing feature is fully integrated.
 
-`ci/ai-blaise/v2-closure-check.sh` and the `v2-closure` workflow codify the
-Rule 10 completion contract for the V2 plan: the old 79-item gap list must
-remain present in implementation `FEATURE:` markers and this register, stale
-completion wording is rejected, overlay crates must keep an executable target,
-and the broad operator, companion, pool, and tool canonical runners must emit
-their deterministic TSV summaries.
+`ci/ai-blaise/v2-closure-check.sh` retains its historical filename only as a
+compatibility entrypoint for machine-register inventory validation. The
+`v2-inventory-identity` workflow validates `docs/features.tsv`, Git-enumerated
+source-marker identity coverage, and the register summary without a hard-coded
+roster, prose-wording ban, crate executable requirement, or constant model
+output rows. Its success label is `v2_inventory_check=passed` under
+`authority=inventory-only`; it reports `runtime_closure=unverified`,
+`release_qualification=blocked`, and `release_evidence_verifier=unimplemented`.
+Package-level operator, companion, pool, sidecar, and tool behavior remains
+tested by each package's own tests and focused workflows. Neither those model
+tests nor this inventory check establish V2 runtime closure or production
+release qualification.
 `e2e/src/release_gates.rs`, `ci/ai-blaise/v2-acceptance-check.sh`, and the
 `v2-acceptance` workflow codify the 15 continuous release gates from the V2
 plan, including the upstream-merge dry-run against `release-14.0`.
-`ci/ai-blaise/production-readiness-check.sh` guards the register against
-production-readiness overclaiming by verifying source/doc coverage, status
-semantics, and the whole-repo audit record. `ci/ai-blaise/production-gap-audit.sh`
+`ci/ai-blaise/production-readiness-check.sh` checks source-marker identity
+coverage and documentation boundaries in audit mode; release mode rejects
+qualification through the Rust `release-gaps` report. Neither mode uses prose
+statuses to authorize production. `ci/ai-blaise/production-gap-audit.sh`
 adds the stricter production path guard: V2 acceptance models and contract
 runners must remain visible as prerequisites, not production evidence for
 alpha functionality.
@@ -37,6 +53,16 @@ and catalog specs for `FEATURE: S2`, `FEATURE: S4`, `FEATURE: TS7`,
 `FEATURE: Search2`, `FEATURE: Search7`, `FEATURE: TO1`, `FEATURE: TO2`,
 `FEATURE: TO5`, and `FEATURE: WH1`, then emits the deterministic TSV summary
 with `cargo run -p ai_blaise_citus_operator -- run-canonical`.
+The executable Kubernetes catalog is now derived from the 14 actual kube-rs
+controller modules rather than the 17 plan-level Rust spec models. `cargo run
+-p ai_blaise_citus_operator -- print-crds` emits their exact structural,
+namespaced v2 CRDs while retaining the three focused print commands. The same
+typed catalog parses `AI_BLAISE_OPERATOR_CONTROLLERS` fail closed, and `serve`
+does not advertise readiness until Kubernetes client construction and an API
+version probe succeed; any terminal controller task removes readiness by
+terminating the process. This source/test hardening does not promote the eight
+spec-only or otherwise alpha controller paths without their separate live
+evidence.
 `cargo run -p ai_blaise_citus_operator -- run-reconcile-plans-batch-c` and
 `ci/ai-blaise/operator-reconcilers-batch-c-smoke.sh` guard the Batch C operator
 reconcile plans for `FEATURE: R7`, `FEATURE: C9`, `FEATURE: M3`, `FEATURE:
@@ -166,12 +192,14 @@ boundaries for `FEATURE: C10` and `FEATURE: M2`.
 `sidecar/schema_job/src/main.rs` emits canonical online-DDL worker,
 controller-tick, and manifest-validation runners for `FEATURE: C10` and
 `FEATURE: M2`.
-`sidecar/storage/src/lib.rs` validates object metadata, presigned URL, bucket
-ACL, and antivirus contracts for `FEATURE: Sto1`, `FEATURE: Sto3`,
-`FEATURE: Sto4`, and `FEATURE: Sto5`.
+`sidecar/storage/src/lib.rs` validates object metadata, presigning policy,
+bucket-policy metadata, and antivirus contracts for `FEATURE: Sto1`,
+`FEATURE: Sto3`, `FEATURE: Sto4`, and `FEATURE: Sto5`.
 `sidecar/storage/src/lib.rs` also runs a deterministic storage flow for those
-features: presigned URL issuance, tenant bucket ACL checks, object size
-enforcement, metadata persistence, and antivirus quarantine decisions.
+features: fail-closed unconfigured-presigning state, declared tenant bucket
+policy checks, object size enforcement, metadata persistence, and antivirus
+quarantine decisions. Provider URL signing and authenticated tenant binding
+remain unimplemented.
 `sidecar/txn_status/src/lib.rs` validates parallel-commit transaction status,
 intent evidence, and 2PC fallback decisions for `FEATURE: T5`.
 `sidecar/txn_status/src/runtime.rs` runs the Raft-backed staging/finalize state
@@ -189,6 +217,13 @@ contracts: `tools/citus-mcp/src/main.rs`, `tools/citus-admin/src/main.rs`,
 `FEATURE: D2` plan-id guard.
 
 ## Maintenance Notes
+
+2026-09-04 release evidence wiring: `FEATURE: D10` now includes `bootstrap-v2`
+in the upstream Build & Test push triggers. D9's independent PG17/PG18 SQL
+security and populated recovery jobs also run on branch pushes and pull
+requests. This does not establish nightly full `gate-close` execution: the
+repository default remains `main`, and default-branch scheduler wiring is a
+separate outstanding prerequisite.
 
 2026-08-26 upstream sync (citusdata/citus `008b391a7`): no feature status
 changes. Style and hygiene fixes touched feature-bearing surfaces without
@@ -211,41 +246,209 @@ and the patch series (`patches-check` green) and exist to keep the upstream
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: see `images/citus-pg-overlay/extension-manifest.tsv`
 
-**Summary**: `FEATURE: Bundle1 remains alpha`. The manifest, source-build
-lock, canonical preload configuration, and complete initdb path define two
-closed PG17 targets. `bundle1-final-light` is a bounded feedback operand;
-only `bundle1-final-full` may carry
-`full-bundle-required-minus-plrust` and `release-target=true`.
+**Summary**: Defines the operand-image manifest, preload order, initialization
+SQL, and explicit PG17 source-build targets. `FEATURE: Bundle1 remains alpha`
+because its authoritative manifest requires pg_search and plv8 while the
+historical evidence file contains only `bundle1-final-light` rows. Light is a
+bounded B1/PR subset derived from required manifest entries minus source-build
+lock rows marked `full`; it carries
+`light-required-subset-minus-heavy-and-plrust` and is not release eligible.
+Only `bundle1-final-full` may carry
+`full-bundle-required-minus-plrust` and `release-target=true`, and release or
+publishing requires that target to pass the stock-entrypoint default-boot
+smoke with every required manifest capability present.
 
-The trusted Bundle1 configuration loads TimescaleDB and the other reviewed
-hook users before a final Citus entry. This matches the installed zero-argument
-cohabitation-order assertion without changing plain upstream Citus's first-load
-rule outside the explicit cohabitation policy. The default-boot smoke passes no
-PostgreSQL command override, checks the applied preload source and every
-required manifest capability, and exercises Citus-first and missing-library
-negative controls. The Dockerfile retains Citus's native PostgreSQL 17 version
-check and uses `install-all` so downgrade SQL is packaged without a fallback to
-plain `install`. The `v13.3.0` value remains historical tracking metadata, not
-the compiled runtime version or the selected Chimera upstream pin.
+**2026-09-04 default-boot correction**: the earlier source-build receipt
+started PostgreSQL with an explicit `-c shared_preload_libraries=...` argument,
+so it proves the configured bundle boundary above but not a default-command
+operand boot. The current Dockerfile now appends a fail-closed include of the
+canonical preload file to the PostgreSQL sample configuration before initdb,
+and `ci-image.yml` builds `bundle1-final-light` explicitly and runs
+`bundle1-default-boot-smoke.sh` with no PostgreSQL command override. A separate
+push-time job builds `bundle1-final-full` and runs the full required-set mode.
+Both bind target/scope/release, source SHA/tree-state, actual Citus extversion,
+and installed companion version `0.1.2` to expected inputs. The historical
+`v13.3.0` tracking tag is not treated as the in-tree runtime version or as
+Chimera's separately selected upstream. The workflow does not publish an
+image. There is no current full-target default-boot receipt.
 
-Image CI binds the reviewed PostgreSQL 17 base digest, records an IID, and
-runs both light and full default-boot checks through that immutable image ID.
-The workflow does not publish an image. The plrust PG17 upstream gap remains
-unchanged, and there is no current full-target default-boot receipt from a
-reviewed clean commit.
+**Current W1 source correction**: the canonical trusted-cohabitation list now
+loads TimescaleDB and the other reviewed hook users before a final Citus entry,
+matching `assert_citus_cohabit_extension_order` without changing plain
+upstream's first-load rule outside the explicit cohabitation policy. The
+default-boot smoke calls that zero-argument runtime assertion and validates the
+configured required coextensions against the actual applied GUCs. Deliberately
+Citus-first and missing-required-library inputs are negative controls. The PG17
+Citus build retains its native supported-version check, and image CI binds the
+reviewed PostgreSQL base digest, records the build image ID, and runs the smoke
+through that immutable ID. These are source-level W1 prerequisites; until the
+full target is built and booted from frozen inputs, they are not a new runtime
+receipt or release-readiness claim.
 
-On 2026-09-05, a content-sealed dirty overlay over `e1060703` built the full
-target and passed the stock-entrypoint smoke by image ID. The exact input,
-toolchain, package, image, and log identities are recorded in
+**2026-09-05 dirty-candidate observation**: one content-sealed e106-based dirty
+overlay built `bundle1-final-full` from the reviewed PG17 base digest and passed
+the stock-entrypoint smoke by immutable image ID. The smoke observed Citus
+`15.0-1`, companion `0.1.2`, all 26 required SQL extensions, and the one
+preload-only capability; it exercised the installed positive assertions and
+both negative controls. The exact input, image, log, package, and toolchain
+identities and the remaining limits are recorded in
 `docs/ai-blaise/evidence/2026-09-05-bundle1-full-default-boot-dirty-candidate.md`.
-That observation is not clean-source release evidence, W1 completion, or an
-M0/M1/M2 promotion because its overlay was dirty and several dependency
-resolutions remain mutable.
+Because the source overlay was dirty and package/toolchain resolution remains
+mutable, this is a bounded native candidate receipt, not repeatable release
+evidence, W1 completion, or permission to promote any downstream gate.
 
-Historical light evidence remains available through
-`BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh`;
-`BUNDLE1_BUILD_HEAVY=1` selects its historical heavy path. Those rows do not
-substitute for the new full-target default-boot requirement.
+**Current source-only B6 packaging correction**: the in-tree Citus operand and
+CI packaging paths now require upstream's `install-all` target, which installs
+the normal artifacts and the distributed and columnar downgrade SQL. The
+Bundle1 checker rejects plain `install` and any `install-all || install`
+fallback, with mutation regressions for both omissions. The TimescaleDB and
+pg_cron cohabitation images and the patched-PostgreSQL-core diagnostic image
+now use the same downgrade-aware target, and the checker rejects a cohabitation
+Dockerfile that merely prints `install-all` before executing plain `install`.
+Existing Bundle1 and cohabitation image receipts predate these Dockerfiles and
+do not qualify the corrected packaging; new exact-source image builds and
+upgrade rehearsals remain required.
+
+The shared fixture migration is source-complete for the plain-PostgreSQL
+consumer set described below. Its bounded local native executions do not
+qualify release operands; the OTEL path remains unexecuted.
+`images/citus-test-fixture/Dockerfile` builds both real Citus shared libraries
+from the exact selected checkout inputs with `install-all`, then installs the
+SQL-fallback companion files into digest-pinned PG16, PG17, and PG18 bases.
+`ci/ai-blaise/build-real-citus-test-fixture.sh` binds the cached test image to
+an immutable Docker image ID plus a length-framed SHA-256 over the exact staged
+source, nonignored local source additions, overlay SQL, file modes, symlinks,
+and fixture Dockerfile. Git-ignored native build products are never staged;
+Git commit, tree, and dirty/clean state remain validated build provenance
+rather than cache authority. The separate `ai-sql-real-citus-fixture` CI job
+runs the A10/A11 SQL contract only after creating real Citus, then `pgcrypto`,
+then the companion. `migration-invariants-smoke.sh` and
+`schema-job-f1-2vi-smoke.sh` use that same immutable image boundary, prohibit
+host extension mounts and stock-image fallbacks, and create Citus before
+`pgcrypto` and the companion. This fixture is explicitly labeled test-only and
+is not the Bundle1 release operand. On 2026-09-05, a local native Linux/arm64
+build compiled and installed real Citus with `install-all` into fixture
+identity
+`85798b7d871d254d458e34668ff16fb741fc942c742750f80437cc593bcbfcbe`
+and immutable image ID
+`sha256:1b7ee236af39055df3e65137e54a7c1c67ef60d5d360a122851f383f961a2a31`.
+The A10/A11 smoke then passed real Citus, `pgcrypto`, companion `0.1.2`, and
+its existing SQL assertions against that image. This is local fixture and AI
+SQL validation only, not release, GCP, performance, or production
+qualification. Static and mutation checks have run for the two new consumer
+bytes. Against the same immutable image, the migration-invariants smoke passed
+all existing assertions over 25 rows, and the schema-job smoke passed its
+canonical Rust report plus all existing SQL 2VI, 50-row backfill, phase, and
+rollback assertions. These are local fixture regressions, not release, GCP,
+performance, or production qualification.
+
+The A10/A11 live mock-provider smoke now derives a separate immutable HTTP
+test wrapper from that exact fixture parent. The wrapper binds its own bytes,
+PG17, the parent fixture identity and image ID, and the exact reviewed
+`postgresql-17-http=1.7.2-2.pgdg12+1` package into its cache identity; it uses
+the locally cached fixture tag pinned by digest and refuses a floating parent.
+The database and mock share a private Docker network with no published host
+port, initialization and SQL readiness are separately bounded, and the
+database creates Citus, `pgcrypto`, `http`, then the companion. On 2026-09-05,
+the local Linux/arm64 wrapper build produced HTTP fixture identity
+`bcde11b05cd6540f685b1e95aedae5de43fd705045c7b624a5d0770aa74220af`
+and immutable image ID
+`sha256:e7f08efc197732b9497e986dbf949e710e958fdab485ba0d59cc00a12dd01b60`;
+the corrected smoke used the digest-pinned Python mock image and passed five
+stream events and five executed result rows with a validated canonical UTC/Git
+evidence row. This is local HTTP-mock integration evidence, not a real model
+provider, performance, release, GCP, or production qualification. The
+OTEL pool/sidecar smoke uses the base immutable fixture, removes its extension
+mounts and stock-image override, and creates Citus before `pgcrypto` and the
+companion in both default and optional kind databases. Its PostgreSQL port is
+published only on `127.0.0.1` because the host-run pool is the subject under
+test; optional kind mode loads a verified run-scoped tag of the exact image ID
+with image pulls disabled. Static and mutation checks cover both source
+migrations. The OTEL default path deliberately depends on native Linux Docker
+host-network semantics so its containerized `psql` client can reach the
+host-run pool; a macOS/Lima workaround must not weaken that boundary. Neither
+the OTEL path nor its optional kind path has native execution evidence yet.
+
+The PG16/PG17/PG18 SQL-extension matrix, PG17/PG18 canary upgrade/rollback
+matrix, and PG17/PG18 populated security backup/restore matrix now build the
+same exact source fixture for each major. They prohibit stock-image overrides,
+host extension mounts/copies, and published ports; clean anonymous volumes;
+wait for the final post-initdb server; and create Citus before `pgcrypto` and
+the companion in every database that exercises the companion. Their existing
+SQL surface, version graph, failed-upgrade rollback, ACL, logical dump/restore,
+and PG18 `io_method` assertions remain in place. On 2026-09-05, bounded local
+Linux/arm64 execution passed the SQL-extension matrix on PG16, PG17, and PG18,
+the canary matrix on PG17 and PG18, and the populated security backup/restore
+matrix on PG17 and PG18. These are local fixture regressions, not release, GCP,
+performance, or production qualification, and no older stock-image receipt
+qualifies the new paths. Their legacy stock-image override variables now fail with a
+direction to the shared builder; a caller may supply
+`CITUS_TEST_FIXTURE_IMAGE` only for one explicitly selected PostgreSQL major,
+where the builder revalidates the immutable image ID and exact source/major
+labels.
+
+The observability-replication smoke is a migrated source path. Its
+primary and physical standby use the same immutable PG17 real-Citus fixture on
+a private Docker network, both explicitly preload Citus, the primary creates
+Citus before `pgcrypto` and the companion, and the standby resolves the server
+binary from `pg_config` rather than a hard-coded package path. It preserves the
+existing local-activity, compatibility-view, recovery, streaming, and
+nonnegative-lag assertions. It also takes a fast checkpoint during the base
+backup, inserts a post-backup row, and requires bounded replay of that row on
+the standby. On 2026-09-05 this exact local Linux/arm64 rehearsal passed. That
+is a local fixture replication regression, not release, GCP, performance, or
+production qualification.
+
+The companion controls do not yet declare `requires = 'citus'`. The remaining
+prerequisite is fresh native execution of every mandatory fixture after its
+conversion to an exact Citus-bearing operand, including the two TimescaleDB
+minor lanes below. Tests must not strip the future dependency or substitute an
+empty Citus shim. Until all fixture migrations and fresh native proofs exist,
+the B6 declared-dependency and rolling-upgrade boundaries remain unverified.
+
+The source-only Timescale prerequisite now has a dedicated immutable fixture
+boundary. `images/citus-timescale-cohabitation/base-image.lock.tsv` selects the
+existing vendor TimescaleDB 2.27 and 2.28 PG17 operands by their exact reviewed
+manifest digests; this does not change or reinterpret their bundled license. A narrow materializer
+stages only the selected Citus checkout inputs, companion install/transition
+SQL, archived 0.1.2 upgrade bytes, lock, and cohabitation Dockerfile, excluding
+ignored native build output. The builder length-frames those staged bytes with
+the exact base, PostgreSQL, TimescaleDB, Citus, and companion versions, then
+accepts cache hits only through an immutable image ID and exact labels. The
+Dockerfile rejects a floating or wrong-minor base, derives the exact installed
+PostgreSQL Debian version, pins matching server headers, and proves the
+PostgreSQL binary plus TimescaleDB control/shared-library bytes remain unchanged
+before building Citus with `install-all`. It compares every generated
+distributed and columnar SQL file with its installed byte copy. The
+cohabitation, bridge, and 2.27/2.28 matrix consumers now use only this builder;
+the bridge retains a separate missing-Citus failure database and uses real
+Citus in its positive database rather than defining a distribution stub.
+Source and mutation contracts pass, but neither selected Timescale fixture has
+fresh native execution on these bytes. No old cohabitation or bridge receipt
+qualifies this source boundary.
+
+**Current boundary**: Historical light receipts are bounded observations, not
+full-product readiness. The plrust PG17 upstream gap is unchanged
+(upstream pg13-pg16 pgrx 0.11.0 only); plrust has been moved from
+`required` to `optional` in the manifest and is tracked separately under
+`FEATURE: EF6`. Target-specific labels prevent a light image from claiming
+the full boundary. The bundle is not
+evidence for plrust Rust UDFs, PG18 source-build of the heavy extensions,
+operand image release certification by command-center, or production
+multi-region Kubernetes deployment correctness.
+
+Historical bounded evidence: `BUNDLE1_BUILD_IMAGE=1 BUNDLE1_EVIDENCE_FILE=images/citus-pg-overlay/bundle1-source-build-evidence.tsv REQUIRE_DOCKER=1 bash ci/ai-blaise/sql-extension-smoke.sh` builds
+`bundle1-final-light` (PG17 PGDG + Timescale + light source-built subset),
+starts a container with the canonical `shared_preload_libraries` set, waits
+for the docker-entrypoint `PostgreSQL init process complete` log line so the
+verification phase is not racing the initdb-script-runner / final-server
+restart, and then verifies pg_extension catalog records every expected light
+SQL extension and pg_warm/seed_extension_catalog functional smoke
+output. The evidence row is appended to
+`images/citus-pg-overlay/bundle1-source-build-evidence.tsv` with the
+`bundle1-final-light` image digest. The heavy variant
+`BUNDLE1_BUILD_HEAVY=1` extends the same path through pg_search and plv8, but
+no current full-target row exists yet.
 
 **Motivation**: The fork needs one machine-checkable contract for always-on,
 optional, and hard-blocked extensions before image builds and Helm values can
@@ -672,18 +875,18 @@ hypertables for worker-local partitions. The `apply_distribute_hypertable`
 SQL function executes the TimescaleDB and Citus calls when both extensions are
 loaded, then records bridge state for operator/readiness inspection.
 
-Production evidence: `ci/ai-blaise/timescale-bridge-smoke.sh` proves
-`apply_distribute_hypertable(...)` fails closed when the Citus distribution
-entrypoint is absent, then calls real TimescaleDB `create_hypertable(...)` in
-`timescale/timescaledb-ha:pg17-ts2.27` with only the Citus entrypoint stubbed.
-`ci/ai-blaise/timescale-cohabitation-smoke.sh` then builds this fork into the
-same pinned HA image, creates real `citus`, `timescaledb`, and
-`ai_blaise_citus`, runs `apply_distribute_hypertable(...)`, verifies a real
-Timescale hypertable plus Citus `pg_dist_partition` metadata, and records
-`policy_execution_scope=entrypoints-and-catalog-state-only` evidence. This is
-the bounded bridge-entrypoint/catalog-state claim; it does not claim full
-TimescaleDB functionality, multi-worker fanout, rebalance behavior, planner
-pushdown, or operator reconciliation.
+Current source contract: `ci/ai-blaise/timescale-bridge-smoke.sh` proves
+`apply_distribute_hypertable(...)` fails closed in a database without Citus,
+then creates a separate database in the selected exact TimescaleDB 2.27 or
+2.28 fixture and loads real `citus`, `timescaledb`, `pgcrypto`, and
+`ai_blaise_citus` in dependency order. The positive path requires a real
+Timescale hypertable, Citus `pg_dist_partition` and `pg_dist_shard` metadata,
+and row readback; it defines no Citus stub. The cohabitation smoke exercises
+the same real catalogs. Source and mutation contracts pass, but fresh native
+execution on these bytes is pending, so older receipts do not qualify this
+revision. The bounded path does not claim full TimescaleDB functionality,
+multi-worker fanout, rebalance behavior, planner pushdown, or operator
+reconciliation.
 
 **Motivation**: Vanilla Citus does not understand TimescaleDB hypertables.
 The bridge uses TimescaleDB's partitioned-hypertable seam without forking
@@ -907,30 +1110,33 @@ guard.
 load time. With TS6 enabled, ai-blaise/citus remains the outer Citus hook while
 delegating to trusted preexisting hooks where the Citus path can safely do so.
 
-Production evidence: `ci/ai-blaise/timescale-cohabitation-smoke.sh` builds a
-real `timescale/timescaledb-ha:pg17-ts2.27` image with this Citus fork installed,
-starts PostgreSQL with `shared_preload_libraries=timescaledb,citus` and
+Current source contract: `ci/ai-blaise/timescale-cohabitation-smoke.sh` uses the
+shared builder to install this Citus fork into either exact manifest-pinned
+TimescaleDB 2.27 or 2.28 PG17 fixture. It starts PostgreSQL with
+`shared_preload_libraries=timescaledb,citus` and
 `citus.cohabit_extensions=timescaledb`, then creates `citus`, `timescaledb`,
-and `ai_blaise_citus` in the same server. The VM run in the production audit
-records the Git SHA, image identity, command path, PostgreSQL version,
+`pgcrypto`, and `ai_blaise_citus` in the same server. Its evidence row records
+the Git SHA, image identity, command path, PostgreSQL version,
 TimescaleDB extension version, Citus extension version, and explicit
 `real_citus_distribution=true` / `stubbed_citus_distribution=false` evidence.
-This proves the trusted cohabitation startup/loading guard for the measured
-image only; it does not prove full TimescaleDB planner pushdown, distributed
+Fresh native execution of both fixture revisions remains pending; the source
+contract alone does not prove the trusted startup/loading guard. Even a passing
+native fixture does not prove full TimescaleDB planner pushdown, distributed
 hypertable execution correctness, background policy execution, compression job
 completion, or continuous aggregate refresh. The smoke is part of
 `make -f Makefile.ai-blaise gate-close`.
 
 Forward-compatibility gate: `ci/ai-blaise/ts-version-matrix-smoke.sh`
 iterates the TS minor lines pinned under `tests/cohab-matrix/`, reads each
-exact `image-tag.txt`, runs the single-version cohabitation smoke for
-published images, and compares the running container against the per-version
-expected hook-claim table. TS 2.27 is load-bearing through
-`timescale/timescaledb-ha:pg17-ts2.27`. TS 2.28 is not production evidence yet:
-the VM registry probe on 2026-05-24 found no `timescale/timescaledb-ha:pg17-ts2.28`,
-`timescale/timescaledb-ha:pg17-ts2.28.0`, or
-`timescale/timescaledb-ha:pg17-ts2.28.1` image, so the 2.28 row records `skip-with-note` until the tag
-is published and all `unknown` hook rows are measured.
+exact digest-pinned `image-tag.txt`, asks the shared builder for that exact
+minor, passes only its verified immutable image ID to the single-version
+cohabitation smoke, and validates extension/Citus admission on the running
+container. PostgreSQL SQL cannot expose C hook pointers, so the per-version
+hook-claim table is a separate static inventory whose rows label source
+measurements and carry-forward expectations. Its schema and closed vocabulary
+are validated, but its claims are not a runtime hook comparison. TS 2.27
+and 2.28 are both required lanes; neither
+new source-built fixture has a native receipt on the current bytes yet.
 
 **References**:
 
@@ -1125,24 +1331,26 @@ catalog, exercises public apply entrypoints where plain PostgreSQL can safely
 emulate dependency calls, requires durable `companion_timescale_bridge_state`
 rows for all six bridge feature ids, and verifies that compression/CAGG apply
 paths fail closed when TimescaleDB dependency functions are absent.
-`ci/ai-blaise/timescale-bridge-smoke.sh` then installs the same extension into
-a real `timescale/timescaledb-ha:pg17-ts2.27` container, verifies that
-`apply_distribute_hypertable(...)` fails closed before a Citus distribution
-entrypoint is visible, stubs only that Citus distribution entrypoint, and
-records `policy_execution_scope=entrypoints-and-catalog-state-only` evidence
-for real TimescaleDB entrypoint calls and bridge-state rows.
-`ci/ai-blaise/timescale-cohabitation-smoke.sh` closes the previous stub gap by
-building this Citus fork into the pinned TimescaleDB HA PG17/TS2.27 image, loading
+`ci/ai-blaise/timescale-bridge-smoke.sh` now uses the same source-bound
+TimescaleDB fixture, verifies that `apply_distribute_hypertable(...)` fails
+closed in a database without Citus, and then exercises the positive path with
+real Citus and TimescaleDB in a separate database. It requires real Timescale
+hypertable state, Citus distribution/shard catalogs, row readback, and all six
+bridge-state rows; it defines no Citus distribution stub.
+`ci/ai-blaise/timescale-cohabitation-smoke.sh` builds the selected Citus fork
+into either exact TimescaleDB HA PG17/TS2.27 or PG17/TS2.28 base, loading
 `timescaledb,citus` with `citus.cohabit_extensions=timescaledb`, creating real
-`citus`, `timescaledb`, and `ai_blaise_citus` extensions, enforcing the
+`citus`, `timescaledb`, `pgcrypto`, and `ai_blaise_citus` extensions, enforcing the
 expected PG/Timescale minor when configured by the version matrix, requiring
 real `create_distributed_table` rows in `pg_dist_partition`, and executing the
 TS1/TS2/TS3/TS4/TS5/TS12 apply functions against that live cohabiting server
-without defining any Citus stub. Those six feature entries are production-ready
-for the same bounded SQL apply/catalog-state surface. TS7 separately proves the
-Kubernetes controller execution and status reconciliation path for that surface.
+without defining any Citus stub. Source and mutation contracts pass, but fresh
+native execution of the new fixture/consumer bytes remains pending and older
+receipts do not qualify them. TS7 separately covers the Kubernetes controller
+execution and status reconciliation path for that surface.
 
-The TS18 production-ready boundary is intentionally narrow: it proves SQL
+The declared TS18 boundary is intentionally narrow: after fresh native proof it
+covers whether the SQL
 apply functions invoke the expected TimescaleDB/Citus entrypoints, create the
 measured coordinator catalog objects, fail closed when required dependency
 functions are absent, and record deterministic bridge-state rows. It does not
@@ -1866,6 +2074,18 @@ Ready. It deliberately rejects coordinator-less apply, so this source
 work does not broaden the bounded coordinator-less S4 evidence above. Cluster
 promotion still requires independent review of all eight live evidence
 artifacts documented in `operator/CITUS_CLUSTER_PRODUCTION.md`.
+
+Command Center chart prerelease `0.1.0-bootstrap-v2.3` now packages the
+Rust-generated 14-CRD `citus.ai-blaise.io/v2` catalog, selected-controller
+namespaced RBAC, an API token, explicit apply mode, and a real coordinator/worker
+CR with exact image/extension/TLS inputs. Its operator is a singleton with
+Recreate rollouts, not a leader-elected HA deployment. The chart disables the
+legacy pool by default and supplies a read-only Helm topology/version test.
+These source and render checks do not close the live chart-install or rolling
+upgrade gates. Legacy `ai-blaise.com` CRs require an explicit data-preserving
+migration; no automatic conversion or child adoption is claimed. The chart
+and migration instructions remain in `ai-blaise/command-center`, not a
+duplicate deployment tree in this repository.
 
 **Motivation**: The classic coordinator is a throughput and availability
 bottleneck.
@@ -4643,7 +4863,7 @@ so requests route through Citus-aware helper views.
 ### API3: GraphQL Sidecar
 
 **Overlay**: `sidecar/graphql`, `companion/src/graph_bridge.rs`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: `pg_graphql`
@@ -4651,27 +4871,28 @@ so requests route through Citus-aware helper views.
 **Summary**: Defines the GraphQL endpoint path, schema bindings, and exposed
 tables for the GraphQL sidecar, plus a runnable canonical binding emitter.
 
-Production evidence: VM proof runs
-`bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh` and
-`bash ci/ai-blaise/graphql-pggraphql-live-smoke.sh`. The runtime smoke builds
-and serves `ai_blaise_citus_sidecar_graphql`, then verifies live GraphiQL HTML,
-POST `/graphql/v1` query handling with tenant JWT claims, missing-claim and
-introspection-denied error taxonomy, malformed body handling, `/graphql/ws`
-subscription registration, WebSocket-upgrade boundary errors, persistent
-`/drain` readiness, metrics, and fail-closed runtime dependency validation for
-database URL and JWT secret inputs. The live data-plane smoke starts a
-PostgreSQL image containing `pg_graphql`, creates an RLS-protected
-`public.account` table with tenant A and tenant B rows, runs the real GraphQL
-sidecar in `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1` mode against that database,
-posts tenant-scoped queries through `/graphql/v1`, proves the sidecar executes
-`graphql.resolve(...)` and returns only the caller tenant's row, verifies the
-opposite tenant row is hidden by PostgreSQL RLS, and checks database URL/JWT
-secret material is absent from GraphQL responses. This production-ready
-boundary covers live query execution through `pg_graphql`, tenant-claim
-installation via `request.jwt.claims`, RLS-preserving HTTP query handling, and
-the existing subscription registration boundary; it does not claim durable
-GraphQL subscription fan-out, GraphQL query planning across multiple Citus
-workers (multi-worker GraphQL planning), or Kubernetes traffic.
+Bounded evidence: `bash ci/ai-blaise/graphql-postgrest-runtime-smoke.sh`
+builds and serves `ai_blaise_citus_sidecar_graphql` and verifies GraphiQL,
+malformed-input handling, readiness/drain/metrics, and closed startup when its
+live database or authentication configuration is absent. HTTP
+`POST /graphql/v1` accepts exactly one `Authorization: Bearer` token; caller
+body fields named `jwt_claims` or `tenant_id` are rejected rather than trusted.
+The sidecar introspects that token through central Auth3 over HTTPS with an
+explicit CA and mandatory client mTLS, then binds the authenticated claims and
+`graphql.resolve(...)` into the same PostgreSQL transaction so database RLS
+remains authoritative. Query handling has no canonical-success fallback.
+
+`bash ci/ai-blaise/graphql-pggraphql-live-smoke.sh` exercises this path against
+real Auth3 and `pg_graphql`: Auth3 listens only on loopback behind a
+client-certificate-required TLS proxy, two tokens prove tenant-separated RLS,
+revocation closes access, and forged body claims are rejected. This is
+single-process diagnostic evidence, not a production promotion receipt.
+`/graphql/ws` authenticates and then returns HTTP 501 because subscription
+transport is not implemented. API3 remains alpha until Auth3 identity,
+session, and revocation state are durable and replica-consistent; secure
+enrollment/admin boundaries, production certificate issuance and rotation,
+Kubernetes network policy, GraphQL HA/multiworker operation, load and query
+cost limits, and subscriptions also remain unproven.
 
 **Motivation**: GraphQL routing needs a typed endpoint and schema-binding
 contract before exposing pg_graphql to tenants.
@@ -4735,7 +4956,7 @@ for distributed tables.
 **Summary**: Requires RLS, JWT secret references, and tenant claims for
 auto-API routes.
 
-Production evidence: VM proof run `bash ci/ai-blaise/postgrest-live-data-plane-smoke.sh` signs HS256 JWTs with `role=web_user` and `tenant_id` claims, sends them through the PostgREST sidecar proxy to upstream PostgREST, and verifies PostgreSQL RLS enforces tenant isolation end to end: unauthenticated reads fail closed, tenant A and tenant B SELECTs only return their own rows, a tenant A INSERT for tenant A succeeds, and a tenant A cross-tenant INSERT for tenant B is rejected and leaves no row behind. The same smoke verifies database URI and JWT secret values stay out of `check-runtime-dependencies` output and `postgrest.conf`. The production-ready claim covers the PostgREST auto-REST data-plane path; API3 has separate live `pg_graphql` execution evidence in `ci/ai-blaise/graphql-pggraphql-live-smoke.sh`.
+Production evidence: VM proof run `bash ci/ai-blaise/postgrest-live-data-plane-smoke.sh` signs HS256 JWTs with `role=web_user` and `tenant_id` claims, sends them through the PostgREST sidecar proxy to upstream PostgREST, and verifies PostgreSQL RLS enforces tenant isolation end to end: unauthenticated reads fail closed, tenant A and tenant B SELECTs only return their own rows, a tenant A INSERT for tenant A succeeds, and a tenant A cross-tenant INSERT for tenant B is rejected and leaves no row behind. The same smoke verifies database URI and JWT secret values stay out of `check-runtime-dependencies` output and `postgrest.conf`. The production-ready API5 claim is limited to that separately proven PostgREST auto-REST data plane. Its GraphQL contribution inherits no readiness from PostgREST and remains alpha under API3's Auth3 durability, HA, certificate/network-policy, query-limit, and subscription gaps.
 
 **Motivation**: Auto-generated APIs must preserve tenant isolation rather than
 exposing raw distributed tables.
@@ -5815,7 +6036,7 @@ Production evidence: VM worker D on experiment-playground, 2026-05-23: `cargo te
 **Bundled extension dep**: none
 
 **Summary**: Defines bucket and metadata-table contracts for the storage
-sidecar, plus a runnable canonical metadata/presign emitter.
+sidecar, plus a runnable canonical metadata and presigning-policy emitter.
 
 Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` builds and serves the real `ai_blaise_citus_sidecar_storage` binary, verifies `/healthz`, `/readyz`, `/metrics`, persistent `/drain`, `/storage/policy`, `/storage/state`, clean upload storage, infected upload quarantine, and fail-closed JSON errors through live HTTP. This promotes the bounded storage sidecar metadata, policy, and in-process object-record runtime; external object-store writes remain outside this feature scope.
 
@@ -5836,14 +6057,22 @@ mapping before upload/download paths are implemented.
 ### Sto3: Presigned URL Signing
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Defines presigned upload URL TTL policy for the storage sidecar.
+**Summary**: Defines presigned upload URL TTL policy for the storage sidecar,
+but does not yet implement a provider signer.
 
-Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` exercises live HTTP `POST /storage/presign`, verifies deterministic signed URL output for tenant `tenant-a`, and verifies `ttl_seconds=901` fails closed against the 900-second policy. This promotes presign policy enforcement and URL issuance in the storage sidecar runtime.
+Current bounded evidence: `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
+exercises live HTTP `POST /storage/presign` and verifies it fails closed with
+HTTP 503 and `presigning unavailable: no provider signer is configured`,
+without parsing or echoing caller fields. The policy endpoint reports
+`presigning_status=unconfigured`, and canonical runtime state records no URL
+and `issued_urls=0`. S3/GCS/Azure credential integration, provider-canonical
+request signing, and successful presigned URL issuance remain unimplemented;
+this feature is not eligible for production release.
 
 **Motivation**: Direct uploads need a bounded signing window to keep file
 access auditable.
@@ -5862,14 +6091,22 @@ URLs.
 ### Sto4: Bucket-Level ACLs
 
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/storage`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
 
-**Summary**: Carries tenant-column ACL binding for object metadata rows.
+**Summary**: Carries tenant-column ACL policy metadata for object rows; it does
+not establish the request tenant's authenticated identity.
 
-Production evidence: VM proof run `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh` verifies the live storage policy exposes the tenant-bound `tenant_read_write` ACL and that upload/presign requests execute only for the configured `tenant-files` and `tenant-a` policy. The Rust unit suite covers ACL method rejection and policy lookup failures.
+Current bounded evidence: `bash ci/ai-blaise/storage-sidecar-runtime-smoke.sh`
+verifies that the live storage policy exposes the configured
+`tenant_read_write` ACL, while the Rust unit suite covers ACL method rejection
+and policy lookup failures. A tenant value supplied in a request body is
+untrusted input, not authentication or authorization evidence. Verified
+identity propagation, server-derived tenant binding, cross-tenant denial, and
+provider bucket-policy enforcement remain unimplemented; this feature is not
+eligible for production release.
 
 **Motivation**: Storage ACLs must line up with tenant RLS rather than existing
 only in object-store policy.
@@ -6859,13 +7096,16 @@ promoted.
 **Citus comparison**: Vanilla Citus exposes many stats views, but not this
 single companion-owned local activity rollup contract.
 
-Production evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
-`ai_blaise_citus` into a real `postgres:17` container and requires
+Source-gated evidence: `ci/ai-blaise/sql-extension-smoke.sh` installs
+`ai_blaise_citus` into the immutable source-built real-Citus fixture and requires
 `companion_pg_stat_local_activity` and its compatibility alias
 `companion_pg_stat_distributed` to report the local database node.
-`ci/ai-blaise/observability-replication-smoke.sh` then starts a real
-PostgreSQL primary, installs the extension, and requires the view to report
-active local activity with nonnegative idle and wait counters.
+`ci/ai-blaise/observability-replication-smoke.sh` defines a private-network
+real-Citus primary/standby rehearsal and requires the view to report active
+local activity with nonnegative idle and wait counters. On 2026-09-05 the
+local Linux/arm64 rehearsal passed its post-backup replay and view assertions.
+The SQL-extension matrix and replication rehearsal are bounded local fixture
+regressions, not release, GCP, performance, or production qualification.
 
 **References**:
 
@@ -6892,11 +7132,14 @@ surface for lag budgets before HA gates can assert readiness.
 **Citus comparison**: Vanilla Citus does not provide an ai-blaise regional lag
 view contract.
 
-Production evidence: `ci/ai-blaise/observability-replication-smoke.sh` starts
-a real `postgres:17` primary and streaming standby on a Docker network, creates
-a replication role, performs `pg_basebackup`, waits for the standby to enter
-recovery, and requires the installable `companion_pg_dist_replication_lag`
-view to report a streaming standby row with nonnegative lag bytes.
+Source-gated evidence: `ci/ai-blaise/observability-replication-smoke.sh` uses
+the immutable source-built PG17 real-Citus fixture for a primary and streaming
+standby on a private Docker network, creates a replication role, performs
+`pg_basebackup`, waits for recovery, and requires the installable
+`companion_pg_dist_replication_lag` view to report a streaming standby row with
+nonnegative lag bytes. On 2026-09-05 bounded local Linux/arm64 execution also
+inserted a post-backup row and observed it on the standby. This is local
+fixture replication evidence, not production or release qualification.
 
 **References**:
 
@@ -8541,9 +8784,9 @@ into a separate cluster; it cannot silently gain a security-reopening reverse.
 
 ### D10: Release Hardening Runbook
 
-**Overlay**: `companion/src/ops_contracts.rs` and
+**Overlay**: `tools/feature-register` and
 `docs/ai-blaise/RUNBOOKS/production.md`
-**Status**: production-ready
+**Status**: alpha
 **Since**: unreleased
 **Upstream Citus equivalent**: none
 **Bundled extension dep**: none
@@ -8551,20 +8794,79 @@ into a separate cluster; it cannot silently gain a security-reopening reverse.
 **Summary**: Records the release-readiness review path, security controls, and
 operational handoff checklist as a contract surface.
 
-Production evidence: VM proof run
-`bash ci/ai-blaise/release-hardening-runbook-smoke.sh` executes the real
-companion `run-release-hardening-canonical` contract, verifies all 19 required
-release gates and 10 required release-record fields, runs
-`runbook-command-check.sh`, `docs-evidence-boundary-check.sh`, and
-`production-gap-audit.sh`, runs `production-readiness-check.sh
-production-release` and requires it to fail closed while alpha features remain
-in release scope, verifies D10 is no longer listed as the blocker, and renders a
-release record containing source revision, digest-manifest requirement,
-audit/check status, alpha scope, rollback checkpoint requirement, and owner
-signoff requirement. The production-ready surface is the fail-closed release
-hardening runbook and release-record contract. It does not claim that a release
-candidate has been certified, that owner signoff has occurred, or that D9
+Evidence boundary: no current release qualification. The former companion
+canonical report counted modeled gates and required record fields; it did not
+verify their execution. The release path now uses the Rust inventory's
+`release-gaps` command. `production-readiness-check.sh production-release`
+returns a nonzero result with per-ID scope and blockers, including D10, while
+the trusted current-source release evidence verifier is unimplemented.
+Changing every historical status to production-ready, marking implementation
+complete, or adding local evidence paths cannot authorize a release.
+
+`release-hardening-runbook-smoke.sh` checks this rejection contract and exact
+inventory coverage. It does not generate a release record or substitute
+source revision text for artifact provenance. Functional, security, recovery,
+upgrade, and comparative performance evidence, licensing, the rollback
+checkpoint requirement, and the owner signoff requirement remain outstanding.
+It does not claim that a release candidate has been certified or that D9
 canary upgrade/rollback drills have run for a particular release.
+
+The static production-gap audit now gets source identity coverage from the
+Rust register rather than parsing headings, status labels, or prose counts.
+Its positive-readiness wording requirements and inverted status comparisons
+are removed. This catalog is an optional overclaim-check input, not inventory
+authority. Regression tests cover absent and invented legacy prose, malformed
+TSV rejected through the real Rust validator, a removed GraphQL revocation
+assertion, and substitution of structural success for release rejection.
+The audit's success labels describe checked source contracts, not live SQL or
+Kubernetes execution. This does not reclassify the historical claims here or
+provide new production receipts.
+
+`tools/feature-register` now validates the structured inventory in Rust. The
+inventory retains all legacy IDs while distinguishing aliases, retained
+components, externally owned implementations, compatibility tombstones, and
+benchmark evidence. The feature-doc workflow and `feature-register-check`
+Make target validate the TSV, require exact transitional heading/ID coverage,
+and exercise malformed-input rejection. Missing artifact outputs are not
+invented as evidence paths. This is structural validation, not a replacement
+for current-source live qualification or a claim that the remaining prose
+parsers, release machinery, and P7 implementation retirements are complete.
+
+The Rust `check-source-coverage` command scans Git-enumerated overlay files,
+including nonignored new sources but excluding build outputs. Every observed
+source marker must name a registered ID; a marker never establishes
+implementation. Library-only crates are valid, source symlink escapes and
+unregistered IDs fail, and an empty marker scan cannot silently pass. The
+production audit, V2 inventory workflow, and feature-doc path use this machine
+identity boundary. The docs boundary checker no longer derives evidence
+classification from prose status labels. Its digest, global-overclaim, and
+snapshot-freshness checks remain.
+
+The D10 release boundary also includes
+`ci/ai-blaise/license-check.sh`. It reads exactly one structurally complete,
+nonempty `cargo metadata --locked` document before applying the existing Rust
+dependency policy. Cargo failure, empty or malformed metadata, and jq failure
+are fatal after scanning begins; missing tools may skip only an explicitly
+exploratory run, while the workflow requires them. The focused Python suite
+exercises the real locked workspace and mocked command failures. This is a
+locked metadata check, not a legal compatibility opinion, runtime evidence, or
+release qualification, and it does not change the repository's licensing
+policy.
+
+The September 5 attribution refresh records the actual locked Rust graph and
+removes speculative Go/npm dependency lists. `LICENSE_AUDIT.md` corrects the
+PostGIS later-version grant and links the reviewed WhoDB Apache-2.0 revision;
+the prior unsupported WhoDB relicensing claim is withdrawn. No Go/npm import,
+Timescale deployment choice, image notice bundle, or source offer is implied.
+
+Bundle1's contract checker now reads canonical image/extension documentation,
+and the placement-generation checker reads its bounded production-audit
+description; neither requires this catalog. Their negative tests still reject
+missing image-scope and C-symbol contracts. The restore-depth checker points
+to the PITR runbook, which distinguishes `dr_restore_depth_report`'s model
+output from the separate PostgreSQL drill and from production Citus restore
+evidence. The microbenchmark identity anchor now names `docs/features.tsv` and
+does not present those artifacts as additional product features.
 
 **Citus comparison**: Vanilla Citus does not include these ai-blaise hardening
 gates.
@@ -8572,8 +8874,14 @@ gates.
 **References**:
 
 - In-source: `FEATURE: D10` in `companion/src/ops_contracts.rs`
+- In-source: `FEATURE: D10` in `tools/feature-register/src/lib.rs`
+- Executable: `cargo run --locked -p ai_blaise_feature_register -- check-legacy-coverage`
+- CI: `.github/workflows/ci-features-doc.yml`
+- Source check: `ci/ai-blaise/license-check.sh`
+- Regression: `ci/ai-blaise/license-check_test.py`
+- CI: `.github/workflows/ci-license.yml`
 - Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-operations-canonical`
-- Executable: `cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-release-hardening-canonical`
+- Executable: `cargo run --locked -p ai_blaise_feature_register -- release-gaps`
 - CI: `ci/ai-blaise/release-hardening-runbook-smoke.sh`
 - Executable: `cargo run -p ai_blaise_citus_operator -- run-multiregion-contracts-canonical`
 - CI: `ci/ai-blaise/operator-multiregion-contracts-smoke.sh`

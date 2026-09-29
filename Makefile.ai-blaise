@@ -22,7 +22,7 @@
 .PHONY: sidecar-analytical-parquet-read-smoke
 .PHONY: sidecar-analytical-iceberg-snapshot-smoke
 .PHONY: run-companion-libsql-read-tier-guard-canonical companion-edge2-libsql-research-guard-smoke
-.PHONY: bundle1-default-boot-smoke extension-security-backup-smoke
+.PHONY: bundle1-default-boot-smoke
 .NOTPARALLEL: gate-close
 
 preflight-local:
@@ -452,10 +452,10 @@ run-postgrest-runtime-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_postgrest -- run-runtime-canonical
 
 build-sidecar-graphql:
-	cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
+	cargo check --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --all-targets --all-features
 
 test-sidecar-graphql:
-	cargo test -p ai_blaise_citus_sidecar_graphql
+	cargo test --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --all-targets
 
 run-graphql-canonical:
 	cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-canonical
@@ -714,9 +714,10 @@ upgrade-rollback-guardrails:
 canary-upgrade-rollback-smoke:
 	@bash ci/ai-blaise/canary-upgrade-rollback-smoke.sh
 
+.PHONY: extension-security-backup-smoke
 extension-security-backup-smoke:
-	@EXTENSION_SECURITY_PG_MAJOR=17 bash ci/ai-blaise/extension-security-backup-smoke.sh
-	@EXTENSION_SECURITY_PG_MAJOR=18 bash ci/ai-blaise/extension-security-backup-smoke.sh
+	@EXTENSION_SECURITY_PG_MAJOR=17 EXTENSION_SECURITY_IMAGE="$${EXTENSION_SECURITY_IMAGE_17:-postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0}" bash ci/ai-blaise/extension-security-backup-smoke.sh
+	@EXTENSION_SECURITY_PG_MAJOR=18 EXTENSION_SECURITY_IMAGE="$${EXTENSION_SECURITY_IMAGE_18:-postgres:18-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af}" bash ci/ai-blaise/extension-security-backup-smoke.sh
 
 gate-close: extension-security-backup-smoke
 
@@ -786,17 +787,28 @@ postgres-core-patches-live-smoke:
 
 build-image-matrix: build-image-pg17 build-image-pg18
 
-features-doc-check:
+.PHONY: feature-register-check
+feature-register-check:
+	cargo run --locked -p ai_blaise_feature_register -- check-legacy-coverage
+	cargo run --locked -p ai_blaise_feature_register -- check-source-coverage
+	cargo test --locked -p ai_blaise_feature_register
+
+features-doc-check: feature-register-check
 	@ci/ai-blaise/features-doc-check.sh
 
 slop-scan:
 	@ci/ai-blaise/slop-scan.sh
 
 production-readiness-check:
-	@ci/ai-blaise/production-readiness-check.sh
+	@if [ "$${AI_BLAISE_RELEASE_MODE:-0}" = "1" ]; then \
+	  ci/ai-blaise/production-readiness-check.sh production-release; \
+	else \
+	  ci/ai-blaise/production-readiness-check.sh audit; \
+	fi
 
 production-gap-audit: docs-evidence-boundary-check
 	@ci/ai-blaise/production-gap-audit.sh
+	@python3 ci/ai-blaise/production-gap-audit_test.py
 
 release-gate-monitor:
 	@ci/ai-blaise/release-gate-monitor.sh --local-only
@@ -804,6 +816,7 @@ release-gate-monitor:
 .PHONY: docs-evidence-boundary-check observability-contracts-check release-gate-monitor dr-restore-depth-check
 docs-evidence-boundary-check:
 	@ci/ai-blaise/docs-evidence-boundary-check.sh
+	@python3 ci/ai-blaise/docs-evidence-boundary-check_test.py
 
 citus-patch-production-audit:
 	@ci/ai-blaise/citus-patch-production-audit.sh

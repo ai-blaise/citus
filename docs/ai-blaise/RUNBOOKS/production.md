@@ -26,11 +26,11 @@ Production deployments must run through the continuous gates before release.
 18. Docs evidence boundary audit.
 19. Runbook command checks.
 
-These gates are not a blanket production certification for every custom
-feature. They verify the V2 acceptance model, the current deployment path, and
-the docs evidence boundaries. Before any production promotion, run the
-production-readiness audit in release mode and block promotion while alpha or
-contract-only features remain in release scope:
+This historical checklist is not a set of measured passing results. Several
+entries still use models or source checks. Before any production promotion,
+run the production-readiness audit in release mode. It currently rejects
+release because the trusted current-source release evidence verifier is
+unimplemented, regardless of historical labels or implementation maturity:
 
 ```bash
 ci/ai-blaise/production-readiness-check.sh production-release
@@ -43,27 +43,33 @@ The runbook-command check statically parses the operational runbook command
 blocks, runs `bash -n` after placeholder normalization, and verifies referenced
 repo scripts, Cargo packages, Makefile targets, and sidecar binaries still exist.
 
-The release-hardening smoke binds this runbook to a machine-readable contract:
+The release-hardening smoke verifies the rejection contract and exact
+machine-register coverage:
 
 ```bash
 ci/ai-blaise/release-hardening-runbook-smoke.sh
-cargo run -p ai_blaise_citus_companion --bin companion_contracts -- run-release-hardening-canonical
+cargo run --locked -p ai_blaise_feature_register -- release-gaps
 ```
 
-The canonical report must list 19 required release gates, 10 release-record
-fields, `production_release_block_required=true`,
-`owner_signoff_required=true`, `rollback_evidence_required=true`,
-`production_gap_audit_required=true`, and
-`runbook_command_check_required=true`. The generated release record must carry:
-`source_revision`, `image_digest_manifest`, `production_readiness_audit`,
-`production_gap_audit`, `docs_evidence_boundary_audit`,
-`runbook_command_check`, `release_block_status`, `alpha_feature_scope`,
-`rollback_checkpoint`, and `owner_signoff`.
+`release-gaps` reports per-ID maturity, disposition, canonical owners, scope,
+and blockers from `docs/features.tsv`. Exit 1 means a valid inventory is not
+release-qualified; exit 2 means invalid input. Neither is a successful
+production release. The smoke must reject unexpected success and malformed
+input, and must preserve every ID, including D10 and consolidated components.
+It does not create a release record. Source paths and local evidence files
+are not verified release receipts.
 
-The production-gap-audit gate is intentionally conservative: it asserts that
-V2 acceptance is a modeled prerequisite, that production-release mode remains
-blocked while alpha features exist, and that SQL/Kubernetes smoke tests still
-exercise live runtime behavior.
+Before a positive release path can be implemented, the evidence verifier must
+bind exact source revision and immutable image digests to trusted executions
+covering functional, security, recovery, upgrade, and comparative performance
+contracts. Licensing, deployment scope, rollback checkpoint, and owner
+signoff must also be resolved. Counting required fields or canonical model
+thresholds does not establish any of those outcomes.
+
+The production-gap-audit gate checks source and documentation contracts,
+including the presence of SQL/Kubernetes test assertions. It does not execute
+those tests or qualify their results. Legacy prose parsers remain during the
+machine-register migration; no parser's status count authorizes promotion.
 
 ## Runtime Image Gate
 

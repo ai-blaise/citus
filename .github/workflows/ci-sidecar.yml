@@ -234,14 +234,14 @@ jobs:
           components: clippy, rustfmt
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy ai_blaise_citus_sidecar_graphql (warnings denied)
-        run: cargo clippy -p ai_blaise_citus_sidecar_graphql --all-targets -- -D warnings
-      - name: Rustdoc broken-intra-doc-links ai_blaise_citus_sidecar_graphql
-        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc -p ai_blaise_citus_sidecar_graphql --no-deps
+      - name: Clippy GraphQL and Auth3 introspection client (warnings denied)
+        run: cargo clippy --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --all-targets --all-features -- -D warnings
+      - name: Rustdoc broken-intra-doc-links for GraphQL and Auth3 introspection client
+        run: RUSTDOCFLAGS="-D rustdoc::broken-intra-doc-links" cargo doc --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --no-deps
       - name: Check tests
-        run: cargo check -p ai_blaise_citus_sidecar_graphql --all-targets
+        run: cargo check --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --all-targets --all-features
       - name: Test
-        run: cargo test -p ai_blaise_citus_sidecar_graphql
+        run: cargo test --locked -p ai_blaise_citus_auth_introspection_client -p ai_blaise_citus_sidecar_graphql --all-targets
       - name: Run canonical GraphQL runtime
         run: cargo run -q -p ai_blaise_citus_sidecar_graphql -- run-runtime-canonical
 

@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # FEATURE: API1 API2 API3 API5 API6 EF1 EF2 EF4 EF5
+# GraphQL is exercised here only as a fail-closed startup member of the trio;
+# its authenticated Auth3/mTLS data plane is covered by the dedicated live
+# pg_graphql smoke.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -98,39 +101,31 @@ def smoke_postgrest():
 
 
 def smoke_graphql():
-    proc, port = start_service("ai_blaise_citus_sidecar_graphql")
-    try:
-        wait_ready(proc, port, "graphql")
-        status, data = request(port, "GET", "/graphql")
-        assert status == 200, (status, data)
-        assert "ai-blaise GraphQL" in data
-
-        body = json.dumps(
-            {
-                "query": "query { orderCollection { edges { node { id total } } } }",
-                "jwt_claims": '{"tenant_id":"tenant-a","role":"web_anon"}',
-            },
-            separators=(",", ":"),
-        )
-        status, data = request(port, "POST", "/graphql/v1", body)
-        assert status == 200, (status, data)
-        assert '"namespace":"public_api"' in data
-        assert '"tenant_id":"tenant-a"' in data
-
-        subscription = json.dumps(
-            {
-                "query": "subscription { orderInserted { id total } }",
-                "jwt_claims": '{"tenant_id":"tenant-a"}',
-            },
-            separators=(",", ":"),
-        )
-        status, data = request(port, "POST", "/graphql/ws", subscription)
-        assert status == 200, (status, data)
-        assert '"transport":"websocket"' in data
-        assert '"subscription_field":"orderInserted"' in data
-        assert "public_api.public.orders" in data
-    finally:
-        stop(proc)
+    env = os.environ.copy()
+    for name in (
+        "AI_BLAISE_GRAPHQL_DATABASE_URL",
+        "AI_BLAISE_GRAPHQL_LIVE_EXECUTION",
+        "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
+        "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE",
+        "AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS",
+    ):
+        env.pop(name, None)
+    result = subprocess.run(
+        ["cargo", "run", "-q", "-p", "ai_blaise_citus_sidecar_graphql", "--", "serve"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    assert result.returncode != 0, result.stdout
+    assert (
+        "missing runtime dependency: AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL"
+        in result.stderr
+    ), result.stderr
 
 
 def smoke_edge_functions():

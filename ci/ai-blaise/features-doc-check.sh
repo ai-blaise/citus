@@ -1,79 +1,77 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base="${BASE_SHA:-}"
-head="${HEAD_SHA:-HEAD}"
+# FEATURE: D10
 
-if [[ -z "${base}" ]]; then
+repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+validator=""
+while (($#)); do
+  case "$1" in
+    --repo|--feature-register-bin)
+      if (($# < 2)); then
+        echo "$1 requires a path" >&2
+        exit 2
+      fi
+      if [[ "$1" == "--repo" ]]; then repo="$2"; else validator="$2"; fi
+      shift 2
+      ;;
+    *)
+      echo "usage: $0 [--repo PATH] [--feature-register-bin PATH]" >&2
+      exit 2
+      ;;
+  esac
+done
+if [[ -n "${validator}" ]]; then
+  validator="$(cd -- "$(dirname -- "${validator}")" && pwd -P)/$(basename -- "${validator}")"
+fi
+cd -- "${repo}"
 
-  remote_base="${GITHUB_BASE_REF:-main}"
-  if git config --get remote.origin.url >/dev/null 2>&1; then
-    git fetch -q origin "${remote_base}:refs/remotes/origin/${remote_base}" >/dev/null 2>&1 || true
-    if [[ "${remote_base}" != "main" ]]; then
-      git fetch -q origin main:refs/remotes/origin/main >/dev/null 2>&1 || true
-    fi
-  fi
-
-  if git rev-parse --verify "origin/${remote_base}" >/dev/null 2>&1; then
-    base="origin/${remote_base}"
-
-  elif git rev-parse --verify origin/main >/dev/null 2>&1; then
-    base="origin/main"
-  else
-    base="$(git rev-list --max-parents=0 HEAD | tail -1)"
-  fi
+if [[ -n "${validator}" ]]; then
+  "${validator}" check-source-coverage --repo .
+else
+  cargo run --locked --quiet -p ai_blaise_feature_register -- check-source-coverage
 fi
 
-feature_paths='^(companion/src/|sidecar/[^/]+/src/|pool/src/|operator/src/crds/|e2e/src/|patches/|tools/[^/]+/src/)'
-scan_paths=(
-  companion
-  sidecar
-  pool
-  operator
-  e2e
-  tools
-  patches
-)
-
-source_ids="$(mktemp)"
-doc_ids="$(mktemp)"
-trap 'rm -f "${source_ids}" "${doc_ids}"' EXIT
-
-extract_feature_ids() {
-  if command -v rg >/dev/null 2>&1; then
-    rg -No 'FEATURE: [A-Za-z][A-Za-z0-9]*' "$@" || true
+base="${BASE_SHA:-}"
+head="${HEAD_SHA:-}"
+if [[ "${base}" =~ ^0+$ ]]; then base=""; fi
+if [[ -z "${base}" ]]; then
+  remote_base="origin/${GITHUB_BASE_REF:-main}"
+  if git rev-parse --verify --end-of-options "${remote_base}^{commit}" >/dev/null 2>&1; then
+    base="${remote_base}"
+  elif git rev-parse --verify 'origin/main^{commit}' >/dev/null 2>&1; then
+    base=origin/main
   else
-    grep -RhoE 'FEATURE: [A-Za-z][A-Za-z0-9]*' "$@" 2>/dev/null || true
+    base=HEAD
   fi
-}
+fi
+base_oid="$(git rev-parse --verify --end-of-options "${base}^{commit}")"
 
-extract_feature_ids "${scan_paths[@]}" \
-  | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
-  | sort -u >"${source_ids}"
+changed_paths="$(mktemp)"
+trap 'rm -f "${changed_paths}"' EXIT
+if [[ -n "${head}" ]]; then
+  head_oid="$(git rev-parse --verify --end-of-options "${head}^{commit}")"
+  git diff --name-only -z "${base_oid}" "${head_oid}" -- >"${changed_paths}"
+else
+  git diff --name-only -z "${base_oid}" -- >"${changed_paths}"
+  git ls-files --others --exclude-standard -z >>"${changed_paths}"
+fi
 
-extract_feature_ids docs/ai-blaise/NEW_FEATURES.md \
-  | sed -E 's/.*FEATURE: ([A-Za-z][A-Za-z0-9]*).*/\1/' \
-  | sort -u >"${doc_ids}"
+inventory_changed=false
+feature_changes=()
+while IFS= read -r -d '' path; do
+  case "${path}" in
+    docs/features.tsv) inventory_changed=true ;;
+    companion/src/*|sidecar/*/src/*|pool/src/*|operator/src/*|e2e/src/*|patches/*|tools/*/src/*)
+      feature_changes+=("${path}")
+      ;;
+  esac
+done <"${changed_paths}"
 
-missing_ids="$(comm -23 "${source_ids}" "${doc_ids}")"
-
-if [[ -n "${missing_ids}" ]]; then
-  echo "source FEATURE markers missing from docs/ai-blaise/NEW_FEATURES.md:" >&2
-  echo "${missing_ids}" >&2
+if ((${#feature_changes[@]} > 0)) && [[ "${inventory_changed}" != true ]]; then
+  echo "feature-bearing files changed without updating docs/features.tsv:" >&2
+  printf '  %q\n' "${feature_changes[@]}" >&2
   exit 1
 fi
-
-changed_files="$(git diff --name-only "${base}" "${head}")"
-added_files="$(grep -E "${feature_paths}" <<<"${changed_files}" || true)"
-
-if [[ -z "${added_files}" ]]; then
-  exit 0
-fi
-
-if grep -qx 'docs/ai-blaise/NEW_FEATURES.md' <<<"${changed_files}"; then
-  exit 0
-fi
-
-echo "feature-bearing files were added without updating docs/ai-blaise/NEW_FEATURES.md" >&2
-echo "${added_files}" >&2
-exit 1
+printf 'feature_doc_change_check\tpassed\tfeature_paths=%s\tinventory_changed=%s\n' \
+  "${#feature_changes[@]}" "${inventory_changed}"

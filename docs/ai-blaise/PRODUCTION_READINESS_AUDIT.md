@@ -226,23 +226,28 @@ more production-ready than the artifacts justified.
   rejects regressions that leave a promoted runtime smoke out of those gates.
 - The API trio sidecars now have runtime front doors instead of canonical-only
   binaries: PostgREST renders config/OpenAPI and can spawn the configured child
-  process, GraphQL can execute `graphql.resolve(...)` against live
-  `pg_graphql` when `AI_BLAISE_GRAPHQL_LIVE_EXECUTION=1` is set and still
-  registers subscription transport state, and edge-functions exposes registry,
+  process, GraphQL executes live `graphql.resolve(...)` only with its database
+  and central Auth3 trust inputs configured, and edge-functions exposes registry,
   trigger, invocation, and UDS-callback runtime surfaces. The
   `ci/ai-blaise/api-trio-runtime-smoke.sh` boots all three services and verifies
-  live TCP readiness plus API-specific behavior. `graphql-pggraphql-live-smoke.sh`
-  is the API3 production data-plane proof: it runs a PostgreSQL image with
-  `pg_graphql`, creates an RLS-protected `public.account` table, starts the real
-  GraphQL sidecar in live execution mode, posts tenant-scoped `/graphql/v1`
-  queries, verifies `graphql.resolve(...)` returns only the caller tenant row,
-  verifies the opposite tenant row is hidden by PostgreSQL RLS, and checks
-  database URL/JWT secret material is not returned. EF1 has separate live
+  live TCP readiness plus API-specific behavior. The bounded
+  `graphql-pggraphql-live-smoke.sh` runs real Auth3 on loopback behind a
+  client-certificate-required TLS proxy and real `pg_graphql` with RLS. It proves
+  exactly one bearer token is centrally introspected over HTTPS with an explicit
+  CA and mandatory client mTLS, body `jwt_claims`/`tenant_id` are rejected,
+  authenticated claims and `graphql.resolve(...)` share one transaction, two
+  tenants remain isolated, and revocation closes access. There is no canonical
+  200 fallback; absent authentication or live database configuration refuses
+  startup. `/graphql/ws` authenticates and returns honest HTTP 501 because the
+  subscription transport is unimplemented. This remains single-process alpha
+  evidence, not an API3 production promotion receipt. EF1 has separate live
   inline-Deno process evidence through `edge-functions-deno-live-smoke.sh`, EF5
   has sidecar-owned scheduled/CDC trigger dispatch evidence in that same smoke,
   and EF4 has separate live PostgreSQL UDS callback evidence through
-  `edge-functions-db-callback-uds-smoke.sh`. Durable GraphQL subscription
-  fan-out, multi-worker GraphQL planning, Bun user-code execution,
+  `edge-functions-db-callback-uds-smoke.sh`. Durable Auth3 identity/session/
+  revocation state and replica consistency, secure enrollment, production
+  certificate rotation and Kubernetes policy, GraphQL subscriptions, HA,
+  multiworker planning, load/query-cost limits, Bun user-code execution,
   queue/broker delivery, live CDC slot tailing, and Kubernetes deployment remain
   outside this proof unless covered by their own feature evidence.
 - The bundled-extension docs and operand-image README now explicitly state that
@@ -286,6 +291,14 @@ more production-ready than the artifacts justified.
   no-client-cert and TLS 1.2 clients fail. Cloud provider authentication,
   cert-manager integration, production rotation SLOs, service-mesh policy, and
   every application protocol path remain outside the Sec7/Sec8 claim. The
+  operator's generated runtime catalog now contains exactly the 14 real
+  kube-rs controllers, with structural namespaced v2 CRDs and exact status
+  schemas checked in Rust. Selector typos/empty entries no longer fall through
+  to all controllers, and `serve` binds its ready probe only after Kubernetes
+  credentials, client construction, and an API-server version request succeed;
+  any controller task exit terminates the process. These are current source and
+  process tests, not a substitute for a fresh in-cluster rollout/probe receipt.
+  The
   security supply-chain smoke validates the narrow SBOM/cosign metadata contract
   for digest-pinned fixture image refs, `.spdx.json` SBOM paths,
   `.sigstore.json` cosign bundles, SLSA provenance predicate metadata, and
@@ -532,17 +545,18 @@ more production-ready than the artifacts justified.
   does not certify the current image or its provenance. This does not
   claim full upstream Citus upgrade-matrix evidence, operand image release
   certification, or human production promotion.
-- D10 release hardening is now production-ready for the fail-closed runbook and
-  release-record contract. `release-hardening-runbook-smoke.sh` executes the
-  companion `run-release-hardening-canonical` report, verifies 19 release gates
-  and 10 required release-record fields, reruns runbook command and docs
-  evidence checks, requires `production-readiness-check.sh production-release`
-  to block while alpha features remain, verifies D10 is not itself a blocker,
-  and renders a release record with source revision, digest-manifest
-  requirement, audit/check status, alpha scope, rollback checkpoint requirement,
-  and owner signoff requirement. This does not certify a release candidate,
-  perform human owner signoff, or execute the separate D9 canary
-  upgrade/rollback drill.
+- D10 release hardening is alpha. Its former canonical report counted modeled
+  gates and required fields without verifying execution. The production path
+  now delegates to the Rust feature register's `release-gaps` command, which
+  rejects qualification while the trusted current-source release evidence
+  verifier is unimplemented. The report retains every ID with its disposition,
+  scope, canonical owners, and blockers; D10 is not exempt. The smoke checks
+  exact rejection and coverage rather than generating a synthetic release
+  record. Historical statuses, implemented maturity, and local evidence paths
+  cannot authorize promotion. Functional, security, recovery, upgrade,
+  comparative performance, licensing, and operational qualification remain
+  separate requirements. This does not certify a release candidate, perform
+  human owner signoff, or execute the separate D9 canary upgrade/rollback drill.
 - Alpha wording cleanup now also covers the former addendum entries and tool
   READMEs. Schema visualization, plan-freeze, PostgREST, storage, and O12
   wording uses versioned, operator, release, or measured-evidence language
@@ -805,9 +819,12 @@ more production-ready than the artifacts justified.
   sidecar `run-live-postgrest` supervisor, starts the sidecar proxy with
   `AI_BLAISE_POSTGREST_UPSTREAM`, and verifies authenticated GET/POST traffic plus
   tenant RLS isolation and secret non-disclosure end to end.
-  `graphql-pggraphql-live-smoke.sh` is the matching production data-plane proof
-  for API3 live `pg_graphql` query execution and tenant RLS through the GraphQL
-  sidecar. `edge-functions-deno-live-smoke.sh` is the EF1 and EF5 production
+  `graphql-pggraphql-live-smoke.sh` is bounded API3 alpha evidence for central
+  Auth3 HTTPS+mTLS introspection, live `pg_graphql` query execution, tenant RLS,
+  revocation, and forged-body-claim rejection through the GraphQL sidecar. It is
+  single-process diagnostic evidence and does not promote API3; API5 remains
+  production-ready only for the separate PostgREST/RLS path above.
+  `edge-functions-deno-live-smoke.sh` is the EF1 and EF5 production
   proof for explicit opt-in inline Deno execution and sidecar-owned trigger
   dispatch: it boots the real sidecar, verifies live mode fails closed unless
   `AI_BLAISE_EDGE_RUNTIME_EXECUTION=1` and `AI_BLAISE_DENO_BIN` are supplied,
@@ -967,6 +984,15 @@ more production-ready than the artifacts justified.
   owner metadata persistence. This is not evidence for object storage
   upload/download, retention automation, malware scanning, pool or RLS
   authorization, or sidecar integration.
+
+- The storage sidecar's `FEATURE: Sto3` presigning boundary now fails closed:
+  `POST /storage/presign` returns HTTP 503 with the stable unconfigured-signer
+  error, the policy endpoint reports `presigning_status=unconfigured`, and the
+  runtime records no issued URL. No provider signer or credential integration
+  exists, so Sto3 remains alpha. `FEATURE: Sto4` likewise remains alpha: its
+  current evidence covers declared bucket-policy metadata and method/policy
+  rejection only. A caller-supplied tenant field is not authenticated identity
+  and cannot prove cross-tenant authorization.
 
 ## Verification Standard
 
@@ -1266,24 +1292,22 @@ command-center release-controller proof still requires the exact chart and
 digest-pinned Citus images. The broader repository is still not production-ready
 as a whole.
 
-The current feature inventory is machine-derived by
-`ci/ai-blaise/production-readiness-check.sh` and
-`ci/ai-blaise/production-gap-audit.sh`. Do not restate source/heading/status
-counts in prose: mutable totals are emitted on every run as
-`source_feature_ids`, `feature_headings`, `production_ready`, and
-`alpha_headings` fields in the `production_gap_audit` line, with the richer
-`status_counts` map in the `production_readiness_audit` line. The scripts
-compare source `FEATURE:` markers to the feature headings in
-`docs/ai-blaise/NEW_FEATURES.md`, reject missing, extra, or duplicate headings,
-require a status field for every heading, and preserve the production boundary
-here without depending on hand-maintained inventory totals.
+The current feature inventory is `docs/features.tsv`, validated by the Rust
+`ai_blaise_feature_register` tool. Its `summary` derives counts from the
+validated rows. Its `check-source-coverage` command checks that every
+Git-enumerated overlay source marker has a registered identity; it permits
+library-only crates and retained identities without an active implementation.
+Neither command measures functionality or production readiness. Do not restate
+mutable inventory totals as acceptance targets in prose.
 
-The promoted feature set is the set of `Status: production-ready` headings with
-explicit production evidence in `docs/ai-blaise/NEW_FEATURES.md`; every other
-heading remains `Status: alpha`. There are no manual source-only carve-outs:
-any new source `FEATURE:` marker must land with a corresponding feature heading
-and evidence line before the audit passes. This keeps the catalog auditable, but
-alpha contract evidence is not independently sufficient for production signoff.
+The old `NEW_FEATURES.md` headings and status labels are historical claims,
+not a promoted feature set. The transitional `check-legacy-coverage` adapter
+checks exact identity retention only; it cannot authorize a release. Source
+paths, test paths, local evidence references, and implemented maturity likewise
+cannot certify deployment. The `release-gaps` path reports every registered
+requirement and rejects release qualification while the trusted current-source,
+full-scope evidence verifier remains unimplemented. The production-readiness
+wrapper's audit mode is structural validation, not a positive release path.
 
 Worker D CDC/realtime production evidence from 2026-05-23 and the C2 DDL
 capture follow-up from 2026-05-24 add `C1`, `C2`, `C3`, `WH3`, `RT1`, `RT2`,
@@ -1473,12 +1497,15 @@ command-center render that enables an alpha sidecar, uses `latest`, or omits
 `@sha256` image pinning is rejected before it can be cited as production
 evidence.
 
-The release gate monitor now centralizes the bounded integration contract for
-production wording, executable evidence, V2 domain-command freshness,
-benchmark Black formatting, image probe coverage, Docker/Postgres readiness,
-and parallel matrix monitoring via `gh pr checks`. It is wired into
-`gate-close` and the `release-gate-monitor` workflow, while the repository
-remains not production-ready as a whole until production-release mode passes.
+The release gate monitor checks the structured feature inventory, global
+overclaim wording, benchmark formatting, and the presence of image/runtime
+guardrails. It preserves parallel matrix monitoring via `gh pr checks`.
+These are structural, hygiene, and PR observations, not executed full-scope
+runtime evidence. The monitor is wired into `gate-close` and its focused
+workflow; `release-gaps` remains blocked until a trusted current-source,
+full-scope release evidence verifier is implemented. Changing status or
+maturity metadata cannot qualify a release. The repository remains not
+production-ready as a whole.
 
 The Citus patch production integration audit now has measured gates for custom
 patch artifacts `0004`, `0006`, `0007`, and `0008`. `0004` records the integrated
@@ -1660,9 +1687,8 @@ full required set, respectively, after initdb and record observations in
 moved from `required` to `optional` in
 `images/citus-pg-overlay/extension-manifest.tsv`; the plrust PG17 upstream
 gap (upstream main still pg13-pg16 with pgrx 0.11.0 as of 2026-02-27) is
-tracked separately under `FEATURE: EF6`. There is no current release-qualified
-full-target default-boot receipt from a reviewed clean commit, so
-release/publishing remains blocked. This is not
+tracked separately under `FEATURE: EF6`. There is no current full-target
+default-boot receipt, so release/publishing remains blocked. This is not
 evidence for plrust
 Rust UDFs, PG18 source-build of the heavy extensions, command-center release
 chart certification, Kubernetes operand image release certification, or

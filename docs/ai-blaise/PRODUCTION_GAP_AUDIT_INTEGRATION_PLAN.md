@@ -1,9 +1,11 @@
 # Production Gap Audit Integration Record
 
-This record captures the production-gap, release, performance, runbook, patch,
-and sidecar-runtime reconciliation that has now been folded into
+This historical record captures the production-gap, release, performance,
+runbook, patch, and sidecar-runtime reconciliation that was folded into
 `bootstrap-v2`. It is not an unexecuted plan and should not be used as a reason
 to keep separate PR branches alive after their heads are ancestors of the base.
+Its VM observations identify the source and commands tested at that time; they
+do not qualify the current working tree or supersede the Rust feature register.
 
 ## Landed PRs
 
@@ -36,10 +38,13 @@ the runtime durability batch.
 - The PostgREST, GraphQL, and edge-functions HTTP serve loops retain persistent
   runtime drain state; edge-functions also retains process-local function
   registration state across requests.
-- The release gate monitor baseline is refreshed to the current 51-command V2
-  domain-contract output.
+- The release gate monitor used the fixed V2 domain-contract output current at
+  the time of the historical replay. The current monitor validates the
+  identity-only Rust register structurally, reports runtime closure as
+  unverified, and keeps release qualification blocked; it does not pin or
+  promote a command count.
 
-## Verification On VM
+## Historical Verification On VM
 
 The final compact replay passed on the VM worktree
 `/home/spencer/wt/release-patch-final-integration-20260524T0553Z` with log
@@ -71,11 +76,15 @@ The release performance evidence gate intentionally remains fail-closed without
 complete release benchmark artifacts. That behavior is the production boundary,
 not a release signoff.
 
-The production gap audit currently emits machine-derived counts similar to:
+The archived replay emitted then-current fixed inventory, status, and command
+counts. Those observations remain in its log, but they are not current
+acceptance targets and are deliberately absent from the present contract. The
+current production-gap audit emits the identity-only Rust boundary:
 
 ```text
-production_gap_audit source_feature_ids=276 doc_feature_headings=276 feature_headings=276 production_ready=164 alpha_headings=112 inventory_contract=machine_derived source_only_alpha=0 v2_acceptance=model_only production_release_blocked=true live_sql_guards=true k8s_guardrail_contract=true live_k8s_e2e_harness=true chart_folded_to_command_center=2026-05-22
+production_gap_audit feature_registry=validated source_feature_coverage=validated inventory_contract=identity_only v2_acceptance=model_only production_release_blocked=true live_sql_contract_sources_checked=true k8s_guardrail_contract_sources_checked=true live_k8s_e2e_harness_source_checked=true chart_folded_to_command_center=2026-05-22
 ```
 
-Those numeric values are evidence output from the scripts, not hand-maintained
-doc prose.
+That output proves source/register checks only. It is not evidence that the
+referenced SQL, Kubernetes, release, recovery, performance, or licensing gates
+executed for a current candidate.

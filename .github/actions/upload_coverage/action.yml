@@ -1,8 +1,11 @@
 name: coverage
+description: Upload collected test coverage when a Codecov token is configured.
 inputs:
   flags:
+    description: Flags identifying the coverage upload.
     required: false
   codecov_token:
+    description: Repository Codecov upload token.
     required: false
 runs:
   using: composite

@@ -21,6 +21,19 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Validate machine register and retained identities
+        run: cargo run --locked -p ai_blaise_feature_register -- check-legacy-coverage
+      - name: Test feature register rejection paths
+        run: cargo test --locked -p ai_blaise_feature_register
+      - name: Test source and inventory change requirements
+        run: |
+          cargo build --locked -p ai_blaise_feature_register
+          python3 ci/ai-blaise/features-doc-check_test.py
+      - name: Check feature register Rust style
+        run: |
+          cargo fmt -p ai_blaise_feature_register -- --check
+          cargo clippy --locked -p ai_blaise_feature_register --all-targets --all-features -- -D warnings
       - name: Check feature register updates
         env:
           BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}

@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # FEATURE: API1 API2 API3 API5 API6
-# Focused runtime smoke for the GraphQL and PostgREST sidecar front doors.
-# This proves live process/socket behavior and dependency fail-closed contracts;
-# it does not prove table-backed upstream PostgREST or pg_graphql execution.
+# Focused runtime smoke for the PostgREST front door and GraphQL dependency
+# boundary. It proves PostgREST process/socket behavior and GraphQL fail-closed
+# startup; authenticated pg_graphql execution belongs to the dedicated live
+# Auth3/mTLS smoke.
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -287,77 +288,82 @@ def smoke_postgrest(binary):
 
 def smoke_graphql(binary):
     missing = os.environ.copy()
-    for key in ("AI_BLAISE_GRAPHQL_DATABASE_URL", "AI_BLAISE_GRAPHQL_JWT_SECRET"):
+    auth_keys = (
+        "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
+        "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE",
+        "AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS",
+    )
+    for key in (
+        "AI_BLAISE_GRAPHQL_DATABASE_URL",
+        "AI_BLAISE_GRAPHQL_LIVE_EXECUTION",
+        *auth_keys,
+    ):
         missing.pop(key, None)
     run_expect_failure([binary, "check-runtime-dependencies"], "missing runtime dependency: AI_BLAISE_GRAPHQL_DATABASE_URL", env=missing)
 
     invalid = missing.copy()
     invalid.update({
         "AI_BLAISE_GRAPHQL_DATABASE_URL": "http://postgres",
-        "AI_BLAISE_GRAPHQL_JWT_SECRET": JWT_SECRET,
     })
     run_expect_failure([binary, "check-runtime-dependencies"], "must be a PostgreSQL URL", env=invalid)
 
-    short_secret = missing.copy()
-    short_secret.update({
+    missing_auth = missing.copy()
+    missing_auth.update({
         "AI_BLAISE_GRAPHQL_DATABASE_URL": POSTGRES_URL,
-        "AI_BLAISE_GRAPHQL_JWT_SECRET": "too-short",
     })
-    run_expect_failure([binary, "check-runtime-dependencies"], "must be at least 32 bytes", env=short_secret)
+    run_expect_failure(
+        [binary, "check-runtime-dependencies"],
+        "missing runtime dependency: AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
+        env=missing_auth,
+    )
+
+    plaintext_auth = missing_auth.copy()
+    plaintext_auth.update({
+        "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL": "http://127.0.0.1/auth/introspect",
+        "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH": "/run/secrets/auth-ca.pem",
+        "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH": "/run/secrets/graphql-client.pem",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER": "https://auth.example.com",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE": "postgres",
+    })
+    run_expect_failure(
+        [binary, "check-runtime-dependencies"],
+        "invalid runtime dependency: AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL",
+        env=plaintext_auth,
+    )
 
     valid = missing.copy()
     valid.update({
         "AI_BLAISE_GRAPHQL_DATABASE_URL": POSTGRES_URL,
-        "AI_BLAISE_GRAPHQL_JWT_SECRET": JWT_SECRET,
+        "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL": "https://auth.example.com/auth/introspect",
+        "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH": "/run/secrets/auth-ca.pem",
+        "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH": "/run/secrets/graphql-client.pem",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER": "https://auth.example.com",
+        "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE": "postgres",
+        "AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS": "750",
     })
     report = parse_tsv(run([binary, "check-runtime-dependencies"], env=valid))
     assert report["database_url_env"] == "AI_BLAISE_GRAPHQL_DATABASE_URL", report
-    assert report["jwt_secret_env"] == "AI_BLAISE_GRAPHQL_JWT_SECRET", report
+    assert report["auth_introspection_url_env"] == "AI_BLAISE_GRAPHQL_AUTH_INTROSPECTION_URL", report
+    assert report["auth_ca_cert_path_env"] == "AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH", report
+    assert report["auth_client_identity_path_env"] == "AI_BLAISE_GRAPHQL_AUTH_CLIENT_IDENTITY_PATH", report
+    assert report["auth_expected_issuer_env"] == "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_ISSUER", report
+    assert report["auth_expected_audience_env"] == "AI_BLAISE_GRAPHQL_AUTH_EXPECTED_AUDIENCE", report
+    assert report["auth_timeout_ms_env"] == "AI_BLAISE_GRAPHQL_AUTH_TIMEOUT_MS", report
     assert report["endpoint"] == "/graphql/v1", report
     assert report["pg_graphql_required"] == "true", report
 
-    proc, port = start_server(binary, "graphql")
-    try:
-        status, body = request(port, "GET", "/graphql")
-        assert status == 200, body
-        assert "ai-blaise GraphQL" in body, body
-        assert "/graphql/v1" in body, body
-
-        query = '{"query":"query { orderCollection { edges { node { id } } } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
-        status, body = request(port, "POST", "/graphql/v1", body=query)
-        assert status == 200, body
-        assert '"namespace":"public_api"' in body, body
-        assert '"tenant_id":"tenant-a"' in body, body
-
-        missing_claim = '{"query":"query { orderCollection { edges { node { id } } } }"}'
-        status, body = request(port, "POST", "/graphql/v1", body=missing_claim)
-        assert status == 400, body
-        assert "request.jwt.claims is missing" in body, body
-        assert '"errors"' in body, body
-
-        introspection = '{"query":"query { __schema { types { name } } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
-        status, body = request(port, "POST", "/graphql/v1", body=introspection)
-        assert status == 400, body
-        assert "introspection is disabled" in body, body
-
-        malformed = '{"variables":{}}'
-        status, body = request(port, "POST", "/graphql/v1", body=malformed)
-        assert status == 400, body
-        assert "missing query field" in body, body
-
-        subscription = '{"query":"subscription { orderInserted { id total } }","jwt_claims":"{\\"tenant_id\\":\\"tenant-a\\"}"}'
-        status, body = request(port, "POST", "/graphql/ws", body=subscription)
-        assert status == 200, body
-        assert '"transport":"websocket"' in body, body
-        assert '"subscription_field":"orderInserted"' in body, body
-
-        status, body = request(port, "GET", "/graphql/ws")
-        assert status == 426, body
-        assert "upgrade required" in body, body
-    finally:
-        terminate(proc)
-
-    smoke_common_runtime(binary, "graphql")
+    startup = valid.copy()
+    startup["AI_BLAISE_GRAPHQL_LIVE_EXECUTION"] = "1"
+    output = run_expect_failure(
+        [binary, "serve"],
+        "invalid runtime dependency: AI_BLAISE_GRAPHQL_AUTH_CA_CERT_PATH",
+        env=startup,
+    )
+    assert POSTGRES_URL not in output, output
+    assert "auth.example.com" not in output, output
 
 
 require_tool("cargo")

@@ -67,7 +67,7 @@ use std::error::Error;
 use std::process;
 use std::thread;
 
-const CANONICAL_OPERATOR_CRDS: usize = 17;
+const CANONICAL_OPERATOR_CRDS: usize = controllers::CONTROLLER_COUNT;
 const V2_OPERATOR_CATALOG_GATES: usize = 13;
 
 fn main() {
@@ -111,6 +111,7 @@ fn main() {
         [command] if command == "print-sidecar-crd" => print_sidecar_crd(),
         [command] if command == "print-hypertable-crd" => print_hypertable_crd(),
         [command] if command == "print-citus-cluster-crd" => print_citus_cluster_crd(),
+        [command] if command == "print-crds" => print_crds(),
         _ => {
             eprintln!("operator: unknown command");
             print_usage();
@@ -147,7 +148,26 @@ fn run_canonical() {
 }
 
 fn print_usage() {
-    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-citus-cluster-crd|print-sidecar-crd|print-hypertable-crd]");
+    println!("usage: operator [serve|run-canonical|run-reconcile-plans|run-reconcilers-batch-a|run-multiregion-contracts-canonical|run-reconcilers-batch-b|run-reconcile-plans-batch-c|run-conflict-policy-runtime-canonical|run-controller-boundary|run-branch-lifecycle-canonical|run-endpointslice-retarget-canonical|run-security-canonical|run-security-supply-chain-canonical|print-crds|print-citus-cluster-crd|print-sidecar-crd|print-hypertable-crd]");
+}
+
+fn print_crds() {
+    let rendered = render_controller_crds().unwrap_or_else(|error| {
+        eprintln!("operator: controller CRD catalog render failed: {error}");
+        process::exit(1);
+    });
+    print!("{rendered}");
+}
+
+fn render_controller_crds() -> Result<String, serde_yaml::Error> {
+    let mut rendered = String::new();
+    for (index, crd) in controllers::controller_crds().iter().enumerate() {
+        if index > 0 {
+            rendered.push_str("---\n");
+        }
+        rendered.push_str(&serde_yaml::to_string(crd)?);
+    }
+    Ok(rendered)
 }
 
 fn print_citus_cluster_crd() {
@@ -485,20 +505,15 @@ fn run_controller_boundary() {
     }
 }
 
-/// Spawn the probe server on a dedicated thread (blocking std net) while a
-/// tokio runtime drives every kube-rs controller concurrently. The probe
-/// server is the readiness signal the operator deployment uses; the
-/// controllers reconcile CRDs against the live API server.
+/// Validate the controller selector, construct a Kubernetes client, and prove
+/// API-server reachability before starting the ready probe. Any controller
+/// task exit is terminal, so the process exits and can no longer advertise
+/// readiness.
 fn run_serve(component: &'static str, default_addr: &'static str) {
-    let component_owned = component.to_string();
-    let default_owned = default_addr.to_string();
-    let probe = thread::spawn(move || {
-        if let Err(error) = run_probe_server(&component_owned, &default_owned) {
-            eprintln!("{component_owned}: probe server failed: {error}");
-            process::exit(1);
-        }
+    let selection = controllers::ControllerSelection::from_env().unwrap_or_else(|error| {
+        eprintln!("{component}: invalid controller selection: {error}");
+        process::exit(1);
     });
-
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -507,22 +522,35 @@ fn run_serve(component: &'static str, default_addr: &'static str) {
             process::exit(1);
         });
 
-    runtime.block_on(async move {
-        match kube::Client::try_default().await {
-            Ok(client) => {
-                if let Err(error) = controllers::serve_all(client).await {
-                    eprintln!("{component}: controllers exited: {error}");
-                    process::exit(1);
-                }
-            }
-            Err(error) => {
-                // No in-cluster kube config: keep probes alive so the
-                // deployment surfaces NotReady rather than crash-looping.
-                tracing::warn!(?error, "kube client unavailable; running probe-only");
-                let _ = probe.join();
-            }
+    let client = runtime.block_on(async {
+        let client = kube::Client::try_default()
+            .await
+            .map_err(|error| format!("Kubernetes client initialization failed: {error}"))?;
+        client
+            .apiserver_version()
+            .await
+            .map_err(|error| format!("Kubernetes API readiness check failed: {error}"))?;
+        Ok::<kube::Client, String>(client)
+    });
+    let client = client.unwrap_or_else(|error| {
+        eprintln!("{component}: {error}");
+        process::exit(1);
+    });
+
+    let component_owned = component.to_string();
+    let default_owned = default_addr.to_string();
+    let _probe = thread::spawn(move || {
+        if let Err(error) = run_probe_server(&component_owned, &default_owned) {
+            eprintln!("{component_owned}: probe server failed: {error}");
+            process::exit(1);
         }
     });
+
+    match runtime.block_on(controllers::serve(client, selection)) {
+        Ok(()) => eprintln!("{component}: controller runtime exited unexpectedly"),
+        Err(error) => eprintln!("{component}: controllers exited: {error}"),
+    }
+    process::exit(1);
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -1291,7 +1319,7 @@ mod tests {
         assert_eq!(
             report,
             OperatorExecutionReport {
-                crds: 17,
+                crds: 14,
                 cluster_workers: 3,
                 cluster_sidecars: 3,
                 shards: 32,
@@ -1473,6 +1501,34 @@ mod tests {
         ] {
             assert!(status.get(field).is_some(), "missing status field {field}");
         }
+    }
+
+    #[test]
+    fn print_crds_renders_one_document_per_actual_controller() {
+        use serde::Deserialize as _;
+
+        let rendered = render_controller_crds().expect("render controller CRDs");
+        let documents = serde_yaml::Deserializer::from_str(&rendered)
+            .map(|document| {
+                serde_yaml::Value::deserialize(document).expect("deserialize rendered CRD")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(documents.len(), controllers::CONTROLLER_COUNT);
+        let kinds = documents
+            .iter()
+            .map(|document| {
+                document["spec"]["names"]["kind"]
+                    .as_str()
+                    .expect("CRD kind")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            controllers::ControllerKind::ALL
+                .iter()
+                .map(|controller| controller.resource_kind())
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
