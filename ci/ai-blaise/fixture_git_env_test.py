@@ -6,15 +6,14 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
-from pathlib import Path
 import stat
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from fixture_git_env import fixture_git_environment, isolated_fixture_git_environment
-
 
 HERE = Path(__file__).resolve().parent
 
@@ -93,7 +92,9 @@ class FixtureGitEnvironmentTests(unittest.TestCase):
 
     def test_real_fixture_tests_preserve_parent_git_and_source_under_overrides(self):
         citus = load_fixture_tests("real-citus-test-fixture-contract_test.py")
-        timescale = load_fixture_tests("real-citus-timescale-test-fixture-contract_test.py")
+        timescale = load_fixture_tests(
+            "real-citus-timescale-test-fixture-contract_test.py"
+        )
         cases = (
             citus.RealCitusFixtureContractTests(
                 "test_http_builder_builds_the_prehashed_snapshot_after_checkout_drift"
@@ -107,7 +108,9 @@ class FixtureGitEnvironmentTests(unittest.TestCase):
         )
         # Never point the deliberately hostile overrides at the live checkout. The parent
         # sentinel is itself disposable, but contains a real config, index, refs, and objects.
-        with tempfile.TemporaryDirectory(prefix="fixture-git-parent-regression-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="fixture-git-parent-regression-"
+        ) as directory:
             parent = Path(directory)
             environment = fixture_git_environment()
 
@@ -124,13 +127,21 @@ class FixtureGitEnvironmentTests(unittest.TestCase):
             parent_git("config", "user.name", "Fixture isolation regression")
             parent_git("config", "user.email", "fixture-isolation@example.invalid")
             parent_git("config", "commit.gpgsign", "false")
-            (parent / "source.txt").write_text("committed parent source\n", encoding="utf-8")
+            (parent / "source.txt").write_text(
+                "committed parent source\n", encoding="utf-8"
+            )
             parent_git("add", "source.txt")
             parent_git("commit", "--quiet", "-m", "parent sentinel")
-            (parent / "source.txt").write_text("unstaged parent source\n", encoding="utf-8")
-            (parent / "staged.txt").write_text("staged parent source\n", encoding="utf-8")
+            (parent / "source.txt").write_text(
+                "unstaged parent source\n", encoding="utf-8"
+            )
+            (parent / "staged.txt").write_text(
+                "staged parent source\n", encoding="utf-8"
+            )
             parent_git("add", "staged.txt")
-            (parent / "untracked.txt").write_text("untracked parent source\n", encoding="utf-8")
+            (parent / "untracked.txt").write_text(
+                "untracked parent source\n", encoding="utf-8"
+            )
             before = snapshot_tree(parent)
             self.assertIn(".git/config", before)
             self.assertIn(".git/index", before)

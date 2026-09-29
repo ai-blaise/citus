@@ -315,9 +315,7 @@ def validate_http_builder(builder: str) -> None:
         or "@${fixture_image_id}" in builder
         or 'fixture_parent="${fixture_image_id}"' in builder
     ):
-        fail(
-            f"{context} must use only its locally verified content-derived parent tag"
-        )
+        fail(f"{context} must use only its locally verified content-derived parent tag")
     if "postgres:" in builder:
         fail(f"{context} must not bypass the shared immutable base builder")
     if not (

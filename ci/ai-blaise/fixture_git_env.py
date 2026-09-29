@@ -5,9 +5,9 @@ Do not use this helper for source-provenance operations on the real checkout.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-import os
 from unittest.mock import patch
 
 

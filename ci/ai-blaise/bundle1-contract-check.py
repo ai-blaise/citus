@@ -353,7 +353,9 @@ def main() -> None:
         fail(str(exc))
     validate_citus_downgrade_install(dockerfile, build_citus)
     if "--without-pg-version-check" in dockerfile:
-        fail("Bundle1 Citus build must not bypass its supported PostgreSQL version check")
+        fail(
+            "Bundle1 Citus build must not bypass its supported PostgreSQL version check"
+        )
     validate_custom_citus_install(
         timescale_cohabitation_dockerfile,
         "WORKDIR /build/citus",

@@ -235,7 +235,10 @@ def validate_cohabitation_smoke(smoke: str) -> None:
         "--network none",
         'docker rm --force --volumes "${container}"',
         "PostgreSQL init process complete",
-        "CREATE EXTENSION IF NOT EXISTS citus;\nCREATE EXTENSION IF NOT EXISTS timescaledb;\nCREATE EXTENSION IF NOT EXISTS pgcrypto;\nCREATE EXTENSION IF NOT EXISTS ai_blaise_citus;",
+        "CREATE EXTENSION IF NOT EXISTS citus;\n"
+        "CREATE EXTENSION IF NOT EXISTS timescaledb;\n"
+        "CREATE EXTENSION IF NOT EXISTS pgcrypto;\n"
+        "CREATE EXTENSION IF NOT EXISTS ai_blaise_citus;",
         "FROM pg_dist_partition",
         "FROM _timescaledb_catalog.hypertable",
         '"true" \\\n    "false"',
