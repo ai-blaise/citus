@@ -220,16 +220,33 @@ class RealCitusFixtureContractTests(unittest.TestCase):
                     "must contain exactly one occurrence",
                 )
 
-    def test_http_builder_rejects_floating_parent_tag_fallback(self):
-        self.assert_mutation_fails(
+    def test_http_builder_requires_verified_parent_tag_and_rootfs_ancestry(self):
+        for old, new, message in (
             (
-                "ci/ai-blaise/build-real-citus-http-test-fixture.sh",
-                'fixture_parent="docker.io/library/${fixture_tag}@${fixture_image_id}"',
-                'fixture_parent="docker.io/library/${fixture_tag}@${fixture_image_id}"\n'
-                'docker image tag "${fixture_image_id}" "${fixture_tag}"',
+                'verify_parent_tag\nfixture_parent="${fixture_tag}"',
+                'fixture_parent="${fixture_tag}"',
+                "must verify its parent tag before and after use",
             ),
-            "must not use a floating parent tag",
-        )
+            (
+                "  verify_parent_ancestry\n}",
+                "}",
+                "must verify immutable parent rootfs ancestry",
+            ),
+            (
+                'fixture_parent="${fixture_tag}"',
+                'fixture_parent="${fixture_image_id}"',
+                "must contain exactly one occurrence",
+            ),
+        ):
+            with self.subTest(new=new):
+                self.assert_mutation_fails(
+                    (
+                        "ci/ai-blaise/build-real-citus-http-test-fixture.sh",
+                        old,
+                        new,
+                    ),
+                    message,
+                )
 
     @isolated_fixture_git_environment()
     def test_http_builder_builds_the_prehashed_snapshot_after_checkout_drift(self):
@@ -290,6 +307,7 @@ class RealCitusFixtureContractTests(unittest.TestCase):
                 "ai-blaise.citus.test-fixture.http": "true",
                 "ai-blaise.citus.test-fixture.release-target": "false",
                 "ai-blaise.citus.test-fixture.pg-major": "17",
+                "ai-blaise.citus.test-fixture.id": fixture_id,
                 "ai-blaise.citus.test-fixture.http-package": package_name,
                 "ai-blaise.citus.test-fixture.http-package-version": package_version,
                 "ai-blaise.citus.test-fixture.http-parent-image-id": base_image_id,
@@ -313,10 +331,14 @@ args = sys.argv[1:]
 base_id = os.environ["FAKE_BASE_IMAGE_ID"]
 fixture_id = os.environ["FAKE_FIXTURE_ID"]
 fixture_tag = f"ai-blaise-citus-test-fixture:pg17-{fixture_id}"
-fixture_parent = f"docker.io/library/{fixture_tag}@{base_id}"
+fixture_parent = fixture_tag
 http_id = os.environ["FAKE_HTTP_IMAGE_ID"]
 built = Path(os.environ["FAKE_BUILT_MARKER"])
 checkout = Path(os.environ["FAKE_CHECKOUT_DOCKERFILE"])
+parent_layers = [f"sha256:{'d' * 64}"]
+child_layers = parent_layers + [f"sha256:{'e' * 64}"]
+if os.environ.get("FAKE_BAD_CHILD_LAYERS") == "1":
+    child_layers = [f"sha256:{'f' * 64}", f"sha256:{'e' * 64}"]
 
 if args[:2] == ["image", "inspect"]:
     target = args[-1]
@@ -327,13 +349,27 @@ if args[:2] == ["image", "inspect"]:
         raise SystemExit(0)
     template = args[args.index("--format") + 1]
     if template == "{{.Id}}":
-        if target in {base_id, fixture_tag, fixture_parent}:
+        if target == base_id:
             print(base_id)
+            raise SystemExit(0)
+        if target == fixture_tag:
+            if built.exists() and os.environ.get("FAKE_PARENT_TAG_DRIFT") == "1":
+                print(f"sha256:{'f' * 64}")
+            else:
+                print(base_id)
             raise SystemExit(0)
         if target.startswith("ai-blaise-citus-http-test-fixture:") and built.exists():
             print(http_id)
             raise SystemExit(0)
         raise SystemExit(40)
+    if template == "{{json .RootFS.Layers}}":
+        if target == base_id:
+            print(json.dumps(parent_layers))
+            raise SystemExit(0)
+        if target == http_id:
+            print(json.dumps(child_layers))
+            raise SystemExit(0)
+        raise SystemExit(43)
     match = re.fullmatch(r'{{ index \.Config\.Labels "([^"]+)" }}', template)
     if match is None:
         raise SystemExit(41)
@@ -405,6 +441,34 @@ raise SystemExit(60)
             )
             self.assertIn(b"concurrent checkout drift", dockerfile.read_bytes())
             self.assertEqual(list(tmpdir.iterdir()), [])
+
+            for environment_flag, expected_error in (
+                (
+                    "FAKE_PARENT_TAG_DRIFT",
+                    "base real-Citus fixture tag does not resolve to the expected image ID",
+                ),
+                (
+                    "FAKE_BAD_CHILD_LAYERS",
+                    "real-Citus HTTP fixture parent ancestry verification failed",
+                ),
+            ):
+                with self.subTest(environment_flag=environment_flag):
+                    built_marker.unlink(missing_ok=True)
+                    proof_marker.unlink(missing_ok=True)
+                    dockerfile.write_bytes(original_dockerfile)
+                    negative_environment = environment.copy()
+                    negative_environment[environment_flag] = "1"
+                    negative = subprocess.run(
+                        ["bash", str(builder), "--pg-major", "17"],
+                        cwd=fixture_root,
+                        env=negative_environment,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(negative.returncode, 1, negative.stderr)
+                    self.assertIn(expected_error, negative.stderr)
+                    self.assertEqual(list(tmpdir.iterdir()), [])
 
     def test_source_content_fingerprint_is_required(self):
         self.assert_mutation_fails(

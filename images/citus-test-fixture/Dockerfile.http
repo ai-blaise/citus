@@ -2,8 +2,9 @@
 # FEATURE: A10 A11
 
 # Test-only HTTP variant layered on the already content-addressed real-Citus
-# fixture. The builder supplies the expected local fixture tag pinned by its
-# verified digest and refuses engines that cannot resolve that compound parent.
+# fixture. The builder supplies its content-derived local fixture tag, verifies
+# that tag against the immutable image ID before and after the build, and checks
+# the resulting rootfs ancestry.
 ARG REAL_CITUS_FIXTURE_PARENT
 FROM ${REAL_CITUS_FIXTURE_PARENT} AS companion-http-test-fixture
 
