@@ -119,3 +119,49 @@ must remain identical. The existing CI test entry point includes this regression
 The Citus fixture suite passed all 55 tests and the Timescale suite passed all
 16 after this test-only follow-up. These tests do not add native release evidence
 or change the checkpoint's alpha boundary.
+
+## Later canonical W1 boot evidence
+
+The original checkpoint and dirty-context observations above predate the clean
+CI run in this section. A later canonical push of commit
+`43e7b309ff3fdfdc82bf6d18107490393b125ce0` ran the
+[`image-contract` workflow](https://github.com/ai-blaise/citus/actions/runs/33993073146)
+from Git tree `b940a99696b43b0cec5f800627a4d50bfc00abf1`. Both PG17
+operands used the locked parent
+`postgres:17-bookworm@sha256:7bade6d532592ca8ce7ee32def7399dad2607c4ea5583839fc4352a095a11ea6`,
+recorded an image ID, and booted through the stock PostgreSQL entry point with
+no command override.
+
+| Operand | Job | Result | Image ID | Official log SHA-256 |
+| --- | --- | --- | --- | --- |
+| `bundle1-final-light` | [`101378646774`](https://github.com/ai-blaise/citus/actions/runs/33993073146/job/101378646774) | Build and default boot passed | `sha256:97e016d1daffae11519feb05a2c49d1a0fd18e0e0ce4012986fac10bebdc4422` | `65d1fdce0dfac731027263737b139e0e562b8b062c58acb069312efabb921939` |
+| `bundle1-final-full` | [`101378646744`](https://github.com/ai-blaise/citus/actions/runs/33993073146/job/101378646744) | Build and default boot passed | `sha256:1dc292e84f5f233782a37da4baed40c42386eb39e246d12f627aff537f1e12e1` | `67cb7fe860ba05c6c51c297f7c4ff2c4b6fac4f6bb7b14f3b1d3c485722fc741` |
+
+The full build ran from 21:27:19 through 22:04:02 UTC and its no-override
+default boot passed at 22:04:07 UTC. The smoke verified PG17, Citus `15.0-1`,
+`ai_blaise_citus` `0.1.2`, all 26 required SQL extensions, the one reviewed
+preload-only library, target `bundle1-final-full`, scope
+`full-bundle-required-minus-plrust`, clean source provenance, and
+`release-target=true`. The light smoke separately verified its closed 24-SQL
+extension subset and one preload-only library.
+
+The source and executable contract inputs for that observation are:
+
+| Input | SHA-256 |
+| --- | --- |
+| `.github/workflows/ci-image.yml` | `bd5f9800d9e501997a3f9f82fd3896d2132296a0aca812a93078e03d7a936a22` |
+| `images/citus-pg-overlay/Dockerfile` | `6125ca677cdce83e56d34e38848163634a297abc06108228de2cc73d0cdf4b0c` |
+| `images/citus-pg-overlay/bundle1-source-build.lock.tsv` | `440224d931c5265c6a8aba2684b0ac407677659d874370048c85fa3c34a39105` |
+| `images/citus-pg-overlay/extension-manifest.tsv` | `87553eb715ad52c521db0d77f2201dc60e27088cc56fac4f55bfaea11c5d902f` |
+| `images/citus-pg-overlay/shared-preload-libraries.conf` | `4ace37465396061af27dc30527ca3d299253e4300dc917fd02e119f94486b47b` |
+| `ci/ai-blaise/bundle1-default-boot-smoke.sh` | `2fdbf228c2578299a21c506fdecf9a4e4ebc89cdc6c434092cefa02702e592c6` |
+| `ci/ai-blaise/bundle1-contract-check.py` | `2c2091edf71ca7d1a8bfbcf74561a18c14b67b8640a5f54e17ad1efa98ae6fe0` |
+| `ci/ai-blaise/image-check.sh` | `d80a6cf645996135c96604c50e2b30e08274f29ac331c21d5790d693a9909fab` |
+
+This closes only the corrected plan's W1 source-bound full-image boot
+prerequisite. The workflow did not publish the image. A local image ID and a
+`release-target=true` label are not a registry digest, signature, provenance
+attestation, or production release. B1, mutable-dependency sealing, repeatable
+release publication, cluster recovery and rolling upgrade, complete feature
+qualification, Chimera's W2 harness/source freeze, W3 measurements, and every
+M0–M11 gate remain open.
