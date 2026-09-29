@@ -51,3 +51,9 @@ standalone backport representation, not a silently appended member of the
 historical `patches/series` with its different frozen applicability targets.
 No selected-upstream pin, operand lock, release threshold or historical receipt
 is changed by this repair.
+
+The separately tracked CDC TAP fixture compatibility change is represented by
+`patches/0014-cdc-output-plugin-admission.patch`, based on the frozen ownership
+repair `35c39b7d2be0438119d020dc6000c6da8bc9de6a`. It is likewise standalone,
+not appended to historical patch-series targets. See the operator admission
+runbook in `docs/ai-blaise/CDC_OUTPUT_PLUGIN_ADMISSION.md`.

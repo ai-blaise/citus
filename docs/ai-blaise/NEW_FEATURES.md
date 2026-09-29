@@ -2856,6 +2856,12 @@ reorder buffer regains its own original tuples. The focused native witness is
 documented in `ci/ai-blaise/cdc-ownership-native.md`; its isolated ownership proof
 does not establish live logical replication, overall CI success, or publication.
 
+Newer PostgreSQL security releases also require explicit output-plugin admission.
+The disposable CDC fixture preserves existing policy and admits its two required
+decoders; production operator approval and upgrade checks are documented in
+`docs/ai-blaise/CDC_OUTPUT_PLUGIN_ADMISSION.md`. This is not automatic production
+policy mutation or an overall readiness promotion.
+
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
 **Status**: production-ready
 **Since**: unreleased

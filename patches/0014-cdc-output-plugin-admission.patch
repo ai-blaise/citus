@@ -1,0 +1,36 @@
+diff --git a/src/test/cdc/t/cdctestlib.pm b/src/test/cdc/t/cdctestlib.pm
+index d5d7bd59b..c5bc5d619 100644
+--- a/src/test/cdc/t/cdctestlib.pm
++++ b/src/test/cdc/t/cdctestlib.pm
+@@ -150,6 +150,31 @@ max_replication_slots = 100
+ 
+     $node->start();
+ 
++    # FEATURE: C1. Security updates added explicit output-plugin admission.
++    # These disposable fixture nodes intentionally exercise only these two extra
++    # decoders; do not replace the server defaults or weaken the allowlist.
++    # The prefix distinguishes an available-but-empty policy from an absent GUC
++    # on supported older minors such as PG16.14.
++    my $output_plugins = $node->safe_psql('postgres',
++        "SELECT 'supported:' || current_setting('output_plugin_libraries', true);");
++    if ($output_plugins =~ s/^supported://) {
++        my $admitted_plugins = $output_plugins;
++        $admitted_plugins .= ',' if $admitted_plugins ne '';
++        $admitted_plugins .= 'citus,wal2json';
++        my $config_plugins = $admitted_plugins;
++        $config_plugins =~ s/\\/\\\\/g;
++        $config_plugins =~ s/'/''/g;
++        $node->append_conf('postgresql.conf',
++            "output_plugin_libraries = '$config_plugins'\n");
++        $node->reload();
++        # E-strings and config strings both need escaped backslashes and quotes.
++        # Wait for the actual applied policy before exercising a logical slot.
++        $node->poll_query_until('postgres',
++            "SELECT current_setting('output_plugin_libraries') = E'$config_plugins';")
++            or die "fixture output-plugin admission did not become effective";
++        print("fixture output_plugin_libraries: $admitted_plugins\n");
++    }
++
+     if ($node_type == $NODE_TYPE_COORDINATOR || $node_type == $NODE_TYPE_WORKER) {
+         $node->safe_psql('postgres', "CREATE EXTENSION citus;");
+         my $value = $node->safe_psql('postgres', "SHOW citus.enable_change_data_capture;");
