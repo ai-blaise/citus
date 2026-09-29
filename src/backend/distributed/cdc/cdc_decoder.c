@@ -2,6 +2,7 @@
  *
  * cdc_decoder.c
  *		CDC Decoder plugin for Citus
+ * FEATURE: C1 -- translated tuples remain owned only by the publish scope.
  *
  * Copyright (c) Citus Data, Inc.
  *
@@ -41,7 +42,12 @@ static bool replication_origin_filter_cb(LogicalDecodingContext *ctx, RepOriginI
 										 origin_id);
 
 static void TranslateChangesIfSchemaChanged(Relation relation, Relation targetRelation,
-											ReorderBufferChange *change);
+											ReorderBufferChange *change
+#if PG_VERSION_NUM < PG_VERSION_17
+											, HeapTuple volatile *translatedNewTuple,
+											HeapTuple volatile *translatedOldTuple
+#endif
+											);
 
 static void TranslateAndPublishRelationForCDC(LogicalDecodingContext *ctx,
 											  ReorderBufferTXN *txn,
@@ -262,18 +268,107 @@ TranslateAndPublishRelationForCDC(LogicalDecodingContext *ctx, ReorderBufferTXN 
 	Relation targetRelation = RelationIdGetRelation(targetRelationid);
 
 	/*
-	 * Check if there has been a schema change (such as a dropped column), by comparing
-	 * the number of attributes in the shard table and the shell table.
+	 * Remember the tuples that the reorder buffer handed us. Any tuple that we
+	 * substitute below is allocated by us, but the reorder buffer frees both
+	 * tuple fields of the change when the transaction is cleaned up, assuming
+	 * they were allocated from its own tuple context. Restoring the original
+	 * pointers after publishing keeps each allocator freeing only what it owns.
 	 */
-	TranslateChangesIfSchemaChanged(relation, targetRelation, change);
+#if PG_VERSION_NUM >= PG_VERSION_17
+	HeapTuple originalNewTuple = change->data.tp.newtuple;
+	HeapTuple originalOldTuple = change->data.tp.oldtuple;
+#else
 
-	/*
-	 * Publish the change to the shard table as the change in the distributed table,
-	 * so that the CDC client can see the change in the distributed table,
-	 * instead of the shard table, by calling the pgoutput's callback function.
-	 */
-	ouputPluginChangeCB(ctx, txn, targetRelation, change);
-	RelationClose(targetRelation);
+	/* PG16 embeds HeapTupleData in the reorder buffer's own wrapper. */
+	ReorderBufferTupleBuf *originalNewTuple = change->data.tp.newtuple;
+	ReorderBufferTupleBuf *originalOldTuple = change->data.tp.oldtuple;
+	HeapTupleData originalNewTupleData = { 0 };
+	HeapTupleData originalOldTupleData = { 0 };
+	HeapTuple volatile translatedNewTuple = NULL;
+	HeapTuple volatile translatedOldTuple = NULL;
+
+	if (originalNewTuple != NULL)
+	{
+		originalNewTupleData = originalNewTuple->tuple;
+	}
+	if (originalOldTuple != NULL)
+	{
+		originalOldTupleData = originalOldTuple->tuple;
+	}
+#endif
+
+	PG_TRY();
+	{
+		/*
+		 * Check if there has been a schema change (such as a dropped column), by comparing
+		 * the number of attributes in the shard table and the shell table.
+		 */
+		TranslateChangesIfSchemaChanged(relation, targetRelation, change
+#if PG_VERSION_NUM < PG_VERSION_17
+									   , &translatedNewTuple, &translatedOldTuple
+#endif
+										);
+
+		/*
+		 * Publish the change to the shard table as the change in the distributed table,
+		 * so that the CDC client can see the change in the distributed table,
+		 * instead of the shard table, by calling the pgoutput's callback function.
+		 */
+		ouputPluginChangeCB(ctx, txn, targetRelation, change);
+	}
+	PG_FINALLY();
+	{
+		/*
+		 * Free the translated tuples and put the original ones back. A field that
+		 * was not translated still holds its original pointer, so it is left alone.
+		 * This also has to happen when the callback throws, because the reorder
+		 * buffer cleans the transaction up before the error propagates further.
+		 */
+#if PG_VERSION_NUM >= PG_VERSION_17
+		if (change->data.tp.newtuple != originalNewTuple &&
+			change->data.tp.newtuple != NULL)
+		{
+			heap_freetuple(change->data.tp.newtuple);
+			change->data.tp.newtuple = originalNewTuple;
+		}
+
+		if (change->data.tp.oldtuple != originalOldTuple &&
+			change->data.tp.oldtuple != NULL)
+		{
+			heap_freetuple(change->data.tp.oldtuple);
+			change->data.tp.oldtuple = originalOldTuple;
+		}
+
+#else
+
+		/*
+		 * The embedded tuple is only a view of heap_form_tuple's allocation.
+		 * Never free the reorder buffer wrapper or its embedded HeapTupleData.
+		 * Volatile out-slots retain even the first allocation if translating the
+		 * second tuple throws before publication.
+		 */
+		if (translatedNewTuple != NULL)
+		{
+			heap_freetuple(translatedNewTuple);
+		}
+		if (translatedOldTuple != NULL)
+		{
+			heap_freetuple(translatedOldTuple);
+		}
+		if (originalNewTuple != NULL)
+		{
+			originalNewTuple->tuple = originalNewTupleData;
+		}
+		if (originalOldTuple != NULL)
+		{
+			originalOldTuple->tuple = originalOldTupleData;
+		}
+		change->data.tp.newtuple = originalNewTuple;
+		change->data.tp.oldtuple = originalOldTuple;
+#endif
+		RelationClose(targetRelation);
+	}
+	PG_END_TRY();
 }
 
 
@@ -426,7 +521,12 @@ HasSchemaChanged(TupleDesc sourceRelationDesc, TupleDesc targetRelationDesc)
  */
 static void
 TranslateChangesIfSchemaChanged(Relation sourceRelation, Relation targetRelation,
-								ReorderBufferChange *change)
+								ReorderBufferChange *change
+#if PG_VERSION_NUM < PG_VERSION_17
+											, HeapTuple volatile *translatedNewTuple,
+								HeapTuple volatile *translatedOldTuple
+#endif
+								)
 {
 	TupleDesc sourceRelationDesc = RelationGetDescr(sourceRelation);
 	TupleDesc targetRelationDesc = RelationGetDescr(targetRelation);
@@ -514,6 +614,7 @@ TranslateChangesIfSchemaChanged(Relation sourceRelation, Relation targetRelation
 			HeapTuple sourceRelationNewTuple = &(change->data.tp.newtuple->tuple);
 			HeapTuple targetRelationNewTuple = GetTupleForTargetSchemaForCdc(
 				sourceRelationNewTuple, sourceRelationDesc, targetRelationDesc);
+			*translatedNewTuple = targetRelationNewTuple;
 			change->data.tp.newtuple->tuple = *targetRelationNewTuple;
 			break;
 		}
@@ -530,6 +631,7 @@ TranslateChangesIfSchemaChanged(Relation sourceRelation, Relation targetRelation
 			HeapTuple sourceRelationNewTuple = &(change->data.tp.newtuple->tuple);
 			HeapTuple targetRelationNewTuple = GetTupleForTargetSchemaForCdc(
 				sourceRelationNewTuple, sourceRelationDesc, targetRelationDesc);
+			*translatedNewTuple = targetRelationNewTuple;
 			change->data.tp.newtuple->tuple = *targetRelationNewTuple;
 
 			/*
@@ -545,6 +647,7 @@ TranslateChangesIfSchemaChanged(Relation sourceRelation, Relation targetRelation
 					sourceRelationDesc,
 					targetRelationDesc);
 
+				*translatedOldTuple = targetRelationOldTuple;
 				change->data.tp.oldtuple->tuple = *targetRelationOldTuple;
 			}
 			break;
@@ -559,6 +662,7 @@ TranslateChangesIfSchemaChanged(Relation sourceRelation, Relation targetRelation
 				sourceRelationDesc,
 				targetRelationDesc);
 
+			*translatedOldTuple = targetRelationOldTuple;
 			change->data.tp.oldtuple->tuple = *targetRelationOldTuple;
 			break;
 		}

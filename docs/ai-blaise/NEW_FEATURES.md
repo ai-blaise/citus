@@ -2848,6 +2848,14 @@ state machine.
 
 ### C1: CDC Sidecar
 
+Operand decoder compatibility: the September 29 repair carries upstream
+`211afb11fd5074b12621dd2947260ca570f918c2` tuple-lifetime handling with explicit
+PostgreSQL 16 ownership for embedded tuple views. Translated allocations live
+only through publication and are released on success or error, while the
+reorder buffer regains its own original tuples. The focused native witness is
+documented in `ci/ai-blaise/cdc-ownership-native.md`; its isolated ownership proof
+does not establish live logical replication, overall CI success, or publication.
+
 **Overlay**: `sidecar/shared/src/contracts.rs`, `sidecar/cdc`
 **Status**: production-ready
 **Since**: unreleased
