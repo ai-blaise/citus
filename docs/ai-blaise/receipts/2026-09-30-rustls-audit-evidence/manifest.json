@@ -1,0 +1,487 @@
+{
+  "acceptance_scope": "bounded local dependency and docs qualification only; hosted CI and whole-fork readiness not established",
+  "baseline_source": "e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e",
+  "baseline_tree": "3534bb867093a2b7b5aba293649a1ad6a0711ef9",
+  "baseline_verdicts": {
+    "audit_exit": 1,
+    "expected_failures_verified": 1,
+    "v2_exit": 1
+  },
+  "files": [
+    {
+      "encoding": "gzip",
+      "phase": "baseline",
+      "source_bytes": 1424,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/baseline.sh",
+      "source_sha256": "e71d5eacc66a059e205e495bd7bcefcb5db98fcbc942f1ab93b8eb83fa0d027a",
+      "stored_bytes": 649,
+      "stored_path": "baseline/baseline.sh.gz",
+      "stored_sha256": "e920559f594ffaf92f0ffd76774290bb078a278b7f818d8260ef85fc39214374"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "baseline",
+      "source_bytes": 573,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/baseline.log",
+      "source_sha256": "6e143e85c0727741e5e9f67050d469ee010ce349c824c6351f6c00ba2819a6af",
+      "stored_bytes": 348,
+      "stored_path": "baseline/baseline.log.gz",
+      "stored_sha256": "2ca3c17b3f4cf3b8b486388ff53de42837fd3c63ca13575be78754711817585c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "baseline",
+      "source_bytes": 586,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/audit-red.log",
+      "source_sha256": "40040d0ff7fb21003e33c75dd9186a96a6e85e2ffbc769d6be4a4ecf351189b8",
+      "stored_bytes": 381,
+      "stored_path": "baseline/audit-red.log.gz",
+      "stored_sha256": "513c224124724ef815e95366d531735fa19567c2fc834c1e340cf29df6edce51"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "baseline",
+      "source_bytes": 159,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/v2-red.log",
+      "source_sha256": "e5b79d441b81320604fbc16571de57b39ad2ab1d25ebcc4728e163ca1c07b4f6",
+      "stored_bytes": 157,
+      "stored_path": "baseline/v2-red.log.gz",
+      "stored_sha256": "987c7c11ee78b0665f3d5db8033b99530b673fc64368bf2896aeaa74ae546984"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 2630,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/qualification.sh",
+      "source_sha256": "207d554987ec5d019401def061363e4de9e3325361579e5043c755c1d5488254",
+      "stored_bytes": 1120,
+      "stored_path": "qualification/qualification.sh.gz",
+      "stored_sha256": "bf2b0e7ae37e59c646c02c4117e8f1a25ef8e8ad1c472a6a088a6a13c6662037"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 3134,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/qualification.log",
+      "source_sha256": "5d00566ae2f5d058cd1da7fb58c7a034785d15ff568212fdca421f02fb4f65f8",
+      "stored_bytes": 1199,
+      "stored_path": "qualification/qualification.log.gz",
+      "stored_sha256": "f30c21cbdab6a49d2a96fcd3a2772dad834002db789e3fc434d813d8c119424f"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 2,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/qualification.exit",
+      "source_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "stored_bytes": 22,
+      "stored_path": "qualification/qualification.exit.gz",
+      "stored_sha256": "89ed3b723e0e40d8957a2df55fcb04d57b6d95fa665c5fe67b098df7f29694ae"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 111,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/steps.tsv",
+      "source_sha256": "ca6bd590aceab94162fddbc8d16b85378c3e232d0e851332ca70c04c221ddcbe",
+      "stored_bytes": 101,
+      "stored_path": "qualification/steps.tsv.gz",
+      "stored_sha256": "c4d4fbade4a4db0601a1ac6e99105db5bd2bd69f638f4d4b65591ce9cb74de8f"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 82,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/source-before.txt",
+      "source_sha256": "7187d95f066534095fd88b144fe4dd8370a31b84e158e3cf896724d40606de79",
+      "stored_bytes": 81,
+      "stored_path": "qualification/source-before.txt.gz",
+      "stored_sha256": "8ad24f023457f92304ed3ee17e14a0974c9dbb3319b71f91e44878cb64a63e6c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 82,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/source-after.txt",
+      "source_sha256": "7187d95f066534095fd88b144fe4dd8370a31b84e158e3cf896724d40606de79",
+      "stored_bytes": 81,
+      "stored_path": "qualification/source-after.txt.gz",
+      "stored_sha256": "8ad24f023457f92304ed3ee17e14a0974c9dbb3319b71f91e44878cb64a63e6c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 772,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/audit.log",
+      "source_sha256": "3bed4472656cfcf8d7d7b715e73cb1f67c6fab629d159f9e2a57b874178cad85",
+      "stored_bytes": 347,
+      "stored_path": "qualification/audit.log.gz",
+      "stored_sha256": "c6c18846458d283b6ebe74f748afaa83e6e47340245f1825e709d885f9494f02"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 1995,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/dependency-tree.log",
+      "source_sha256": "91d790b10ac4c633e63a151f7bbacba63396a4a0f32be13c48b5b21793ae244b",
+      "stored_bytes": 535,
+      "stored_path": "qualification/dependency-tree.log.gz",
+      "stored_sha256": "476bd278c85fd26cc3af1801d2d7d3a7800ae9e543961d0fef95c2fcce3e8ff8"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 0,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/fmt.log",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_path": "qualification/fmt.log.gz",
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 17709,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/workspace-check.log",
+      "source_sha256": "35803d0728387166af0519709193066c150a0c94a4f9366ebd2cce8f6e070384",
+      "stored_bytes": 4288,
+      "stored_path": "qualification/workspace-check.log.gz",
+      "stored_sha256": "cb993b389f5923fd02bb8d16aff6674e61b5a9575b541dfe273ea480fa862803"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 51357,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/consumer-tests.log",
+      "source_sha256": "d673ceaeb1e9378cd50d3bd751210c2b3bce4ac432b31a2ceff98fa1848a1daa",
+      "stored_bytes": 11366,
+      "stored_path": "qualification/consumer-tests.log.gz",
+      "stored_sha256": "d6e1284cebf01d56ddcb1f5e94ec7ad8b706a23c627b7e785e38901d36682f03"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 3546,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/consumer-clippy.log",
+      "source_sha256": "01594a7445675a45873e897997bf0201b29c3e43299939e446100b275c9786ac",
+      "stored_bytes": 1073,
+      "stored_path": "qualification/consumer-clippy.log.gz",
+      "stored_sha256": "d5f5dababa1ba03b1f8db4c7e4f13f22db847291c0c46383a1da76b0584a22e0"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 0,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/v2-closure.log",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_path": "qualification/v2-closure.log.gz",
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 0,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/whitespace.log",
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stored_bytes": 20,
+      "stored_path": "qualification/whitespace.log.gz",
+      "stored_sha256": "9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "qualification",
+      "source_bytes": 191,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/lock-update.log",
+      "source_sha256": "a0727952d05447763274c7537ee6fd505972b4ca176fa756b96cd5ee92c10f73",
+      "stored_bytes": 148,
+      "stored_path": "qualification/lock-update.log.gz",
+      "stored_sha256": "24f7d9e34c75eee6d80ecb3803147db0790c81862cc8e102aedb208ed08a94bd"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 9560,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/additional-consumer-tests.log",
+      "source_sha256": "7c63630f79a97b0885f26874b75938e832a1b843147a5ba79d228e8dfe92b04d",
+      "stored_bytes": 2379,
+      "stored_path": "supplemental/additional-consumer-tests.log.gz",
+      "stored_sha256": "05255f398e41cf2d27384f4d918d634f7f2890461794860efb4bc77dafac3b39"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 1824,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/additional-consumer-clippy.log",
+      "source_sha256": "520e70120c9902f5fdca44251c31db157301f439544315bd0226675ef7d1de1e",
+      "stored_bytes": 540,
+      "stored_path": "supplemental/additional-consumer-clippy.log.gz",
+      "stored_sha256": "ea33a41f5c7b6f9853e01ac8aac69685cc909fe285ae037d38540219a3b0b2d8"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 2,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement.exit",
+      "source_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "stored_bytes": 22,
+      "stored_path": "supplemental/supplement.exit.gz",
+      "stored_sha256": "89ed3b723e0e40d8957a2df55fcb04d57b6d95fa665c5fe67b098df7f29694ae"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 2258,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement.sh",
+      "source_sha256": "95a1805e63c6ab8a89f03a29de45d29a68a24fddc63102412d303b4f191f49c4",
+      "stored_bytes": 970,
+      "stored_path": "supplemental/supplement.sh.gz",
+      "stored_sha256": "64fac67af0be9ac5b11f2b2d9c790270f9e5694b0fc78dd39652e107969677bb"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 2947,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement.log",
+      "source_sha256": "cd7995ff760e7a1192312d61b6326915e5b87e7fe6fb3a48baac529e2e6c3fb1",
+      "stored_bytes": 1173,
+      "stored_path": "supplemental/supplement.log.gz",
+      "stored_sha256": "f1a84396b22700fcf09de1ccf0592c20f02279655f77871e32aed39df6d389ba"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 57,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement-steps.tsv",
+      "source_sha256": "329f29c94096770bdb31c1ce5fd495b319af16260495a0b9af329f25ed52bab9",
+      "stored_bytes": 59,
+      "stored_path": "supplemental/supplement-steps.tsv.gz",
+      "stored_sha256": "006b80510f50a8be38a2986e49bf54147a1e26d97dacbf951ce3d7793282a8a6"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 82,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement-source-before.txt",
+      "source_sha256": "7187d95f066534095fd88b144fe4dd8370a31b84e158e3cf896724d40606de79",
+      "stored_bytes": 81,
+      "stored_path": "supplemental/supplement-source-before.txt.gz",
+      "stored_sha256": "8ad24f023457f92304ed3ee17e14a0974c9dbb3319b71f91e44878cb64a63e6c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "supplemental",
+      "source_bytes": 82,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/supplement-source-after.txt",
+      "source_sha256": "7187d95f066534095fd88b144fe4dd8370a31b84e158e3cf896724d40606de79",
+      "stored_bytes": 81,
+      "stored_path": "supplemental/supplement-source-after.txt.gz",
+      "stored_sha256": "8ad24f023457f92304ed3ee17e14a0974c9dbb3319b71f91e44878cb64a63e6c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "control",
+      "source_bytes": 17031,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/seal.py",
+      "source_sha256": "43f682afac5ca45000b1e8a4bfccced311e96dd2375683b11eed85e5ef6455eb",
+      "stored_bytes": 5545,
+      "stored_path": "control/seal.py.gz",
+      "stored_sha256": "5c7595e49efad915d9b1bccbeb565bb524362204befba88db6c6676c2ce3bc19"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "control",
+      "source_bytes": 9942,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/seal_custody_test.py",
+      "source_sha256": "cc2365eb5d1cf89652ff7078ff66adfe41103d05900e3a1113d0e2baf2bf043b",
+      "stored_bytes": 2847,
+      "stored_path": "control/seal_custody_test.py.gz",
+      "stored_sha256": "c7b6c24654658188ac8a22ee4be2f442e471a4ac3fe4955892b5706519b07281"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "control",
+      "source_bytes": 1449,
+      "source_path": "/home/spencer/citus-rustls-repair-sep30-run/seal-custody-tests.log",
+      "source_sha256": "c09c75b1ec91d9e36372f3b8d72c70d2df2233d67a47adef882e90068df53a00",
+      "stored_bytes": 535,
+      "stored_path": "control/seal-custody-tests.log.gz",
+      "stored_sha256": "5ac77fd1e5907b2d086892a86f22edc150af097e2b623827f91f69e1e997c048"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 171490,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/logs/run-36646192338-attempt-1/job-109669613189.log",
+      "source_sha256": "0ff4c0791e85b53e7aea382ac253d87f29733e7dea58aaf8c5bf7cf45d5fd1c7",
+      "stored_bytes": 34170,
+      "stored_path": "hosted-predecessor/job-109669613189.log.gz",
+      "stored_sha256": "4b6c86115d4df03eced6d96827ff9e95cd86d6c5d8629b099db2f33dd98ed1cf"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 4158,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/snapshots/20260929T234514.115859Z/run-36646192338-attempt-1-jobs-page-1.json",
+      "source_sha256": "a2592879cacb5aaf0b27b2a4630e051d2208785c436ff6df79657d04a2da54b7",
+      "stored_bytes": 919,
+      "stored_path": "hosted-predecessor/run-36646192338-attempt-1-jobs-page-1.json.gz",
+      "stored_sha256": "72a65dfd956f33e85fbf14a7c6388670f4dff74fc5bad06f4d97c7e4171724bb"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 97893,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/logs/run-36646192219-attempt-1/job-109669612773.log",
+      "source_sha256": "1f4e9a5bd2354cd572d601b0b6c52536da73174b05c48df831a6fc45b2bd67ad",
+      "stored_bytes": 20326,
+      "stored_path": "hosted-predecessor/job-109669612773.log.gz",
+      "stored_sha256": "1156b0d3a3c49425ede4b873d8394c9ef5bf985b713600da151ed4d1a006ac94"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 4135,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/snapshots/20260929T234514.115859Z/run-36646192219-attempt-1-jobs-page-1.json",
+      "source_sha256": "f5e56840db045fb66629fb67bf3c08485d5145bb24d48902daf36294e3e66e8d",
+      "stored_bytes": 903,
+      "stored_path": "hosted-predecessor/run-36646192219-attempt-1-jobs-page-1.json.gz",
+      "stored_sha256": "519c366d9c1aa892fed2722a0800982984585a80a2abdcf6d0e9af26ab7cfe2c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 92703,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/logs/run-36646192341-attempt-1/job-109669613296.log",
+      "source_sha256": "a9cef4158d313017a890a0d7f2b3fdc747af92baa10d081655b905e66b0373df",
+      "stored_bytes": 19880,
+      "stored_path": "hosted-predecessor/job-109669613296.log.gz",
+      "stored_sha256": "f4aad077886b93d30f3618bb1f7187e4c12621bcc676ae762fd3b6c7cff3005c"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 7037,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/snapshots/20260929T234514.115859Z/run-36646192341-attempt-1-jobs-page-1.json",
+      "source_sha256": "f3754eb0fbddfb9fb7033ad55fd0eb950be208accf075ba7497968107984be27",
+      "stored_bytes": 1061,
+      "stored_path": "hosted-predecessor/run-36646192341-attempt-1-jobs-page-1.json.gz",
+      "stored_sha256": "ab20a04937168363d30dc4f7383da7736f97691f1ad6e255a615f8409f2983d5"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 42237,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/logs/run-36646192248-attempt-1/job-109669613133.log",
+      "source_sha256": "7c759b1b93972167c5810c6323817a5c65d6629b8bc64d01f0691807f1f25552",
+      "stored_bytes": 9443,
+      "stored_path": "hosted-predecessor/job-109669613133.log.gz",
+      "stored_sha256": "9d410886cad6eccdb672d781ddc630a629024895e0ba2157f3e1e027f4cd7b76"
+    },
+    {
+      "encoding": "gzip",
+      "phase": "hosted-predecessor",
+      "source_bytes": 2079,
+      "source_path": "/home/spencer/citus-current-ci-sep29/heads/e6efe2aed9a7e413f00e60faadf6dfe0c381ad6e/snapshots/20260929T234514.115859Z/run-36646192248-attempt-1-jobs-page-1.json",
+      "source_sha256": "d3ca3b261c468716c0a6a47e91e7be857e1ecb2034f7c09dea12c9bd3cc51fe4",
+      "stored_bytes": 600,
+      "stored_path": "hosted-predecessor/run-36646192248-attempt-1-jobs-page-1.json.gz",
+      "stored_sha256": "a5fecb4f06684700ab871a1fdaf1927788bc3d7db62b26dff5b301e9592e61fc"
+    }
+  ],
+  "policy_hashes": {
+    ".cargo/audit.toml": "a27be6454dae54326d5ff780ef47542282c721a55039a1a54bff436958f21063",
+    "ci/ai-blaise/cargo-audit-policy-smoke.sh": "48561bd02dcdfd64184c55b9af40c659f8c27bc76221ac0eb25576b76857a10e",
+    "ci/ai-blaise/v2-closure-check.sh": "79a8ef8ae30f87407a175ab47609a688543c2990cff203094a1a1e4b5a05042a",
+    "rust-toolchain.toml": "fe6a4292ca3db912256876d98b3d16521598dca38e2b6c996ad20e40a1dc52b8"
+  },
+  "qualified_source": "d10eeb6f4929a6779146bf6a022106f28c9350cc",
+  "qualified_tree": "3299d66142e6a5a93a2876d825a8ada07966d425",
+  "schema": "ai-blaise-rustls-custody-v1",
+  "source_witnesses": {
+    "initial": {
+      "source": "d10eeb6f4929a6779146bf6a022106f28c9350cc",
+      "tree": "3299d66142e6a5a93a2876d825a8ada07966d425"
+    },
+    "supplemental": {
+      "source": "d10eeb6f4929a6779146bf6a022106f28c9350cc",
+      "tree": "3299d66142e6a5a93a2876d825a8ada07966d425"
+    }
+  },
+  "steps": {
+    "initial": [
+      {
+        "exit_code": 0,
+        "step": "audit"
+      },
+      {
+        "exit_code": 0,
+        "step": "dependency-tree"
+      },
+      {
+        "exit_code": 0,
+        "step": "fmt"
+      },
+      {
+        "exit_code": 0,
+        "step": "workspace-check"
+      },
+      {
+        "exit_code": 0,
+        "step": "consumer-tests"
+      },
+      {
+        "exit_code": 0,
+        "step": "consumer-clippy"
+      },
+      {
+        "exit_code": 0,
+        "step": "v2-closure"
+      },
+      {
+        "exit_code": 0,
+        "step": "whitespace"
+      }
+    ],
+    "supplemental": [
+      {
+        "exit_code": 0,
+        "step": "additional-consumer-tests"
+      },
+      {
+        "exit_code": 0,
+        "step": "additional-consumer-clippy"
+      }
+    ]
+  },
+  "test_counts": {
+    "combined": {
+      "failed": 0,
+      "filtered_out": 0,
+      "harnesses": 22,
+      "ignored": 1,
+      "measured": 0,
+      "passed": 603
+    },
+    "initial": {
+      "failed": 0,
+      "filtered_out": 0,
+      "harnesses": 13,
+      "ignored": 1,
+      "ignored_test_lines": [
+        "test cdc_replay_pumps_postgres_changes_into_nats ... ignored, requires docker; see sidecar/cdc/README.md"
+      ],
+      "measured": 0,
+      "passed": 522
+    },
+    "supplemental": {
+      "failed": 0,
+      "filtered_out": 0,
+      "harnesses": 9,
+      "ignored": 0,
+      "ignored_test_lines": [],
+      "measured": 0,
+      "passed": 81
+    }
+  }
+}
