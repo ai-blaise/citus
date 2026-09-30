@@ -5293,7 +5293,7 @@ does not qualify default-reserve operation, expand the production-ready helper
 claim above, or establish Command Center storage or whole-fork readiness. See
 `docs/ai-blaise/RESTRICTIVE_POLICY_RUNTIME_2026-09-12.md` for exact evidence/limits.
 
-The separate distributed-trigger prerequisite is unchanged. Any future migration
+The separate distributed-trigger prerequisite is unchanged. Any migration
 or maintenance opt-in to `citus.enable_unsafe_triggers` needs explicit scoped DDL,
 propagation, rollback, and real least-role qualification. This correction neither
 enables that setting nor claims ordinary row-trigger execution requires a
