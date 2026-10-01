@@ -8798,6 +8798,12 @@ federation.
 
 ### F4: postgres_fdw Credential Rotation
 
+The live smoke waits for the final PostgreSQL loopback TCP listener, not the
+image's socket-only initialization server that is stopped before normal startup.
+Both fixture SQL clients use that same TCP transport. This removes a startup
+race without changing the credential-rotation checks or accepting failed SQL;
+it is not production secret-provider or deployed-cluster evidence.
+
 **Overlay**: `companion/src/advanced_planner.rs`, `companion/src/fdw_rotation.rs`
 **Status**: production-ready
 **Since**: unreleased

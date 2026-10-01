@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# FEATURE: F4
+
 export PATH="$HOME/.cargo/bin:$PATH"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -34,9 +36,11 @@ trap cleanup EXIT
 
 wait_for_pg() {
   local container="$1"
-  local attempt
-  for attempt in $(seq 1 90); do
-    if docker exec "${container}" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+  local _attempt
+  for _attempt in $(seq 1 90); do
+    # The image's initialization server is socket-only and subsequently stops.
+    # Wait for the final TCP listener; SQL below uses the same transport.
+    if docker exec "${container}" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
@@ -48,12 +52,12 @@ wait_for_pg() {
 
 psql_remote() {
   docker exec -i -e PGPASSWORD=postgres "${remote_container}" \
-    psql -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"
+    psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"
 }
 
 psql_local() {
   docker exec -i -e PGPASSWORD=postgres "${local_container}" \
-    psql -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"
+    psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"
 }
 
 docker network create "${network}" >/dev/null
