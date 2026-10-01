@@ -317,53 +317,61 @@ pub fn dispatch_nats_pub(
     subject: &str,
     payload: &[u8],
 ) -> Result<String, String> {
-    let host_port = server_url
-        .strip_prefix("nats://")
-        .ok_or_else(|| format!("invalid NATS URL: {server_url}"))?;
-    let socket_addr = host_port
-        .to_socket_addrs()
-        .map_err(|e| format!("resolve {host_port}: {e}"))?
-        .next()
-        .ok_or_else(|| format!("no address resolved for {host_port}"))?;
-    let mut stream = TcpStream::connect_timeout(
-        &socket_addr,
-        Duration::from_secs(HTTP1_CONNECT_TIMEOUT_SECS),
-    )
-    .map_err(|e| format!("connect {host_port}: {e}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
-        .map_err(|e| e.to_string())?;
+    crate::validate_nats_subject("sink.nats.subject", subject)
+        .map_err(|_| "invalid NATS publish subject".to_string())?;
     let frame = encode_nats_pub_with_subject(subject, payload);
+    let mut stream = connect_nats(server_url)?;
     dispatch_nats_frame_to_stream(&mut stream, &frame)
 }
 
 /// Write an already-encoded NATS PUB frame to a plain TCP socket.
 pub fn dispatch_nats_frame(server_url: &str, frame: &[u8]) -> Result<String, String> {
-    let host_port = server_url
-        .strip_prefix("nats://")
-        .ok_or_else(|| format!("invalid NATS URL: {server_url}"))?;
-    let socket_addr = host_port
-        .to_socket_addrs()
-        .map_err(|e| format!("resolve {host_port}: {e}"))?
-        .next()
-        .ok_or_else(|| format!("no address resolved for {host_port}"))?;
-    let mut stream = TcpStream::connect_timeout(
-        &socket_addr,
-        Duration::from_secs(HTTP1_CONNECT_TIMEOUT_SECS),
-    )
-    .map_err(|e| format!("connect {host_port}: {e}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
-        .map_err(|e| e.to_string())?;
+    let mut stream = connect_nats(server_url)?;
     dispatch_nats_frame_to_stream(&mut stream, frame)
 }
 
-fn dispatch_nats_frame_to_stream(stream: &mut TcpStream, frame: &[u8]) -> Result<String, String> {
+fn nats_host_port(server_url: &str) -> Result<&str, String> {
+    crate::validate_nats_url(server_url).map_err(|_| "invalid NATS URL".to_string())?;
+    server_url
+        .strip_prefix("nats://")
+        .ok_or_else(|| "invalid NATS URL".to_string())
+}
+
+fn connect_nats(server_url: &str) -> Result<TcpStream, String> {
+    let host_port = nats_host_port(server_url)?;
+    let socket_addr = host_port
+        .to_socket_addrs()
+        .map_err(|error| format!("resolve NATS server: {}", error.kind()))?
+        .next()
+        .ok_or_else(|| "no address resolved for NATS server".to_string())?;
+    let stream = TcpStream::connect_timeout(
+        &socket_addr,
+        Duration::from_secs(HTTP1_CONNECT_TIMEOUT_SECS),
+    )
+    .map_err(|error| format!("connect NATS server: {}", error.kind()))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
+        .map_err(|error| format!("set NATS read timeout: {}", error.kind()))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(HTTP1_RW_TIMEOUT_SECS)))
+        .map_err(|error| format!("set NATS write timeout: {}", error.kind()))?;
+    Ok(stream)
+}
+
+fn dispatch_nats_frame_to_stream(
+    stream: &mut (impl Read + Write),
+    frame: &[u8],
+) -> Result<String, String> {
     stream
         .write_all(frame)
-        .map_err(|e| format!("write NATS PUB: {e}"))?;
+        .map_err(|error| format!("write NATS PUB: {}", error.kind()))?;
     let mut response = [0_u8; 256];
-    let bytes = stream.read(&mut response).unwrap_or(0);
+    let bytes = stream
+        .read(&mut response)
+        .map_err(|error| format!("read NATS response: {}", error.kind()))?;
+    if bytes == 0 {
+        return Err("NATS server closed without a response".to_string());
+    }
     Ok(first_line_lossy(&response[..bytes]))
 }
 
@@ -813,6 +821,134 @@ mod tests {
             encode_sink_frame(&plan, &payload, &event),
             Err(CdcSidecarError::InvalidSinkConfig("sink.nats.subject"))
         );
+    }
+
+    #[test]
+    fn direct_nats_publish_rejects_invalid_subjects_before_connecting() {
+        for subject in [
+            "",
+            "tenant..orders",
+            "tenant.orders\r\nPING",
+            "tenant.*",
+            ">",
+            "tenant orders",
+            "tenant.é",
+        ] {
+            assert_eq!(
+                dispatch_nats_pub("not-a-nats-url", subject, b"payload"),
+                Err("invalid NATS publish subject".to_string())
+            );
+        }
+    }
+
+    #[test]
+    fn direct_nats_url_admission_rejects_secrets_and_invalid_authorities() {
+        for url in [
+            "",
+            "http://secret.example",
+            "nats://",
+            "nats://user:secret@nats.example:4222",
+            "nats://secret@nats.example:4222",
+            "nats://nats.example:4222/?token=secret",
+            "nats://nats.example:4222?token=secret",
+            "nats://nats.example:4222\r\nPING",
+        ] {
+            assert_eq!(nats_host_port(url), Err("invalid NATS URL".to_string()));
+        }
+        assert_eq!(
+            nats_host_port("nats://nats.example:4222"),
+            Ok("nats.example:4222")
+        );
+        assert_eq!(nats_host_port("nats://[::1]:4222"), Ok("[::1]:4222"));
+        assert_eq!(
+            dispatch_nats_frame("not-a-nats-url", b"PUB x 0\r\n\r\n"),
+            Err("invalid NATS URL".to_string())
+        );
+    }
+
+    #[derive(Default)]
+    struct NatsTestStream {
+        response: std::io::Cursor<Vec<u8>>,
+        read_error: Option<std::io::ErrorKind>,
+        write_error: Option<std::io::ErrorKind>,
+        written: Vec<u8>,
+    }
+
+    impl Read for NatsTestStream {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if let Some(kind) = self.read_error {
+                return Err(std::io::Error::new(
+                    kind,
+                    "synthetic credential-bearing source",
+                ));
+            }
+            self.response.read(buffer)
+        }
+    }
+
+    impl Write for NatsTestStream {
+        fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+            if let Some(kind) = self.write_error {
+                return Err(std::io::Error::new(
+                    kind,
+                    "synthetic credential-bearing source",
+                ));
+            }
+            self.written.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn nats_stream_rejects_eof_and_read_failures() {
+        assert_eq!(
+            dispatch_nats_frame_to_stream(&mut NatsTestStream::default(), b"frame"),
+            Err("NATS server closed without a response".to_string())
+        );
+        for kind in [
+            std::io::ErrorKind::TimedOut,
+            std::io::ErrorKind::WouldBlock,
+            std::io::ErrorKind::ConnectionReset,
+        ] {
+            let mut stream = NatsTestStream {
+                read_error: Some(kind),
+                ..Default::default()
+            };
+            assert_eq!(
+                dispatch_nats_frame_to_stream(&mut stream, b"frame"),
+                Err(format!("read NATS response: {kind}"))
+            );
+            assert_eq!(stream.written, b"frame");
+        }
+    }
+
+    #[test]
+    fn nats_stream_preserves_frame_and_refuses_write_failure() {
+        let mut stream = NatsTestStream {
+            response: std::io::Cursor::new(b"INFO {}\r\n".to_vec()),
+            ..Default::default()
+        };
+        assert_eq!(
+            dispatch_nats_frame_to_stream(&mut stream, b"PUB tenant.orders 0\r\n\r\n"),
+            Ok("INFO {}".to_string())
+        );
+        assert_eq!(stream.written, b"PUB tenant.orders 0\r\n\r\n");
+        let mut failing = NatsTestStream {
+            write_error: Some(std::io::ErrorKind::BrokenPipe),
+            ..Default::default()
+        };
+        assert_eq!(
+            dispatch_nats_frame_to_stream(&mut failing, b"frame"),
+            Err(format!(
+                "write NATS PUB: {}",
+                std::io::ErrorKind::BrokenPipe
+            ))
+        );
+        assert!(failing.written.is_empty());
     }
 
     #[test]

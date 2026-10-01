@@ -2971,6 +2971,14 @@ connection-error category, discarding credential-bearing source diagnostics.
 Synthetic unit cases cover every locked async-nats connection-error category;
 they do not connect to a broker or prove live authentication/delivery.
 
+The plain TCP entry points reuse URL admission, and the publish entry point
+validates the subject before any connection. Connection and I/O failures expose
+only error kinds, never caller URLs or source diagnostics; read failure and EOF
+are errors, not successful delivery. Both socket I/O directions have timeouts.
+Pure regression cases exercise admission and in-memory I/O only. A response
+summary (including a server greeting) is not a publish or durable acknowledgement:
+the raw TCP boundary does not yet perform CONNECT/flush or JetStream acknowledgement.
+
 **References**:
 
 - Design: `docs/ai-blaise/ARCHITECTURE.md`
