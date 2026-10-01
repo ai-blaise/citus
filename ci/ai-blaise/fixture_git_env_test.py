@@ -124,6 +124,11 @@ class FixtureGitEnvironmentTests(unittest.TestCase):
                 )
 
             parent_git("init", "--quiet")
+            # Stabilize only this owned sentinel before writes: background Git
+            # maintenance may otherwise mutate its objects during byte snapshots.
+            # Retain every config/index/ref/object/source comparison below.
+            parent_git("config", "maintenance.auto", "false")
+            parent_git("config", "gc.auto", "0")
             parent_git("config", "user.name", "Fixture isolation regression")
             parent_git("config", "user.email", "fixture-isolation@example.invalid")
             parent_git("config", "commit.gpgsign", "false")

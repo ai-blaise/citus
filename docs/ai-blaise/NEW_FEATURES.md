@@ -6520,6 +6520,13 @@ release chart and immutable Citus image digests.
 
 ### D13: Production Runtime Image Matrix
 
+The image contract requires CDC's probe-only startup to remain alive but unready
+until a replication stream is active; it must not require the old unconditional
+ready constructor. The disposable Git isolation sentinel disables automatic
+maintenance only in its own temporary repository before writes, retaining full
+config/index/ref/object/source comparisons. No host Git policy or production
+CDC behavior changes, and these pure checks are not deployed-image evidence.
+
 **Overlay**: `images/rust-runtime`, `scripts/citus-scale`
 **Status**: production-ready
 **Since**: unreleased

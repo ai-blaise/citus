@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# FEATURE: D13
+
 image_dir="images/citus-pg-overlay"
 manifest="${image_dir}/extension-manifest.tsv"
 upgrade_manifest="${image_dir}/extensions/ai_blaise_citus-upgrade-manifest.tsv"
@@ -579,7 +581,13 @@ for main_file in "${required_serve_mains[@]}"; do
     grep -Fq 'route("/healthz", get(healthz))' sidecar/cdc/src/runtime.rs
     grep -Fq 'route("/readyz", get(readyz))' sidecar/cdc/src/runtime.rs
     grep -Fq 'route("/metrics", get(metrics))' sidecar/cdc/src/runtime.rs
-    grep -Fq 'SidecarRuntime::ready(component)' sidecar/cdc/src/runtime.rs
+    # Probe-only CDC must not claim an active replication stream at startup.
+    grep -Fq 'SidecarRuntime::not_ready(' sidecar/cdc/src/runtime.rs
+    grep -Fq '"logical replication stream is not active"' sidecar/cdc/src/runtime.rs
+    if grep -Fq 'SidecarRuntime::ready(component)' sidecar/cdc/src/runtime.rs; then
+      echo "CDC image contract must not claim probe-only replication readiness" >&2
+      exit 1
+    fi
     continue
   fi
   if grep -Fq 'run_probe_server' "${main_file}"; then
