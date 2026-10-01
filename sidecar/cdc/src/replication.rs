@@ -14,11 +14,23 @@ use tracing::{debug, info, warn};
 const DEFAULT_PUBLICATION: &str = "command_center_cdc";
 
 /// Connection string for a single Postgres backend the CDC sidecar consumes.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ReplicationTarget {
     pub label: String,
     pub conninfo: String,
     pub slot_name: String,
+}
+
+// FEATURE: C1 — connection strings must not escape through Debug diagnostics.
+impl std::fmt::Debug for ReplicationTarget {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ReplicationTarget")
+            .field("label", &self.label)
+            .field("conninfo", &"[REDACTED]")
+            .field("slot_name", &self.slot_name)
+            .finish()
+    }
 }
 
 impl ReplicationTarget {
@@ -247,6 +259,23 @@ mod tests {
             if let Err(error) = targets_from_env() {
                 assert!(matches!(error, ReplicationError::NoTargetsConfigured));
             }
+        }
+    }
+
+    #[test]
+    fn replication_target_debug_redacts_url_and_keyword_connection_strings() {
+        for conninfo in [
+            "postgres://synthetic-user:synthetic-secret@invalid.example/db?sslpassword=synthetic-tls-secret",
+            "host=invalid.example user=synthetic-user password='synthetic-secret' sslpassword=synthetic-tls-secret",
+        ] {
+            let target = ReplicationTarget::new("coordinator", conninfo, "ai_blaise_cdc");
+            let output = format!("{target:?}");
+            assert!(output.contains("[REDACTED]"));
+            assert!(output.contains("coordinator"));
+            assert!(output.contains("ai_blaise_cdc"));
+            assert!(!output.contains("synthetic-"));
+            assert!(!output.contains("invalid.example"));
+            assert_eq!(target.conninfo, conninfo);
         }
     }
 

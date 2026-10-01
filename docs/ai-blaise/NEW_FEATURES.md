@@ -2848,6 +2848,11 @@ state machine.
 
 ### C1: CDC Sidecar
 
+Connection diagnostics must not contain database credentials: `ReplicationTarget`
+redacts the entire connection string in `Debug`, including URL and keyword DSNs.
+This safety change does not establish replication frame pumping, durable sink
+acknowledgement, recovery, or operational readiness.
+
 Operand decoder compatibility: the September 29 repair carries upstream
 `211afb11fd5074b12621dd2947260ca570f918c2` tuple-lifetime handling with explicit
 PostgreSQL 16 ownership for embedded tuple views. Translated allocations live
@@ -2960,6 +2965,11 @@ retry and dead-letter policy as webhook and realtime sinks.
 Production evidence: VM Worker CDC-Sinks on experiment-playground, 2026-05-24: `cargo test -p ai_blaise_citus_sidecar_shared -p ai_blaise_citus_sidecar_cdc` covers fail-closed NATS subject/auth URL validation, deterministic `PUB` frame encoding, and live-dispatch DLQ retry accounting; `bash ci/ai-blaise/sidecar-cdc-smoke.sh` proves the serve-runtime and canonical stdout paths expose the NATS target and encoded frame.
 
 Current boundary: The production-evidenced surface is the protocol frame, strict local validation, and DLQ-on-dispatch-failure accounting. Live broker authentication, TLS, JetStream, and managed NATS operations remain alpha.
+
+The async-nats connection path logs no server URL and returns only the typed
+connection-error category, discarding credential-bearing source diagnostics.
+Synthetic unit cases cover every locked async-nats connection-error category;
+they do not connect to a broker or prove live authentication/delivery.
 
 **References**:
 

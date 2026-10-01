@@ -29,10 +29,9 @@ impl NatsSink {
     }
 
     pub async fn connect(url: &str, subject_prefix: &str) -> Result<Arc<Self>, ReplicationError> {
-        info!(url, "connecting CDC NATS sink");
-        let client = async_nats::connect(url)
-            .await
-            .map_err(|error| ReplicationError::Sink(error.to_string()))?;
+        // FEATURE: C14 — connection URLs may contain credentials; never log them.
+        info!("connecting CDC NATS sink");
+        let client = async_nats::connect(url).await.map_err(safe_connect_error)?;
         Ok(Arc::new(Self {
             client,
             subject_prefix: subject_prefix.to_string(),
@@ -76,6 +75,13 @@ impl NatsSink {
             .map_err(|error| ReplicationError::Sink(error.to_string()))?;
         Ok(())
     }
+}
+
+/// Keep the diagnostic category, but discard address-bearing source errors.
+/// async-nats includes its source in both Display and Debug output, so redacting
+/// only the input URL would still leak credentials from parsing/connect failures.
+fn safe_connect_error(error: async_nats::ConnectError) -> ReplicationError {
+    ReplicationError::Sink(format!("NATS connection failed: {}", error.kind()))
 }
 
 fn serde_event(event: &CdcEventEnvelope) -> serde_json::Value {
@@ -140,6 +146,41 @@ impl CdcEventSink for NatsSink {
 mod tests {
     use super::*;
     use crate::{CdcColumnValue, CdcOperation};
+
+    #[test]
+    fn connect_error_diagnostics_drop_credentials_for_every_category() {
+        use async_nats::ConnectErrorKind;
+        use std::error::Error as _;
+
+        let credentials =
+            "nats://synthetic-user:synthetic-secret@invalid.example:4222/?token=synthetic-token";
+        for kind in [
+            ConnectErrorKind::ServerParse,
+            ConnectErrorKind::Dns,
+            ConnectErrorKind::Authentication,
+            ConnectErrorKind::AuthorizationViolation,
+            ConnectErrorKind::TimedOut,
+            ConnectErrorKind::Tls,
+            ConnectErrorKind::Io,
+            ConnectErrorKind::MaxReconnects,
+        ] {
+            let upstream =
+                async_nats::ConnectError::with_source(kind, std::io::Error::other(credentials));
+            assert!(upstream.to_string().contains(credentials));
+            let safe = safe_connect_error(upstream);
+            assert_eq!(
+                safe.to_string(),
+                format!("sink failed: NATS connection failed: {kind}")
+            );
+            for output in [safe.to_string(), format!("{safe:?}")] {
+                assert!(!output.contains("synthetic-user"));
+                assert!(!output.contains("synthetic-secret"));
+                assert!(!output.contains("synthetic-token"));
+                assert!(!output.contains("invalid.example"));
+            }
+            assert!(safe.source().is_none());
+        }
+    }
 
     fn fake_sink() -> NatsSink {
         // Cannot construct a real Client without I/O; this struct uses the type
