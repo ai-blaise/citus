@@ -27,3 +27,8 @@ ready metric stays zero, including probe-only operation when targets or NATS
 are unavailable. `/healthz` remains a liveness endpoint; metrics and drain
 remain available. A NATS connection or successful setup query must not be
 interpreted as replication, durable delivery, or recovery readiness.
+
+The custom-component observability smoke verifies this probe-only state explicitly:
+CDC readiness is 503 with `ready=false` and the inactive-stream reason, health
+and metrics remain 200, and the ready gauge is zero. Other component readiness
+expectations are unchanged; a dead CDC process or an unrelated 503 does not pass.

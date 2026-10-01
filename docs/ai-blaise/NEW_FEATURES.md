@@ -2848,6 +2848,13 @@ state machine.
 
 ### C1: CDC Sidecar
 
+The custom-component observability contract expects the current `serve` fixture
+to be alive but not ready: `/readyz` 503, `ready=false`, inactive-stream detail,
+`/healthz` and `/metrics` 200, and a zero ready gauge. It still verifies every
+component and does not treat arbitrary 503s, draining, or exited processes as
+success. This aligns the smoke with the fail-closed runtime; it is not stream,
+delivery, recovery, or production-readiness evidence.
+
 Connection diagnostics must not contain database credentials: `ReplicationTarget`
 redacts the entire connection string in `Debug`, including URL and keyword DSNs.
 This safety change does not establish replication frame pumping, durable sink

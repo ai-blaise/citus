@@ -3,6 +3,7 @@ set -euo pipefail
 
 # FEATURE: O4
 # FEATURE: O15
+# FEATURE: C1
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "${repo_root}"
@@ -69,6 +70,9 @@ SERVICES = [
         "component": "cdc",
         "listen_env": "AI_BLAISE_SIDECAR_LISTEN_ADDR",
         "schema": "cdc",
+        # No replication frame pump is active in this serve/probe-only fixture.
+        "expected_ready": False,
+        "expected_detail": "logical replication stream is not active",
     },
     {
         "label": "coldtier",
@@ -294,7 +298,7 @@ def wait_for_probe(label, proc, log_file, port, path, predicate):
     fail(f"{label} did not satisfy {path} within {TIMEOUT_SECONDS}s: {last_error}\n{read_log(log_file)}")
 
 
-def assert_json_probe(label, body, component, ready):
+def assert_json_probe(label, body, component, ready, expected_detail=None):
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as error:
@@ -305,15 +309,21 @@ def assert_json_probe(label, body, component, ready):
         fail(f"{label} probe ready mismatch: {payload!r}")
     if ready and payload.get("accepting_new_work") is not True:
         fail(f"{label} probe must accept new work while ready: {payload!r}")
+    if expected_detail is not None:
+        if payload.get("state") != "not_ready" or payload.get("detail") != expected_detail:
+            fail(f"{label} probe not-ready reason mismatch: {payload!r}")
+        if payload.get("accepting_new_work") is not True:
+            fail(f"{label} probe-only fixture must not be draining: {payload!r}")
 
 
 def expected_metrics_fragments(service):
     if "metrics_fragments" in service:
         return service["metrics_fragments"]
     component = service["component"]
+    ready = int(service.get("expected_ready", True))
     return [
         "# TYPE ai_blaise_sidecar_ready gauge",
-        f'ai_blaise_sidecar_ready{{component="{component}"}} 1',
+        f'ai_blaise_sidecar_ready{{component="{component}"}} {ready}',
         f'ai_blaise_sidecar_accepting_new_work{{component="{component}"}} 1',
         f'ai_blaise_sidecar_in_flight_work{{component="{component}"}} 0',
     ]
@@ -357,20 +367,27 @@ def smoke_service(service):
             [binary_path(service["package"]), "serve"],
             env,
         )
+        expected_ready = service.get("expected_ready", True)
+        expected_status = 200 if expected_ready else 503
+        expected_detail = service.get("expected_detail")
         _, _, ready_body = wait_for_probe(
             service["label"],
             proc,
             log_file,
             port,
             "/readyz",
-            lambda status, _headers, body: status == 200 and service["component"] in body,
+            lambda status, _headers, body: status == expected_status and service["component"] in body,
         )
-        assert_json_probe(service["label"], ready_body, service["component"], True)
+        assert_json_probe(
+            service["label"], ready_body, service["component"], expected_ready, expected_detail
+        )
 
         status, _, health_body = http_get(port, "/healthz")
         if status != 200:
             fail(f"{service['label']} /healthz returned {status}: {health_body!r}")
-        assert_json_probe(service["label"], health_body, service["component"], True)
+        assert_json_probe(
+            service["label"], health_body, service["component"], expected_ready, expected_detail
+        )
 
         status, _, metrics = http_get(port, "/metrics")
         if status != 200:
