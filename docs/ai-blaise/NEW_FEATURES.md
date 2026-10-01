@@ -2853,6 +2853,13 @@ redacts the entire connection string in `Debug`, including URL and keyword DSNs.
 This safety change does not establish replication frame pumping, durable sink
 acknowledgement, recovery, or operational readiness.
 
+The `serve` probe is explicitly unready while no logical-replication frame pump
+is active: `/readyz` returns 503 and the shared ready gauge is zero, including
+probe-only operation. Liveness, metrics and drain remain available. The current
+consumer's slot/publication setup and `SELECT 1` completion are not a CDC stream;
+this readiness correction does not implement replication, durable sink
+acknowledgement or recovery. The separate `serve-runtime` ingest path is unchanged.
+
 Operand decoder compatibility: the September 29 repair carries upstream
 `211afb11fd5074b12621dd2947260ca570f918c2` tuple-lifetime handling with explicit
 PostgreSQL 16 ownership for embedded tuple views. Translated allocations live

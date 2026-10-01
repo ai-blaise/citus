@@ -24,10 +24,21 @@ use tracing::{error, info, warn};
 #[derive(Clone)]
 struct ProbeState(Arc<Mutex<SidecarRuntime>>);
 
+impl ProbeState {
+    fn new(component: &str) -> Self {
+        // FEATURE: C1
+        Self(Arc::new(Mutex::new(SidecarRuntime::not_ready(
+            component,
+            "logical replication stream is not active",
+        ))))
+    }
+}
+
 /// Entry point invoked from `main serve`.
 pub async fn serve(component: &'static str, default_addr: &str) -> Result<(), ReplicationError> {
     init_tracing();
-    let runtime = Arc::new(Mutex::new(SidecarRuntime::ready(component)));
+    let state = ProbeState::new(component);
+    let runtime = state.0.clone();
     let bind: SocketAddr = env::var("AI_BLAISE_SIDECAR_LISTEN_ADDR")
         .unwrap_or_else(|_| default_addr.to_string())
         .parse()
@@ -39,7 +50,7 @@ pub async fn serve(component: &'static str, default_addr: &str) -> Result<(), Re
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .route("/drain", post(post_drain).get(get_drain))
-        .with_state(ProbeState(runtime.clone()));
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind)
         .await
@@ -174,5 +185,58 @@ mod tests {
         // Defensive — don't mutate env in parallel tests, just check default.
         let addr = listen_addr_from_env("0.0.0.0:8080");
         assert!(!addr.is_empty());
+    }
+
+    #[tokio::test]
+    async fn probe_only_runtime_is_not_ready() {
+        let state = ProbeState::new("cdc");
+        let response = dispatch(&state, HttpMethod::Get, "/readyz").into_response();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .expect("readiness body");
+        let report: serde_json::Value = serde_json::from_slice(&body).expect("readiness JSON");
+        assert_eq!(report["ready"], false);
+        assert_eq!(report["detail"], "logical replication stream is not active");
+    }
+
+    #[tokio::test]
+    async fn unready_runtime_retains_liveness_and_zero_ready_metric() {
+        let state = ProbeState::new("cdc");
+        let response = dispatch(&state, HttpMethod::Get, "/healthz").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .expect("health body");
+        let report: serde_json::Value = serde_json::from_slice(&body).expect("health JSON");
+        assert_eq!(report["ready"], false);
+        let response = dispatch(&state, HttpMethod::Get, "/metrics").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .expect("metrics body");
+        let metrics = std::str::from_utf8(&body).expect("metrics text");
+        assert!(metrics.contains("ai_blaise_sidecar_ready{component=\"cdc\"} 0\n"));
+    }
+
+    #[tokio::test]
+    async fn draining_unready_runtime_does_not_promote_readiness() {
+        let state = ProbeState::new("cdc");
+        let response = dispatch(&state, HttpMethod::Post, "/drain").into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::ACCEPTED);
+        let response = dispatch(&state, HttpMethod::Get, "/readyz").into_response();
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        let body = axum::body::to_bytes(response.into_body(), 65536)
+            .await
+            .expect("draining body");
+        let report: serde_json::Value = serde_json::from_slice(&body).expect("draining JSON");
+        assert_eq!(report["ready"], false);
+        assert_eq!(report["accepting_new_work"], false);
     }
 }
