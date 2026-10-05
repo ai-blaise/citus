@@ -79,3 +79,22 @@ def test_follower_schedule_selects_follower_custom_target(monkeypatch):
     assert "check-follower-custom-schedule" in commands[0]
     assert "WORKERCOUNT=2" in commands[0]
     assert "SCHEDULE='tmp_schedule'" in commands[0]
+
+
+def test_mx_schema_support_line_runs_multi_extension_on_a_fresh_cluster():
+    args = {
+        "use_base_schedule": False,
+        "use_whole_schedule_line": True,
+    }
+    schedule_line = (
+        "test: multi_mx_schema_support multi_mx_tpch_query1 multi_mx_tpch_query10\n"
+    )
+
+    dependencies = get_test_dependencies(
+        "multi_mx_schema_support", "multi_mx_schedule", schedule_line, args
+    )
+
+    # multi_extension needs a public schema that no setup schedule has filled
+    # with test helpers, so the line must not pull in mx_minimal_schedule.
+    assert "multi_extension" in dependencies.extra_tests()
+    assert dependencies.schedule is None
