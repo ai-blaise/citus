@@ -1,14 +1,16 @@
 /* FEATURE: C1 -- native ownership probe; not a substitute for live CDC TAP. */
 #include "postgres.h"
+
 #include "fmgr.h"
+
 #include "access/htup_details.h"
 #include "catalog/pg_type_d.h"
 #include "replication/logical.h"
 #include "replication/output_plugin.h"
 #include "replication/reorderbuffer.h"
 #include "utils/builtins.h"
-#include "utils/rel.h"
 #include "utils/memutils.h"
+#include "utils/rel.h"
 
 #define PG_VERSION_17 170000
 PG_MODULE_MAGIC;
