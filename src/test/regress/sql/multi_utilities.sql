@@ -212,7 +212,9 @@ SET citus.next_shard_id TO 970000;
 
 SET citus.log_remote_commands TO OFF;
 
-CREATE TABLE local_vacuum_table(id int primary key, b text);
+-- the size checks below expect only the VACUUMs they issue; an autovacuum
+-- between a DELETE and its VACUUM (INDEX_CLEANUP OFF) truncates the heap
+CREATE TABLE local_vacuum_table(id int primary key, b text) WITH (autovacuum_enabled = false);
 
 CREATE TABLE reference_vacuum_table(id int);
 SELECT create_reference_table('reference_vacuum_table');
