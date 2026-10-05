@@ -68,13 +68,15 @@ if [ "${require_docker}" = "1" ]; then
     -p 0:5432 \
     "${postgres_image}" >/dev/null
 
+  # The image's initialization server is socket-only and stops before the
+  # final server starts; the smoke connects over TCP, so wait for that.
   for _ in $(seq 1 60); do
-    if docker exec "${pg_container}" pg_isready -U postgres >/dev/null 2>&1; then
+    if docker exec "${pg_container}" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
       break
     fi
     sleep 1
   done
-  docker exec "${pg_container}" pg_isready -U postgres >/dev/null 2>&1 \
+  docker exec "${pg_container}" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 \
     || fail "${postgres_image} did not become ready"
 
   host_port=$(docker port "${pg_container}" 5432/tcp | head -1 | awk -F: '{print $NF}')

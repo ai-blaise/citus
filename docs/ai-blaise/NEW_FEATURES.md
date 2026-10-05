@@ -9771,6 +9771,9 @@ Production evidence:
   and binary result format codes (asserts `reuse_text_value=21
   reuse_binary_value=35 reuse_ready_idle_count=2`). Evidence row in
   `artifacts/pool-extended-query-pipeline-evidence.tsv`.
+  The example connects over TCP, so the smoke waits for the final server's
+  loopback TCP listener, not the image's socket-only initialization server
+  that stops before normal startup.
 - `ci/ai-blaise/pool-extended-query-through-pool-live-smoke.sh` runs the same
   example through the real `pool` `serve` data port (the pool is started
   pointing at `postgres:17`; the smoke calls `cargo run -p ai_blaise_citus_pool
